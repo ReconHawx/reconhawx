@@ -420,6 +420,22 @@ export const typosquatAPI = {
     return response.data;
   },
 
+  startPhishlabsTakedown: async (typoDomain, programName) => {
+    const params = new URLSearchParams({
+      typo_domain: typoDomain,
+      program_name: programName
+    });
+    const response = await api.post(`/findings/typosquat/phishlabs-takedown?${params.toString()}`, {});
+    return response.data;
+  },
+
+  startPhishlabsTakedownBatch: async (findingIds) => {
+    const response = await api.post('/findings/typosquat/phishlabs-takedown/batch', {
+      finding_ids: findingIds
+    });
+    return response.data;
+  },
+
   // Create background job for batch typosquat domain analysis
   createBatchTyposquatJob: async (domains, programName = null, originalDomain = null) => {
     const requestData = {

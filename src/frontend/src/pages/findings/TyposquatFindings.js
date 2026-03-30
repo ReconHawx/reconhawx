@@ -130,7 +130,11 @@ function TyposquatFindings() {
     apex_only: searchParams.get('apex_only') === 'true',
     similarity_protected_domain: searchParams.get('similarity_protected_domain') || '',
     min_similarity_percent: searchParams.get('min_similarity_percent') || '',
-    auto_resolve: searchParams.get('auto_resolve') || ''
+    auto_resolve: searchParams.get('auto_resolve') || '',
+    created_at_from: searchParams.get('created_at_from') || '',
+    created_at_to: searchParams.get('created_at_to') || '',
+    updated_at_from: searchParams.get('updated_at_from') || '',
+    updated_at_to: searchParams.get('updated_at_to') || ''
   });
   
   // Sort state
@@ -324,6 +328,8 @@ function TyposquatFindings() {
 
   // Build API filter object
   const buildTypedParams = useCallback(() => {
+    const dayStartUtc = (ymd) => (ymd ? `${ymd}T00:00:00.000Z` : undefined);
+    const dayEndUtc = (ymd) => (ymd ? `${ymd}T23:59:59.999Z` : undefined);
     const params = {
       search: filters.typo_domain || undefined,
       status: (filters.status && filters.status.length > 0) ? filters.status : undefined,
@@ -344,6 +350,10 @@ function TyposquatFindings() {
       similarity_protected_domain: filters.similarity_protected_domain || undefined,
       min_similarity_percent: filters.min_similarity_percent ? parseFloat(filters.min_similarity_percent) : undefined,
       auto_resolve: filters.auto_resolve ? (filters.auto_resolve === 'true') : undefined,
+      created_at_from: dayStartUtc(filters.created_at_from),
+      created_at_to: dayEndUtc(filters.created_at_to),
+      updated_at_from: dayStartUtc(filters.updated_at_from),
+      updated_at_to: dayEndUtc(filters.updated_at_to),
       program: selectedProgram || undefined,
       sort_by: sortField,
       sort_dir: sortDirection,
@@ -525,6 +535,62 @@ function TyposquatFindings() {
     }));
     setCurrentPage(1); // Reset to first page when filtering
   };
+
+  const STATUS_FILTER_OPTIONS = [
+    { value: 'new', label: 'New' },
+    { value: 'inprogress', label: 'In Progress' },
+    { value: 'resolved', label: 'Resolved' },
+    { value: 'dismissed', label: 'Dismissed' },
+  ];
+  const PHISHLABS_INCIDENT_FILTER_OPTIONS = [
+    { value: 'no_incident', label: 'No Incident' },
+    { value: 'monitoring', label: 'Monitoring' },
+    { value: 'other', label: 'Other' },
+  ];
+
+  const renderStatusFilterChecks = (idPrefix) => (
+    <div className="d-flex flex-wrap gap-3">
+      {STATUS_FILTER_OPTIONS.map(({ value, label }) => (
+        <Form.Check
+          key={value}
+          type="checkbox"
+          id={`${idPrefix}-status-${value}`}
+          label={label}
+          checked={(filters.status || []).includes(value)}
+          onChange={(e) => {
+            const cur = filters.status || [];
+            if (e.target.checked) {
+              handleFilterChange('status', [...cur, value]);
+            } else {
+              handleFilterChange('status', cur.filter((s) => s !== value));
+            }
+          }}
+        />
+      ))}
+    </div>
+  );
+
+  const renderPhishlabsIncidentFilterChecks = (idPrefix) => (
+    <div className="d-flex flex-wrap gap-3">
+      {PHISHLABS_INCIDENT_FILTER_OPTIONS.map(({ value, label }) => (
+        <Form.Check
+          key={value}
+          type="checkbox"
+          id={`${idPrefix}-phishlabs-${value}`}
+          label={label}
+          checked={(filters.phishlabs_incident_status || []).includes(value)}
+          onChange={(e) => {
+            const cur = filters.phishlabs_incident_status || [];
+            if (e.target.checked) {
+              handleFilterChange('phishlabs_incident_status', [...cur, value]);
+            } else {
+              handleFilterChange('phishlabs_incident_status', cur.filter((s) => s !== value));
+            }
+          }}
+        />
+      ))}
+    </div>
+  );
 
   // Handle sorting
   const handleSort = (field) => {
@@ -862,19 +928,9 @@ function TyposquatFindings() {
     }
   };
 
-  const handleBatchPhishlabsFetch = () => {
+  const handleBatchPhishlabsOpen = () => {
     if (selectedItems.size === 0) return;
     setPhishlabsAction('fetch');
-    setShowPhishlabsModal(true);
-  };
-
-  const handleBatchPhishlabsIncidents = () => {
-    if (selectedItems.size === 0) return;
-    setPhishlabsAction('create');
-    // Set default comment for incident creation
-    setPhishlabsComment('Typosquat related to our brand. Please monitor in case of new evidences, please proceed to takedown. Regards');
-    // Set Google Safe Browsing to checked by default
-    setBatchReportToGsb(true);
     setShowPhishlabsModal(true);
   };
 
@@ -883,6 +939,43 @@ function TyposquatFindings() {
       await handleExecuteBatchPhishlabsFetch();
     } else if (phishlabsAction === 'create') {
       await handleExecuteBatchPhishlabsIncidents();
+    } else if (phishlabsAction === 'takedown') {
+      await handleExecuteBatchPhishlabsTakedown();
+    }
+  };
+
+  const handleExecuteBatchPhishlabsTakedown = async () => {
+    try {
+      setCreatingPhishlabs(true);
+      setPhishMessage({ text: '', type: '' });
+
+      const selectedIds = Array.from(selectedItems);
+      const response = await api.findings.typosquat.startPhishlabsTakedownBatch(selectedIds);
+
+      const msgType =
+        response.status === 'success'
+          ? 'success'
+          : response.status === 'partial_success'
+            ? 'warning'
+            : 'danger';
+
+      setPhishMessage({
+        text:
+          response.message ||
+          `PhishLabs takedown: ${response.success_count ?? 0} succeeded, ${response.error_count ?? 0} failed`,
+        type: msgType
+      });
+
+      fetchFindings();
+    } catch (err) {
+      console.error('Error starting PhishLabs takedown batch:', err);
+      setPhishMessage({
+        text: err.response?.data?.detail || err.message || 'Error requesting PhishLabs takedown',
+        type: 'danger'
+      });
+    } finally {
+      setCreatingPhishlabs(false);
+      setShowPhishlabsModal(false);
     }
   };
 
@@ -1386,38 +1479,18 @@ function TyposquatFindings() {
             <Button
               variant="outline-info"
               size="sm"
-              onClick={handleBatchPhishlabsFetch}
+              onClick={handleBatchPhishlabsOpen}
               disabled={creatingPhishlabs}
               className="me-2"
             >
               {creatingPhishlabs ? (
                 <>
                   <Spinner animation="border" size="sm" className="me-2" />
-                  Fetching...
+                  Working...
                 </>
               ) : (
                 <>
-                  <i className="bi bi-cloud-download"></i> Fetch PhishLabs ({selectedItems.size})
-                </>
-              )}
-            </Button>
-          )}
-          {selectedItems.size > 0 && (
-            <Button
-              variant="outline-success"
-              size="sm"
-              onClick={handleBatchPhishlabsIncidents}
-              disabled={creatingPhishlabs}
-              className="me-2"
-            >
-              {creatingPhishlabs ? (
-                <>
-                  <Spinner animation="border" size="sm" className="me-2" />
-                  Creating...
-                </>
-              ) : (
-                <>
-                  <i className="bi bi-plus-circle"></i> Create Phishlabs Incidents ({selectedItems.size})
+                  <i className="bi bi-shield-lock"></i> PhishLabs actions ({selectedItems.size})
                 </>
               )}
             </Button>
@@ -1491,12 +1564,17 @@ function TyposquatFindings() {
         <Col>
           <Accordion>
             <Accordion.Item eventKey="0">
-              <Accordion.Header>🔍 Search & Filter Options</Accordion.Header>
-              <Accordion.Body>
-                {/* Row 1: [Search text box] [apex domain dropdown] [assigned to dropdown] */}
-                <Row>
+              <Accordion.Header>
+                <span className="d-flex align-items-center gap-2">
+                  <i className="bi bi-search" aria-hidden />
+                  Search &amp; Filter Options
+                </span>
+              </Accordion.Header>
+              <Accordion.Body className="pt-3">
+                <h6 className="text-secondary text-uppercase small fw-semibold mb-0">Search &amp; assignment</h6>
+                <Row className="g-3 mt-2">
                   <Col md={4}>
-                    <Form.Group className="mb-3">
+                    <Form.Group className="mb-0">
                       <Form.Label>Typo Domain</Form.Label>
                       <Form.Control
                         type="text"
@@ -1507,7 +1585,7 @@ function TyposquatFindings() {
                     </Form.Group>
                   </Col>
                   <Col md={4}>
-                    <Form.Group className="mb-3">
+                    <Form.Group className="mb-0">
                       <Form.Label>Apex Domain</Form.Label>
                       <Form.Select
                         value={filters.apex_domain}
@@ -1528,7 +1606,7 @@ function TyposquatFindings() {
                     </Form.Group>
                   </Col>
                   <Col md={4}>
-                    <Form.Group className="mb-3">
+                    <Form.Group className="mb-0">
                       <Form.Label>Assigned To</Form.Label>
                       <Form.Select
                         value={filters.assigned_to_username}
@@ -1544,10 +1622,56 @@ function TyposquatFindings() {
                   </Col>
                 </Row>
 
-                {/* Row 2: [ip address text box] [source dropdown] */}
-                <Row>
+                <hr className="my-3" />
+                <h6 className="text-secondary text-uppercase small fw-semibold mb-0">Date range</h6>
+                <Row className="g-3 mt-2">
                   <Col md={6}>
-                    <Form.Group className="mb-3">
+                    <Form.Group className="mb-0">
+                      <Form.Label>Created at</Form.Label>
+                      <div className="d-flex flex-wrap align-items-center gap-2">
+                        <Form.Control
+                          type="date"
+                          value={filters.created_at_from}
+                          onChange={(e) => handleFilterChange('created_at_from', e.target.value)}
+                          aria-label="Created from"
+                        />
+                        <span className="text-muted small">to</span>
+                        <Form.Control
+                          type="date"
+                          value={filters.created_at_to}
+                          onChange={(e) => handleFilterChange('created_at_to', e.target.value)}
+                          aria-label="Created to"
+                        />
+                      </div>
+                    </Form.Group>
+                  </Col>
+                  <Col md={6}>
+                    <Form.Group className="mb-0">
+                      <Form.Label>Updated at</Form.Label>
+                      <div className="d-flex flex-wrap align-items-center gap-2">
+                        <Form.Control
+                          type="date"
+                          value={filters.updated_at_from}
+                          onChange={(e) => handleFilterChange('updated_at_from', e.target.value)}
+                          aria-label="Updated from"
+                        />
+                        <span className="text-muted small">to</span>
+                        <Form.Control
+                          type="date"
+                          value={filters.updated_at_to}
+                          onChange={(e) => handleFilterChange('updated_at_to', e.target.value)}
+                          aria-label="Updated to"
+                        />
+                      </div>
+                    </Form.Group>
+                  </Col>
+                </Row>
+
+                <hr className="my-3" />
+                <h6 className="text-secondary text-uppercase small fw-semibold mb-0">Network &amp; source</h6>
+                <Row className="g-3 mt-2">
+                  <Col md={6}>
+                    <Form.Group className="mb-0">
                       <Form.Label>IP Address</Form.Label>
                       <Form.Control
                         type="text"
@@ -1565,7 +1689,7 @@ function TyposquatFindings() {
                     </Form.Group>
                   </Col>
                   <Col md={6}>
-                    <Form.Group className="mb-3">
+                    <Form.Group className="mb-0">
                       <Form.Label>Source</Form.Label>
                       <Form.Select
                         value={filters.source}
@@ -1581,57 +1705,28 @@ function TyposquatFindings() {
                   </Col>
                 </Row>
 
-                {/* Row 3: [status m-select] [phishlabs incident m-select] */}
-                <Row>
+                <hr className="my-3" />
+                <h6 className="text-secondary text-uppercase small fw-semibold mb-0">Status &amp; PhishLabs</h6>
+                <Row className="g-3 mt-2">
                   <Col md={6}>
-                    <Form.Group className="mb-3">
-                      <Form.Label>Status (Multi-select)</Form.Label>
-                      <Form.Select
-                        multiple
-                        value={filters.status}
-                        onChange={(e) => {
-                          const selectedOptions = Array.from(e.target.selectedOptions, option => option.value);
-                          handleFilterChange('status', selectedOptions);
-                        }}
-                        style={{ height: '120px' }}
-                      >
-                        <option value="new">New</option>
-                        <option value="inprogress">In Progress</option>
-                        <option value="resolved">Resolved</option>
-                        <option value="dismissed">Dismissed</option>
-                      </Form.Select>
-                      <Form.Text className="text-muted">
-                        Hold Ctrl/Cmd to select multiple
-                      </Form.Text>
+                    <Form.Group className="mb-0">
+                      <Form.Label>Status</Form.Label>
+                      {renderStatusFilterChecks('accordion')}
                     </Form.Group>
                   </Col>
                   <Col md={6}>
-                    <Form.Group className="mb-3">
-                      <Form.Label>PhishLabs Incident (Multi-select)</Form.Label>
-                      <Form.Select
-                        multiple
-                        value={filters.phishlabs_incident_status}
-                        onChange={(e) => {
-                          const selectedOptions = Array.from(e.target.selectedOptions, option => option.value);
-                          handleFilterChange('phishlabs_incident_status', selectedOptions);
-                        }}
-                        style={{ height: '120px' }}
-                      >
-                        <option value="no_incident">🔘 No Incident</option>
-                        <option value="monitoring">✅ Monitoring</option>
-                        <option value="other">🔴 Other</option>
-                      </Form.Select>
-                      <Form.Text className="text-muted">
-                        Hold Ctrl/Cmd to select multiple
-                      </Form.Text>
+                    <Form.Group className="mb-0">
+                      <Form.Label>PhishLabs incident</Form.Label>
+                      {renderPhishlabsIncidentFilterChecks('accordion')}
                     </Form.Group>
                   </Col>
                 </Row>
 
-                {/* Row 4: [Country] [Registrar] [wildcard status] */}
-                <Row>
-                  <Col md={4}>
-                    <Form.Group className="mb-3">
+                <hr className="my-3" />
+                <h6 className="text-secondary text-uppercase small fw-semibold mb-0">Domain attributes</h6>
+                <Row className="g-3 mt-2">
+                  <Col lg={3} md={6}>
+                    <Form.Group className="mb-0">
                       <Form.Label>Country</Form.Label>
                       <Form.Select
                         value={filters.country}
@@ -1644,8 +1739,8 @@ function TyposquatFindings() {
                       </Form.Select>
                     </Form.Group>
                   </Col>
-                  <Col md={4}>
-                    <Form.Group className="mb-3">
+                  <Col lg={3} md={6}>
+                    <Form.Group className="mb-0">
                       <Form.Label>Registrar</Form.Label>
                       <Form.Select
                         value={filters.registrar}
@@ -1665,8 +1760,8 @@ function TyposquatFindings() {
                       />
                     </Form.Group>
                   </Col>
-                  <Col md={4}>
-                    <Form.Group className="mb-3">
+                  <Col lg={3} md={6}>
+                    <Form.Group className="mb-0">
                       <Form.Label>Wildcard Status</Form.Label>
                       <Form.Select
                         value={filters.is_wildcard}
@@ -1678,10 +1773,8 @@ function TyposquatFindings() {
                       </Form.Select>
                     </Form.Group>
                   </Col>
-                </Row>
-                <Row>
-                  <Col md={4}>
-                    <Form.Group className="mb-3">
+                  <Col lg={3} md={6}>
+                    <Form.Group className="mb-0">
                       <Form.Label>Parked Domain Status</Form.Label>
                       <Form.Select
                         value={filters.is_parked}
@@ -1694,9 +1787,12 @@ function TyposquatFindings() {
                     </Form.Group>
                   </Col>
                 </Row>
-                <Row>
-                  <Col md={4}>
-                    <Form.Group className="mb-3">
+
+                <hr className="my-3" />
+                <h6 className="text-secondary text-uppercase small fw-semibold mb-0">Similarity &amp; auto-resolve</h6>
+                <Row className="g-3 mt-2">
+                  <Col lg={4} md={6}>
+                    <Form.Group className="mb-0">
                       <Form.Label>Protected Domain Similarity</Form.Label>
                       <Form.Select
                         value={filters.similarity_protected_domain}
@@ -1717,8 +1813,8 @@ function TyposquatFindings() {
                       )}
                     </Form.Group>
                   </Col>
-                  <Col md={3}>
-                    <Form.Group className="mb-3">
+                  <Col lg={4} md={6}>
+                    <Form.Group className="mb-0">
                       <Form.Label>Min Similarity %</Form.Label>
                       <Form.Control
                         type="text"
@@ -1737,8 +1833,8 @@ function TyposquatFindings() {
                       <Form.Text className="text-muted">0-100</Form.Text>
                     </Form.Group>
                   </Col>
-                  <Col md={3}>
-                    <Form.Group className="mb-3">
+                  <Col lg={4} md={12}>
+                    <Form.Group className="mb-0">
                       <Form.Label>Would Auto-Resolve</Form.Label>
                       <Form.Select
                         value={filters.auto_resolve}
@@ -1751,7 +1847,7 @@ function TyposquatFindings() {
                     </Form.Group>
                   </Col>
                 </Row>
-                <Row>
+                <Row className="g-3 mt-3">
                 <Col md={12} className="d-flex justify-content-end">
                     <Button variant="outline-secondary" onClick={() => {
                       setTypoDomainInput('');
@@ -1775,7 +1871,11 @@ function TyposquatFindings() {
                         apex_only: false,
                         similarity_protected_domain: '',
                         min_similarity_percent: '',
-                        auto_resolve: ''
+                        auto_resolve: '',
+                        created_at_from: '',
+                        created_at_to: '',
+                        updated_at_from: '',
+                        updated_at_to: ''
                       });
                     }}>
                       Clear
@@ -1818,7 +1918,11 @@ function TyposquatFindings() {
                 apex_only: false,
                 similarity_protected_domain: '',
                 min_similarity_percent: '',
-                auto_resolve: ''
+                auto_resolve: '',
+                created_at_from: '',
+                created_at_to: '',
+                updated_at_from: '',
+                updated_at_to: ''
               });
               setCurrentPage(1);
             }}>Reset filters</Button>
@@ -1867,18 +1971,9 @@ function TyposquatFindings() {
                         <ColumnFilterPopover id="filter-status" ariaLabel="Filter by status" isActive={(filters.status||[]).length>0}>
                           <div>
                             <Form.Label className="mb-1">Status</Form.Label>
-                            <Form.Select multiple value={filters.status} onChange={(e) => {
-                              const selectedOptions = Array.from(e.target.selectedOptions, option => option.value);
-                              handleFilterChange('status', selectedOptions);
-                            }} style={{ height: '120px' }}>
-                              <option value="new">New</option>
-                              <option value="inprogress">In Progress</option>
-                              <option value="resolved">Resolved</option>
-                              <option value="dismissed">Dismissed</option>
-                            </Form.Select>
+                            {renderStatusFilterChecks('col-filter')}
                             <div className="d-flex justify-content-end gap-2 mt-2">
                               <Button size="sm" variant="secondary" onClick={() => handleFilterChange('status', [])}>Clear</Button>
-                              <Button size="sm" variant="primary" onClick={() => {}}>Apply</Button>
                             </div>
                           </div>
                         </ColumnFilterPopover>
@@ -2886,15 +2981,52 @@ function TyposquatFindings() {
       }}>
         <Modal.Header closeButton>
           <Modal.Title>
-            {phishlabsAction === 'fetch' ? 'Fetch PhishLabs Data' : 'Create PhishLabs Incidents'}
+            {phishlabsAction === 'fetch' && 'Fetch PhishLabs Data'}
+            {phishlabsAction === 'create' && 'Create PhishLabs Incidents'}
+            {phishlabsAction === 'takedown' && 'Start PhishLabs Takedown'}
           </Modal.Title>
         </Modal.Header>
         <Modal.Body>
-          <p>
-            {phishlabsAction === 'fetch'
-              ? `Fetch PhishLabs data for ${selectedItems.size} selected findings?`
-              : `Create PhishLabs incidents for ${selectedItems.size} selected findings?`
-            }
+          <Form.Group className="mb-3">
+            <Form.Label>Action</Form.Label>
+            <div className="d-flex flex-column gap-1">
+              <Form.Check
+                type="radio"
+                id="phishlabs-modal-fetch"
+                name="phishlabsModalAction"
+                label="Fetch PhishLabs data (background job)"
+                checked={phishlabsAction === 'fetch'}
+                onChange={() => setPhishlabsAction('fetch')}
+              />
+              <Form.Check
+                type="radio"
+                id="phishlabs-modal-create"
+                name="phishlabsModalAction"
+                label="Create PhishLabs incident (background job)"
+                checked={phishlabsAction === 'create'}
+                onChange={() => {
+                  setPhishlabsAction('create');
+                  setPhishlabsComment('Typosquat related to our brand. Please monitor in case of new evidences, please proceed to takedown. Regards');
+                  setBatchReportToGsb(true);
+                }}
+              />
+              <Form.Check
+                type="radio"
+                id="phishlabs-modal-takedown"
+                name="phishlabsModalAction"
+                label="Start takedown (immediate API — requires incident ID per finding)"
+                checked={phishlabsAction === 'takedown'}
+                onChange={() => setPhishlabsAction('takedown')}
+              />
+            </div>
+          </Form.Group>
+          <p className="text-muted small mb-3">
+            {phishlabsAction === 'fetch' &&
+              `Fetch existing PhishLabs incident data for ${selectedItems.size} selected finding(s).`}
+            {phishlabsAction === 'create' &&
+              `Create PhishLabs incidents for ${selectedItems.size} selected finding(s).`}
+            {phishlabsAction === 'takedown' &&
+              `Request takedown (apply action) in PhishLabs for ${selectedItems.size} finding(s). Rows without a stored PhishLabs incident ID will fail.`}
           </p>
 
           {phishlabsAction === 'create' && (
@@ -2973,8 +3105,18 @@ function TyposquatFindings() {
               </>
             ) : (
               <>
-                <i className={`bi bi-${phishlabsAction === 'fetch' ? 'cloud-download' : 'plus-circle'} me-2`}></i>
-                {phishlabsAction === 'fetch' ? 'Fetch Data' : 'Create Incidents'}
+                <i
+                  className={`bi me-2 ${
+                    phishlabsAction === 'fetch'
+                      ? 'bi-cloud-download'
+                      : phishlabsAction === 'takedown'
+                        ? 'bi-shield-fill-check'
+                        : 'bi-plus-circle'
+                  }`}
+                ></i>
+                {phishlabsAction === 'fetch' && 'Fetch Data'}
+                {phishlabsAction === 'create' && 'Create Incidents'}
+                {phishlabsAction === 'takedown' && 'Start Takedown'}
               </>
             )}
           </Button>
