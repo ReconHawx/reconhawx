@@ -1,0 +1,101 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Environment
+.env
+.env.local
+.env.*.local
+.envrc
+shell.nix
+.direnv/
+ansible/
+*.http
+src/frontend/app/staticfiles/
+/src/worker/files/nuclei_templates/vrev
+common
+!*/src/common
+dev-stuff/
+.cursorrc
+.ruff_cache/
+.claude/
+kubernetes/overlays
+kubernetes/base/secrets/*.yaml
+!kubernetes/base/secrets/*.yaml.example
+
+# Logs
+*.log
+logs/
+
+# Test coverage
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Build artifacts
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+
+# Docker
+.docker/
+
+# Kubernetes
+kubeconfig 
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm
+.yarn-integrity
+.next/
+out/
+build/
+
+# React
+src/frontend/node_modules/
+src/frontend/build/
+
+# Devenv
+.devenv*
+.devenv/
+devenv.local.nix
+devenv.local.yaml
+~/
+secretspec.toml
+
+# direnv
+.direnv
+
+# pre-commit
+.pre-commit-config.yaml
