@@ -1,0 +1,242 @@
+handlers:
+  # PhishLabs batch processing for new typosquat findings
+  - id: typosquat_phishlabs_batch
+    event_type: findings.typosquat_domain.created
+    description: Trigger PhishLabs batch job for newly created typosquat findings without incident IDs
+    conditions:
+      - type: field_value
+        field: phishlabs_data
+        operator: null_or_empty
+    actions:
+      - type: phishlabs_batch_trigger
+        finding_id_template: "{record_id}"
+        api_url: "{api_base_url}"
+        api_key: "{internal_api_key}"
+        batching:
+          max_events: 10
+          max_delay_seconds: 120
+
+  # # AI analysis batch for new typosquat findings
+  # - id: typosquat_ai_analysis_batch
+  #   event_type: findings.typosquat_domain.created
+  #   description: Trigger AI analysis batch job for typosquat findings without AI analysis
+  #   conditions:
+  #     - type: field_value
+  #       field: ai_analysis
+  #       operator: null_or_empty
+  #   actions:
+  #     - type: ai_analysis_batch_trigger
+  #       finding_id_template: "{record_id}"
+  #       api_url: "{api_base_url}"
+  #       api_key: "{internal_api_key}"
+  #       batching:
+  #         max_events: 10
+  #         max_delay_seconds: 120
+
+  ### SUBDOMAIN HANDLERS ###
+  # Subdomains without IPs - trigger resolution workflow
+  - id: new_unresolved_subdomain_resolution_workflow
+    event_type: assets.subdomain.created
+    description: Trigger workflow to resolve subdomains without IPs
+    conditions:
+      # For individual events: no IP and no resolution_status (new creation)
+      # For batch events: will be filtered by asset_filter during batch processing
+      - type: field_value
+        field: event
+        operator: in
+        expected_value: ["asset.created", "asset.batch_created"]  # Only new creations, not updates
+      - type: field_value
+        field: resolution_status
+        operator: not_exists
+    actions:
+      - type: workflow_trigger
+        api_url: "{api_base_url}"
+        api_key: "{internal_api_key}"
+        use_custom_payload: true
+        batching:
+          max_events: 50
+          max_delay_seconds: 300
+        parameters:
+          workflow_name: "subdomain_resolution"
+          program_name: "{program_name}"
+          description: "Batch resolution of subdomains without IPs"
+          steps:
+            - name: "resolve_domains"
+              tasks:
+                - name: "resolve_domain"
+                  force: true
+                  task_type: "resolve_domain"
+                  params: {}
+                  input_mapping:
+                    domains: "inputs.domains"
+          inputs:
+            domains:
+              type: "direct"
+              values: "{domain_list_array}"
+              value_type: "domains"
+          variables: {}
+
+  # Subdomain created with IPs - trigger recon workflow
+  - id: new_resolved_subdomain_recon_workflow
+    event_type: assets.subdomain.created
+    description: Trigger workflow to resolve subdomains with IPs
+    conditions:
+      - type: field_value
+        field: resolution_status
+        operator: equals
+        expected_value: "created_resolved"
+    actions:
+      - type: workflow_trigger
+        api_url: "{api_base_url}"
+        api_key: "{internal_api_key}"
+        use_custom_payload: true
+        batching:
+          max_events: 25
+          max_delay_seconds: 300
+        parameters:
+          workflow_name: "resolved_subdomain_recon"
+          program_name: "{program_name}"
+          description: "Batch recon of subdomains with IPs"
+          steps:
+            - name: "test_http"
+              tasks:
+                - name: "test_http"
+                  task_type: "test_http"
+                  params: {}
+                  input_mapping:
+                    domains: "inputs.domains"
+          inputs:
+            domains:
+              type: "direct"
+              values: "{domain_list_array}"
+              value_type: "domains"
+          variables: {}
+
+  # Subdomain created with IPs - trigger recon workflow
+  - id: updated_resolved_subdomain_recon_workflow
+    event_type: assets.subdomain.updated
+    description: Trigger workflow to resolve subdomains with IPs
+    conditions:
+      - type: field_value
+        field: new_ip_count
+        operator: greater_than
+        expected_value: 0
+      - type: field_value
+        field: previous_ip_count
+        operator: equals
+        expected_value: 0
+    actions:
+      - type: workflow_trigger
+        api_url: "{api_base_url}"
+        api_key: "{internal_api_key}"
+        use_custom_payload: true
+        batching:
+          max_events: 25
+          max_delay_seconds: 300
+        parameters:
+          workflow_name: "resolved_subdomain_recon"
+          program_name: "{program_name}"
+          description: "Batch recon of subdomains with IPs"
+          steps:
+            - name: "test_http"
+              tasks:
+                - name: "test_http"
+                  task_type: "test_http"
+                  params: {}
+                  input_mapping:
+                    domains: "inputs.domains"
+          inputs:
+            domains:
+              type: "direct"
+              values: "{domain_list_array}"
+              value_type: "domains"
+          variables: {}
+
+  ### IP HANDLERS ###
+  # IP without PTR resolution
+  - id: new_ip_without_ptr_resolve_workflow
+    event_type: assets.ip.created
+    description: Trigger workflow to resolve subdomains without IPs
+    conditions:
+      # For individual events: no IP and no resolution_status (new creation)
+      # For batch events: will be filtered by asset_filter during batch processing
+      - type: field_value
+        field: ptr_record
+        operator: not_exists
+    actions:
+      - type: workflow_trigger
+        api_url: "{api_base_url}"
+        api_key: "{internal_api_key}"
+        use_custom_payload: true
+        batching:
+          max_events: 50
+          max_delay_seconds: 300
+        parameters:
+          workflow_name: "ip_handling"
+          program_name: "{program_name}"
+          description: "Batch resolution of IPs without PTR records"
+          steps:
+            - name: "resolve_ips"
+              tasks:
+                - name: "resolve_ip"
+                  task_type: "resolve_ip"
+                  params: {}
+                  input_mapping:
+                    ips: "inputs.ips"
+            - name: "port_scan"
+              tasks:
+                - name: "port_scan"
+                  task_type: "port_scan"
+                  params: {}
+                  input_mapping:
+                    ips: "inputs.ips"
+          inputs:
+            ips:
+              type: "direct"
+              values: "{ip_list_array}"
+              value_type: "ips"
+          variables: {}
+
+  ### URL HANDLERS ###
+  # New URL created - trigger recon workflow
+  - id: new_url_recon_workflow
+    event_type: assets.url.created
+    description: Trigger workflow to recon URLs
+    conditions:
+      - type: field_value
+        field: path
+        operator: equals
+        expected_value: "/"
+    actions:
+      - type: workflow_trigger
+        api_url: "{api_base_url}"
+        api_key: "{internal_api_key}"
+        use_custom_payload: true
+        batching:
+          max_events: 15
+          max_delay_seconds: 300
+        parameters:
+          workflow_name: "url_recon"
+          program_name: "{program_name}"
+          description: "Batch recon of new URLs"
+          steps:
+            - name: "nuclei_scan"
+              tasks:
+                - name: "nuclei_scan"
+                  task_type: "nuclei_scan"
+                  params: {"cmd_args": ["-as"]}
+                  input_mapping:
+                    domains: "inputs.urls"
+            - name: "screenshot_website"
+              tasks:
+                - name: "screenshot_website"
+                  task_type: "screenshot_website"
+                  params: {}
+                  input_mapping:
+                    domains: "inputs.urls"
+          inputs:
+            urls:
+              type: "direct"
+              values: "{url_list_array}"
+              value_type: "urls"
+          variables: {}

@@ -1,0 +1,1960 @@
+import axios from 'axios';
+
+// Support different API configurations based on environment
+const getApiBaseUrl = () => {
+  const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+  const isDevelopment = process.env.NODE_ENV === 'development';
+  
+  
+  // In local development (running on localhost with npm start)
+  if (isLocalhost && isDevelopment) {
+    const devBase = process.env.REACT_APP_API_URL || 'http://localhost:8001';
+    return devBase;
+  }
+  
+  return '/api';
+};
+
+const API_BASE_URL = getApiBaseUrl();
+
+// Export the base URL for use in other components
+export { API_BASE_URL };
+
+const api = axios.create({
+  baseURL: API_BASE_URL,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+});
+
+api.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem('access_token');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
+  }
+);
+
+api.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const originalRequest = error.config;
+    
+    if (error.response?.status === 401 && !originalRequest._retry) {
+      originalRequest._retry = true;
+      
+      try {
+        // Try to refresh the token
+        const refreshToken = localStorage.getItem('refresh_token');
+        if (refreshToken) {
+          const response = await api.post('/auth/refresh', {
+            refresh_token: refreshToken
+          });
+          
+          const { access_token } = response.data;
+          localStorage.setItem('access_token', access_token);
+          localStorage.setItem('token_expires_at', Date.now() + (response.data.expires_in * 1000));
+          
+          // Update the failed request with new token
+          originalRequest.headers.Authorization = `Bearer ${access_token}`;
+          return api(originalRequest);
+        }
+      } catch (refreshError) {
+        // Refresh failed, redirect to login
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
+        localStorage.removeItem('user_data');
+        localStorage.removeItem('token_expires_at');
+        window.location.href = '/login';
+        return Promise.reject(refreshError);
+      }
+    }
+    
+    return Promise.reject(error);
+  }
+);
+
+// Asset API calls
+export const assetAPI = {
+  delete: async (assetType, assetId) => {
+    const response = await api.delete(`/assets/${assetType}/${assetId}`);
+    return response.data;
+  },
+
+  deleteBatch: async (assetType, assetIds, options = {}) => {
+    const response = await api.delete(`/assets/${assetType}/batch`, {
+      data: {
+        asset_ids: assetIds,
+        ...options
+      }
+    });
+    return response.data;
+  }
+};
+
+// Domain API calls
+export const domainAPI = {
+  // New typed subdomain search API (preferred)
+  searchSubdomains: async (params = {}) => {
+    // params: { search, apex_domain, wildcard, has_ips, ip, has_cname, cname_contains, sort_by, sort_dir, page, page_size }
+    const response = await api.post('/assets/subdomain/search', params);
+    return response.data;
+  },
+
+  getById: async (id) => {
+    const response = await api.get('/assets/subdomain', { params: { id } });
+    if (response.data && response.data.data) return response.data.data;
+    throw new Error('Domain not found');
+  },
+
+  getByName: async (domainName) => {
+    // Use the new domain by name endpoint for better performance
+    const response = await api.get(`/assets/subdomain/name/${encodeURIComponent(domainName)}`);
+    
+    if (response.data.status === 'success' && response.data.data) {
+      return response.data.data;
+    }
+    
+    throw new Error('Domain not found');
+  },
+
+  updateNotes: async (domainId, notes) => {
+    const response = await api.put(`/assets/subdomain/${domainId}/notes`, {
+      notes: notes
+    });
+    return response.data;
+  },
+
+  delete: async (domainId) => {
+    const response = await api.delete(`/assets/subdomain/${domainId}`);
+    return response.data;
+  },
+
+  deleteBatch: async (domainIds, options = {}) => {
+    const response = await api.delete('/assets/subdomain/batch', {
+      data: {
+        asset_ids: domainIds,
+        ...options
+      }
+    });
+    return response.data;
+  },
+
+  import: async (domains, options = {}) => {
+    const response = await api.post('/assets/subdomain/import', {
+      domains,
+      ...options
+    });
+    return response.data;
+  },
+
+  // Get distinct values for a field
+  getDistinctValues: async (fieldName, program = undefined) => {
+    const body = {};
+    if (program) body.program = program;
+    const response = await api.post(`/assets/subdomain/distinct/${fieldName}`, body);
+    return response.data;
+  },
+
+  // Get subdomains that resolve to a specific IP address
+  getSubdomainsByIP: async (ipAddress, page = 1, pageSize = 25) => {
+    const response = await api.post('/assets/subdomain/search', {
+      ip: ipAddress,
+      page: page,
+      page_size: pageSize,
+      sort_by: 'name',
+      sort_dir: 'asc'
+    });
+    return response.data;
+  }
+};
+
+// Apex Domain API calls
+export const apexDomainAPI = {
+  // Search apex domains with typed parameters
+  search: async (params = {}) => {
+    // params: { search, program, sort_by, sort_dir, page, page_size }
+    const response = await api.post('/assets/apex-domain/search', params);
+    return response.data;
+  },
+
+  // Get apex domain by ID
+  getById: async (id) => {
+    const response = await api.get('/assets/apex-domain', { params: { id } });
+    if (response.data && response.data.data) return response.data.data;
+    throw new Error('Apex domain not found');
+  },
+
+  // Import apex domains
+  import: async (apexDomains, options = {}) => {
+    const response = await api.post('/assets/apex-domain/import', {
+      apex_domains: apexDomains,
+      merge: options.merge !== false,
+      update_existing: options.update_existing !== false,
+      validate_domains: options.validate_domains !== false
+    });
+    return response.data;
+  },
+
+  // Delete individual apex domain
+  delete: async (apexDomainId) => {
+    const response = await api.delete(`/assets/apex-domain/${apexDomainId}`);
+    return response.data;
+  },
+
+  // Delete multiple apex domains in batch
+  deleteBatch: async (apexDomainIds, options = {}) => {
+    const response = await api.delete('/assets/apex-domain/batch', {
+      data: {
+        asset_ids: apexDomainIds,
+        delete_subdomains: options.deleteSubdomains || false
+      }
+    });
+    return response.data;
+  },
+
+  // Update notes for an apex domain
+  updateNotes: async (apexDomainId, notes) => {
+    const response = await api.put(`/assets/apex-domain/${apexDomainId}/notes`, {
+      notes: notes
+    });
+    return response.data;
+  }
+};
+
+// IP API calls
+export const ipAPI = {
+  // New typed IPs search API (preferred)
+  searchIPs: async (params = {}) => {
+    // params: { search, program, has_ptr, ptr_contains, service_provider, sort_by, sort_dir, page, page_size }
+    const response = await api.post('/assets/ip/search', params);
+    return response.data;
+  },
+
+  getByAddress: async (ipAddress) => {
+    // Use the new IP by address endpoint for better performance
+    const response = await api.get(`/assets/ip/address/${encodeURIComponent(ipAddress)}`);
+    
+    if (response.data.status === 'success' && response.data.data) {
+      return response.data.data;
+    }
+    
+    throw new Error('IP not found');
+  },
+
+  getById: async (id) => {
+    const response = await api.get('/assets/ip', { params: { id } });
+    if (response.data && response.data.data) return response.data.data;
+    throw new Error('IP not found');
+  },
+
+  updateNotes: async (ipId, notes) => {
+    const response = await api.put(`/assets/ip/${ipId}/notes`, {
+      notes: notes
+    });
+    return response.data;
+  },
+
+  delete: async (ipId) => {
+    const response = await api.delete(`/assets/ip/${ipId}`);
+    return response.data;
+  },
+
+  deleteBatch: async (ipIds, options = {}) => {
+    const response = await api.delete('/assets/ip/batch', {
+      data: {
+        asset_ids: ipIds,
+        ...options
+      }
+    });
+    return response.data;
+  },
+
+  import: async (ips, options = {}) => {
+    const response = await api.post('/assets/ip/import', {
+      ips,
+      ...options
+    });
+    return response.data;
+  }
+};
+
+// URL API calls
+export const urlAPI = {
+  // New typed URL search API (preferred)
+  searchURLs: async (params = {}) => {
+    // params: { search, protocol, status_code, only_root, technology_text, technology, program, sort_by, sort_dir, page, page_size }
+    const response = await api.post('/assets/url/search', params);
+    return response.data;
+  },
+
+  getByUrl: async (url) => {
+    // Use the new URL by URL string endpoint for better performance
+    const response = await api.post('/assets/url/by-url', {
+      url: url
+    });
+    
+    if (response.data.status === 'success' && response.data.data) {
+      return response.data.data;
+    }
+    
+    throw new Error('URL not found');
+  },
+
+  getById: async (id) => {
+    const response = await api.get('/assets/url', { params: { id } });
+    if (response.data && response.data.data) return response.data.data;
+    throw new Error('URL not found');
+  },
+
+  updateNotes: async (urlId, notes) => {
+    const response = await api.put(`/assets/url/${urlId}/notes`, {
+      notes: notes
+    });
+    return response.data;
+  },
+
+  delete: async (urlId) => {
+    const response = await api.delete(`/assets/url/${urlId}`);
+    return response.data;
+  },
+
+  deleteBatch: async (urlIds, options = {}) => {
+    const response = await api.delete('/assets/url/batch', {
+      data: {
+        asset_ids: urlIds,
+        ...options
+      }
+    });
+    return response.data;
+  },
+
+  // Get related URLs for sitemap (same scheme/host/port but different paths)
+  getRelatedUrls: async (scheme, host, port, currentUrl) => {
+
+    
+    const response = await api.post('/assets/url/search', {
+      port: port,
+      hostname: host,
+      sort_by: 'url',
+      scheme: scheme,
+      sort_dir: 'asc',
+      page: 1,
+      page_size: 25
+    });
+    
+    if (response.data.status === 'success' && response.data.items) {
+      // Filter out the current URL and return others
+      return response.data.items.filter(url => url.url !== currentUrl);
+    }
+    
+    return [];
+  },
+
+  // Get distinct values for a field
+  getDistinctValues: async (fieldName, program = undefined) => {
+    const body = {};
+    if (program) body.program = program;
+    const response = await api.post(`/assets/url/distinct/${fieldName}`, body);
+    return response.data;
+  },
+
+  import: async (urls, options = {}) => {
+    const response = await api.post('/assets/url/import', {
+      urls,
+      ...options
+    });
+    return response.data;
+  },
+
+  // Get technologies summary with counts and URLs (paginated)
+  getTechnologiesSummary: async (program = null, page = 1, page_size = 25, search = undefined, sort_by = undefined, sort_order = undefined) => {
+    const params = {
+      page,
+      page_size
+    };
+    if (program) {
+      params.program = program;
+    }
+    if (search) {
+      params.search = search;
+    }
+    if (sort_by) {
+      params.sort_by = sort_by;
+    }
+    if (sort_order) {
+      params.sort_order = sort_order;
+    }
+    const response = await api.get('/assets/url/technologies/summary', { params });
+    return response.data;
+  }
+};
+
+// Service API calls
+export const serviceAPI = {
+  // New typed services search API (preferred)
+  searchServices: async (params = {}) => {
+    // params: { search_ip, port, protocol, service_name, service_text, program, sort_by, sort_dir, page, page_size }
+    const response = await api.post('/assets/service/search', params);
+    return response.data;
+  },
+
+  getByIpPort: async (ip, port) => {
+    // Use the existing service by IP:port endpoint
+    const response = await api.get(`/assets/service/${encodeURIComponent(ip)}/${encodeURIComponent(port)}`);
+    
+    if (response.data.status === 'success' && response.data.data) {
+      return response.data.data;
+    }
+    
+    throw new Error('Service not found');
+  },
+
+  getById: async (id) => {
+    const response = await api.get('/assets/service', { params: { id } });
+    if (response.data && response.data.data) return response.data.data;
+    throw new Error('Service not found');
+  },
+
+  updateNotes: async (serviceId, notes) => {
+    const response = await api.put(`/assets/service/${serviceId}/notes`, {
+      notes: notes
+    });
+    return response.data;
+  },
+
+  delete: async (serviceId) => {
+    const response = await api.delete(`/assets/service/${serviceId}`);
+    return response.data;
+  },
+
+  deleteBatch: async (serviceIds, options = {}) => {
+    const response = await api.delete('/assets/service/batch', {
+      data: {
+        asset_ids: serviceIds,
+        ...options
+      }
+    });
+    return response.data;
+  },
+
+  import: async (services, options = {}) => {
+    const response = await api.post('/assets/service/import', {
+      services,
+      ...options
+    });
+    return response.data;
+  }
+};
+
+// Screenshot API calls
+export const screenshotAPI = {
+  // New typed screenshots search API (preferred)
+  searchScreenshots: async (params = {}) => {
+    // params: { search_url, url_equals, program, sort_by, sort_dir, page, page_size }
+    const response = await api.post('/assets/screenshot/search', params);
+    return response.data;
+  },
+
+  getById: async (fileId) => {
+    const response = await api.get(`/assets/screenshot/${fileId}`);
+    return response.data;
+  },
+
+  delete: async (screenshotId) => {
+    const response = await api.delete(`/assets/screenshot/${screenshotId}`);
+    return response.data;
+  },
+
+  deleteBatch: async (screenshotIds, options = {}) => {
+    const response = await api.delete('/assets/screenshot/batch', {
+      data: screenshotIds  // Send screenshot_ids as direct list, not wrapped in asset_ids object
+    });
+    return response.data;
+  }
+};
+
+// Typosquat Screenshot API calls - using the same pattern as other asset APIs
+export const typosquatScreenshotAPI = {
+  // Search typosquat screenshots with typed parameters
+  searchTyposquatScreenshots: async (params = {}) => {
+    // params: { search_url, url_equals, typosquat_type, original_domain, program, sort_by, sort_dir, page, page_size }
+    const response = await api.post('/findings/typosquat-screenshot/search', params);
+    return response.data;
+  },
+
+  getById: async (fileId) => {
+    const response = await api.get(`/findings/typosquat-screenshot/${fileId}`);
+    return response.data;
+  },
+
+  delete: async (screenshotId) => {
+    const response = await api.delete(`/findings/typosquat-screenshot/${screenshotId}`);
+    return response.data;
+  },
+
+  deleteBatch: async (screenshotIds, options = {}) => {
+    const response = await api.delete('/findings/typosquat-screenshot/batch', {
+      data: {
+        asset_ids: screenshotIds,
+        ...options
+      }
+    });
+    return response.data;
+  }
+};
+
+// Technology API calls
+export const technologyAPI = {
+
+  getById: async (technologyName) => {
+    const response = await api.get(`/assets/technologies/${encodeURIComponent(technologyName)}`);
+    return response.data;
+  },
+
+  delete: async (technologyId) => {
+    const response = await api.delete(`/assets/technology/${technologyId}`);
+    return response.data;
+  },
+
+  deleteBatch: async (technologyIds, options = {}) => {
+    const response = await api.delete('/assets/technology/batch', {
+      data: {
+        asset_ids: technologyIds,
+        ...options
+      }
+    });
+    return response.data;
+  }
+};
+
+// Certificate API calls
+export const certificateAPI = {
+  // New typed certificates search API (preferred)
+  searchCertificates: async (params = {}) => {
+    // params: { search, program, status, expiring_within_days, sort_by, sort_dir, page, page_size }
+    const response = await api.post('/assets/certificate/search', params);
+    return response.data;
+  },
+
+  // Get distinct values for a certificate field
+  getDistinctValues: async (fieldName, program = undefined) => {
+    const body = {};
+    if (program) body.program = program;
+    const response = await api.post(`/assets/certificate/distinct/${fieldName}`, body);
+    return response.data;
+  },
+
+  getBySubjectDN: async (subjectDN) => {
+    // Use the new certificate by subject DN endpoint
+    const response = await api.post('/assets/certificate/by-subject-dn', {
+      subject_dn: subjectDN
+    });
+    
+    if (response.data.status === 'success' && response.data.data) {
+      return response.data.data;
+    }
+    
+    throw new Error('Certificate not found');
+  },
+
+  getById: async (id) => {
+    const response = await api.get('/assets/certificate', { params: { id } });
+    if (response.data && response.data.data) return response.data.data;
+    throw new Error('Certificate not found');
+  },
+
+  updateNotes: async (certificateId, notes) => {
+    const response = await api.put(`/assets/certificate/${certificateId}/notes`, {
+      notes: notes
+    });
+    return response.data;
+  },
+
+  delete: async (certificateId) => {
+    const response = await api.delete(`/assets/certificate/${certificateId}`);
+    return response.data;
+  },
+
+  deleteBatch: async (certificateIds, options = {}) => {
+    const response = await api.delete('/assets/certificate/batch', {
+      data: {
+        asset_ids: certificateIds,
+        ...options
+      }
+    });
+    return response.data;
+  },
+
+  import: async (certificates, options = {}) => {
+    const response = await api.post('/assets/certificate/import', {
+      certificates,
+      ...options
+    });
+    return response.data;
+  }
+};
+
+// Nuclei Findings API calls
+export const nucleiAPI = {
+  search: async (params) => {
+    const response = await api.post('/findings/nuclei/search', params);
+    return response.data;
+  },
+  // query: async (queryObj) => {
+  //   // Try the simple GET endpoint first, fallback to POST query if needed
+  //   try {
+  //     const params = new URLSearchParams();
+  //     if (queryObj.limit) params.append('limit', queryObj.limit);
+  //     if (queryObj.skip) params.append('skip', queryObj.skip);
+  //     if (queryObj.filter && Object.keys(queryObj.filter).length > 0) {
+  //       // If there are filters, use the POST query endpoint
+  //       const response = await api.post('/findings/nuclei/query', queryObj);
+  //       return response.data;
+  //     } else {
+  //       // Simple listing without filters
+  //       const response = await api.get(`/findings/nuclei?${params.toString()}`);
+  //       return response.data;
+  //     }
+  //   } catch (error) {
+  //     // Fallback to POST query if GET fails
+  //     const response = await api.post('/findings/nuclei/query', queryObj);
+  //     return response.data;
+  //   }
+  // },
+
+  getById: async (findingId) => {
+    const response = await api.get(`/findings/nuclei/${findingId}`);
+    
+    if (response.data.status === 'success' && response.data.data) {
+      return response.data;
+    }
+    
+    throw new Error('Nuclei finding not found');
+  },
+
+  getByIdUnified: async (findingId) => {
+    const response = await api.get('/findings/nuclei', { params: { id: findingId } });
+    if (response.data && response.data.data) return response.data.data;
+    throw new Error('Nuclei finding not found');
+  },
+
+  updateStatus: async (findingId, status, takeOwnership = false, user_id = null) => {
+    const requestData = {
+      status: status
+    };
+    
+    // Add assigned_to field if taking ownership
+    if (takeOwnership && user_id) {
+      requestData.assigned_to = user_id;
+    }
+    
+    const response = await api.put(`/findings/nuclei/${findingId}/status`, requestData);
+    return response.data;
+  },
+
+  updateNotes: async (findingId, notes) => {
+    const response = await api.put(`/findings/nuclei/${findingId}/notes`, {
+      notes: notes
+    });
+    return response.data;
+  },
+
+  delete: async (findingId) => {
+    const response = await api.delete(`/findings/nuclei/${findingId}`);
+    return response.data;
+  },
+
+  deleteBatch: async (findingIds) => {
+    const response = await api.delete('/findings/nuclei/batch', {
+      data: findingIds
+    });
+    return response.data;
+  },
+  getDistinct: async (fieldName, filter = {}) => {
+    const response = await api.post(`/findings/nuclei/distinct/${fieldName}`, { filter });
+    return response.data;
+  }
+};
+
+// WPScan Findings API calls
+export const wpscanAPI = {
+  search: async (params) => {
+    const response = await api.post('/findings/wpscan/search', params);
+    return response.data;
+  },
+
+  getById: async (findingId) => {
+    const response = await api.get(`/findings/wpscan/${findingId}`);
+    
+    if (response.data.status === 'success' && response.data.data) {
+      return response.data;
+    }
+    
+    throw new Error('WPScan finding not found');
+  },
+
+  getByIdUnified: async (findingId) => {
+    const response = await api.get('/findings/wpscan', { params: { id: findingId } });
+    if (response.data && response.data.data) return response.data.data;
+    throw new Error('WPScan finding not found');
+  },
+
+  updateStatus: async (findingId, status, takeOwnership = false, user_id = null) => {
+    const requestData = {
+      status: status
+    };
+    
+    // Add assigned_to field if taking ownership
+    if (takeOwnership && user_id) {
+      requestData.assigned_to = user_id;
+    }
+    
+    const response = await api.put(`/findings/wpscan/${findingId}/status`, requestData);
+    return response.data;
+  },
+
+  updateNotes: async (findingId, notes) => {
+    const response = await api.put(`/findings/wpscan/${findingId}/notes`, {
+      notes: notes
+    });
+    return response.data;
+  },
+
+  delete: async (findingId) => {
+    const response = await api.delete(`/findings/wpscan/${findingId}`);
+    return response.data;
+  },
+
+  deleteBatch: async (findingIds) => {
+    const response = await api.delete('/findings/wpscan/batch', {
+      data: findingIds
+    });
+    return response.data;
+  },
+
+  getDistinct: async (fieldName, filter = {}) => {
+    const response = await api.post(`/findings/wpscan/distinct/${fieldName}`, filter);
+    return response.data;
+  },
+
+  import: async (findings, options = {}) => {
+    const response = await api.post('/findings/wpscan/import', {
+      findings,
+      ...options
+    });
+    return response.data;
+  }
+};
+
+// Broken Links API calls
+export const brokenLinksAPI = {
+  search: async (params) => {
+    const response = await api.post('/findings/broken-links/search', params);
+    return response.data;
+  },
+
+  getById: async (findingId) => {
+    const response = await api.get(`/findings/broken-links/${findingId}`);
+    return response.data;
+  },
+
+  create: async (finding) => {
+    const response = await api.post('/findings/broken-links', finding);
+    return response.data;
+  },
+
+  update: async (findingId, updateData) => {
+    const response = await api.put(`/findings/broken-links/${findingId}`, updateData);
+    return response.data;
+  },
+
+  delete: async (findingId) => {
+    const response = await api.delete(`/findings/broken-links/${findingId}`);
+    return response.data;
+  },
+
+  deleteBatch: async (findingIds) => {
+    const response = await api.delete('/findings/broken-links/batch', { data: findingIds });
+    return response.data;
+  },
+
+  getStats: async (programName = null) => {
+    const params = programName ? { program_name: programName } : {};
+    const response = await api.get('/findings/broken-links/stats', { params });
+    return response.data;
+  }
+};
+
+// Social Media Credentials API calls
+export const socialMediaCredentialsAPI = {
+  list: async (platform = null) => {
+    const params = platform ? { platform } : {};
+    const response = await api.get('/social-media-credentials', { params });
+    return response.data;
+  },
+
+  getById: async (credentialId) => {
+    const response = await api.get(`/social-media-credentials/id/${credentialId}`);
+    return response.data;
+  },
+
+  getByPlatform: async (platform) => {
+    const response = await api.get(`/social-media-credentials/${platform}`);
+    return response.data;
+  },
+
+  create: async (credential) => {
+    const response = await api.post('/social-media-credentials', credential);
+    return response.data;
+  },
+
+  update: async (credentialId, updateData) => {
+    const response = await api.put(`/social-media-credentials/${credentialId}`, updateData);
+    return response.data;
+  },
+
+  delete: async (credentialId) => {
+    const response = await api.delete(`/social-media-credentials/${credentialId}`);
+    return response.data;
+  }
+};
+
+// Typosquat Findings API calls
+export const typosquatAPI = {
+  search: async (params) => {
+    const response = await api.post('/findings/typosquat/search', params);
+    return response.data;
+  },
+
+  getById: async (findingId) => {
+    const response = await api.get(`/findings/typosquat/${findingId}`);
+    
+    if (response.data.status === 'success' && response.data.data) {
+      return response.data.data;
+    }
+    
+    throw new Error('Typosquat finding not found');
+  },
+
+  getByIdUnified: async (findingId) => {
+    const response = await api.get('/findings/typosquat', { params: { id: findingId } });
+    if (response.data && response.data.data) return response.data.data;
+    throw new Error('Typosquat finding not found');
+  },
+
+  updateStatus: async (findingId, status, takeOwnership = false, user_id = null, comment = null, actionTaken = null, assigned_to = undefined) => {
+    const requestData = {
+      status: status
+    };
+
+    // Handle assignment - priority: explicit assigned_to > takeOwnership > no change
+    if (assigned_to !== undefined) {
+      // Explicit assignment (can be user ID or null for unassign)
+      requestData.assigned_to = assigned_to;
+    } else if (takeOwnership && user_id) {
+      // Legacy takeOwnership behavior
+      requestData.assigned_to = user_id;
+    }
+
+    // Add comment if provided
+    if (comment && comment.trim()) {
+      requestData.comment = comment.trim();
+    }
+
+    // Add action_taken if provided
+    if (actionTaken && actionTaken.trim()) {
+      requestData.action_taken = actionTaken.trim();
+    }
+
+    const response = await api.put(`/findings/typosquat/${findingId}/status`, requestData);
+    return response.data;
+  },
+
+  updateStatusBatch: async (findingIds, status, takeOwnership = false, user_id = null, comment = null, actionTaken = null, assigned_to = undefined, forceAssignmentOverwrite = false) => {
+    const requestData = {
+      finding_ids: findingIds
+    };
+
+    // Only include status if it's not 'unchanged'
+    if (status !== 'unchanged') {
+      requestData.status = status;
+    }
+
+    // Handle assignment - priority: explicit assigned_to > takeOwnership > no change
+    if (assigned_to !== undefined) {
+      // Explicit assignment (can be user ID or null for unassign)
+      requestData.assigned_to = assigned_to;
+      requestData.force_assignment_overwrite = forceAssignmentOverwrite;
+    } else if (takeOwnership && user_id) {
+      // Legacy takeOwnership behavior
+      requestData.assigned_to = user_id;
+    }
+
+    // Add comment if provided
+    if (comment && comment.trim()) {
+      requestData.comment = comment.trim();
+    }
+
+    // Add action_taken if provided
+    if (actionTaken && actionTaken.trim()) {
+      requestData.action_taken = actionTaken.trim();
+    }
+
+    const response = await api.put('/findings/typosquat/batch/status', requestData);
+    return response.data;
+  },
+
+  updateNotes: async (findingId, notes) => {
+    const response = await api.put(`/findings/typosquat/${findingId}/notes`, {
+      notes: notes
+    });
+    return response.data;
+  },
+
+  delete: async (findingId, deleteRelated = false) => {
+    const params = deleteRelated ? { delete_related: true } : {};
+    const response = await api.delete(`/findings/typosquat/${findingId}`, { params });
+    return response.data;
+  },
+
+  deleteBatch: async (findingIds) => {
+
+    const response = await api.delete('/findings/typosquat/batch', {
+      data: { finding_ids: findingIds }
+    });
+    return response.data;
+  },
+
+  calculateRiskScores: async (programName = null, findingIds = null) => {
+    const requestBody = {};
+    if (programName) {
+      requestBody.program_name = programName;
+    }
+    if (findingIds && findingIds.length > 0) {
+      requestBody.finding_ids = findingIds;
+    }
+    const response = await api.post('/findings/typosquat/calculate-risk-scores', requestBody);
+    return response.data;
+  },
+
+  calculateSingleRiskScore: async (findingId) => {
+    const response = await api.post(`/findings/typosquat/${findingId}/calculate-risk-score`, {});
+    return response.data;
+  },
+
+  // Fetch PhishLabs information for a domain
+  fetchPhishlabsInfo: async (typoDomain, programName) => {
+    const params = new URLSearchParams({
+      typo_domain: typoDomain,
+      program_name: programName
+    });
+    const response = await api.post(`/findings/typosquat/phishlabs?${params.toString()}`, {});
+    return response.data;
+  },
+
+  // Create background job for batch PhishLabs processing
+  createBatchPhishlabsJob: async (findingIds) => {
+    const response = await api.post('/findings/typosquat/phishlabs/batch', {
+      finding_ids: findingIds
+    });
+    return response.data;
+  },
+
+  // Create background job for batch PhishLabs operations
+  createBatchPhishlabsIncidentsJob: async (findingIds, catcode = null, comment = null, reportToGsb = false) => {
+    const requestData = {
+      finding_ids: findingIds,
+      report_to_gsb: reportToGsb
+    };
+    if (catcode) {
+      requestData.catcode = catcode;
+    }
+    if (comment) {
+      requestData.comment = comment;
+    }
+    const response = await api.post('/findings/typosquat/phishlabs-incidents/batch', requestData);
+    return response.data;
+  },
+
+  // Create PhishLabs incident for a single domain
+  createPhishlabsIncident: async (typoDomain, programName, catcode, comment = null, reportToGsb = false) => {
+    const params = new URLSearchParams({
+      typo_domain: typoDomain,
+      program_name: programName,
+      catcode: catcode,
+      report_to_gsb: reportToGsb
+    });
+    const requestBody = {};
+    if (comment) {
+      requestBody.comment = comment;
+    }
+    const response = await api.post(`/findings/typosquat/phishlabs-incidents?${params.toString()}`, requestBody);
+    return response.data;
+  },
+
+  // Create PhishLabs infraction for a single domain
+  createPhishlabsInfraction: async (typoDomain, programName, catcode) => {
+    const params = new URLSearchParams({
+      typo_domain: typoDomain,
+      program_name: programName,
+      catcode: catcode
+    });
+    const response = await api.post(`/findings/typosquat/phishlabs/create-infraction?${params.toString()}`, {});
+    return response.data;
+  },
+
+  // Create background job for batch typosquat domain analysis
+  createBatchTyposquatJob: async (domains, programName = null, originalDomain = null) => {
+    const requestData = {
+      "workflow_name": "Batch_Typosquat_Analysis",
+      "program_name": programName || "default",
+      "description": "Batch processing of potential Typosquat Domains",
+      "steps": [
+        {
+          "name": "step_1",
+          "tasks": [
+            {
+              "name": "typosquat_detection",
+              "force": true,
+              "params": {
+                "include_subdomains": false,
+                "analyze_input_as_variations": true,
+                "original_domain": originalDomain || ""
+              },
+              "task_type": "typosquat_detection",
+              "input_mapping": {
+                "domains": "inputs.input_1"
+              }
+            }
+          ]
+        }
+      ],
+      "variables": {},
+      "inputs": {
+        "input_1": {
+          "type": "direct",
+          "values": domains,
+          "value_type": "domains"
+        }
+      },
+      "workflow_definition_id": ""
+    };
+    
+    const response = await api.post('/workflows/run', requestData);
+    return response.data;
+  },
+
+  // Get distinct values for a field
+  getDistinctValues: async (fieldName, program = undefined) => {
+    const body = {};
+    if (program) body.program = program;
+    const response = await api.post(`/findings/typosquat/distinct/${fieldName}`, body);
+    return response.data;
+  },
+
+  getDistinctValuesUrl: async (fieldName, program = undefined) => {
+    const body = {};
+    if (program) body.program = program;
+    const response = await api.post(`/findings/typosquat-url/distinct/${fieldName}`, body);
+    return response.data;
+  },
+
+  // Typosquat URLs API calls - using the same pattern as other asset APIs
+  searchTyposquatUrls: async (params = {}) => {
+    // params: { search, exact_match, protocol, status_code, technology_text, technology, program, sort_by, sort_dir, page, page_size }
+    const response = await api.post('/findings/typosquat-url/search', params);
+    return response.data;
+  },
+
+  getUrlById: async (urlId) => {
+    const response = await api.get(`/findings/typosquat-url/${urlId}`);
+    return response.data;
+  },
+
+  deleteUrl: async (urlId) => {
+    const response = await api.delete(`/findings/typosquat-url/${urlId}`);
+    return response.data;
+  },
+
+  deleteBatchUrls: async (urlIds, options = {}) => {
+    const response = await api.delete('/findings/typosquat-url/batch', {
+      data: {
+        asset_ids: urlIds,
+        ...options
+      }
+    });
+    return response.data;
+  },
+
+  updateUrlNotes: async (urlId, notes) => {
+    const response = await api.put(`/findings/typosquat-url/${urlId}/notes`, {
+      notes: notes
+    });
+    return response.data;
+  },
+
+  // Get certificate by ID
+  getCertificateById: async (certificateId) => {
+    const response = await api.get(`/findings/typosquat-certificate/${certificateId}`);
+    return response.data;
+  },
+
+  // Get URLs by domain
+  getUrlsByDomain: async (domain) => {
+    const response = await api.post('/findings/typosquat-url/search', {
+      search: domain,
+      page: 1,
+      page_size: 1000
+    });
+    return response.data.items || [];
+  },
+
+  // Get related typosquat domains (domains sharing the same base domain)
+  getRelatedDomains: async (findingId) => {
+    const response = await api.get(`/findings/typosquat/${findingId}/related-domains`);
+    return response.data;
+  },
+
+  // Get URLs for all related typosquat domains
+  getRelatedUrls: async (findingId) => {
+    const response = await api.get(`/findings/typosquat/${findingId}/related-urls`);
+    return response.data;
+  },
+
+  // Get action logs for a specific finding
+  getActionLogs: async (findingId, limit = 50, offset = 0) => {
+    const params = new URLSearchParams();
+    params.append('limit', limit.toString());
+    params.append('offset', offset.toString());
+    const response = await api.get(`/findings/typosquat/${findingId}/action-logs?${params.toString()}`);
+    return response.data;
+  },
+
+  // Get dashboard KPIs
+  getDashboardKpis: async (days = 30, singleDate = null, program = null) => {
+    const params = new URLSearchParams();
+    if (singleDate) {
+      params.append('single_date', singleDate);
+    } else {
+      params.append('days', days.toString());
+    }
+    if (program) {
+      params.append('program', program);
+    }
+    const response = await api.get(`/findings/typosquat/dashboard/kpis?${params.toString()}`);
+    return response.data;
+  },
+
+  // Get all action logs for typosquat findings
+  getAllActionLogs: async (params = {}) => {
+    const queryParams = new URLSearchParams();
+    if (params.program) queryParams.append('program', params.program);
+    if (params.action_type) queryParams.append('action_type', params.action_type);
+    if (params.entity_id) queryParams.append('entity_id', params.entity_id);
+    if (params.search) queryParams.append('search', params.search);
+    if (params.limit) queryParams.append('limit', params.limit.toString());
+
+    const response = await api.get(`/findings/typosquat/action-logs?${queryParams.toString()}`);
+    return response.data;
+  }
+};
+
+// Job API calls
+export const jobAPI = {
+  getAll: async (page = 1, limit = 25, jobType = null, status = null) => {
+    const params = new URLSearchParams({
+      page: page.toString(),
+      limit: limit.toString()
+    });
+    if (jobType) params.append('job_type', jobType);
+    if (status) params.append('status', status);
+    
+    const response = await api.get(`/jobs?${params.toString()}`);
+    return response.data;
+  },
+  
+  getStatus: async (jobId) => {
+    const response = await api.get(`/jobs/${jobId}/status`);
+    return response.data;
+  },
+  
+  getResults: async (jobId) => {
+    const response = await api.get(`/jobs/${jobId}/results`);
+    return response.data;
+  },
+  
+  delete: async (jobId) => {
+    const response = await api.delete(`/jobs/${jobId}`);
+    return response.data;
+  }
+};
+
+// Programs API calls
+export const programAPI = {
+  getAll: async () => {
+    const response = await api.get('/programs');
+    return response.data;
+  },
+
+  search: async (params = {}) => {
+    // params: { search, exact_match, has_domains, has_ips, has_workflows, has_findings, sort_by, sort_dir, page, page_size }
+    const response = await api.post('/programs/search', params);
+    return response.data;
+  },
+
+  getByName: async (programName) => {
+    const response = await api.get(`/programs/${encodeURIComponent(programName)}`);
+    return response.data;
+  },
+
+  create: async (programData) => {
+    const response = await api.post('/programs', programData);
+    return response.data;
+  },
+
+  update: async (programName, programData, overwrite = false) => {
+    const url = `/programs/${encodeURIComponent(programName)}${overwrite ? '?overwrite=true' : ''}`;
+    const response = await api.put(url, programData);
+    return response.data;
+  },
+
+  updateNotificationSettings: async (programName, notificationSettings) => {
+    const url = `/programs/${encodeURIComponent(programName)}`;
+    const response = await api.put(url, { notification_settings: notificationSettings });
+    return response.data;
+  },
+
+  delete: async (programName) => {
+    const response = await api.delete(`/programs/${encodeURIComponent(programName)}`);
+    return response.data;
+  },
+
+  importFromHackerOne: async (programHandle) => {
+    const response = await api.post('/programs/import/hackerone', {
+      program_handle: programHandle
+    });
+    return response.data;
+  },
+
+  importFromYesWeHack: async (programSlug, jwtToken) => {
+    const response = await api.post('/programs/import/yeswehack', {
+      program_slug: programSlug,
+      jwt_token: jwtToken
+    });
+    return response.data;
+  },
+
+  importFromIntigriti: async (programHandle) => {
+    const response = await api.post('/programs/import/intigriti', {
+      program_handle: programHandle
+    });
+    return response.data;
+  },
+
+  importFromBugcrowd: async (programCode, sessionToken) => {
+    const response = await api.post('/programs/import/bugcrowd', {
+      program_code: programCode,
+      session_token: sessionToken
+    });
+    return response.data;
+  }
+};
+
+// Workflow API calls - using consolidated unified API with clear path separation
+export const workflowAPI = {
+  // === Workflow Definitions (Templates/Saved Workflows) ===
+  
+  // Get all saved workflow definitions
+  getWorkflows: async (programName = null) => {
+    const params = programName ? `?program_name=${encodeURIComponent(programName)}` : '';
+    const response = await api.get(`/workflows/definitions${params}`);
+    return response.data;
+  },
+
+  // Save a new workflow definition (not run it)
+  saveWorkflow: async (workflowData) => {
+    const response = await api.post('/workflows/definitions', {
+      name: workflowData.workflow_name,
+      program_name: workflowData.program_name,
+      description: workflowData.description || `Workflow: ${workflowData.workflow_name}`,
+      steps: workflowData.steps,
+      variables: workflowData.variables || {},
+      inputs: workflowData.inputs || {}
+    });
+    return response.data;
+  },
+
+  // Backward compatibility alias - use saveWorkflow instead
+  createWorkflow: async (workflowData) => {
+    console.warn('createWorkflow is deprecated, use saveWorkflow for saving definitions or runWorkflow for execution');
+    const response = await api.post('/workflows/definitions', {
+      name: workflowData.workflow_name,
+      program_name: workflowData.program_name,
+      description: workflowData.description || `Workflow: ${workflowData.workflow_name}`,
+      steps: workflowData.steps,
+      variables: workflowData.variables || {},
+      inputs: workflowData.inputs || {}
+    });
+    return response.data;
+  },
+
+  // Update an existing workflow definition
+  updateWorkflow: async (workflowId, workflowData) => {
+    const response = await api.put(`/workflows/definitions/${workflowId}`, {
+      name: workflowData.workflow_name,
+      program_name: workflowData.program_name,
+      description: workflowData.description || `Workflow: ${workflowData.workflow_name}`,
+      steps: workflowData.steps,
+      variables: workflowData.variables || {},
+      inputs: workflowData.inputs || {}
+    });
+    return response.data;
+  },
+
+  // Delete a workflow definition
+  deleteWorkflow: async (workflowId) => {
+    const response = await api.delete(`/workflows/definitions/${workflowId}`);
+    return response.data;
+  },
+
+  // Get workflow definition by ID
+  getWorkflow: async (workflowId) => {
+    const response = await api.get(`/workflows/definitions/${workflowId}`);
+    return response.data;
+  },
+
+  // === Workflow Executions (Runtime Operations) ===
+  
+  // Execute/run a workflow with complete definition
+  runWorkflow: async (workflowData) => {
+    // Send the complete workflow definition for execution
+    const response = await api.post('/workflows/run', {
+      workflow_name: workflowData.workflow_name,
+      program_name: workflowData.program_name,
+      description: workflowData.description,
+      steps: workflowData.steps,
+      variables: workflowData.variables || {},
+      inputs: workflowData.inputs || {},
+      workflow_definition_id: workflowData.workflow_definition_id // Include workflow definition ID for saved workflows
+    });
+    return response.data;
+  },
+
+  // Get workflow execution status list (paginated)
+  getWorkflowStatus: async (page = 1, limit = 25, programName = null, sortField = null, sortOrder = 'desc') => {
+    const params = new URLSearchParams({
+      page: page.toString(),
+      limit: limit.toString()
+    });
+    if (programName) {
+      params.append('program_name', programName);
+    }
+    if (sortField) {
+      params.append('sort_field', sortField);
+      params.append('sort_order', sortOrder);
+    }
+    const response = await api.get(`/workflows/executions?${params}`);
+    return response.data;
+  },
+
+  // Get detailed status for a specific workflow execution
+  getWorkflowStatusDetail: async (workflowId) => {
+    const response = await api.get(`/workflows/executions/${workflowId}`);
+    return response.data;
+  },
+
+  // Get workflow execution logs
+  getWorkflowLogs: async (workflowId) => {
+    const response = await api.get(`/workflows/executions/${workflowId}/logs`);
+    return response.data;
+  },
+
+  // Get workflow execution tasks
+  getWorkflowTasks: async (workflowId) => {
+    const response = await api.get(`/workflows/executions/${workflowId}/tasks`);
+    return response.data;
+  },
+
+  // Delete a workflow execution
+  deleteWorkflowExecution: async (workflowId) => {
+    const response = await api.delete(`/workflows/executions/${workflowId}`);
+    return response.data;
+  },
+
+  // Stop a running workflow execution
+  stopWorkflow: async (workflowId) => {
+    const response = await api.post(`/workflows/executions/${workflowId}/stop`);
+    return response.data;
+  },
+
+  // === Legacy Endpoints (for backward compatibility) ===
+  
+  // Legacy: Get all workflow logs (use getWorkflowStatus instead)
+  getAllWorkflowLogs: async () => {
+    console.warn('getAllWorkflowLogs is deprecated, use getWorkflowStatus for paginated results');
+    const response = await api.get('/workflows/logs');
+    return response.data;
+  },
+
+  // Legacy: Query workflow logs (use getWorkflowStatus instead)
+  queryWorkflowLogs: async (queryFilter) => {
+    console.warn('queryWorkflowLogs is deprecated, use getWorkflowStatus for better performance');
+    const response = await api.post('/workflows/logs/query', queryFilter);
+    return response.data;
+  }
+};
+
+// Queue API calls
+export const queueAPI = {
+  getStatus: async () => {
+    const response = await api.get('/queue/status');
+    return response.data;
+  },
+
+  getJobs: async () => {
+    const response = await api.get('/queue/jobs');
+    return response.data;
+  },
+
+  clearQueue: async () => {
+    const response = await api.delete('/queue/clear');
+    return response.data;
+  }
+};
+
+// Auth API calls
+export const authAPI = {
+  login: async (username, password) => {
+    const response = await api.post('/auth/login', {
+      username,
+      password
+    });
+    return response.data;
+  },
+
+  logout: async (refreshToken) => {
+    const response = await api.post('/auth/logout', {
+      refresh_token: refreshToken
+    });
+    return response.data;
+  },
+
+  refreshToken: async (refreshToken) => {
+    const response = await api.post('/auth/refresh', {
+      refresh_token: refreshToken
+    });
+    return response.data;
+  },
+
+  logoutAllDevices: async () => {
+    const response = await api.post('/auth/logout-all');
+    return response.data;
+  },
+
+  getCurrentUser: async () => {
+    const response = await api.get('/auth/me');
+    return response.data;
+  },
+
+  // API Token Management
+  getApiTokens: async () => {
+    const response = await api.get('/auth/api-tokens');
+    return response.data;
+  },
+
+  createApiToken: async (tokenData) => {
+    const response = await api.post('/auth/api-tokens', tokenData);
+    return response.data;
+  },
+
+  revokeApiToken: async (tokenId) => {
+    const response = await api.delete(`/auth/api-tokens/${tokenId}`);
+    return response.data;
+  }
+};
+
+// User Management API calls (superuser only)
+export const userManagementAPI = {
+  getUsers: async (page = 1, limit = 25, search = '') => {
+    const params = new URLSearchParams({ page: page.toString(), limit: limit.toString() });
+    if (search) {
+      params.append('search', search);
+    }
+    const response = await api.get(`/auth/users?${params}`);
+    return response.data;
+  },
+
+  createUser: async (userData) => {
+    const response = await api.post('/auth/users', userData);
+    return response.data;
+  },
+
+  getUser: async (userId) => {
+    const response = await api.get(`/auth/users/${userId}`);
+    return response.data;
+  },
+
+  updateUser: async (userId, userData) => {
+    const response = await api.put(`/auth/users/${userId}`, userData);
+    return response.data;
+  },
+
+  deleteUser: async (userId) => {
+    const response = await api.delete(`/auth/users/${userId}`);
+    return response.data;
+  },
+
+  changePassword: async (userId, newPassword) => {
+    const response = await api.put(`/auth/users/${userId}/password`, {
+      new_password: newPassword
+    });
+    return response.data;
+  },
+
+  getUsersForAssignment: async (program = null) => {
+    const params = new URLSearchParams();
+    if (program) {
+      params.append('program', program);
+    }
+    const response = await api.get(`/auth/users/assignment?${params}`);
+    return response.data;
+  }
+};
+
+// External Links API calls
+export const externalLinksAPI = {
+  getExternalLinks: async (programName = '', linkSearch = '', linkNegative = false, rootSite = '', page = null, pageSize = null) => {
+    const params = new URLSearchParams();
+    if (programName) params.append('program_name', programName);
+    if (linkSearch) params.append('link_search', linkSearch);
+    if (linkNegative) params.append('link_negative', 'true');
+    if (rootSite) params.append('root_site', rootSite);
+    if (page !== null) params.append('page', page.toString());
+    if (pageSize !== null) params.append('page_size', pageSize.toString());
+    
+    const response = await api.get(`/findings/external-links/?${params.toString()}`);
+    return response.data;
+  }
+};
+
+// Admin API calls
+export const adminAPI = {
+  // Recon Task Parameters
+  listReconTaskParameters: async () => {
+    const response = await api.get('/admin/recon-tasks/parameters');
+    return response.data;
+  },
+
+  getReconTaskParameters: async (reconTask) => {
+    const response = await api.get(`/admin/recon-tasks/${reconTask}/parameters`);
+    return response.data;
+  },
+
+  createReconTaskParameters: async (reconTask, parameters) => {
+    const response = await api.post(`/admin/recon-tasks/${reconTask}/parameters`, {
+      parameters: parameters
+    });
+    return response.data;
+  },
+
+  updateReconTaskParameters: async (reconTask, parameters) => {
+    const response = await api.put(`/admin/recon-tasks/${reconTask}/parameters`, {
+      parameters: parameters
+    });
+    return response.data;
+  },
+
+  deleteReconTaskParameters: async (reconTask) => {
+    const response = await api.delete(`/admin/recon-tasks/${reconTask}/parameters`);
+    return response.data;
+  },
+
+  // Last Execution Threshold
+  getLastExecutionThreshold: async (reconTask) => {
+    const response = await api.get(`/admin/recon-tasks/${reconTask}/last-execution-threshold`);
+    return response.data;
+  },
+
+  setLastExecutionThreshold: async (reconTask, threshold) => {
+    const response = await api.put(`/admin/recon-tasks/${reconTask}/last-execution-threshold`, {
+      last_execution_threshold: threshold
+    });
+    return response.data;
+  },
+
+  // Chunk Size
+  getChunkSize: async (reconTask) => {
+    const response = await api.get(`/admin/recon-tasks/${reconTask}/chunk-size`);
+    return response.data;
+  },
+
+  setChunkSize: async (reconTask, chunkSize) => {
+    const response = await api.put(`/admin/recon-tasks/${reconTask}/chunk-size`, {
+      chunk_size: chunkSize
+    });
+    return response.data;
+  },
+
+  // AWS Credentials
+  listAwsCredentials: async () => {
+    const response = await api.get('/admin/aws-credentials');
+    return response.data;
+  },
+
+  getAwsCredential: async (credentialId) => {
+    const response = await api.get(`/admin/aws-credentials/${credentialId}`);
+    return response.data;
+  },
+
+  createAwsCredential: async (data) => {
+    const response = await api.post('/admin/aws-credentials', data);
+    return response.data;
+  },
+
+  updateAwsCredential: async (credentialId, data) => {
+    const response = await api.put(`/admin/aws-credentials/${credentialId}`, data);
+    return response.data;
+  },
+
+  deleteAwsCredential: async (credentialId) => {
+    const response = await api.delete(`/admin/aws-credentials/${credentialId}`);
+    return response.data;
+  }
+};
+
+// Nuclei Templates API calls
+export const nucleiTemplatesAPI = {
+  list: async (skip = 0, limit = 100, activeOnly = true, tags = null, severity = null, search = null) => {
+    const params = new URLSearchParams({
+      skip: skip.toString(),
+      limit: limit.toString(),
+      active_only: activeOnly.toString()
+    });
+    
+    if (tags) params.append('tags', tags);
+    if (severity) params.append('severity', severity);
+    if (search) params.append('search', search);
+    
+    const url = `/nuclei-templates/?${params}`;
+    const response = await api.get(url);
+    return response.data;
+  },
+
+  getById: async (templateId) => {
+    const response = await api.get(`/nuclei-templates/${templateId}`);
+    return response.data;
+  },
+
+  getByName: async (templateName) => {
+    const response = await api.get(`/nuclei-templates/name/${encodeURIComponent(templateName)}`);
+    return response.data;
+  },
+
+  create: async (templateData) => {
+    const response = await api.post('/nuclei-templates/', templateData);
+    return response.data;
+  },
+
+  update: async (templateId, updateData) => {
+    const response = await api.put(`/nuclei-templates/${templateId}`, updateData);
+    return response.data;
+  },
+
+  delete: async (templateId, hardDelete = false) => {
+    const params = hardDelete ? '?hard_delete=true' : '';
+    const response = await api.delete(`/nuclei-templates/${templateId}${params}`);
+    return response.data;
+  },
+
+  checkExists: async (templateId) => {
+    const response = await api.get(`/nuclei-templates/check/${templateId}/exists`);
+    return response.data;
+  },
+
+  // Official templates endpoints
+  getOfficialStructure: async () => {
+    const response = await api.get('/nuclei-templates/official/structure');
+    return response.data;
+  },
+
+  getOfficialCategories: async () => {
+    const response = await api.get('/nuclei-templates/official/categories');
+    return response.data;
+  },
+
+  getOfficialTemplatesByCategory: async (categoryName) => {
+    const response = await api.get(`/nuclei-templates/official/category/${encodeURIComponent(categoryName)}`);
+    return response.data;
+  },
+
+  updateOfficialTemplates: async () => {
+    const response = await api.post('/nuclei-templates/official/update');
+    return response.data;
+  },
+
+  setupOfficialTemplates: async () => {
+    const response = await api.post('/nuclei-templates/official/setup');
+    return response.data;
+  },
+
+  getOfficialTemplatesStatus: async () => {
+    const response = await api.get('/nuclei-templates/official/status');
+    return response.data;
+  },
+
+  // New enhanced browsing endpoints
+  getOfficialTemplatesByFolder: async (folderPath) => {
+    const response = await api.get(`/nuclei-templates/official/folder/${encodeURIComponent(folderPath)}`);
+    return response.data;
+  },
+
+  searchOfficialTemplates: async (query, limit = 50) => {
+    const params = new URLSearchParams({
+      query: query,
+      limit: limit.toString()
+    });
+    const response = await api.get(`/nuclei-templates/official/search?${params}`);
+    return response.data;
+  },
+
+  getOfficialTemplatesTree: async () => {
+    const response = await api.get('/nuclei-templates/official/tree');
+    return response.data;
+  },
+
+  // Get raw content of official template by path
+  getOfficialTemplateContent: async (templatePath) => {
+    const response = await api.get(`/nuclei-templates/official/${encodeURIComponent(templatePath)}`, {
+      responseType: 'text'
+    });
+    return response.data;
+  }
+};
+
+// Wordlists API calls
+export const wordlistsAPI = {
+  list: async (skip = 0, limit = 100, activeOnly = true, programName = null, tags = null, search = null) => {
+    const params = new URLSearchParams({
+      skip: skip.toString(),
+      limit: limit.toString(),
+      active_only: activeOnly.toString()
+    });
+    
+    if (programName) params.append('program_name', programName);
+    if (tags) params.append('tags', tags);
+    if (search) params.append('search', search);
+    
+    const url = `/wordlists/?${params}`;
+    const response = await api.get(url);
+    return response.data;
+  },
+
+  getById: async (wordlistId) => {
+    const response = await api.get(`/wordlists/${wordlistId}`);
+    return response.data;
+  },
+
+  upload: async (formData) => {
+    const response = await api.post('/wordlists/', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    return response.data;
+  },
+
+  update: async (wordlistId, updateData) => {
+    const response = await api.put(`/wordlists/${wordlistId}`, updateData);
+    return response.data;
+  },
+
+  delete: async (wordlistId) => {
+    const response = await api.delete(`/wordlists/${wordlistId}`);
+    return response.data;
+  },
+
+  download: async (wordlistId) => {
+    const response = await api.get(`/wordlists/${wordlistId}/download`, {
+      responseType: 'blob'
+    });
+    return response.data;
+  }
+};
+
+// Scheduled Jobs API calls
+export const scheduledJobsAPI = {
+  // Get all scheduled jobs
+  getAll: async (limit = 25, skip = 0, status = null, jobType = null) => {
+    const params = new URLSearchParams();
+    params.append('limit', limit);
+    params.append('skip', skip);
+    if (status) params.append('status', status);
+    if (jobType) params.append('job_type', jobType);
+    
+    const response = await api.get(`/scheduled-jobs?${params.toString()}`);
+    return response.data;
+  },
+
+  // Get a specific scheduled job
+  getById: async (scheduleId) => {
+    const response = await api.get(`/scheduled-jobs/${scheduleId}`);
+    return response.data;
+  },
+
+  // Create a new scheduled job
+  create: async (jobData) => {
+    const response = await api.post('/scheduled-jobs', jobData);
+    return response.data;
+  },
+
+  // Update a scheduled job
+  update: async (scheduleId, jobData) => {
+    const response = await api.put(`/scheduled-jobs/${scheduleId}`, jobData);
+    return response.data;
+  },
+
+  // Delete a scheduled job
+  delete: async (scheduleId) => {
+    const response = await api.delete(`/scheduled-jobs/${scheduleId}`);
+    return response.data;
+  },
+
+  // Enable a scheduled job
+  enable: async (scheduleId) => {
+    const response = await api.post(`/scheduled-jobs/${scheduleId}/enable`);
+    return response.data;
+  },
+
+  // Disable a scheduled job
+  disable: async (scheduleId) => {
+    const response = await api.post(`/scheduled-jobs/${scheduleId}/disable`);
+    return response.data;
+  },
+
+  // Run a scheduled job immediately
+  runNow: async (scheduleId) => {
+    const response = await api.post(`/scheduled-jobs/${scheduleId}/run-now`);
+    return response.data;
+  },
+
+  // Get execution history for a scheduled job
+  getExecutionHistory: async (scheduleId, limit = 25, skip = 0) => {
+    const params = new URLSearchParams();
+    params.append('limit', limit);
+    params.append('skip', skip);
+    
+    const response = await api.get(`/scheduled-jobs/${scheduleId}/executions?${params.toString()}`);
+    return response.data;
+  },
+
+  // Get available job types
+  getJobTypes: async () => {
+    const response = await api.get('/scheduled-jobs/types');
+    return response.data;
+  }
+};
+
+// Common Stats API calls
+export const commonStatsAPI = {
+  // Get aggregated asset stats across all accessible programs
+  getAggregatedAssetStats: async () => {
+    const response = await api.get('/assets/common/stats');
+    return response.data;
+  },
+
+  // Get asset stats for a specific program
+  getProgramAssetStats: async (programName) => {
+    const response = await api.get(`/assets/common/stats/${encodeURIComponent(programName)}`);
+    return response.data;
+  },
+
+  // Get aggregated findings stats across all accessible programs
+  getAggregatedFindingsStats: async () => {
+    const response = await api.get('/findings/common/stats');
+    return response.data;
+  },
+
+  // Get findings stats for a specific program
+  getProgramFindingsStats: async (programName) => {
+    const response = await api.get(`/findings/common/stats/${encodeURIComponent(programName)}`);
+    return response.data;
+  },
+
+  // Get latest assets and findings for dashboard
+  getLatestAssetsAndFindings: async (programName = null, limit = 5) => {
+    const params = new URLSearchParams();
+    if (programName) params.append('program_name', programName);
+    params.append('limit', limit.toString());
+    
+    // Get assets and findings separately since they're now in different endpoints
+    const [assetsResponse, findingsResponse] = await Promise.allSettled([
+      api.get(`/assets/common/latest?${params.toString()}`),
+      api.get(`/findings/common/latest?${params.toString()}`)
+    ]);
+    
+    return {
+      status: 'success',
+      data: {
+        latest_assets: assetsResponse.status === 'fulfilled' ? assetsResponse.value.data.data.latest_assets : {},
+        latest_findings: findingsResponse.status === 'fulfilled' ? findingsResponse.value.data.data : {}
+      }
+    };
+  },
+
+  // Get only latest assets for dashboard
+  getLatestAssets: async (programName = null, limit = 5) => {
+    const params = new URLSearchParams();
+    if (programName) params.append('program_name', programName);
+    params.append('limit', limit.toString());
+    
+    const response = await api.get(`/assets/common/latest?${params.toString()}`);
+    return response.data;
+  },
+
+  // Get only latest findings for dashboard
+  getLatestFindings: async (programName = null, limit = 5) => {
+    const params = new URLSearchParams();
+    if (programName) params.append('program_name', programName);
+    params.append('limit', limit.toString());
+    
+    const response = await api.get(`/findings/common/latest?${params.toString()}`);
+    return response.data;
+  }
+};
+
+// Main API object with nested namespaces
+const apiObject = {
+  auth: authAPI,
+  userManagement: userManagementAPI,
+  admin: adminAPI,
+  nucleiTemplates: nucleiTemplatesAPI,
+  wordlists: wordlistsAPI,
+  commonStats: commonStatsAPI,
+  jobs: jobAPI,
+  assets: {
+    domains: domainAPI,
+    ips: ipAPI,
+    urls: urlAPI,
+    services: serviceAPI,
+    certificates: certificateAPI
+  },
+  findings: {
+    nuclei: nucleiAPI,
+    wpscan: wpscanAPI,
+    typosquat: typosquatAPI,
+    brokenLinks: brokenLinksAPI,
+    externalLinks: externalLinksAPI
+  },
+  socialMediaCredentials: socialMediaCredentialsAPI,
+  programs: programAPI,
+  workflows: workflowAPI,
+  queue: queueAPI
+};
+
+export default apiObject;

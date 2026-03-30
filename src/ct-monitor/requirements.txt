@@ -1,0 +1,11 @@
+websockets>=12.0,<13.0
+nats-py==2.14.0
+aiohttp==3.13.3
+cryptography>=46.0.5,<47.0.0
+pyahocorasick>=2.0.0,<3.0.0
+dnstwist>=20231201
+fastapi==0.109.2
+uvicorn[standard]==0.27.1
+tldextract==5.3.1
+redis==7.4.0
+requests==2.33.0

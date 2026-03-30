@@ -1,0 +1,61 @@
+.sitemap-tree {
+  font-family: 'Courier New', 'Monaco', monospace;
+  font-size: 0.9rem;
+}
+
+.sitemap-tree-item {
+  margin-bottom: 0.25rem;
+}
+
+.sitemap-folder {
+  user-select: none;
+  transition: background-color 0.2s ease;
+  padding: 0.2rem;
+  border-radius: 0.25rem;
+}
+
+.sitemap-folder:hover {
+  background-color: var(--bs-subtle-hover-bg);
+}
+
+.tree-leaf {
+  padding: 0.2rem;
+  border-radius: 0.25rem;
+  transition: background-color 0.2s ease;
+}
+
+.tree-leaf:hover {
+  background-color: var(--bs-subtle-hover-bg);
+}
+
+.sitemap-subtree {
+  border-left: 1px dashed var(--bs-border-color);
+  margin-left: 0.5rem;
+  padding-left: 0.5rem;
+}
+
+.sitemap-tree .fas {
+  width: 1rem;
+  text-align: center;
+}
+
+.sitemap-tree a {
+  color: var(--bs-link-color);
+  text-decoration: none;
+  word-break: break-all;
+}
+
+.sitemap-tree a:hover {
+  text-decoration: underline;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .sitemap-tree {
+    font-size: 0.8rem;
+  }
+  
+  .tree-leaf .badge {
+    font-size: 0.7rem;
+  }
+}

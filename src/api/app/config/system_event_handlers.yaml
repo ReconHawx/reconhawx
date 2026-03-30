@@ -1,0 +1,123 @@
+# System (mandatory) event handlers — loaded only by the API, not editable via UI.
+# Effective config order: system → global (DB) → program addons → notification handlers (ephemeral).
+handlers:
+  - id: system_ct_typosquat_alert_analysis
+    event_type: typosquat.ct_alert
+    description: Trigger immediate typosquat analysis when CT monitor detects suspicious certificate
+    conditions:
+      - type: field_value
+        field: auto_analyze
+        operator: equals
+        expected_value: true
+    actions:
+      - type: workflow_trigger
+        api_url: "{api_base_url}"
+        api_key: "{internal_api_key}"
+        use_custom_payload: true
+        batching:
+          max_events: 50
+          max_delay_seconds: 30  # Process CT alerts quickly
+        parameters:
+          workflow_name: "ct_typosquat_analysis"
+          program_name: "{program_name}"
+          description: "CT Monitor detected {event_count} suspicious certificate(s)"
+          steps:
+            - name: "ct_typosquat_analysis"
+              tasks:
+                - name: "typosquat_detection"
+                  force: true
+                  params:
+                    include_subdomains: false
+                    analyze_input_as_variations: true
+                    active_checks: true
+                    geoip_checks: true
+                    source: "ct_monitoring"
+                  task_type: "typosquat_detection"
+                  input_mapping:
+                    domains: "inputs.detected_domains"
+          variables: {}
+          inputs:
+            detected_domains:
+              type: "direct"
+              values: "{detected_domain_list_array}"
+              value_type: "domains"
+          workflow_definition_id: ""
+
+  # Typosquat domains without registration data - trigger analysis workflow
+  - id: system_typosquat_without_whois_data
+    event_type: findings.typosquat_domain.created
+    description: Trigger analysis workflow for typosquat domains without WHOIS data
+    conditions:
+      - type: field_value
+        field: whois_registrar
+        operator: null_or_empty
+    actions:
+      - type: workflow_trigger
+        api_url: "{api_base_url}"
+        api_key: "{internal_api_key}"
+        use_custom_payload: true
+        batching:
+          max_events: 500
+          max_delay_seconds: 120
+        parameters:
+          workflow_name: "event_triggered_typosquat_analysis"
+          program_name: "{program_name}"
+          description: "Batch typosquat analysis for {event_count} domains"
+          steps:
+            - name: "typosquat_analysis"
+              tasks:
+                - name: "typosquat_detection"
+                  force: true
+                  params:
+                    include_subdomains: false
+                    analyze_input_as_variations: true
+                    active_checks: true
+                    geoip_checks: true
+                  task_type: "typosquat_detection"
+                  input_mapping:
+                    domains: "inputs.input_1"
+          variables: {}
+          inputs:
+            input_1:
+              type: "direct"
+              values: "{domain_list_array}"
+              value_type: "domains"
+          workflow_definition_id: ""
+
+  - id: system_apex_domain_whois_backfill
+    event_type: assets.apex_domain.created
+    description: >-
+      When an apex domain is created without WHOIS data, trigger whois_domain_check workflow.
+      Requires a program workflow named apex_domain_whois (or adjust workflow_name to match yours).
+    conditions:
+      - type: field_value
+        field: whois_status
+        operator: null_or_empty
+    actions:
+      - type: workflow_trigger
+        api_url: "{api_base_url}"
+        api_key: "{internal_api_key}"
+        use_custom_payload: true
+        batching:
+          max_events: 50
+          max_delay_seconds: 120
+        parameters:
+          workflow_name: "apex_domain_whois"
+          program_name: "{program_name}"
+          description: "Batch WHOIS check for {event_count} apex domain(s)"
+          steps:
+            - name: "whois_check"
+              tasks:
+                - name: "whois_domain_check"
+                  force: true
+                  task_type: "whois_domain_check"
+                  params: {}
+                  input_mapping:
+                    domains: "inputs.domains"
+          variables: {}
+          inputs:
+            domains:
+              type: "direct"
+              values: "{domain_list_array}"
+              value_type: "domains"
+          workflow_definition_id: ""

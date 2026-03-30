@@ -1,0 +1,14 @@
+**/__pycache__
+.pytest_cache
+tests
+.venv
+venv
+*.pyc
+*.pyo
+*.pyd
+*.swp
+*.swo
+node_modules
+dist
+build
+

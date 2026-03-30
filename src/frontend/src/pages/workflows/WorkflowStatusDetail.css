@@ -1,0 +1,95 @@
+/* Theme-aware styling for WorkflowStatusDetail component */
+
+/* Summary card - adapts to theme */
+.summary-card {
+  background-color: var(--bs-card-bg) !important;
+  color: var(--bs-body-color) !important;
+}
+
+/* Card headers - theme-aware */
+/* Light mode: Card headers use subtle background */
+.theme-aware-header {
+  background-color: #f8f9fa !important;
+  border-bottom-color: var(--bs-card-border-color) !important;
+  color: var(--bs-body-color) !important;
+}
+
+/* Dark mode specific styling for card headers */
+[data-theme="dark"] .theme-aware-header {
+  background-color: #2c2c2e !important;
+  border-bottom-color: #3a3a3f !important;
+  color: #f2f2f7 !important;
+}
+
+/* Accordion buttons - theme-aware */
+/* Light mode: Accordion buttons use subtle background */
+.theme-aware-accordion {
+  background-color: #f8f9fa !important;
+  color: var(--bs-body-color) !important;
+}
+
+.theme-aware-accordion:not(.collapsed) {
+  background-color: #f8f9fa !important;
+  color: var(--bs-body-color) !important;
+}
+
+.theme-aware-accordion:hover {
+  background-color: #e9ecef !important;
+}
+
+/* Dark mode specific styling for accordion buttons */
+[data-theme="dark"] .theme-aware-accordion {
+  background-color: #2c2c2e !important;
+  color: #f2f2f7 !important;
+}
+
+[data-theme="dark"] .theme-aware-accordion:not(.collapsed) {
+  background-color: #2c2c2e !important;
+  color: #f2f2f7 !important;
+}
+
+[data-theme="dark"] .theme-aware-accordion:hover {
+  background-color: #343436 !important;
+}
+
+/* Table headers - theme-aware */
+/* Light mode: Table headers use subtle background */
+.theme-aware-table-header {
+  background-color: #f8f9fa !important;
+  color: var(--bs-body-color) !important;
+}
+
+.theme-aware-table-header th {
+  border-color: #dee2e6 !important;
+}
+
+/* Dark mode specific styling for table headers */
+[data-theme="dark"] .theme-aware-table-header {
+  background-color: #2c2c2e !important;
+  color: #f2f2f7 !important;
+}
+
+[data-theme="dark"] .theme-aware-table-header th {
+  border-color: #3a3a3f !important;
+}
+
+/* Code blocks - theme-aware */
+.theme-aware-code-block {
+  background-color: var(--bs-pre-bg) !important;
+  color: var(--bs-pre-color) !important;
+}
+
+.theme-aware-code-block pre {
+  color: var(--bs-pre-color) !important;
+}
+
+/* Dark mode specific styling for code blocks */
+[data-theme="dark"] .theme-aware-code-block {
+  background-color: #252527 !important;
+  color: #f2f2f7 !important;
+}
+
+[data-theme="dark"] .theme-aware-code-block pre {
+  color: #e3f2fd !important;
+}
+

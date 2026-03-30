@@ -1,0 +1,6 @@
+.pytest_cache
+.ruff_cache
+venv
+build.sh
+Dockerfile
+ruff.toml

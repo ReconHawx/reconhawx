@@ -1,0 +1,875 @@
+/* ReconHawx themes — logo palette: navy base, neon cyan #00F2FF, electric purple #B026FF */
+
+:root {
+  /* Brand (shared) */
+  --rh-cyan: #00f2ff;
+  --rh-cyan-rgb: 0, 242, 255;
+  --rh-cyan-muted: #5cefff;
+  --rh-purple: #b026ff;
+  --rh-purple-rgb: 176, 38, 255;
+  --rh-purple-muted: #c95dff;
+  --rh-navy: #0a0f1c;
+  --rh-navy-rgb: 10, 15, 28;
+  --rh-surface-elevated: #f7f9fc;
+  --rh-on-cyan: #0a0f1c;
+
+  /* Light theme — off-white layers (less glare than pure #fff, still clearly light) */
+  --bs-body-bg: #e8ecf4;
+  --bs-body-color: #0a0f1c;
+  --bs-border-color: #cdd6e4;
+  --bs-card-bg: #f7f9fc;
+  --bs-card-border-color: #cfd8e6;
+  --bs-table-bg: #f7f9fc;
+  --bs-table-hover-bg: rgba(10, 15, 28, 0.055);
+  --bs-input-bg: #fcfdff;
+  --bs-input-border-color: #b9c4d4;
+  --bs-nav-link-color: #4a5f72;
+  --bs-nav-link-hover-color: #0a0f1c;
+  --bs-text-muted: #5c6d80;
+  --bs-input-color: #0a0f1c;
+  --bs-pre-bg: #e4e9f2;
+  --bs-pre-color: #0a0f1c;
+  --bs-link-color: #007a8c;
+  --bs-link-hover-color: #005f6e;
+  --bs-subtle-hover-bg: rgba(10, 15, 28, 0.045);
+  --bs-tertiary-bg: #e2e8f2;
+  --bs-tertiary-color: #0a0f1c;
+  --bs-secondary-bg: #dce3ef;
+  --bs-secondary-color: rgba(10, 15, 28, 0.75);
+
+  /* Bootstrap semantic — slightly toned cyan on white for text/bg utilities */
+  --bs-primary: #00bdd4;
+  --bs-primary-rgb: 0, 189, 212;
+  --bs-info: #00a8c0;
+  --bs-info-rgb: 0, 168, 192;
+  --bs-secondary: #9d22e8;
+  --bs-secondary-rgb: 157, 34, 232;
+}
+
+[data-theme="dark"] {
+  /* Dark theme — deep navy shell, cyan/purple highlights */
+  --rh-surface-elevated: #121c2f;
+
+  --bs-body-bg: #0a0f1c;
+  --bs-body-color: #f0fbff;
+  --bs-border-color: rgba(0, 242, 255, 0.14);
+  --bs-card-bg: #121c2f;
+  --bs-card-border-color: rgba(0, 242, 255, 0.16);
+  --bs-table-bg: #121c2f;
+  --bs-table-hover-bg: rgba(0, 242, 255, 0.08);
+  --bs-input-bg: #151d30;
+  --bs-input-border-color: rgba(176, 38, 255, 0.2);
+  --bs-nav-link-color: #9db4c4;
+  --bs-nav-link-hover-color: #f0fbff;
+  --bs-text-muted: #8eadbf;
+  --bs-input-color: #f0fbff;
+  --bs-pre-bg: #0d1422;
+  --bs-pre-color: #e8f8fc;
+  --bs-link-color: #5cefff;
+  --bs-link-hover-color: #9df6ff;
+  --bs-subtle-hover-bg: rgba(0, 242, 255, 0.06);
+  --bs-tertiary-bg: #0d1422;
+  --bs-tertiary-color: #f0fbff;
+  --bs-secondary-bg: #151d30;
+  --bs-secondary-color: rgba(240, 251, 255, 0.78);
+
+  --bs-primary: #00f2ff;
+  --bs-primary-rgb: 0, 242, 255;
+  --bs-info: #33f0ff;
+  --bs-info-rgb: 51, 240, 255;
+  --bs-secondary: #b026ff;
+  --bs-secondary-rgb: 176, 38, 255;
+}
+
+/* Bootstrap’s compiled .btn-* uses hardcoded blues — align fills to brand cyan */
+.btn-primary {
+  --bs-btn-color: var(--rh-on-cyan);
+  --bs-btn-bg: var(--rh-cyan);
+  --bs-btn-border-color: var(--rh-cyan);
+  --bs-btn-hover-color: var(--rh-on-cyan);
+  --bs-btn-hover-bg: #33f5ff;
+  --bs-btn-hover-border-color: #33f5ff;
+  --bs-btn-focus-shadow-rgb: var(--rh-cyan-rgb);
+  --bs-btn-active-color: var(--rh-on-cyan);
+  --bs-btn-active-bg: #00c8de;
+  --bs-btn-active-border-color: #00c8de;
+  --bs-btn-disabled-color: rgba(10, 15, 28, 0.5);
+  --bs-btn-disabled-bg: rgba(0, 242, 255, 0.45);
+  --bs-btn-disabled-border-color: rgba(0, 242, 255, 0.35);
+}
+
+.btn-outline-primary {
+  --bs-btn-color: var(--bs-link-color);
+  --bs-btn-border-color: var(--rh-cyan);
+  --bs-btn-hover-color: var(--rh-on-cyan);
+  --bs-btn-hover-bg: var(--rh-cyan);
+  --bs-btn-hover-border-color: var(--rh-cyan);
+  --bs-btn-focus-shadow-rgb: var(--rh-cyan-rgb);
+  --bs-btn-active-color: var(--rh-on-cyan);
+  --bs-btn-active-bg: var(--rh-cyan);
+  --bs-btn-active-border-color: var(--rh-cyan);
+  --bs-btn-disabled-color: rgba(0, 189, 212, 0.55);
+  --bs-btn-disabled-border-color: rgba(0, 242, 255, 0.35);
+}
+
+[data-theme="dark"] .btn-outline-primary {
+  --bs-btn-color: var(--rh-cyan-muted);
+  --bs-btn-border-color: rgba(0, 242, 255, 0.55);
+  --bs-btn-disabled-color: rgba(92, 239, 255, 0.35);
+}
+
+.bg-primary,
+.card-header.bg-primary {
+  color: var(--rh-on-cyan) !important;
+}
+
+.badge.bg-primary {
+  color: var(--rh-on-cyan) !important;
+}
+
+/*
+ * Dark mode: .badge defaults to white text; neon info/primary fills need dark text.
+ * Applies app-wide (Subdomains apex tags, Services protocol, etc.).
+ */
+[data-theme="dark"] .badge.bg-info {
+  color: var(--rh-on-cyan) !important;
+}
+
+[data-theme="dark"] .card-header.bg-info,
+[data-theme="dark"] .card-footer.bg-info {
+  color: var(--rh-on-cyan) !important;
+}
+
+/* Logo from public/logo.png (transparent); subtle lift in light mode */
+.brand-logo {
+  width: auto;
+  object-fit: contain;
+  vertical-align: middle;
+}
+
+.brand-logo--navbar-light {
+  filter: drop-shadow(0 1px 3px rgba(10, 15, 28, 0.18));
+}
+
+[data-theme="dark"] .brand-logo--hero {
+  filter: drop-shadow(0 0 20px rgba(0, 242, 255, 0.15));
+}
+
+/* Login banner: wide track above the narrow form card */
+.login-banner-wrap {
+  max-width: min(960px, 100%);
+}
+
+.login-banner {
+  width: 100%;
+  height: auto;
+  max-height: min(440px, 50vh);
+  object-fit: contain;
+  object-position: center;
+}
+
+[data-theme="light"] .login-banner {
+  filter: drop-shadow(0 1px 4px rgba(10, 15, 28, 0.08));
+}
+
+[data-theme="dark"] .login-banner {
+  filter: drop-shadow(0 0 24px rgba(0, 242, 255, 0.12));
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: var(--bs-body-bg) !important;
+  color: var(--bs-body-color) !important;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+code {
+  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
+    monospace;
+}
+
+/* Main content area */
+.main-content {
+  min-height: 100vh;
+  background-color: var(--bs-body-bg);
+  flex-grow: 1;
+}
+
+.nav-link.active {
+  background-color: var(--rh-cyan) !important;
+  color: var(--rh-on-cyan) !important;
+}
+
+.hover-highlight:hover {
+  background-color: var(--bs-table-hover-bg) !important;
+  cursor: pointer;
+}
+
+.nav-link {
+  color: var(--bs-nav-link-color) !important;
+  transition: color 0.3s ease;
+}
+
+.nav-link:hover {
+  color: var(--bs-nav-link-hover-color) !important;
+}
+
+.table-hover tbody tr:hover {
+  background-color: var(--bs-table-hover-bg) !important;
+}
+
+/* Card theming */
+.card {
+  background-color: var(--bs-card-bg) !important;
+  border-color: var(--bs-card-border-color) !important;
+  color: var(--bs-body-color) !important;
+  transition: background-color 0.3s ease, border-color 0.3s ease;
+}
+
+.card-header {
+  background-color: var(--bs-card-bg) !important;
+  border-bottom-color: var(--bs-card-border-color) !important;
+}
+
+/* Table theming */
+.table {
+  --bs-table-bg: var(--bs-table-bg);
+  --bs-table-color: var(--bs-body-color);
+  color: var(--bs-body-color) !important;
+}
+
+.table-light {
+  --bs-table-bg: var(--bs-card-bg);
+  --bs-table-color: var(--bs-body-color);
+}
+
+/* Form theming */
+.form-control,
+.form-select {
+  background-color: var(--bs-input-bg) !important;
+  border-color: var(--bs-input-border-color) !important;
+  color: var(--bs-body-color) !important;
+  transition: background-color 0.3s ease, border-color 0.3s ease;
+}
+
+.form-control:focus,
+.form-select:focus {
+  background-color: var(--bs-input-bg) !important;
+  color: var(--bs-body-color) !important;
+}
+
+[data-theme="light"] .form-control:focus,
+[data-theme="light"] .form-select:focus {
+  border-color: rgba(0, 189, 212, 0.85) !important;
+  box-shadow: 0 0 0 0.2rem rgba(0, 189, 212, 0.18) !important;
+}
+
+/* Text muted theming */
+.text-muted {
+  color: var(--bs-text-muted) !important;
+}
+
+/* Dropdown theming */
+.dropdown-menu {
+  background-color: var(--bs-card-bg) !important;
+  border-color: var(--bs-card-border-color) !important;
+  color: var(--bs-body-color) !important;
+  z-index: 1050 !important;
+}
+
+.dropdown-item {
+  color: var(--bs-body-color) !important;
+}
+
+.dropdown-item:hover,
+.dropdown-item:focus {
+  background-color: var(--bs-table-hover-bg) !important;
+  color: var(--bs-body-color) !important;
+}
+
+/* Alert theming */
+[data-theme="dark"] .alert-danger {
+  background-color: #3d2a2a !important;
+  border-color: #6b3a3a !important;
+  color: #ffb3b3 !important;
+}
+
+[data-theme="dark"] .alert-success {
+  background-color: #2a3d2a !important;
+  border-color: #3a6b3a !important;
+  color: #b3ffb3 !important;
+}
+
+[data-theme="dark"] .alert-warning {
+  background-color: #3d3d2a !important;
+  border-color: #6b6b3a !important;
+  color: #ffffb3 !important;
+}
+
+[data-theme="dark"] .alert-info {
+  background-color: rgba(0, 242, 255, 0.07) !important;
+  border-color: rgba(0, 242, 255, 0.35) !important;
+  color: #9df6ff !important;
+}
+
+/* Badge theming */
+
+/* Secondary badge — brand purple in dark mode */
+[data-theme="dark"] .badge.bg-secondary {
+  background-color: rgba(176, 38, 255, 0.9) !important;
+  color: #ffffff !important;
+}
+
+[data-theme="dark"] .badge.bg-secondary:hover {
+  background-color: #9915e8 !important;
+}
+
+/* Theme toggle button */
+.theme-toggle {
+  transition: transform 0.2s ease;
+  border: 1px solid var(--bs-border-color) !important;
+}
+
+.theme-toggle:hover {
+  transform: scale(1.1);
+}
+
+/* Spinner theming */
+[data-theme="dark"] .spinner-border {
+  color: var(--rh-cyan);
+}
+
+/* Modal theming */
+[data-theme="dark"] .modal-content {
+  background-color: var(--bs-card-bg) !important;
+  border-color: var(--bs-card-border-color) !important;
+  color: var(--bs-body-color) !important;
+}
+
+[data-theme="dark"] .modal-header {
+  border-bottom-color: var(--bs-card-border-color) !important;
+}
+
+[data-theme="dark"] .modal-footer {
+  border-top-color: var(--bs-card-border-color) !important;
+}
+
+/* Pagination — active page uses brand cyan (Bootstrap hardcodes blue on .pagination) */
+.pagination {
+  --bs-pagination-active-color: var(--rh-on-cyan);
+  --bs-pagination-active-bg: var(--rh-cyan);
+  --bs-pagination-active-border-color: var(--rh-cyan);
+  --bs-pagination-focus-box-shadow: 0 0 0 0.25rem rgba(0, 242, 255, 0.22);
+}
+
+[data-theme="dark"] .page-link {
+  background-color: var(--bs-card-bg) !important;
+  border-color: var(--bs-card-border-color) !important;
+  color: var(--bs-body-color) !important;
+}
+
+[data-theme="dark"] .page-link:hover {
+  background-color: var(--bs-table-hover-bg) !important;
+  border-color: var(--bs-card-border-color) !important;
+  color: var(--bs-body-color) !important;
+}
+
+[data-theme="dark"] .page-item.disabled .page-link {
+  background-color: var(--bs-card-bg) !important;
+  border-color: var(--bs-card-border-color) !important;
+  color: var(--bs-text-muted) !important;
+}
+
+/* Code blocks theming */
+[data-theme="dark"] code {
+  background-color: #151d30 !important;
+  color: #9df6ff !important;
+  padding: 2px 4px;
+  border-radius: 3px;
+}
+
+[data-theme="dark"] pre {
+  background-color: #0d1422 !important;
+  color: #e8f8fc !important;
+  border: 1px solid var(--bs-card-border-color) !important;
+  border-radius: 6px;
+  padding: 1rem;
+}
+
+/* Button outline variants theming */
+[data-theme="dark"] .btn-outline-secondary {
+  color: var(--bs-body-color) !important;
+  border-color: var(--bs-border-color) !important;
+}
+
+[data-theme="dark"] .btn-outline-secondary:hover {
+  color: var(--bs-body-color) !important;
+  background-color: var(--bs-table-hover-bg) !important;
+  border-color: var(--bs-border-color) !important;
+}
+
+/* Navbar brand link theming */
+.navbar-brand {
+  color: var(--bs-body-color) !important;
+  text-decoration: none;
+}
+
+.navbar-brand:hover {
+  color: var(--bs-body-color) !important;
+}
+
+/* Top-right overlays (e.g. floating actions) above page content */
+.position-absolute.top-0.end-0 {
+  z-index: 1050;
+}
+
+/* Ensure table containers don't clip dropdowns */
+.table-responsive {
+  overflow: visible !important;
+}
+
+.card-body {
+  overflow: visible !important;
+}
+
+/* Additional dark theme improvements for better readability */
+[data-theme="dark"] a {
+  color: var(--bs-link-color) !important;
+}
+
+[data-theme="dark"] a:hover {
+  color: var(--bs-link-color) !important;
+  text-decoration: underline;
+}
+
+[data-theme="dark"] .text-secondary {
+  color: #c8c8c8 !important;
+}
+
+[data-theme="dark"] .text-dark {
+  color: #f0f0f0 !important;
+}
+
+[data-theme="dark"] .bg-light {
+  background-color: var(--bs-card-bg) !important;
+  color: var(--bs-body-color) !important;
+}
+
+[data-theme="dark"] .bg-body-tertiary,
+[data-theme="dark"] .bg-body-secondary {
+  background-color: var(--bs-pre-bg) !important;
+  color: var(--bs-body-color) !important;
+}
+
+[data-theme="dark"] .border {
+  border-color: var(--bs-border-color) !important;
+}
+
+[data-theme="dark"] .border-top {
+  border-top-color: var(--bs-border-color) !important;
+}
+
+[data-theme="dark"] .border-bottom {
+  border-bottom-color: var(--bs-border-color) !important;
+}
+
+[data-theme="dark"] .border-start {
+  border-left-color: var(--bs-border-color) !important;
+}
+
+[data-theme="dark"] .border-end {
+  border-right-color: var(--bs-border-color) !important;
+}
+
+/* Improve focus states for better accessibility */
+[data-theme="dark"] .form-control:focus,
+[data-theme="dark"] .form-select:focus {
+  border-color: rgba(0, 242, 255, 0.65) !important;
+  box-shadow: 0 0 0 0.2rem rgba(0, 242, 255, 0.22) !important;
+}
+
+/* Better contrast for disabled elements */
+[data-theme="dark"] .form-control:disabled,
+[data-theme="dark"] .form-select:disabled {
+  background-color: #2b2b2b !important;
+  color: #888888 !important;
+}
+
+/* Placeholder text styling for dark mode */
+[data-theme="dark"] .form-control::placeholder,
+[data-theme="dark"] .form-select::placeholder,
+[data-theme="dark"] input::placeholder,
+[data-theme="dark"] textarea::placeholder {
+  color: #b0b0b0 !important;
+  opacity: 1 !important;
+}
+
+[data-theme="dark"] .form-control::-webkit-input-placeholder,
+[data-theme="dark"] .form-select::-webkit-input-placeholder,
+[data-theme="dark"] input::-webkit-input-placeholder,
+[data-theme="dark"] textarea::-webkit-input-placeholder {
+  color: #b0b0b0 !important;
+  opacity: 1 !important;
+}
+
+[data-theme="dark"] .form-control::-moz-placeholder,
+[data-theme="dark"] .form-select::-moz-placeholder,
+[data-theme="dark"] input::-moz-placeholder,
+[data-theme="dark"] textarea::-moz-placeholder {
+  color: #b0b0b0 !important;
+  opacity: 1 !important;
+}
+
+[data-theme="dark"] .form-control:-ms-input-placeholder,
+[data-theme="dark"] .form-select:-ms-input-placeholder,
+[data-theme="dark"] input:-ms-input-placeholder,
+[data-theme="dark"] textarea:-ms-input-placeholder {
+  color: #b0b0b0 !important;
+  opacity: 1 !important;
+}
+
+/* Table text visibility improvements for dark mode */
+[data-theme="dark"] .table td {
+  color: #f0f0f0 !important;
+}
+
+[data-theme="dark"] .table td strong {
+  color: #ffffff !important;
+}
+
+[data-theme="dark"] .table th {
+  color: #f0f0f0 !important;
+}
+
+/* Highlight for search matches */
+.search-highlight {
+  background: var(--bs-primary);
+  color: var(--rh-on-cyan);
+  padding: 1px 3px;
+  border-radius: 3px;
+  font-weight: 600;
+}
+
+/* Current match row highlight (for tr) */
+.search-current-match {
+  outline: 2px solid var(--bs-primary) !important;
+  background: var(--bs-table-hover-bg) !important;
+  z-index: 2;
+}
+
+/* Optional: make all highlighted rows a bit more visible */
+.search-highlight-row {
+  background: var(--bs-table-hover-bg) !important;
+}
+
+
+
+/* Resizable Modal Styles */
+.modal-xl {
+  max-width: 90vw !important;
+  width: 90vw !important;
+}
+
+.modal-xl .modal-dialog {
+  max-width: 90vw !important;
+  width: 90vw !important;
+  margin: 1.75rem auto;
+  min-width: 800px !important;
+  min-height: 500px !important;
+}
+
+.modal-xl .modal-content {
+  min-height: 60vh;
+  max-height: 90vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  height: 100% !important;
+}
+
+.modal-xl .modal-body {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* Make all modals resizable with better support */
+.modal-dialog {
+  min-width: 600px !important;
+  min-height: 400px !important;
+  max-width: 95vw !important;
+  max-height: 95vh !important;
+}
+
+.modal-content {
+  height: 100% !important;
+  display: flex !important;
+  flex-direction: column !important;
+  min-height: 400px !important;
+}
+
+/* Enhanced resizable modal support */
+.modal-dialog {
+  min-width: 600px !important;
+  min-height: 400px !important;
+  max-width: 95vw !important;
+  max-height: 95vh !important;
+}
+
+
+
+/* Ensure modal backdrop doesn't interfere with resize */
+.modal-backdrop {
+  pointer-events: none;
+}
+
+.modal-backdrop + .modal {
+  pointer-events: auto;
+}
+
+/* Resizable modal styles */
+.resizable-modal .modal-dialog {
+  position: relative;
+  margin: 1.75rem auto;
+}
+
+.resizable-modal .modal-content {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Custom scrollbar for modal content */
+.modal-body::-webkit-scrollbar {
+  width: 8px;
+}
+
+.modal-body::-webkit-scrollbar-track {
+  background: var(--bs-border-color);
+  border-radius: 4px;
+}
+
+.modal-body::-webkit-scrollbar-thumb {
+  background: var(--bs-border-color);
+  border-radius: 4px;
+}
+
+.modal-body::-webkit-scrollbar-thumb:hover {
+  background: var(--bs-text-muted);
+}
+
+/* Horizontal Navigation Styles */
+.navbar-dark {
+  background: linear-gradient(165deg, #101a2e 0%, #0a0f1c 55%, #0d1528 100%) !important;
+  border-bottom: 1px solid rgba(0, 242, 255, 0.12);
+  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.35), 0 0 24px rgba(176, 38, 255, 0.06);
+}
+
+.navbar-dark .navbar-nav .nav-link {
+  color: rgba(240, 251, 255, 0.85) !important;
+  padding: 0.5rem 1rem;
+  border-radius: 0.375rem;
+  margin: 0 0.25rem;
+  transition: all 0.2s ease-in-out;
+}
+
+.navbar-dark .navbar-nav .nav-link:hover {
+  color: #ffffff !important;
+  background-color: rgba(0, 242, 255, 0.1);
+}
+
+.navbar-dark .navbar-nav .nav-link.active {
+  color: var(--rh-on-cyan) !important;
+  background-color: rgba(0, 242, 255, 0.35) !important;
+  box-shadow: 0 0 14px rgba(0, 242, 255, 0.2);
+}
+
+.navbar-light {
+  background-color: var(--bs-card-bg) !important;
+  border-bottom: 1px solid rgba(10, 15, 28, 0.08);
+  box-shadow: 0 1px 4px rgba(10, 15, 28, 0.06);
+}
+
+/* Match dark navbar hit area: same padding, radius, and margins on nav items */
+.navbar-light .navbar-nav .nav-link {
+  color: var(--bs-nav-link-color) !important;
+  padding: 0.5rem 1rem;
+  border-radius: 0.375rem;
+  margin: 0 0.25rem;
+  transition: all 0.2s ease-in-out;
+}
+
+.navbar-light .navbar-nav .nav-link:hover {
+  color: var(--bs-nav-link-hover-color) !important;
+  background-color: rgba(0, 189, 212, 0.12);
+}
+
+.navbar-light .navbar-nav .nav-link.active {
+  color: var(--rh-on-cyan) !important;
+  background-color: rgba(0, 189, 212, 0.38) !important;
+  box-shadow: 0 0 12px rgba(0, 189, 212, 0.2);
+}
+
+.navbar-light .dropdown-toggle {
+  color: var(--bs-nav-link-color) !important;
+  background: none !important;
+  border: none !important;
+  padding: 0.5rem 1rem;
+  border-radius: 0.375rem;
+  margin: 0 0.25rem;
+  transition: all 0.2s ease-in-out;
+}
+
+.navbar-light .dropdown-toggle:hover,
+.navbar-light .dropdown-toggle:focus {
+  color: var(--bs-nav-link-hover-color) !important;
+  background-color: rgba(0, 189, 212, 0.1) !important;
+  box-shadow: none !important;
+}
+
+.navbar-light .dropdown-toggle.show {
+  color: var(--bs-nav-link-hover-color) !important;
+  background-color: rgba(0, 189, 212, 0.16) !important;
+}
+
+.navbar-light .theme-toggle {
+  color: var(--bs-nav-link-color);
+}
+
+.navbar-light .theme-toggle:hover {
+  color: var(--bs-nav-link-hover-color);
+}
+
+/* Dropdown styles */
+.navbar-dark .dropdown-toggle {
+  color: rgba(255, 255, 255, 0.8) !important;
+  background: none !important;
+  border: none !important;
+  padding: 0.5rem 1rem;
+  border-radius: 0.375rem;
+  margin: 0 0.25rem;
+  transition: all 0.2s ease-in-out;
+}
+
+.navbar-dark .dropdown-toggle:hover,
+.navbar-dark .dropdown-toggle:focus {
+  color: #ffffff !important;
+  background-color: rgba(0, 242, 255, 0.12) !important;
+  box-shadow: none !important;
+}
+
+.navbar-dark .dropdown-toggle.show {
+  color: #ffffff !important;
+  background-color: rgba(0, 242, 255, 0.18) !important;
+}
+
+/* Dropdown menu styles */
+.dropdown-menu {
+  margin-top: 0.5rem;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.175);
+  border-radius: 0.5rem;
+  padding: 0.5rem 0;
+}
+
+.dropdown-item {
+  padding: 0.5rem 1rem;
+  color: #212529;
+  transition: all 0.15s ease-in-out;
+}
+
+.dropdown-item:hover {
+  background-color: #f8f9fa;
+  color: #16181b;
+}
+
+[data-theme="dark"] .dropdown-menu {
+  background-color: var(--bs-card-bg) !important;
+  border-color: var(--bs-card-border-color) !important;
+  box-shadow: 0 0.5rem 1.25rem rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(0, 242, 255, 0.08);
+}
+
+[data-theme="dark"] .dropdown-item {
+  color: var(--bs-body-color);
+}
+
+[data-theme="dark"] .dropdown-item:hover {
+  background-color: var(--bs-table-hover-bg);
+  color: var(--bs-body-color);
+}
+
+/* Program filter styles */
+.navbar-dark .form-select {
+  background-color: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.2);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.navbar-dark .form-select:focus {
+  background-color: rgba(255, 255, 255, 0.15);
+  border-color: rgba(0, 242, 255, 0.45);
+  color: rgba(255, 255, 255, 1);
+  box-shadow: 0 0 0 0.2rem rgba(0, 242, 255, 0.2);
+}
+
+.navbar-dark .form-select option {
+  background-color: #121c2f;
+  color: #f0fbff;
+}
+
+/* User menu styles */
+.navbar-dark .btn-outline-light {
+  border-color: rgba(255, 255, 255, 0.3);
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.navbar-dark .btn-outline-light:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.5);
+  color: rgba(255, 255, 255, 1);
+}
+
+/* Responsive adjustments */
+@media (max-width: 991.98px) {
+  .navbar-dark .navbar-nav .nav-link,
+  .navbar-dark .dropdown-toggle,
+  .navbar-light .navbar-nav .nav-link,
+  .navbar-light .dropdown-toggle {
+    margin: 0.25rem 0;
+    text-align: left;
+  }
+  
+  .navbar-dark .form-select,
+  .navbar-light .form-select {
+    margin: 0.5rem 0;
+    min-width: auto;
+  }
+  
+  .navbar-dark .dropdown-menu {
+    margin-top: 0;
+    border: none;
+    box-shadow: none;
+    background-color: rgba(255, 255, 255, 0.05);
+  }
+
+  .navbar-light .dropdown-menu {
+    margin-top: 0;
+    border: none;
+    box-shadow: none;
+    background-color: rgba(10, 15, 28, 0.04);
+  }
+}
+
+/* Theme toggle in navbar */
+.navbar-dark .theme-toggle {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.navbar-dark .theme-toggle:hover {
+  color: rgba(255, 255, 255, 1);
+}

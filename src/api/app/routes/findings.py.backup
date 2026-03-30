@@ -1,0 +1,499 @@
+from fastapi import APIRouter, HTTPException, Query, Depends, Request
+from typing import Dict, Any, Optional, Union, List
+from urllib.parse import urlparse
+import logging
+import json
+from pydantic import BaseModel
+from sqlalchemy import and_, func
+from auth.dependencies import get_current_user_from_middleware, get_user_accessible_programs
+from models.user_postgres import UserResponse
+from repository.common_findings_repo import CommonFindingsRepository
+
+logger = logging.getLogger(__name__)
+router = APIRouter()
+
+class QueryFilter(BaseModel):
+    filter: Dict[str, Any]
+    limit: Optional[int] = None
+    skip: Optional[int] = 0
+    sort: Optional[Dict[str, int]] = None
+
+# Pydantic model for typosquat processing response
+class TyposquatProcessingResponse(BaseModel):
+    status: str
+    message: str
+    job_id: Optional[str] = None
+    processing_mode: str  # "immediate" or "background"
+    summary: Dict[str, Any]
+
+@router.get("/external-links/", response_model=Dict[str, Any])
+async def get_external_links(
+    program_name: Optional[str] = Query(None, description="Filter by program name"),
+    link_search: Optional[str] = Query(None, description="Search within link URLs"),
+    link_negative: Optional[bool] = Query(False, description="Exclude matches instead of including them"),
+    root_site: Optional[str] = Query(None, description="Filter by root website"),
+    current_user: UserResponse = Depends(get_current_user_from_middleware)
+):
+    """
+    Get external links grouped by destination website.
+    
+    This endpoint processes URL assets that have a non-empty 'extracted_links' field and groups
+    them by destination website, similar to the Django implementation.
+    """
+    try:
+        from models.postgres import URL, Program
+        from db import get_db_session
+        
+        async with get_db_session() as db:
+            # Build the PostgreSQL query for URLs with non-empty extracted_links
+            query = db.query(URL).join(Program)
+            
+            # Apply user program permissions
+            accessible_programs = get_user_accessible_programs(current_user)
+            # For superusers/admins, accessible_programs is empty (meaning no restrictions)
+            if accessible_programs:
+                # Regular users are restricted to their accessible programs
+                if program_name and program_name not in accessible_programs:
+                    # User doesn't have access to the requested program - return empty result
+                    return {
+                        "dest_grouped_links": {},
+                        "grouped_links": {},
+                        "root_sites_list": [],
+                        "selected_root": root_site,
+                        "selected_program": program_name,
+                        "link_search": link_search or '',
+                        "link_negative": link_negative
+                    }
+                
+                # Filter to accessible programs
+                program_filter = Program.name.in_(accessible_programs)
+                if program_name:
+                    # Both accessible and specific program filter
+                    query = query.filter(Program.name == program_name)
+                else:
+                    # Just accessible programs
+                    query = query.filter(program_filter)
+            else:
+                # Superuser/admin - apply program filter if specified
+                if program_name:
+                    query = query.filter(Program.name == program_name)
+            
+            # Filter for URLs with non-empty extracted_links
+            query = query.filter(
+                and_(
+                    URL.extracted_links.isnot(None),
+                    URL.extracted_links != [],
+                    func.array_length(URL.extracted_links, 1) > 0
+                )
+            )
+            
+            urls_with_links = query.all()
+            
+            logger.info(f"Found {len(urls_with_links)} URLs with links for program_name='{program_name}'")
+            
+            # Build nested grouping: root -> dest_link -> set(sources)
+            grouping = {}
+            for i, url_obj in enumerate(urls_with_links):
+                try:
+                    # Compute root website (scheme://host[:port]/)
+                    scheme = (url_obj.scheme or 'http').lower()
+                    host = url_obj.hostname or ''
+                    port = url_obj.port
+                    
+                    if host:
+                        needs_port = port and not ((scheme == 'http' and port == 80) or (scheme == 'https' and port == 443))
+                        port_part = f":{port}" if needs_port else ''
+                        root_site_url = f"{scheme}://{host}{port_part}/"
+                    else:
+                        root_site_url = url_obj.url or ''
+                    
+                    # Get links array, handle None case
+                    links = url_obj.extracted_links or []
+                    if not isinstance(links, (list, tuple)):
+                        logger.warning(f"URL object {i} has non-list extracted_links field: {type(links)}, skipping")
+                        continue
+                    
+                    # Process each link in the URL's links array
+                    for link_url in links:
+                        # Skip None or empty links
+                        if not link_url or not isinstance(link_url, str):
+                            continue
+                            
+                        # Apply link search filter if specified
+                        if link_search:
+                            try:
+                                contains = link_search.lower() in link_url.lower()
+                                # If negative flag set, skip links that CONTAIN search; else include only those containing
+                                if (not link_negative and not contains) or (link_negative and contains):
+                                    continue
+                            except AttributeError:
+                                # link_url might not be a string
+                                continue
+                        
+                        # Add to grouping
+                        if root_site_url not in grouping:
+                            grouping[root_site_url] = {}
+                        if link_url not in grouping[root_site_url]:
+                            grouping[root_site_url][link_url] = set()
+                        grouping[root_site_url][link_url].add(url_obj.url or '')
+                        
+                except Exception as e:
+                    logger.error(f"Error processing URL object {i}: {e}")
+                    logger.error(f"URL object data: {url_obj}")
+                    continue
+            
+            # Convert sets to sorted lists for JSON serialization
+            grouped_links_all = {}
+            for root_site_url, dest_map in grouping.items():
+                entries = []
+                for dest, sources in dest_map.items():
+                    entries.append({
+                        'destination': dest,
+                        'sources': sorted(list(sources))
+                    })
+                # Sort entries by destination for determinism
+                grouped_links_all[root_site_url] = sorted(entries, key=lambda x: x['destination'])
+            
+            # Apply root site filter on sources if provided
+            if root_site and root_site in grouped_links_all:
+                grouped_links_filtered = {root_site: grouped_links_all[root_site]}
+            else:
+                grouped_links_filtered = grouped_links_all
+            
+            # Group by destination website (dest_root) - matching Django implementation
+            dest_grouping = {}
+            for entries in grouped_links_filtered.values():
+                for entry in entries:
+                    dest_url = entry['destination']
+                    parsed = urlparse(dest_url)
+                    dest_scheme = parsed.scheme or 'http'
+                    dest_host = parsed.hostname or ''
+                    dest_port_part = ''
+                    if parsed.port and not ((dest_scheme == 'http' and parsed.port == 80) or (dest_scheme == 'https' and parsed.port == 443)):
+                        dest_port_part = f":{parsed.port}"
+                    dest_root = f"{dest_scheme}://{dest_host}{dest_port_part}/"
+                    
+                    # Append to grouping
+                    if dest_root not in dest_grouping:
+                        dest_grouping[dest_root] = []
+                    dest_grouping[dest_root].append(entry)
+            
+            # Sort link entries inside each dest_root by destination URL
+            for dest_root, links in dest_grouping.items():
+                dest_grouping[dest_root] = sorted(links, key=lambda x: x['destination'])
+            
+            # Sort the final grouping by destination root
+            dest_grouped_links = dict(sorted(dest_grouping.items()))
+            
+            return {
+                "dest_grouped_links": dest_grouped_links,
+                "grouped_links": dict(sorted(grouped_links_filtered.items())),
+                "root_sites_list": sorted(grouped_links_all.keys()),
+                "selected_root": root_site,
+                "selected_program": program_name,
+                "link_search": link_search or '',
+                "link_negative": link_negative
+            }
+        
+    except Exception as e:
+        logger.error(f"Error fetching external links: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error fetching external links: {str(e)}"
+        )
+
+@router.get("/common/latest", include_in_schema=True)
+async def get_latest_findings(
+    program_name: Optional[str] = Query(None, description="Filter by program name"),
+    limit: int = Query(5, ge=1, le=20, description="Number of latest items to return per type"),
+    days_ago: Optional[int] = Query(None, ge=1, le=365, description="Only return findings created within the last N days")
+):
+    """
+    Get the latest findings for dashboard display
+    """
+    try:
+        latest_findings = await CommonFindingsRepository.get_latest_findings(program_name, limit, days_ago)
+        
+        return {
+            "status": "success",
+            "data": latest_findings
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting latest findings: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to get latest findings: {str(e)}")
+
+@router.get("/common/debug", include_in_schema=True)
+async def debug_findings_endpoints(
+    program_name: Optional[str] = Query(None, description="Filter by program name")
+):
+    """
+    Debug endpoint to help troubleshoot findings endpoints
+    """
+    try:
+        from models.postgres import Program, NucleiFinding, TyposquatDomain
+        from db import get_db_session
+        
+        async with get_db_session() as db:
+            # Get all programs
+            all_programs = db.query(Program).all()
+            program_names = [p.name for p in all_programs]
+            
+            # Get specific program if requested
+            target_program = None
+            if program_name:
+                target_program = db.query(Program).filter(Program.name == program_name).first()
+            
+            # Get basic counts
+            counts = {}
+            if target_program:
+                program_id = target_program.id
+                counts = {
+                    'nuclei_findings': db.query(NucleiFinding).filter(NucleiFinding.program_id == program_id).count(),
+                    'typosquat_findings': db.query(TyposquatDomain).filter(TyposquatDomain.program_id == program_id).count()
+                }
+            else:
+                counts = {
+                    'nuclei_findings': db.query(NucleiFinding).count(),
+                    'typosquat_findings': db.query(TyposquatDomain).count()
+                }
+            
+            return {
+                "status": "success",
+                "data": {
+                    "all_programs": program_names,
+                    "target_program": program_name,
+                    "target_program_found": target_program is not None,
+                    "counts": counts
+                }
+            }
+            
+    except Exception as e:
+        logger.error(f"Error in debug endpoint: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Debug endpoint error: {str(e)}")
+
+# ===== GENERAL FINDINGS ENDPOINTS =====
+
+@router.post("/typosquat", response_model=TyposquatProcessingResponse)
+async def create_typosquat_finding(
+    request: Request,
+    current_user: UserResponse = Depends(get_current_user_from_middleware)
+):
+    """Create typosquat findings using unified processing.
+
+    Supports both single finding and batch processing with consistent event publishing.
+    """
+    try:
+        # Import here to avoid circular imports
+        from services.unified_asset_processor import unified_asset_processor
+
+        # Get raw request body to handle both single objects and arrays
+        body = await request.body()
+        finding_data = json.loads(body)
+
+        # Detect if this is a batch request or single finding
+        if isinstance(finding_data, list):
+            # Batch processing - handle multiple findings
+            findings = finding_data
+            logger.info(f"Processing batch of {len(findings)} typosquat findings")
+
+            # Create background task for batch processing
+            async def process_batch():
+                try:
+                    results = {}
+                    success_count = 0
+                    error_count = 0
+                    successful_findings = []
+
+                    for i, single_finding in enumerate(findings):
+                        try:
+                            logger.debug(f"Processing finding {i+1}/{len(findings)}: {single_finding.get('typo_domain')}")
+
+                            # Create the finding
+                            result_tuple = await TyposquatFindingsRepository.create_or_update_typosquat_finding(single_finding)
+                            if len(result_tuple) == 3:
+                                finding_id, action, event_data = result_tuple
+                            else:
+                                # Fallback for old format
+                                finding_id, action = result_tuple
+                                event_data = None
+
+                            if finding_id:
+                                results[i] = {
+                                    "success": True,
+                                    "finding_id": finding_id
+                                }
+                                success_count += 1
+                                successful_findings.append(single_finding)
+                            else:
+                                results[i] = {
+                                    "success": False,
+                                    "error": "Failed to create finding - no ID returned"
+                                }
+                                error_count += 1
+
+                        except Exception as e:
+                            logger.error(f"Error processing finding {i+1}: {str(e)}")
+                            results[i] = {
+                                "success": False,
+                                "error": str(e)
+                            }
+                            error_count += 1
+
+                    # Trigger a single workflow for all successfully created domains
+                    #if successful_findings:
+                    #    try:
+                    #        await trigger_typosquat_detection_workflow_batch(successful_findings)
+                    #        logger.info(f"Triggered single typosquat_detection workflow for {len(successful_findings)} domains")
+                    #    except Exception as workflow_error:
+                    #        logger.error(f"Failed to trigger batch workflow: {str(workflow_error)}")
+                    #        # Don't fail the finding creation if workflow trigger fails
+
+                    logger.info(f"Background batch processing completed: {success_count} successful, {error_count} errors")
+
+                except Exception as batch_error:
+                    logger.error(f"Error in background batch processing: {str(batch_error)}")
+
+            # Start background processing and return immediately
+            asyncio.create_task(process_batch())
+
+            # Return immediate response for batch
+            logger.info(f"Batch processing initiated for {len(findings)} findings")
+            return {
+                "status": "success",
+                "message": f"Batch processing started for {len(findings)} findings",
+                "batch_processing": True,
+                "count": len(findings)
+            }
+
+        else:
+            # Single finding processing
+            logger.info(f"Creating single typosquat finding for domain: {finding_data.get('typo_domain')}")
+
+            # Create background task for single finding processing
+            async def process_single():
+                try:
+                    result_tuple = await TyposquatFindingsRepository.create_or_update_typosquat_finding(finding_data)
+                    if len(result_tuple) == 3:
+                        finding_id, action, event_data = result_tuple
+                    else:
+                        # Fallback for old format
+                        finding_id, action = result_tuple
+                        event_data = None
+
+                    if finding_id:
+                        logger.info(f"Successfully created typosquat finding with ID: {finding_id}")
+
+                        ## Trigger typosquat_detection workflow for this single domain
+                        #try:
+                        #    await trigger_typosquat_detection_workflow_batch([finding_data])  # Single domain as batch of 1
+                        #    logger.info(f"Triggered typosquat_detection workflow for single domain: {finding_data.get('typo_domain')}")
+                        #except Exception as workflow_error:
+                        #    logger.error(f"Failed to trigger workflow for single domain {finding_data.get('typo_domain')}: {str(workflow_error)}")
+                        #    # Don't fail the finding creation if workflow trigger fails
+                    else:
+                        logger.error(f"Failed to create typosquat finding - no ID returned for {finding_data.get('typo_domain')}")
+
+                except Exception as single_error:
+                    logger.error(f"Error in background single finding processing: {str(single_error)}")
+
+            # Start background processing and return immediately
+            asyncio.create_task(process_single())
+
+            # Return immediate response for single finding
+            return {
+                "status": "success",
+                "message": "Finding processing started in background",
+                "batch_processing": False,
+                "domain": finding_data.get('typo_domain')
+            }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in create_typosquat_finding: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to process typosquat finding(s): {str(e)}")
+
+async def trigger_typosquat_detection_workflow_batch(findings: list):
+    """Trigger a single typosquat_detection workflow for multiple domains"""
+    try:
+        import uuid
+
+        if not findings:
+            logger.warning("No findings provided for workflow triggering")
+            return
+
+        # Get program name from first finding (assume all findings are from same program)
+        first_finding = findings[0]
+        program_name = first_finding.get("program_name")
+        if not program_name:
+            logger.warning("No program_name found in findings")
+            return
+
+        # Extract all domain names
+        domain_names = []
+        for finding in findings:
+            domain_name = finding.get("typo_domain")
+            if domain_name:
+                domain_names.append(domain_name)
+
+        if not domain_names:
+            logger.warning("No valid domain names found in findings")
+            return
+
+        # Create workflow execution data for batch processing
+        execution_id = str(uuid.uuid4())
+        workflow_data = {
+            "workflow_id": None,  # Custom workflow, not based on a definition
+            "execution_id": execution_id,
+            "program_name": program_name,
+            "name": f"Typosquat_Detection_Batch_{len(domain_names)}_domains",
+            "description": f"Batch typosquat detection analysis for {len(domain_names)} domains: {', '.join(domain_names[:3])}{'...' if len(domain_names) > 3 else ''}",
+            "variables": {},
+            "inputs": {
+                "input_1": {
+                    "type": "direct",
+                    "values": domain_names,  # All domains in this batch
+                    "value_type": "domains"
+                }
+            },
+            "steps": [
+                {
+                    "name": "step_1",
+                    "tasks": [
+                        {
+                            "name": "typosquat_detection",
+                            "force": True,
+                            "params": {
+                                "include_subdomains": False,
+                                "analyze_input_as_variations": True,
+                                "original_domain": ""
+                            },
+                            "task_type": "typosquat_detection",
+                            "input_mapping": {
+                                "domains": "inputs.input_1"
+                            }
+                        }
+                    ]
+                }
+            ]
+        }
+
+        # Import and use the Kubernetes service to create the workflow job
+        try:
+            from services.kubernetes import KubernetesService
+
+            k8s_service = KubernetesService()
+            job = k8s_service.create_runner_job(workflow_data)
+
+            logger.info(f"Successfully triggered single typosquat_detection workflow for {len(domain_names)} domains with execution ID: {execution_id}")
+
+        except ImportError:
+            logger.warning("Kubernetes service not available, cannot trigger workflow job")
+        except Exception as k8s_error:
+            logger.error(f"Failed to create Kubernetes job for batch of {len(domain_names)} domains: {str(k8s_error)}")
+            raise
+
+    except Exception as e:
+        logger.error(f"Error triggering typosquat_detection workflow batch: {str(e)}")
+        raise
