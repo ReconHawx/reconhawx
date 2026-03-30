@@ -24,8 +24,11 @@ from models.job import (
 )
 from repository.job_repo import JobRepository
 from services.job_submission import JobSubmissionService
+from services.phishlabs_api_client import (
+    PHISHLABS_ACTION_START_TAKEDOWN,
+    PhishLabsAPIClient,
+)
 from datetime import datetime, timezone
-import aiohttp
 import uuid
 import io
 
@@ -76,6 +79,139 @@ def apply_status_transition_rules(old_status: str, new_status: str, assigned_to:
 
 class BatchDeleteRequest(BaseModel):
     finding_ids: List[str]
+
+
+class PhishlabsTakedownBatchRequest(BaseModel):
+    """Start PhishLabs takedown (applyaction) for typosquat findings that already have a PhishLabs incident id."""
+
+    finding_ids: List[str] = Field(..., min_length=1, description="Typosquat finding UUIDs")
+
+
+PHISHLABS_TAKEDOWN_BATCH_MAX = 100
+
+
+def _typosquat_user_can_access_program(current_user: UserResponse, program_name: Optional[str]) -> bool:
+    if not program_name:
+        return False
+    roles = getattr(current_user, "roles", None) or []
+    if getattr(current_user, "is_superuser", False) or "admin" in roles:
+        return True
+    accessible = get_user_accessible_programs(current_user)
+    return bool(accessible and program_name in accessible)
+
+
+def _resolve_phishlabs_incident_id(finding: Dict[str, Any]) -> Optional[str]:
+    pd = finding.get("phishlabs_data")
+    if isinstance(pd, str):
+        try:
+            import json
+            pd = json.loads(pd)
+        except Exception:
+            pd = None
+    if isinstance(pd, dict):
+        iid = pd.get("incident_id")
+        if iid is not None and str(iid).strip():
+            return str(iid).strip()
+    raw = finding.get("phishlabs_incident_id")
+    if raw is not None and str(raw).strip():
+        return str(raw).strip()
+    return None
+
+
+def _build_typosquat_phishlabs_upsert_from_incident_response(
+    current_typosquat: Dict[str, Any],
+    typo_domain: str,
+    incident_response: Optional[Dict[str, Any]],
+    *,
+    no_incident: Optional[bool] = None,
+    api_responses: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Map incident.get-style JSON into create_or_update_typosquat_finding payload (matches create_phishlabs_infraction)."""
+    upsert_data: Dict[str, Any] = {
+        "typo_domain": current_typosquat.get("typo_domain"),
+        "program_name": current_typosquat.get("program_name"),
+    }
+    phishlabs_meta = {
+        "last_updated": datetime.now(timezone.utc).isoformat(),
+        "url": typo_domain,
+    }
+    if incident_response:
+        infraction = incident_response.get("Infraction", {})
+        enrichment = incident_response.get("EnrichmentData", {})
+        if infraction:
+            phishlabs_data: Dict[str, Any] = {
+                "incident_id": infraction.get("Infrid"),
+                "category_code": infraction.get("Catcode"),
+                "category_name": infraction.get("Catname"),
+                "status": infraction.get("Status"),
+                "comment": infraction.get("Comment"),
+                "product": infraction.get("Product"),
+                "create_date": infraction.get("Createdate"),
+                "assignee": infraction.get("Assignee"),
+                "last_comment": infraction.get("Lastcomment"),
+                "group_category_name": infraction.get("Groupcatname"),
+                "action_description": infraction.get("Actiondescr"),
+                "status_description": infraction.get("Statusdescr"),
+                "mitigation_start": infraction.get("Mitigationstart"),
+                "date_resolved": infraction.get("Dateresolved"),
+                "severity_name": infraction.get("Severityname"),
+                "mx_record": infraction.get("Mxrecord"),
+                "ticket_status": infraction.get("Ticketstatus"),
+                "resolution_status": infraction.get("Resolutionstatus"),
+                "incident_status": infraction.get("Incidentstatus"),
+            }
+            phishlabs_data.update(phishlabs_meta)
+            if api_responses is not None:
+                phishlabs_data["api_responses"] = api_responses
+            if no_incident is not None:
+                phishlabs_data["no_incident"] = bool(no_incident)
+            upsert_data["phishlabs_data"] = phishlabs_data
+        else:
+            phishlabs_data = dict(phishlabs_meta)
+            if no_incident is not None:
+                phishlabs_data["no_incident"] = bool(no_incident)
+            if api_responses is not None:
+                phishlabs_data["api_responses"] = api_responses
+            upsert_data["phishlabs_data"] = phishlabs_data
+        if enrichment:
+            if not current_typosquat.get("whois_registrar"):
+                upsert_data["whois_registrar"] = enrichment.get("RegistrarName")
+            if not current_typosquat.get("whois_creation_date"):
+                upsert_data["whois_creation_date"] = enrichment.get("RegistrationDate")
+            if not current_typosquat.get("whois_expiration_date"):
+                upsert_data["whois_expiration_date"] = enrichment.get("ExpiryDate")
+            if not current_typosquat.get("whois_registrant_name"):
+                upsert_data["whois_registrant_name"] = enrichment.get("RegistrantFullName")
+            if not current_typosquat.get("geoip_country"):
+                upsert_data["geoip_country"] = enrichment.get("Country")
+            if not current_typosquat.get("geoip_organization"):
+                upsert_data["geoip_organization"] = enrichment.get("Isp")
+    else:
+        phishlabs_data = dict(phishlabs_meta)
+        if no_incident is not None:
+            phishlabs_data["no_incident"] = bool(no_incident)
+        if api_responses is not None:
+            phishlabs_data["api_responses"] = api_responses
+        upsert_data["phishlabs_data"] = phishlabs_data
+
+    blob = upsert_data.get("phishlabs_data")
+    if blob:
+        for key, value in list(blob.items()):
+            if isinstance(value, datetime):
+                blob[key] = value.isoformat()
+            elif key in ["create_date", "mitigation_start", "date_resolved"] and value:
+                try:
+                    if isinstance(value, str) and "Z" in value:
+                        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+                        blob[key] = dt.isoformat()
+                except (ValueError, AttributeError) as e:
+                    logger.warning("Failed to parse date field %s: %s, error: %s", key, value, e)
+                    blob[key] = None
+        for field in ["incident_id", "category_code", "ticket_status", "resolution_status"]:
+            if blob.get(field) is not None:
+                blob[field] = str(blob[field])
+
+    return upsert_data
 
 class QueryFilter(BaseModel):
     filter: Dict[str, Any]
@@ -2017,121 +2153,6 @@ async def delete_typosquat_finding(
 
 # ===== PHISHLABS INTEGRATION ENDPOINTS =====
 
-async def _call_phishlabs_apis(
-    session: aiohttp.ClientSession,
-    url: str,
-    api_key: str,
-    catcode: str = "12345",
-    action: str = "check"
-) -> Dict[str, Any]:
-    """Helper function to call PhishLabs APIs for a single domain.
-
-    Args:
-        session: aiohttp ClientSession
-        url: Domain name (typo_domain) to check/create incident for - this will be used as the URL parameter
-        api_key: PhishLabs API key
-        catcode: PhishLabs category code (default: "12345" for checking)
-        action: "check" to check existing incident, "create" to create new incident
-
-    Returns:
-        Dictionary with API responses and incident information
-    """
-    # Infer flags from action
-    if action == "create":
-        flags = 0  # Create incident
-        # Use provided catcode or default to 12345
-        final_catcode = catcode if catcode else "12345"
-        if final_catcode == "12345":
-            raise HTTPException(
-                status_code=400,
-                detail="Valid catcode required for creating incidents (cannot use default 12345)"
-            )
-        comment = "Typosquat domain that impersonate our Brand. Please monitor."
-    else:
-        flags = 2  # Check/fetch existing incident
-        final_catcode = "12345"  # Default catcode for checking
-    # Validate based on action
-
-    # Ensure url is a string (handle Pydantic URL objects)
-    if hasattr(url, '__class__') and 'Url' in str(type(url)):
-        # Convert Pydantic URL object to string
-        url = str(url)
-    elif not isinstance(url, str):
-        # Convert any other object to string
-        url = str(url)
-
-    logger.debug(f"Using url for PhishLabs API: {url} (type: {type(url)})")
-
-    #Prepare PhishLabs URLs
-    createincident_url = (
-        "https://feed.phishlabs.com/createincident"
-        f"?custid={api_key}"
-        "&requestid=placeholder"
-        f"&url={url}"
-        f"&catcode={final_catcode}"
-        f"&flags={flags}"
-    )
-    if action == "create":
-        createincident_url += f"&comment={comment}"
-    incident_id: int | None = None
-    createincident_response: Dict[str, Any] | None = None
-    incident_response: Dict[str, Any] | None = None
-    
-    # First call – createincident
-    async with session.get(createincident_url, timeout=aiohttp.ClientTimeout(total=30)) as resp:
-        if resp.status != 200:
-            body_text = await resp.text()
-            raise HTTPException(
-                status_code=502,
-                detail=f"PhishLabs createincident error {resp.status}: {body_text[:1000]}"
-            )
-        createincident_response = await resp.json(content_type=None)
-
-    if createincident_response is None:
-        raise HTTPException(status_code=502, detail="Empty response from PhishLabs createincident call")
-
-    incident_id = createincident_response.get("IncidentId")
-    error_message = createincident_response.get("ErrorMessage")
-    logger.debug(f"Phishlabs Incident ID: {incident_id}")
-    if error_message:
-        # PhishLabs returned an error
-        raise HTTPException(status_code=400, detail=f"PhishLabs error: {error_message}")
-
-    # Handle case where no incident exists for this domain
-    if not incident_id:
-        return {
-            "createincident_response": createincident_response,
-            "incident_response": None,
-            "incident_id": None,
-            "no_incident": True
-        }
-
-    # Second call – incident.get
-    incident_get_url = (
-        "https://feed.phishlabs.com/incident.get"
-        f"?custid={api_key}"
-        f"&incidentid={incident_id}"
-    )
-    async with session.get(incident_get_url, timeout=aiohttp.ClientTimeout(total=30)) as resp:
-        if resp.status != 200:
-            body_text = await resp.text()
-            raise HTTPException(
-                status_code=502,
-                detail=f"PhishLabs incident.get error {resp.status}: {body_text[:1000]}"
-            )
-        incident_response = await resp.json(content_type=None)
-    logger.debug(f"Phishlabs Incident Response: {incident_response}")
-    result = {
-        "createincident_response": createincident_response,
-        "incident_response": incident_response,
-        "incident_id": str(incident_id) if incident_id is not None else None,
-        "no_incident": False,
-        "action": action,
-        "catcode": catcode,
-        "flags": flags
-    }
-    return result
-
 @router.post("/typosquat/phishlabs/batch", response_model=Dict[str, Any])
 async def create_phishlabs_batch_job(
     request: BatchPhishlabsRequest,
@@ -2555,12 +2576,9 @@ async def create_phishlabs_infraction(
         )
 
     try:
-        # Use aiohttp for async HTTP calls
-        async with aiohttp.ClientSession() as session:
-            # Call PhishLabs APIs using the helper function with create action
-            # Use typo_domain as the URL parameter for PhishLabs API
-            phishlabs_result = await _call_phishlabs_apis(
-                session, typo_domain, api_key, catcode, action="create"
+        async with PhishLabsAPIClient() as pl_client:
+            phishlabs_result = await pl_client.call_createincident_flow(
+                typo_domain, api_key, catcode, action="create"
             )
 
             # Get current typosquat data for upsert
@@ -2682,6 +2700,202 @@ async def create_phishlabs_infraction(
     except Exception as e:
         logger.error(f"Error communicating with PhishLabs: {e}")
         raise HTTPException(status_code=502, detail=f"Error communicating with PhishLabs: {e}")
+
+
+async def _phishlabs_takedown_for_finding_id(finding_id: str, current_user: UserResponse) -> Dict[str, Any]:
+    """Apply PhishLabs start-takedown action and persist refreshed incident data."""
+    finding = await TyposquatFindingsRepository.get_typosquat_by_id(finding_id)
+    if not finding:
+        raise HTTPException(status_code=404, detail=f"Finding {finding_id} not found")
+    program_name = finding.get("program_name")
+    if not program_name:
+        raise HTTPException(status_code=400, detail="Finding has no program")
+    if not _typosquat_user_can_access_program(current_user, program_name):
+        raise HTTPException(status_code=403, detail=f"Access denied to program '{program_name}'")
+
+    incident_id = _resolve_phishlabs_incident_id(finding)
+    if not incident_id:
+        raise HTTPException(
+            status_code=400,
+            detail="No PhishLabs incident id on this finding; fetch or create an incident first",
+        )
+
+    program = await ProgramRepository.get_program_by_name(program_name)
+    if not program:
+        raise HTTPException(status_code=404, detail=f"Program '{program_name}' not found")
+    api_key = program.get("phishlabs_api_key")
+    if not api_key:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Program '{program_name}' does not have a PhishLabs API key configured",
+        )
+
+    async with PhishLabsAPIClient() as pl_client:
+        refresh = await pl_client.apply_action_and_refresh(
+            api_key, incident_id, PHISHLABS_ACTION_START_TAKEDOWN
+        )
+
+    current_typosquat = await TyposquatFindingsRepository.get_typosquat_by_id(finding_id)
+    if not current_typosquat:
+        raise HTTPException(status_code=404, detail=f"Finding {finding_id} not found")
+    typo_domain = current_typosquat.get("typo_domain") or ""
+
+    api_responses = {
+        "applyaction_response": refresh.get("applyaction_response"),
+        "incident_response": refresh.get("incident_response"),
+    }
+    upsert_data = _build_typosquat_phishlabs_upsert_from_incident_response(
+        current_typosquat,
+        typo_domain,
+        refresh.get("incident_response"),
+        no_incident=False,
+        api_responses=api_responses,
+    )
+    _cu = await TyposquatFindingsRepository.create_or_update_typosquat_finding(upsert_data)
+    upserted_id = _cu[0] if isinstance(_cu, tuple) else _cu
+    if not upserted_id:
+        logger.error("Failed to upsert typosquat %s after PhishLabs takedown", finding_id)
+        raise HTTPException(status_code=500, detail="Failed to persist PhishLabs data")
+
+    action_ok = await TyposquatFindingsRepository.update_typosquat_domain(
+        finding_id, {"action_taken": "takedown_requested"}
+    )
+    if not action_ok:
+        logger.error(
+            "Failed to append action_taken takedown_requested for finding %s after PhishLabs takedown",
+            finding_id,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="PhishLabs takedown completed but failed to update action_taken on the finding",
+        )
+
+    uid = str(current_user.id) if current_user.id is not None else "unknown"
+    await ActionLogRepository.log_action(
+        entity_type="typosquat_finding",
+        entity_id=finding_id,
+        action_type="phishlabs_takedown_started",
+        user_id=uid,
+        old_value=None,
+        new_value={
+            "phishlabs_incident_id": incident_id,
+            "action_id": PHISHLABS_ACTION_START_TAKEDOWN,
+        },
+        metadata={
+            "typo_domain": typo_domain,
+            "program_name": program_name,
+            "phishlabs_action": "start_takedown",
+        },
+    )
+
+    return {
+        "finding_id": finding_id,
+        "typo_domain": typo_domain,
+        "program_name": program_name,
+        "incident_id": incident_id,
+        "applyaction_response": refresh.get("applyaction_response"),
+        "incident_response": refresh.get("incident_response"),
+    }
+
+
+@router.post("/typosquat/phishlabs-takedown", response_model=Dict[str, Any])
+async def phishlabs_takedown_single(
+    typo_domain: str = Query(..., description="Typosquat domain"),
+    program_name: str = Query(..., description="Program name"),
+    current_user: UserResponse = Depends(get_current_user_from_middleware),
+):
+    """Start PhishLabs takedown (applyaction) for one finding; requires an existing PhishLabs incident id."""
+    if not typo_domain or not program_name:
+        raise HTTPException(status_code=400, detail="typo_domain and program_name are required")
+
+    from models.postgres import TyposquatDomain, Program
+    from db import get_db_session
+
+    async with get_db_session() as db:
+        existing_doc = (
+            db.query(TyposquatDomain)
+            .join(Program)
+            .filter(
+                and_(TyposquatDomain.typo_domain == typo_domain, Program.name == program_name)
+            )
+            .first()
+        )
+        if not existing_doc:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Typosquat domain '{typo_domain}' not found for program '{program_name}'",
+            )
+        domain_id_str = str(existing_doc.id)
+
+    try:
+        result = await _phishlabs_takedown_for_finding_id(domain_id_str, current_user)
+        return {
+            "status": "success",
+            "message": "PhishLabs takedown requested and incident data refreshed",
+            **result,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("PhishLabs takedown error: %s", e, exc_info=True)
+        raise HTTPException(status_code=502, detail=f"Error communicating with PhishLabs: {e}")
+
+
+@router.post("/typosquat/phishlabs-takedown/batch", response_model=Dict[str, Any])
+async def phishlabs_takedown_batch(
+    request: PhishlabsTakedownBatchRequest,
+    current_user: UserResponse = Depends(get_current_user_from_middleware),
+):
+    """Start PhishLabs takedown for multiple findings in one synchronous request (see PHISHLABS_TAKEDOWN_BATCH_MAX)."""
+    if len(request.finding_ids) > PHISHLABS_TAKEDOWN_BATCH_MAX:
+        raise HTTPException(
+            status_code=400,
+            detail=f"At most {PHISHLABS_TAKEDOWN_BATCH_MAX} findings per request",
+        )
+
+    results: List[Dict[str, Any]] = []
+    errors: List[Dict[str, Any]] = []
+    success_count = 0
+
+    for fid in request.finding_ids:
+        try:
+            r = await _phishlabs_takedown_for_finding_id(fid, current_user)
+            success_count += 1
+            results.append(
+                {
+                    "finding_id": fid,
+                    "status": "success",
+                    "typo_domain": r.get("typo_domain"),
+                    "incident_id": r.get("incident_id"),
+                }
+            )
+        except HTTPException as he:
+            detail = he.detail
+            errors.append(
+                {
+                    "finding_id": fid,
+                    "error": detail if isinstance(detail, str) else str(detail),
+                }
+            )
+        except Exception as e:
+            logger.warning("PhishLabs takedown failed for %s: %s", fid, e)
+            errors.append({"finding_id": fid, "error": str(e)})
+
+    if success_count == 0:
+        overall = "error"
+    elif errors:
+        overall = "partial_success"
+    else:
+        overall = "success"
+
+    return {
+        "status": overall,
+        "message": f"PhishLabs takedown: {success_count} succeeded, {len(errors)} failed",
+        "success_count": success_count,
+        "error_count": len(errors),
+        "errors": errors,
+        "results": results,
+    }
 
 # ===== TYPOSQUAT RISK SCORE CALCULATION ENDPOINTS =====
 
