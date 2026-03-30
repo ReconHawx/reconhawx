@@ -48,6 +48,7 @@ dev-stuff/
 kubernetes/overlays
 kubernetes/base/secrets/*.yaml
 !kubernetes/base/secrets/*.yaml.example
+scripts/
 
 # Logs
 *.log
