@@ -24,7 +24,7 @@ spec:
       serviceAccountName: ct-monitor
       containers:
       - name: ct-monitor
-        image: ghcr.io/h3xitsec/reconhawx/ct-monitor:latest
+        image: ghcr.io/reconhawx/reconhawx/ct-monitor:latest
         imagePullPolicy: IfNotPresent
         resources:
           requests:

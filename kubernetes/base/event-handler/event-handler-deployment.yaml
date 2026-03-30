@@ -18,7 +18,7 @@ spec:
         reconhawx.runner: "true"
       containers:
       - name: event-handler
-        image: ghcr.io/h3xitsec/reconhawx/event-handler:latest
+        image: ghcr.io/reconhawx/reconhawx/event-handler:latest
         env:
         - name: NATS_URL
           valueFrom:

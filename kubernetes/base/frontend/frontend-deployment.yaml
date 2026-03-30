@@ -41,7 +41,7 @@ spec:
           mountPath: /shared-config
       containers:
       - name: frontend
-        image: ghcr.io/h3xitsec/reconhawx/frontend:latest
+        image: ghcr.io/reconhawx/reconhawx/frontend:latest
         ports:
         - containerPort: 80
 
