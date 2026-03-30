@@ -24,8 +24,8 @@ from models.job import (
 )
 from repository.job_repo import JobRepository
 from services.job_submission import JobSubmissionService
+from services.phishlabs_api_client import PhishLabsAPIClient
 from datetime import datetime, timezone
-import aiohttp
 import uuid
 import io
 
@@ -2017,121 +2017,6 @@ async def delete_typosquat_finding(
 
 # ===== PHISHLABS INTEGRATION ENDPOINTS =====
 
-async def _call_phishlabs_apis(
-    session: aiohttp.ClientSession,
-    url: str,
-    api_key: str,
-    catcode: str = "12345",
-    action: str = "check"
-) -> Dict[str, Any]:
-    """Helper function to call PhishLabs APIs for a single domain.
-
-    Args:
-        session: aiohttp ClientSession
-        url: Domain name (typo_domain) to check/create incident for - this will be used as the URL parameter
-        api_key: PhishLabs API key
-        catcode: PhishLabs category code (default: "12345" for checking)
-        action: "check" to check existing incident, "create" to create new incident
-
-    Returns:
-        Dictionary with API responses and incident information
-    """
-    # Infer flags from action
-    if action == "create":
-        flags = 0  # Create incident
-        # Use provided catcode or default to 12345
-        final_catcode = catcode if catcode else "12345"
-        if final_catcode == "12345":
-            raise HTTPException(
-                status_code=400,
-                detail="Valid catcode required for creating incidents (cannot use default 12345)"
-            )
-        comment = "Typosquat domain that impersonate our Brand. Please monitor."
-    else:
-        flags = 2  # Check/fetch existing incident
-        final_catcode = "12345"  # Default catcode for checking
-    # Validate based on action
-
-    # Ensure url is a string (handle Pydantic URL objects)
-    if hasattr(url, '__class__') and 'Url' in str(type(url)):
-        # Convert Pydantic URL object to string
-        url = str(url)
-    elif not isinstance(url, str):
-        # Convert any other object to string
-        url = str(url)
-
-    logger.debug(f"Using url for PhishLabs API: {url} (type: {type(url)})")
-
-    #Prepare PhishLabs URLs
-    createincident_url = (
-        "https://feed.phishlabs.com/createincident"
-        f"?custid={api_key}"
-        "&requestid=placeholder"
-        f"&url={url}"
-        f"&catcode={final_catcode}"
-        f"&flags={flags}"
-    )
-    if action == "create":
-        createincident_url += f"&comment={comment}"
-    incident_id: int | None = None
-    createincident_response: Dict[str, Any] | None = None
-    incident_response: Dict[str, Any] | None = None
-    
-    # First call – createincident
-    async with session.get(createincident_url, timeout=aiohttp.ClientTimeout(total=30)) as resp:
-        if resp.status != 200:
-            body_text = await resp.text()
-            raise HTTPException(
-                status_code=502,
-                detail=f"PhishLabs createincident error {resp.status}: {body_text[:1000]}"
-            )
-        createincident_response = await resp.json(content_type=None)
-
-    if createincident_response is None:
-        raise HTTPException(status_code=502, detail="Empty response from PhishLabs createincident call")
-
-    incident_id = createincident_response.get("IncidentId")
-    error_message = createincident_response.get("ErrorMessage")
-    logger.debug(f"Phishlabs Incident ID: {incident_id}")
-    if error_message:
-        # PhishLabs returned an error
-        raise HTTPException(status_code=400, detail=f"PhishLabs error: {error_message}")
-
-    # Handle case where no incident exists for this domain
-    if not incident_id:
-        return {
-            "createincident_response": createincident_response,
-            "incident_response": None,
-            "incident_id": None,
-            "no_incident": True
-        }
-
-    # Second call – incident.get
-    incident_get_url = (
-        "https://feed.phishlabs.com/incident.get"
-        f"?custid={api_key}"
-        f"&incidentid={incident_id}"
-    )
-    async with session.get(incident_get_url, timeout=aiohttp.ClientTimeout(total=30)) as resp:
-        if resp.status != 200:
-            body_text = await resp.text()
-            raise HTTPException(
-                status_code=502,
-                detail=f"PhishLabs incident.get error {resp.status}: {body_text[:1000]}"
-            )
-        incident_response = await resp.json(content_type=None)
-    logger.debug(f"Phishlabs Incident Response: {incident_response}")
-    result = {
-        "createincident_response": createincident_response,
-        "incident_response": incident_response,
-        "incident_id": str(incident_id) if incident_id is not None else None,
-        "no_incident": False,
-        "action": action,
-        "catcode": catcode,
-        "flags": flags
-    }
-    return result
-
 @router.post("/typosquat/phishlabs/batch", response_model=Dict[str, Any])
 async def create_phishlabs_batch_job(
     request: BatchPhishlabsRequest,
@@ -2555,12 +2440,9 @@ async def create_phishlabs_infraction(
         )
 
     try:
-        # Use aiohttp for async HTTP calls
-        async with aiohttp.ClientSession() as session:
-            # Call PhishLabs APIs using the helper function with create action
-            # Use typo_domain as the URL parameter for PhishLabs API
-            phishlabs_result = await _call_phishlabs_apis(
-                session, typo_domain, api_key, catcode, action="create"
+        async with PhishLabsAPIClient() as pl_client:
+            phishlabs_result = await pl_client.call_createincident_flow(
+                typo_domain, api_key, catcode, action="create"
             )
 
             # Get current typosquat data for upsert
