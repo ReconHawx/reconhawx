@@ -1,11 +1,8 @@
-# Branch pushes: build an image only when files under that component (or this workflow) change.
-# Tag push v* / workflow_dispatch: build all images.
+# Tag push v* (from release-please) / workflow_dispatch: build all images.
 name: Docker — build and push to GHCR
 
 on:
   push:
-    branches:
-      - main
     tags:
       - "v*"
   workflow_dispatch:
@@ -26,59 +23,12 @@ jobs:
       event_handler: ${{ steps.pick.outputs.event_handler }}
       worker: ${{ steps.pick.outputs.worker }}
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      # Branch pushes only (ref_type is not always set reliably; refs/heads/ is explicit).
-      - uses: dorny/paths-filter@v3
-        id: filter
-        if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/')
-        with:
-          filters: |
-            api:
-              - 'src/api/**'
-            frontend:
-              - 'src/frontend/**'
-            runner:
-              - 'src/runner/**'
-            ct_monitor:
-              - 'src/ct-monitor/**'
-            event_handler:
-              - 'src/event-handler/**'
-            worker:
-              - 'src/worker/**'
-
       - id: pick
         run: |
-          set -e
-          BUILD_ALL=false
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            BUILD_ALL=true
-          fi
-          if [ "${{ github.event_name }}" = "push" ] && [[ "${{ github.ref }}" == refs/tags/* ]]; then
-            BUILD_ALL=true
-          fi
-          echo "build_all=$BUILD_ALL" >> "$GITHUB_OUTPUT"
-          if [ "$BUILD_ALL" = "true" ]; then
-            for s in api frontend runner ct_monitor event_handler worker; do
-              echo "$s=true" >> "$GITHUB_OUTPUT"
-            done
-          else
-            echo "api=${{ steps.filter.outputs.api }}" >> "$GITHUB_OUTPUT"
-            echo "frontend=${{ steps.filter.outputs.frontend }}" >> "$GITHUB_OUTPUT"
-            echo "runner=${{ steps.filter.outputs.runner }}" >> "$GITHUB_OUTPUT"
-            echo "ct_monitor=${{ steps.filter.outputs.ct_monitor }}" >> "$GITHUB_OUTPUT"
-            echo "event_handler=${{ steps.filter.outputs.event_handler }}" >> "$GITHUB_OUTPUT"
-            echo "worker=${{ steps.filter.outputs.worker }}" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Paths filter summary
-        if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/')
-        run: |
-          echo "Per-service path matches (true = image will build on this push):"
-          echo "api=${{ steps.filter.outputs.api }} frontend=${{ steps.filter.outputs.frontend }} runner=${{ steps.filter.outputs.runner }}"
-          echo "ct_monitor=${{ steps.filter.outputs.ct_monitor }} event_handler=${{ steps.filter.outputs.event_handler }} worker=${{ steps.filter.outputs.worker }}"
+          for s in api frontend runner ct_monitor event_handler worker; do
+            echo "$s=true" >> "$GITHUB_OUTPUT"
+          done
+          echo "build_all=true" >> "$GITHUB_OUTPUT"
 
   build-api:
     needs: changes
