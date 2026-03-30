@@ -62,13 +62,13 @@ python scripts/deploy.py -e production d all
 
 ### GitHub Container Registry (CI)
 
-Workflow [`.github/workflows/docker-ghcr.yml`](.github/workflows/docker-ghcr.yml) pushes to `ghcr.io/<lowercase_github_owner>/reconhawx/<service>`. **Branch pushes** (`main` / `master`): only builds images under paths that changed per `dorny/paths-filter` (`src/api/**`, `src/frontend/**`, …). Editing only the workflow file does **not** auto-build all images; use **workflow_dispatch** (or a release tag) for a full build. **`v*` tags** and **workflow_dispatch**: always build every image. Worker image is built for **linux/amd64** only (single job, same tagging pattern as other services).
+Workflow [`.github/workflows/docker-ghcr.yml`](.github/workflows/docker-ghcr.yml) pushes to `ghcr.io/<lowercase_github_owner>/reconhawx/<service>`. Images are built on **`v*` tag pushes** (created by release-please) and **`workflow_dispatch`** only—branch pushes do not trigger builds. Both triggers build all 6 service images. Worker image is built for **linux/amd64** only (single job, same tagging pattern as other services).
 
 ### Versioning and releases
 
 The project uses a **single semver** for all services, managed by [release-please](https://github.com/googleapis/release-please).
 
-**Source of truth:** [`VERSION`](VERSION) (plain text, e.g. `0.1.0`). The same version is mirrored in [`src/frontend/package.json`](src/frontend/package.json) by release-please.
+**Source of truth:** [`version.txt`](version.txt) (plain text, e.g. `0.1.0`). The same version is mirrored in [`src/frontend/package.json`](src/frontend/package.json) by release-please.
 
 **Configuration:** [`release-please-config.json`](release-please-config.json) and [`.release-please-manifest.json`](.release-please-manifest.json). Workflow: [`.github/workflows/release-please.yml`](.github/workflows/release-please.yml).
 
