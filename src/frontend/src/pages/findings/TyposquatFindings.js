@@ -536,6 +536,62 @@ function TyposquatFindings() {
     setCurrentPage(1); // Reset to first page when filtering
   };
 
+  const STATUS_FILTER_OPTIONS = [
+    { value: 'new', label: 'New' },
+    { value: 'inprogress', label: 'In Progress' },
+    { value: 'resolved', label: 'Resolved' },
+    { value: 'dismissed', label: 'Dismissed' },
+  ];
+  const PHISHLABS_INCIDENT_FILTER_OPTIONS = [
+    { value: 'no_incident', label: 'No Incident' },
+    { value: 'monitoring', label: 'Monitoring' },
+    { value: 'other', label: 'Other' },
+  ];
+
+  const renderStatusFilterChecks = (idPrefix) => (
+    <div className="d-flex flex-wrap gap-3">
+      {STATUS_FILTER_OPTIONS.map(({ value, label }) => (
+        <Form.Check
+          key={value}
+          type="checkbox"
+          id={`${idPrefix}-status-${value}`}
+          label={label}
+          checked={(filters.status || []).includes(value)}
+          onChange={(e) => {
+            const cur = filters.status || [];
+            if (e.target.checked) {
+              handleFilterChange('status', [...cur, value]);
+            } else {
+              handleFilterChange('status', cur.filter((s) => s !== value));
+            }
+          }}
+        />
+      ))}
+    </div>
+  );
+
+  const renderPhishlabsIncidentFilterChecks = (idPrefix) => (
+    <div className="d-flex flex-wrap gap-3">
+      {PHISHLABS_INCIDENT_FILTER_OPTIONS.map(({ value, label }) => (
+        <Form.Check
+          key={value}
+          type="checkbox"
+          id={`${idPrefix}-phishlabs-${value}`}
+          label={label}
+          checked={(filters.phishlabs_incident_status || []).includes(value)}
+          onChange={(e) => {
+            const cur = filters.phishlabs_incident_status || [];
+            if (e.target.checked) {
+              handleFilterChange('phishlabs_incident_status', [...cur, value]);
+            } else {
+              handleFilterChange('phishlabs_incident_status', cur.filter((s) => s !== value));
+            }
+          }}
+        />
+      ))}
+    </div>
+  );
+
   // Handle sorting
   const handleSort = (field) => {
     if (sortField === field) {
@@ -1501,12 +1557,17 @@ function TyposquatFindings() {
         <Col>
           <Accordion>
             <Accordion.Item eventKey="0">
-              <Accordion.Header>🔍 Search & Filter Options</Accordion.Header>
-              <Accordion.Body>
-                {/* Row 1: [Search text box] [apex domain dropdown] [assigned to dropdown] */}
-                <Row>
+              <Accordion.Header>
+                <span className="d-flex align-items-center gap-2">
+                  <i className="bi bi-search" aria-hidden />
+                  Search &amp; Filter Options
+                </span>
+              </Accordion.Header>
+              <Accordion.Body className="pt-3">
+                <h6 className="text-secondary text-uppercase small fw-semibold mb-0">Search &amp; assignment</h6>
+                <Row className="g-3 mt-2">
                   <Col md={4}>
-                    <Form.Group className="mb-3">
+                    <Form.Group className="mb-0">
                       <Form.Label>Typo Domain</Form.Label>
                       <Form.Control
                         type="text"
@@ -1517,7 +1578,7 @@ function TyposquatFindings() {
                     </Form.Group>
                   </Col>
                   <Col md={4}>
-                    <Form.Group className="mb-3">
+                    <Form.Group className="mb-0">
                       <Form.Label>Apex Domain</Form.Label>
                       <Form.Select
                         value={filters.apex_domain}
@@ -1538,7 +1599,7 @@ function TyposquatFindings() {
                     </Form.Group>
                   </Col>
                   <Col md={4}>
-                    <Form.Group className="mb-3">
+                    <Form.Group className="mb-0">
                       <Form.Label>Assigned To</Form.Label>
                       <Form.Select
                         value={filters.assigned_to_username}
@@ -1554,10 +1615,11 @@ function TyposquatFindings() {
                   </Col>
                 </Row>
 
-                {/* Date ranges: created_at / updated_at */}
-                <Row>
+                <hr className="my-3" />
+                <h6 className="text-secondary text-uppercase small fw-semibold mb-0">Date range</h6>
+                <Row className="g-3 mt-2">
                   <Col md={6}>
-                    <Form.Group className="mb-3">
+                    <Form.Group className="mb-0">
                       <Form.Label>Created at</Form.Label>
                       <div className="d-flex flex-wrap align-items-center gap-2">
                         <Form.Control
@@ -1577,7 +1639,7 @@ function TyposquatFindings() {
                     </Form.Group>
                   </Col>
                   <Col md={6}>
-                    <Form.Group className="mb-3">
+                    <Form.Group className="mb-0">
                       <Form.Label>Updated at</Form.Label>
                       <div className="d-flex flex-wrap align-items-center gap-2">
                         <Form.Control
@@ -1598,10 +1660,11 @@ function TyposquatFindings() {
                   </Col>
                 </Row>
 
-                {/* Row 2: [ip address text box] [source dropdown] */}
-                <Row>
+                <hr className="my-3" />
+                <h6 className="text-secondary text-uppercase small fw-semibold mb-0">Network &amp; source</h6>
+                <Row className="g-3 mt-2">
                   <Col md={6}>
-                    <Form.Group className="mb-3">
+                    <Form.Group className="mb-0">
                       <Form.Label>IP Address</Form.Label>
                       <Form.Control
                         type="text"
@@ -1619,7 +1682,7 @@ function TyposquatFindings() {
                     </Form.Group>
                   </Col>
                   <Col md={6}>
-                    <Form.Group className="mb-3">
+                    <Form.Group className="mb-0">
                       <Form.Label>Source</Form.Label>
                       <Form.Select
                         value={filters.source}
@@ -1635,57 +1698,28 @@ function TyposquatFindings() {
                   </Col>
                 </Row>
 
-                {/* Row 3: [status m-select] [phishlabs incident m-select] */}
-                <Row>
+                <hr className="my-3" />
+                <h6 className="text-secondary text-uppercase small fw-semibold mb-0">Status &amp; PhishLabs</h6>
+                <Row className="g-3 mt-2">
                   <Col md={6}>
-                    <Form.Group className="mb-3">
-                      <Form.Label>Status (Multi-select)</Form.Label>
-                      <Form.Select
-                        multiple
-                        value={filters.status}
-                        onChange={(e) => {
-                          const selectedOptions = Array.from(e.target.selectedOptions, option => option.value);
-                          handleFilterChange('status', selectedOptions);
-                        }}
-                        style={{ height: '120px' }}
-                      >
-                        <option value="new">New</option>
-                        <option value="inprogress">In Progress</option>
-                        <option value="resolved">Resolved</option>
-                        <option value="dismissed">Dismissed</option>
-                      </Form.Select>
-                      <Form.Text className="text-muted">
-                        Hold Ctrl/Cmd to select multiple
-                      </Form.Text>
+                    <Form.Group className="mb-0">
+                      <Form.Label>Status</Form.Label>
+                      {renderStatusFilterChecks('accordion')}
                     </Form.Group>
                   </Col>
                   <Col md={6}>
-                    <Form.Group className="mb-3">
-                      <Form.Label>PhishLabs Incident (Multi-select)</Form.Label>
-                      <Form.Select
-                        multiple
-                        value={filters.phishlabs_incident_status}
-                        onChange={(e) => {
-                          const selectedOptions = Array.from(e.target.selectedOptions, option => option.value);
-                          handleFilterChange('phishlabs_incident_status', selectedOptions);
-                        }}
-                        style={{ height: '120px' }}
-                      >
-                        <option value="no_incident">🔘 No Incident</option>
-                        <option value="monitoring">✅ Monitoring</option>
-                        <option value="other">🔴 Other</option>
-                      </Form.Select>
-                      <Form.Text className="text-muted">
-                        Hold Ctrl/Cmd to select multiple
-                      </Form.Text>
+                    <Form.Group className="mb-0">
+                      <Form.Label>PhishLabs incident</Form.Label>
+                      {renderPhishlabsIncidentFilterChecks('accordion')}
                     </Form.Group>
                   </Col>
                 </Row>
 
-                {/* Row 4: [Country] [Registrar] [wildcard status] */}
-                <Row>
-                  <Col md={4}>
-                    <Form.Group className="mb-3">
+                <hr className="my-3" />
+                <h6 className="text-secondary text-uppercase small fw-semibold mb-0">Domain attributes</h6>
+                <Row className="g-3 mt-2">
+                  <Col lg={3} md={6}>
+                    <Form.Group className="mb-0">
                       <Form.Label>Country</Form.Label>
                       <Form.Select
                         value={filters.country}
@@ -1698,8 +1732,8 @@ function TyposquatFindings() {
                       </Form.Select>
                     </Form.Group>
                   </Col>
-                  <Col md={4}>
-                    <Form.Group className="mb-3">
+                  <Col lg={3} md={6}>
+                    <Form.Group className="mb-0">
                       <Form.Label>Registrar</Form.Label>
                       <Form.Select
                         value={filters.registrar}
@@ -1719,8 +1753,8 @@ function TyposquatFindings() {
                       />
                     </Form.Group>
                   </Col>
-                  <Col md={4}>
-                    <Form.Group className="mb-3">
+                  <Col lg={3} md={6}>
+                    <Form.Group className="mb-0">
                       <Form.Label>Wildcard Status</Form.Label>
                       <Form.Select
                         value={filters.is_wildcard}
@@ -1732,10 +1766,8 @@ function TyposquatFindings() {
                       </Form.Select>
                     </Form.Group>
                   </Col>
-                </Row>
-                <Row>
-                  <Col md={4}>
-                    <Form.Group className="mb-3">
+                  <Col lg={3} md={6}>
+                    <Form.Group className="mb-0">
                       <Form.Label>Parked Domain Status</Form.Label>
                       <Form.Select
                         value={filters.is_parked}
@@ -1748,9 +1780,12 @@ function TyposquatFindings() {
                     </Form.Group>
                   </Col>
                 </Row>
-                <Row>
-                  <Col md={4}>
-                    <Form.Group className="mb-3">
+
+                <hr className="my-3" />
+                <h6 className="text-secondary text-uppercase small fw-semibold mb-0">Similarity &amp; auto-resolve</h6>
+                <Row className="g-3 mt-2">
+                  <Col lg={4} md={6}>
+                    <Form.Group className="mb-0">
                       <Form.Label>Protected Domain Similarity</Form.Label>
                       <Form.Select
                         value={filters.similarity_protected_domain}
@@ -1771,8 +1806,8 @@ function TyposquatFindings() {
                       )}
                     </Form.Group>
                   </Col>
-                  <Col md={3}>
-                    <Form.Group className="mb-3">
+                  <Col lg={4} md={6}>
+                    <Form.Group className="mb-0">
                       <Form.Label>Min Similarity %</Form.Label>
                       <Form.Control
                         type="text"
@@ -1791,8 +1826,8 @@ function TyposquatFindings() {
                       <Form.Text className="text-muted">0-100</Form.Text>
                     </Form.Group>
                   </Col>
-                  <Col md={3}>
-                    <Form.Group className="mb-3">
+                  <Col lg={4} md={12}>
+                    <Form.Group className="mb-0">
                       <Form.Label>Would Auto-Resolve</Form.Label>
                       <Form.Select
                         value={filters.auto_resolve}
@@ -1805,7 +1840,7 @@ function TyposquatFindings() {
                     </Form.Group>
                   </Col>
                 </Row>
-                <Row>
+                <Row className="g-3 mt-3">
                 <Col md={12} className="d-flex justify-content-end">
                     <Button variant="outline-secondary" onClick={() => {
                       setTypoDomainInput('');
@@ -1929,18 +1964,9 @@ function TyposquatFindings() {
                         <ColumnFilterPopover id="filter-status" ariaLabel="Filter by status" isActive={(filters.status||[]).length>0}>
                           <div>
                             <Form.Label className="mb-1">Status</Form.Label>
-                            <Form.Select multiple value={filters.status} onChange={(e) => {
-                              const selectedOptions = Array.from(e.target.selectedOptions, option => option.value);
-                              handleFilterChange('status', selectedOptions);
-                            }} style={{ height: '120px' }}>
-                              <option value="new">New</option>
-                              <option value="inprogress">In Progress</option>
-                              <option value="resolved">Resolved</option>
-                              <option value="dismissed">Dismissed</option>
-                            </Form.Select>
+                            {renderStatusFilterChecks('col-filter')}
                             <div className="d-flex justify-content-end gap-2 mt-2">
                               <Button size="sm" variant="secondary" onClick={() => handleFilterChange('status', [])}>Clear</Button>
-                              <Button size="sm" variant="primary" onClick={() => {}}>Apply</Button>
                             </div>
                           </div>
                         </ColumnFilterPopover>
