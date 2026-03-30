@@ -208,6 +208,10 @@ class TyposquatSearchRequest(BaseModel):
     assigned_to_username: Optional[str] = Field(None, description="Filter by assigned user username")
     apex_domain: Optional[str] = Field(None, description="Filter by apex domain name")
     apex_only: Optional[bool] = Field(None, description="Show only apex domains (hide subdomains)")
+    created_at_from: Optional[datetime] = Field(None, description="Inclusive lower bound on created_at")
+    created_at_to: Optional[datetime] = Field(None, description="Inclusive upper bound on created_at")
+    updated_at_from: Optional[datetime] = Field(None, description="Inclusive lower bound on updated_at")
+    updated_at_to: Optional[datetime] = Field(None, description="Inclusive upper bound on updated_at")
     program: Optional[Union[List[str], str]] = Field(None, description="Restrict to program(s) within user's access scope")
     sort_by: Optional[str] = Field("updated_at")
     sort_dir: Optional[str] = Field("desc")
@@ -584,6 +588,10 @@ async def search_typosquat_typed(request: TyposquatSearchRequest, current_user: 
             assigned_to_username=request.assigned_to_username,
             apex_domain=request.apex_domain,
             apex_only=request.apex_only,
+            created_at_from=request.created_at_from,
+            created_at_to=request.created_at_to,
+            updated_at_from=request.updated_at_from,
+            updated_at_to=request.updated_at_to,
             programs=programs,
             sort_by=request.sort_by or "updated_at",
             sort_dir=request.sort_dir or "desc",
