@@ -64,6 +64,24 @@ python scripts/deploy.py -e production d all
 
 Workflow [`.github/workflows/docker-ghcr.yml`](.github/workflows/docker-ghcr.yml) pushes to `ghcr.io/<lowercase_github_owner>/reconhawx/<service>`. **Branch pushes** (`main` / `master`): only builds images under paths that changed per `dorny/paths-filter` (`src/api/**`, `src/frontend/**`, …). Editing only the workflow file does **not** auto-build all images; use **workflow_dispatch** (or a release tag) for a full build. **`v*` tags** and **workflow_dispatch**: always build every image. Worker image is built for **linux/amd64** only (single job, same tagging pattern as other services).
 
+### Versioning and releases
+
+The project uses a **single semver** for all services, managed by [release-please](https://github.com/googleapis/release-please).
+
+**Source of truth:** [`VERSION`](VERSION) (plain text, e.g. `0.1.0`). The same version is mirrored in [`src/frontend/package.json`](src/frontend/package.json) by release-please.
+
+**Configuration:** [`release-please-config.json`](release-please-config.json) and [`.release-please-manifest.json`](.release-please-manifest.json). Workflow: [`.github/workflows/release-please.yml`](.github/workflows/release-please.yml).
+
+**Release flow:**
+
+1. Develop on feature branches, merge to `develop` via PR.
+2. Merge `develop` into `main` via PR when ready to release.
+3. release-please auto-creates a Release PR on `main` with a `CHANGELOG.md` update and version bump.
+4. Merge the Release PR to publish: release-please tags `v<version>` and creates a GitHub Release.
+5. The `v*` tag triggers `docker-ghcr.yml`, which builds all 6 service images tagged with the semver.
+
+**Conventional commits:** Commit messages on `main` must follow the [Conventional Commits](https://www.conventionalcommits.org/) format so release-please can determine the version bump. Key prefixes: `feat:` (minor bump), `fix:` (patch bump), `feat!:` / `BREAKING CHANGE:` footer (minor pre-1.0, major post-1.0). Prefixes like `chore:`, `docs:`, `ci:`, `refactor:` do not trigger a version bump. Scopes are optional (e.g. `feat(api): ...`). Feature-branch commits can be freeform if you squash-merge into `main`.
+
 ### Frontend local dev
 
 See [`src/frontend/README.md`](src/frontend/README.md).
@@ -105,6 +123,7 @@ When a change updates **how a component works**, **how to run or operate it**, o
 | Deploy, overlays, Kueue, cluster layout | [`k8s-*.mdc`](.cursor/rules/), [`scripts/README.md`](scripts/README.md), [`kubernetes/README.md`](kubernetes/README.md), this file |
 | [`scripts/`](scripts/) (deploy, migrate, init DB, admin user, …) | [`scripts/README.md`](scripts/README.md) and this file if behavior or flags change |
 | CI: Docker builds to GHCR | This file (**GitHub Container Registry**), [`.github/workflows/docker-ghcr.yml`](.github/workflows/docker-ghcr.yml) |
+| Versioning / release-please config | This file (**Versioning and releases**), [`release-please-config.json`](release-please-config.json), [`.release-please-manifest.json`](.release-please-manifest.json) |
 | Domain features (e.g. typosquat, broken links, vendor API gather) | Respective feature `.mdc` under `.cursor/rules/` |
 
 **Always-on or cross-cutting rules** ([`project-hub.mdc`](.cursor/rules/project-hub.mdc), [`devenv-shell.mdc`](.cursor/rules/devenv-shell.mdc), [`dynamic-wordlists.mdc`](.cursor/rules/dynamic-wordlists.mdc)): change when the hub instructions, devenv CLI conventions, or dynamic-wordlist behavior warrant it.

@@ -138,7 +138,7 @@ Or edit the files under `base/kueue/` directly if you are not using overlays.
 
 ### Images
 
-Base manifests use `ghcr.io/h3xitsec/reconhawx/<service>:latest`. To use a different registry or tag, create a kustomize overlay:
+Base manifests use `ghcr.io/reconhawx/reconhawx/<service>:latest`. To use a different registry or tag, create a kustomize overlay:
 
 ```yaml
 # my-overlay/kustomization.yaml
@@ -147,9 +147,9 @@ kind: Kustomization
 resources:
   - ../kubernetes/base
 images:
-  - name: ghcr.io/h3xitsec/reconhawx/api
+  - name: ghcr.io/reconhawx/reconhawx/api
     newTag: v1.0.0
-  - name: ghcr.io/h3xitsec/reconhawx/frontend
+  - name: ghcr.io/reconhawx/reconhawx/frontend
     newTag: v1.0.0
 ```
 

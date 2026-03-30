@@ -240,11 +240,9 @@ async def initialize_internal_service_token():
             )
             try:
                 v1.create_namespaced_secret(namespace, secret_body)
-                logger.info("Created Kubernetes Secret %s for internal token", secret_name)
             except client.exceptions.ApiException as e:
                 if e.status == 409:
                     v1.patch_namespaced_secret(secret_name, namespace, secret_body)
-                    logger.info("Patched Kubernetes Secret %s with new internal token", secret_name)
                 else:
                     raise
             _export_env_token(token)
