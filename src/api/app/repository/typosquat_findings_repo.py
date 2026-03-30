@@ -1224,6 +1224,10 @@ class TyposquatFindingsRepository(ProgramAccessMixin):
         max_threatstream_score: Optional[int] = None,
         similarity_protected_domain: Optional[str] = None,
         min_similarity_percent: Optional[float] = None,
+        created_at_from: Optional[datetime] = None,
+        created_at_to: Optional[datetime] = None,
+        updated_at_from: Optional[datetime] = None,
+        updated_at_to: Optional[datetime] = None,
         programs: Optional[List[str]] = None,
         sort_by: str = "updated_at",
         sort_dir: str = "desc",
@@ -1465,6 +1469,15 @@ class TyposquatFindingsRepository(ProgramAccessMixin):
                         TyposquatDomain.typo_domain == TyposquatApexDomain.apex_domain
                     )
 
+                if created_at_from is not None:
+                    base_query = base_query.filter(TyposquatDomain.created_at >= created_at_from)
+                if created_at_to is not None:
+                    base_query = base_query.filter(TyposquatDomain.created_at <= created_at_to)
+                if updated_at_from is not None:
+                    base_query = base_query.filter(TyposquatDomain.updated_at >= updated_at_from)
+                if updated_at_to is not None:
+                    base_query = base_query.filter(TyposquatDomain.updated_at <= updated_at_to)
+
                 # Protected domain similarity filter
                 # Filter by similarity to a specific protected domain with optional minimum percentage
                 if similarity_protected_domain or min_similarity_percent is not None:
@@ -1692,6 +1705,15 @@ class TyposquatFindingsRepository(ProgramAccessMixin):
                     count_query = count_query.filter(
                         TyposquatDomain.typo_domain == TyposquatApexDomain.apex_domain
                     )
+
+                if created_at_from is not None:
+                    count_query = count_query.filter(TyposquatDomain.created_at >= created_at_from)
+                if created_at_to is not None:
+                    count_query = count_query.filter(TyposquatDomain.created_at <= created_at_to)
+                if updated_at_from is not None:
+                    count_query = count_query.filter(TyposquatDomain.updated_at >= updated_at_from)
+                if updated_at_to is not None:
+                    count_query = count_query.filter(TyposquatDomain.updated_at <= updated_at_to)
 
                 # Protected domain similarity filter for count query
                 if similarity_protected_domain or min_similarity_percent is not None:
