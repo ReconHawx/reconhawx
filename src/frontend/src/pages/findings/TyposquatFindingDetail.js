@@ -131,7 +131,7 @@ function TyposquatFindingDetail() {
 
   // PhishLabs incident creation state
   const [showPhishlabsModal, setShowPhishlabsModal] = useState(false);
-  const [phishlabsAction, setPhishlabsAction] = useState(''); // 'fetch' or 'create'
+  const [phishlabsAction, setPhishlabsAction] = useState(''); // 'fetch' | 'create' | 'takedown'
   const [selectedCatcode, setSelectedCatcode] = useState('');
   const [phishlabsComment, setPhishlabsComment] = useState('Typosquat related to our brand. Please monitor in case of new evidences, please proceed to takedown. Regards');
   const [creatingPhishlabs, setCreatingPhishlabs] = useState(false);
@@ -495,6 +495,7 @@ function TyposquatFindingDetail() {
       case 'status_change': return 'Status Changed';
       case 'assignment_change': return 'Assignment Changed';
       case 'phishlabs_incident_created': return 'PhishLabs Incident Created';
+      case 'phishlabs_takedown_started': return 'PhishLabs Takedown Started';
       case 'phishlabs_batch_job_initiated': return 'PhishLabs Batch Job Initiated';
       case 'google_safe_browsing_reported': return 'Reported to Google Safe Browsing';
       default: return actionType.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
@@ -765,19 +766,12 @@ function TyposquatFindingDetail() {
     handleStatusUpdate(status, false);
   };
 
-  // Handle PhishLabs info fetch
-  const handleFetchPhishlabs = () => {
-    setPhishlabsAction('fetch');
-    setShowPhishlabsModal(true);
-  };
-
-  // Handle PhishLabs incident creation
-  const handleCreatePhishlabsIncident = () => {
-    setPhishlabsAction('create');
-    // Set default comment for incident creation
-    setPhishlabsComment('Typosquat related to our brand. Please monitor in case of new evidences, please proceed to takedown. Regards');
-    // Set Google Safe Browsing to checked by default
-    setReportToGsb(true);
+  const openPhishlabsModal = (initialAction = 'fetch') => {
+    setPhishlabsAction(initialAction);
+    if (initialAction === 'create') {
+      setPhishlabsComment('Typosquat related to our brand. Please monitor in case of new evidences, please proceed to takedown. Regards');
+      setReportToGsb(true);
+    }
     setShowPhishlabsModal(true);
   };
 
@@ -786,6 +780,8 @@ function TyposquatFindingDetail() {
       await handleExecutePhishlabsFetch();
     } else if (phishlabsAction === 'create') {
       await handleExecutePhishlabsIncident();
+    } else if (phishlabsAction === 'takedown') {
+      await handleExecutePhishlabsTakedown();
     }
   };
 
@@ -886,6 +882,59 @@ function TyposquatFindingDetail() {
         // Keep the modal open but change the state to indicate polling
         setCreatingPhishlabs(false);
       }
+    }
+  };
+
+  const handleExecutePhishlabsTakedown = async () => {
+    if (!finding?.typo_domain || !finding?.program_name) {
+      setPhishMessage({ text: 'Finding is missing domain or program', type: 'danger' });
+      return;
+    }
+    try {
+      setCreatingPhishlabs(true);
+      setPhishMessage({ text: '', type: '' });
+      const response = await api.findings.typosquat.startPhishlabsTakedown(
+        finding.typo_domain,
+        finding.program_name
+      );
+
+      if (response.status === 'success') {
+        const params = new URLSearchParams(location.search);
+        const idParam = params.get('id');
+        let updatedFinding;
+        if (idParam) {
+          updatedFinding = await api.findings.typosquat.getByIdUnified(idParam);
+        } else if (id) {
+          updatedFinding = await api.findings.typosquat.getById(id);
+        }
+        if (updatedFinding) {
+          setFinding(updatedFinding);
+        }
+        setPhishMessage({
+          text:
+            response.message ||
+            `PhishLabs takedown requested${response.incident_id ? ` (incident ${response.incident_id})` : ''}`,
+          type: 'success'
+        });
+        setTimeout(() => setPhishMessage({ text: '', type: '' }), 10000);
+      } else {
+        setPhishMessage({
+          text: response.message || 'PhishLabs takedown failed',
+          type: 'danger'
+        });
+      }
+    } catch (err) {
+      console.error('Error requesting PhishLabs takedown:', err);
+      setPhishMessage({
+        text: err.response?.data?.detail || err.message || 'Error requesting PhishLabs takedown.',
+        type: 'danger'
+      });
+    } finally {
+      setCreatingPhishlabs(false);
+      setShowPhishlabsModal(false);
+      setSelectedCatcode('');
+      setPhishlabsComment('');
+      setReportToGsb(false);
     }
   };
 
@@ -1160,35 +1209,18 @@ function TyposquatFindingDetail() {
         <div className="d-flex align-items-center">
                 <Button
                   variant="outline-info"
-                  onClick={handleFetchPhishlabs}
+                  onClick={() => openPhishlabsModal('fetch')}
                   disabled={creatingPhishlabs}
                   className="me-2"
                 >
                   {creatingPhishlabs ? (
                     <>
                       <Spinner animation="border" size="sm" className="me-2" />
-                      Fetching...
+                      Working...
                     </>
                   ) : (
                     <>
-                      <i className="bi bi-cloud-download"></i> Fetch PhishLabs Incident
-                    </>
-                  )}
-                </Button>
-                <Button
-                  variant="outline-success"
-                  onClick={handleCreatePhishlabsIncident}
-                  disabled={creatingPhishlabs}
-                  className="me-2"
-                >
-                  {creatingPhishlabs ? (
-                    <>
-                      <Spinner animation="border" size="sm" className="me-2" />
-                      Creating...
-                    </>
-                  ) : (
-                    <>
-                      <i className="bi bi-plus-circle"></i> Create Phishlabs Incident
+                      <i className="bi bi-shield-lock"></i> PhishLabs actions
                     </>
                   )}
                 </Button>
@@ -3483,7 +3515,9 @@ function TyposquatFindingDetail() {
       >
         <Modal.Header closeButton>
           <Modal.Title>
-            {phishlabsAction === 'fetch' ? 'Fetch PhishLabs Data' : 'Create PhishLabs Incident'}
+            {phishlabsAction === 'fetch' && 'Fetch PhishLabs Data'}
+            {phishlabsAction === 'create' && 'Create PhishLabs Incident'}
+            {phishlabsAction === 'takedown' && 'Start PhishLabs Takedown'}
           </Modal.Title>
         </Modal.Header>
         <Modal.Body>
@@ -3519,12 +3553,49 @@ function TyposquatFindingDetail() {
           )}
 
           {!pollingJobId && (
-            <p>
-              {phishlabsAction === 'fetch'
-                ? `Fetch PhishLabs data for ${finding.typo_domain}?`
-                : `Create PhishLabs incident for ${finding.typo_domain}?`
-              }
-            </p>
+            <>
+              <Form.Group className="mb-3">
+                <Form.Label>Action</Form.Label>
+                <div className="d-flex flex-column gap-1">
+                  <Form.Check
+                    type="radio"
+                    id="detail-phishlabs-fetch"
+                    name="detailPhishlabsAction"
+                    label="Fetch PhishLabs data (background job)"
+                    checked={phishlabsAction === 'fetch'}
+                    onChange={() => setPhishlabsAction('fetch')}
+                  />
+                  <Form.Check
+                    type="radio"
+                    id="detail-phishlabs-create"
+                    name="detailPhishlabsAction"
+                    label="Create PhishLabs incident (background job)"
+                    checked={phishlabsAction === 'create'}
+                    onChange={() => {
+                      setPhishlabsAction('create');
+                      setPhishlabsComment('Typosquat related to our brand. Please monitor in case of new evidences, please proceed to takedown. Regards');
+                      setReportToGsb(true);
+                    }}
+                  />
+                  <Form.Check
+                    type="radio"
+                    id="detail-phishlabs-takedown"
+                    name="detailPhishlabsAction"
+                    label="Start takedown (immediate — requires PhishLabs incident ID on this finding)"
+                    checked={phishlabsAction === 'takedown'}
+                    onChange={() => setPhishlabsAction('takedown')}
+                  />
+                </div>
+              </Form.Group>
+              <p className="text-muted small">
+                {phishlabsAction === 'fetch' &&
+                  `Fetch existing PhishLabs incident data for ${finding.typo_domain}.`}
+                {phishlabsAction === 'create' &&
+                  `Create a PhishLabs incident for ${finding.typo_domain}.`}
+                {phishlabsAction === 'takedown' &&
+                  `Send start-takedown (apply action) to PhishLabs for incident ${phishlabsIncidentId || '(missing — use Fetch or Create first)'}.`}
+              </p>
+            </>
           )}
 
           {phishlabsAction === 'create' && !pollingJobId && (
@@ -3620,7 +3691,11 @@ function TyposquatFindingDetail() {
               <Button
                 variant="primary"
                 onClick={handleConfirmPhishlabsAction}
-                disabled={creatingPhishlabs || (phishlabsAction === 'create' && !selectedCatcode)}
+                disabled={
+                  creatingPhishlabs ||
+                  (phishlabsAction === 'create' && !selectedCatcode) ||
+                  (phishlabsAction === 'takedown' && !phishlabsIncidentId)
+                }
               >
                 {creatingPhishlabs ? (
                   <>
@@ -3629,8 +3704,18 @@ function TyposquatFindingDetail() {
                   </>
                 ) : (
                   <>
-                    <i className={`bi bi-${phishlabsAction === 'fetch' ? 'cloud-download' : 'plus-circle'} me-2`}></i>
-                    {phishlabsAction === 'fetch' ? 'Fetch Data' : 'Create Incident'}
+                    <i
+                      className={`bi me-2 ${
+                        phishlabsAction === 'fetch'
+                          ? 'bi-cloud-download'
+                          : phishlabsAction === 'takedown'
+                            ? 'bi-shield-fill-check'
+                            : 'bi-plus-circle'
+                      }`}
+                    ></i>
+                    {phishlabsAction === 'fetch' && 'Fetch Data'}
+                    {phishlabsAction === 'create' && 'Create Incident'}
+                    {phishlabsAction === 'takedown' && 'Start Takedown'}
                   </>
                 )}
               </Button>

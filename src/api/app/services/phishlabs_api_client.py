@@ -1,11 +1,12 @@
 """
 PhishLabs feed API client.
 
-HTTP integration with https://feed.phishlabs.com (createincident, incident.get).
+HTTP integration with https://feed.phishlabs.com (createincident, incident.get, applyaction).
 """
 
 import logging
-from typing import Any, Dict, Literal, Optional
+from typing import Any, Dict, Literal, Optional, Union
+from urllib.parse import quote
 
 import aiohttp
 from fastapi import HTTPException
@@ -13,6 +14,9 @@ from fastapi import HTTPException
 logger = logging.getLogger(__name__)
 
 PhishLabsAction = Literal["check", "create"]
+
+# PhishLabs Feed API: Apply Action (Feed_ApplyAction) — actionid for "start takedown"
+PHISHLABS_ACTION_START_TAKEDOWN = 3
 
 
 class PhishLabsAPIClient:
@@ -166,6 +170,83 @@ class PhishLabsAPIClient:
             "action": action,
             "catcode": catcode,
             "flags": flags,
+        }
+
+    async def apply_action(
+        self,
+        api_key: str,
+        incident_id: Union[str, int],
+        action_id: int = PHISHLABS_ACTION_START_TAKEDOWN,
+    ) -> Dict[str, Any]:
+        """
+        Call PhishLabs PUT applyaction (Feed_ApplyAction).
+
+        Query parameters match incident.get style: custid, incidentid, actionid.
+        """
+        await self.initialize()
+        assert self.session is not None
+
+        iid = str(incident_id).strip()
+        if not iid:
+            raise HTTPException(status_code=400, detail="incident_id is required for applyaction")
+
+        apply_url = (
+            f"{self.BASE_URL}/applyaction"
+            f"?custid={quote(api_key, safe='')}"
+            f"&incidentid={quote(iid, safe='')}"
+            f"&actionid={int(action_id)}"
+        )
+        request_timeout = aiohttp.ClientTimeout(total=30)
+        async with self.session.put(apply_url, timeout=request_timeout) as resp:
+            if resp.status != 200:
+                body_text = await resp.text()
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"PhishLabs applyaction error {resp.status}: {body_text[:1000]}",
+                )
+            data = await resp.json(content_type=None)
+
+        if data is None:
+            raise HTTPException(status_code=502, detail="Empty response from PhishLabs applyaction")
+        err = data.get("ErrorMessage")
+        if err:
+            raise HTTPException(status_code=400, detail=f"PhishLabs error: {err}")
+        return data
+
+    async def get_incident(self, api_key: str, incident_id: Union[str, int]) -> Dict[str, Any]:
+        """GET incident.get for a given incident id."""
+        await self.initialize()
+        assert self.session is not None
+        iid = str(incident_id).strip()
+        incident_get_url = (
+            f"{self.BASE_URL}/incident.get"
+            f"?custid={quote(api_key, safe='')}"
+            f"&incidentid={quote(iid, safe='')}"
+        )
+        request_timeout = aiohttp.ClientTimeout(total=30)
+        async with self.session.get(incident_get_url, timeout=request_timeout) as resp:
+            if resp.status != 200:
+                body_text = await resp.text()
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"PhishLabs incident.get error {resp.status}: {body_text[:1000]}",
+                )
+            return await resp.json(content_type=None)
+
+    async def apply_action_and_refresh(
+        self,
+        api_key: str,
+        incident_id: Union[str, int],
+        action_id: int = PHISHLABS_ACTION_START_TAKEDOWN,
+    ) -> Dict[str, Any]:
+        """PUT applyaction then GET incident.get to return refreshed incident payload."""
+        apply_response = await self.apply_action(api_key, incident_id, action_id=action_id)
+        iid = str(incident_id).strip()
+        incident_response = await self.get_incident(api_key, iid)
+        return {
+            "applyaction_response": apply_response,
+            "incident_response": incident_response,
+            "incident_id": iid,
         }
 
 
