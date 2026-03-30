@@ -1,0 +1,15 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+- postgresql-deployment.yaml
+- postgresql-service.yaml
+- postgresql-pvc.yaml
+
+configMapGenerator:
+- name: postgresql-init-schema
+  files:
+  - schema.sql
+  - zz-init-admin.sh
+  options:
+    disableNameSuffixHash: true

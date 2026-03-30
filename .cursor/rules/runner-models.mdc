@@ -1,0 +1,446 @@
+---
+globs: ["src/runner/app/models/*.py"]
+---
+
+# Runner Data Models
+
+## Overview
+
+The runner uses Pydantic models for data validation and serialization across three categories:
+- **Asset Models**: Discovered infrastructure (domains, IPs, URLs, etc.)
+- **Finding Models**: Security findings (nuclei, typosquat, etc.)
+- **Workflow Models**: Workflow/task definitions
+
+## Asset Models (`models/assets.py`)
+
+### Domain
+
+```python
+class Domain(BaseModel):
+    name: str                          # e.g., "sub.example.com"
+    apex_domain: Optional[str] = None  # e.g., "example.com"
+    ip: Optional[List[str]] = []       # Resolved IP addresses
+    cname_record: Optional[str] = None # CNAME target
+    is_wildcard: Optional[bool] = None
+    wildcard_type: Optional[List[str]] = None
+    program_name: Optional[str] = None
+    notes: Optional[str] = None
+    created_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
+    updated_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
+```
+
+**Usage in tasks:**
+```python
+from models.assets import Domain
+
+domain = Domain(
+    name="sub.example.com".lower(),  # Always lowercase
+    ip=["192.168.1.1", "10.0.0.1"],
+    cname_record="alias.example.com"
+)
+```
+
+### IP
+
+```python
+class Ip(BaseModel):
+    ip: str                              # e.g., "192.168.1.1"
+    ptr: Optional[str] = None            # Reverse DNS
+    service_provider: Optional[str] = None
+    program_name: Optional[str] = None
+    notes: Optional[str] = None
+    created_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
+    updated_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
+    
+    def __hash__(self):
+        return hash(self.ip)  # Hash based on IP only for set deduplication
+    
+    def __eq__(self, other):
+        return isinstance(other, Ip) and self.ip == other.ip
+```
+
+**Deduplication pattern:**
+```python
+ips = set()  # Use set for automatic deduplication
+for addr in resolved_ips:
+    ips.add(Ip(ip=addr))
+return {AssetType.IP: list(ips)}
+```
+
+### URL
+
+```python
+class Url(BaseModel):
+    url: str                               # Full URL
+    hostname: Optional[str] = None         # e.g., "example.com"
+    ips: Optional[List[str]] = []
+    port: Optional[int] = None
+    path: Optional[str] = None
+    scheme: Optional[str] = None           # "http" or "https"
+    technologies: Optional[List[str]] = [] # Detected technologies
+    response_time: Optional[int] = None    # Response time in ms
+    lines: Optional[int] = None
+    title: Optional[str] = None
+    words: Optional[int] = None
+    method: Optional[str] = None
+    http_status_code: Optional[int] = None
+    content_type: Optional[str] = None
+    content_length: Optional[int] = None
+    chain_status_codes: Optional[List[int]] = None
+    final_url: Optional[str] = None
+    body_preview: Optional[str] = None
+    resp_body_hash: Optional[str] = None
+    favicon_hash: Optional[str] = None
+    favicon_url: Optional[str] = None
+    redirect_chain: Optional[List[Dict]] = None
+    certificate_serial: Optional[str] = None
+    extracted_links: Optional[List[str]] = None
+    notes: Optional[str] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+```
+
+### Service
+
+```python
+class Service(BaseModel):
+    ip: str                        # IP address
+    port: int                      # Port number
+    protocol: str = ""             # "tcp" or "udp"
+    service_name: str = ""         # e.g., "http", "ssh"
+    banner: Optional[str] = None   # Service banner
+    program_name: Optional[str] = None
+    notes: Optional[str] = None
+    created_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
+    updated_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
+```
+
+### Certificate
+
+```python
+class Certificate(BaseModel):
+    subject_dn: str
+    subject_cn: str
+    subject_alternative_names: Optional[List[str]] = None
+    valid_from: str
+    valid_until: str
+    issuer_dn: str
+    issuer_cn: str
+    issuer_organization: Optional[List[str]] = None
+    serial_number: str
+    fingerprint_hash: str
+    notes: Optional[str] = None
+    created_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
+    updated_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
+```
+
+## Finding Models (`models/findings.py`)
+
+### NucleiFinding
+
+```python
+class NucleiFinding(BaseModel):
+    id: Optional[str] = None
+    url: Optional[str] = None
+    template_id: str               # e.g., "cve-2021-12345"
+    template_url: Optional[str] = None
+    template_path: Optional[str] = None
+    name: str                      # Finding name
+    severity: str                  # "info", "low", "medium", "high", "critical"
+    type: str                      # e.g., "http", "tcp"
+    tags: Optional[List[str]] = []
+    description: Optional[str] = None
+    matched_at: Optional[str] = None
+    matcher_name: Optional[str] = None
+    ip: Optional[str] = None
+    port: Optional[int] = None
+    matched_line: Optional[str] = None
+    program_name: Optional[str] = None
+    hostname: Optional[str] = None
+    scheme: Optional[str] = None
+    protocol: Optional[str] = None
+    extracted_results: Optional[List[str]] = []
+    info: Optional[dict] = {}
+    notes: Optional[str] = None
+    created_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
+    updated_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
+```
+
+### TyposquatDomain
+
+```python
+class TyposquatDomain(BaseModel):
+    original_domain: Optional[str] = None
+    typo_domain: str                    # The typosquat domain
+    fuzzers: Optional[List[str]] = []   # e.g., ["insertion", "substitution"]
+    timestamp: Optional[datetime] = Field(default_factory=datetime.utcnow)
+    notes: Optional[str] = None
+    program_name: Optional[str] = None
+    fix_timestamp: Optional[datetime] = None
+    
+    # DNS data
+    domain_registered: Optional[bool] = None
+    dns_a_records: Optional[List[str]] = None
+    dns_mx_records: Optional[List[str]] = None
+    is_wildcard: Optional[bool] = None
+    wildcard_types: Optional[List[str]] = None
+    
+    # WHOIS data
+    whois_registrar: Optional[str] = None
+    whois_creation_date: Optional[str] = None
+    whois_expiration_date: Optional[str] = None
+    whois_registrant_name: Optional[str] = None
+    whois_registrant_country: Optional[str] = None
+    whois_admin_email: Optional[str] = None
+    
+    # GeoIP data
+    geoip_country: Optional[str] = None
+    geoip_city: Optional[str] = None
+    geoip_organization: Optional[str] = None
+    
+    # Risk analysis
+    risk_analysis_total_score: Optional[int] = None
+    risk_analysis_risk_level: Optional[str] = None
+    risk_analysis_category_scores: Optional[Dict] = None
+    risk_analysis_risk_factors: Optional[Dict] = None
+    
+    # External integrations
+    phishlabs_data: Optional[Dict] = None
+    threatstream_data: Optional[Dict] = None
+    
+    # Status
+    status: Optional[str] = None
+    assigned_to: Optional[str] = None
+    
+    def to_dict(self):
+        """Exclude None values to prevent overwriting existing data"""
+        return self.model_dump(by_alias=True, exclude_none=True)
+```
+
+### TyposquatURL
+
+```python
+class TyposquatURL(BaseModel):
+    id: Optional[str] = None
+    url: str
+    original_domain: Optional[str] = None
+    typo_domain: str = Field(alias="typosquat_domain")
+    hostname: Optional[str] = None
+    port: Optional[int] = None
+    scheme: Optional[str] = None
+    path: Optional[str] = None
+    http_status_code: Optional[int] = None
+    content_length: Optional[int] = None
+    line_count: Optional[int] = None
+    word_count: Optional[int] = None
+    content_type: Optional[str] = None
+    title: Optional[str] = None
+    technologies: Optional[List[str]] = []
+    final_url: Optional[str] = None
+    screenshot_url: Optional[str] = None
+    discovered_via: Optional[str] = None  # "fuzzing", "http_test", "manual"
+    fuzzer_wordlist: Optional[str] = None
+    risk_score: Optional[int] = None
+    risk_factors: Optional[Dict] = None
+    similarity_score: Optional[float] = None
+    program_name: Optional[str] = None
+    notes: Optional[str] = None
+    status: Optional[str] = None
+    assigned_to: Optional[str] = None
+    timestamp: Optional[datetime] = Field(default_factory=datetime.utcnow)
+    created_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
+    updated_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
+```
+
+### WPScanFinding
+
+```python
+class WPScanFinding(BaseModel):
+    id: Optional[str] = None
+    url: str
+    item_name: str               # Plugin/theme name or "WordPress"
+    item_type: str               # "wordpress", "plugin", "theme"
+    vulnerability_type: Optional[str] = None
+    severity: Optional[str] = None
+    title: Optional[str] = None
+    description: Optional[str] = None
+    fixed_in: Optional[str] = None
+    references: Optional[List[str]] = []
+    cve_ids: Optional[List[str]] = []
+    enumeration_data: Optional[Dict] = None  # Plugins, themes, users found
+    hostname: Optional[str] = None
+    port: Optional[int] = None
+    scheme: Optional[str] = None
+    program_name: Optional[str] = None
+    notes: Optional[str] = None
+    status: Optional[str] = None
+    assigned_to: Optional[str] = None
+    created_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
+    updated_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
+```
+
+## Workflow Models (`models/workflow.py`)
+
+### TaskDefinition
+
+```python
+class TaskDefinition(BaseModel):
+    name: str                              # Step-unique name
+    task_type: Optional[str] = None        # Task registry name (defaults to name)
+    input_mapping: Optional[Dict[str, str]] = None  # Input sources
+    params: Optional[Dict[str, Any]] = None
+    force: Optional[bool] = False          # Skip deduplication check
+    output_mode: Optional[str] = None      # "assets" or "typosquat_findings"
+    use_proxy: Optional[bool] = None       # Enable API Gateway proxy
+    
+    # Legacy fields
+    input: Optional[List[str]] = None
+    input_from: Optional[List[str]] = None
+    input_limit: Optional[int] = None
+    input_filter: Optional[str] = None
+    internal: Optional[bool] = False       # Don't send assets to API
+```
+
+### InputDefinition
+
+```python
+class InputDefinition(BaseModel):
+    type: str                    # "program_asset", "program_finding", "direct"
+    asset_type: Optional[str] = None      # For program_asset
+    finding_type: Optional[str] = None    # For program_finding
+    value_type: Optional[str] = None      # For direct input
+    values: Optional[List[Any]] = None    # For direct input
+    filter: Optional[str] = None          # Jinja2 filter
+    filter_type: Optional[str] = None     # e.g., "resolved", "unresolved"
+    limit: Optional[int] = None
+```
+
+### WorkflowStep
+
+```python
+class WorkflowStep(BaseModel):
+    name: str
+    tasks: List[TaskDefinition]
+```
+
+### WorkflowDefinition
+
+```python
+class WorkflowDefinition(BaseModel):
+    description: Optional[str] = None
+    variables: Optional[Dict[str, Any]] = {}
+    inputs: Dict[str, InputDefinition] = {}
+    steps: List[WorkflowStep]
+```
+
+### Workflow
+
+```python
+class Workflow(BaseModel):
+    name: str
+    program_name: Optional[str] = None  # null = global workflow
+    steps: List[Union[Step, WorkflowStep]]
+    definition: Optional[WorkflowDefinition] = None
+    variables: Optional[Dict[str, Any]] = {}
+    inputs: Optional[Dict[str, InputDefinition]] = {}
+    
+    @model_validator(mode='after')
+    def extract_definition_fields(self):
+        """Extract fields from definition for easier access"""
+        if self.definition:
+            if not self.inputs:
+                self.inputs = self.definition.inputs
+            if not self.variables:
+                self.variables = self.definition.variables
+            if self.definition.steps:
+                self.steps = self.definition.steps
+        return self
+```
+
+### AssetStore
+
+```python
+class AssetStore:
+    """In-memory storage for workflow step outputs"""
+    
+    def __init__(self):
+        self.assets: Dict[str, Dict[str, List[Any]]] = {}
+    
+    def add_step_assets(self, step_name: str, asset_type: str, assets: List):
+        """Store assets from a step"""
+        if step_name not in self.assets:
+            self.assets[step_name] = {}
+        if asset_type not in self.assets[step_name]:
+            self.assets[step_name][asset_type] = []
+        self.assets[step_name][asset_type].extend(assets)
+    
+    def get_step_assets(self, step_name: str, asset_type: str = None):
+        """Retrieve assets from a step"""
+        if step_name not in self.assets:
+            return {} if asset_type is None else []
+        if asset_type is None:
+            return self.assets[step_name]
+        return self.assets[step_name].get(asset_type, [])
+```
+
+## Serialization Patterns
+
+### Model Serialization
+
+```python
+# Pydantic v2 serialization
+asset_dict = domain.model_dump(by_alias=True, exclude_none=True)
+
+# For JSON (handles datetime)
+asset_json = domain.model_dump(mode='json', by_alias=True)
+
+# Custom to_dict (excludes None to prevent overwriting)
+def to_dict(self):
+    return self.model_dump(by_alias=True, exclude_none=True)
+```
+
+### Datetime Handling
+
+```python
+# In models/base.py
+def serialize_datetime(dt: datetime) -> str:
+    return dt.isoformat() if dt else None
+
+# Model config
+model_config = ConfigDict(
+    json_encoders={ObjectId: str, datetime: serialize_datetime}
+)
+```
+
+### Task Output to API
+
+```python
+# In DataAPIClient
+def _convert_assets_to_dicts(self, assets: Dict[str, List]) -> Dict[str, List[Dict]]:
+    """Convert Pydantic models to dicts for API submission"""
+    converted = {}
+    for asset_type, asset_list in assets.items():
+        converted_list = []
+        for asset in asset_list:
+            if hasattr(asset, 'model_dump'):
+                # Pydantic v2
+                asset_dict = asset.model_dump(by_alias=True, exclude_none=True)
+            elif hasattr(asset, 'to_dict'):
+                asset_dict = asset.to_dict()
+            elif isinstance(asset, dict):
+                asset_dict = asset
+            else:
+                asset_dict = asset.__dict__.copy()
+            converted_list.append(asset_dict)
+        converted[asset_type] = converted_list
+    return converted
+```
+
+## Best Practices
+
+1. **Always lowercase domains**: `name=domain.lower()`
+2. **Use sets for deduplication**: IP and Domain models support `__hash__` and `__eq__`
+3. **Exclude None values**: Use `exclude_none=True` to prevent overwriting existing API data
+4. **Handle datetime correctly**: Use `mode='json'` for JSON serialization
+5. **Use aliases**: `Field(alias="typosquat_domain")` for API field mapping
+6. **Validate early**: Pydantic validates on model creation

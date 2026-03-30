@@ -1,0 +1,540 @@
+---
+globs: ["src/event-handler/app/program_settings.py", "src/event-handler/app/discord.py", "src/api/app/services/event_publisher.py"]
+---
+
+# Event-Handler Integration
+
+## API to Event-Handler Flow
+
+```mermaid
+sequenceDiagram
+    participant API as Data API
+    participant PUB as RobustEventPublisher
+    participant NATS as NATS JetStream
+    participant EH as Event-Handler
+    participant Settings as ProgramSettingsProvider
+    participant Redis as Redis
+
+    Note over API,PUB: Asset/Finding Created
+    API->>PUB: publish(subject, payload)
+    PUB->>PUB: Add to batch
+    
+    alt Batch full or timeout
+        PUB->>NATS: Publish batch event
+    end
+    
+    NATS->>EH: Deliver message
+    EH->>EH: Detect batch event
+    
+    loop For each event in batch
+        EH->>EH: Normalize event data
+        EH->>Settings: get_program_settings(program)
+        Settings->>Redis: Check cache
+        alt Cache miss
+            Settings->>API: GET /programs/{name}
+            API-->>Settings: notification_settings
+            Settings->>Redis: Cache settings (5 min)
+        end
+        Settings-->>EH: Program settings
+        EH->>EH: Execute matching handlers
+    end
+    
+    EH->>NATS: ACK message
+```
+
+## Event Subject Naming
+
+### Convention
+```
+events.<category>.<type>.<action>
+```
+
+### Categories
+
+| Category | Description | Examples |
+|----------|-------------|----------|
+| `assets` | Asset events | `events.assets.subdomain.created` |
+| `findings` | Finding events | `events.findings.nuclei.created` |
+| `workflow` | Workflow events | `events.workflow.started` |
+| `test` | Test events | `events.test.workflow.trigger` |
+
+### Asset Events
+
+```
+events.assets.subdomain.created
+events.assets.subdomain.updated
+events.assets.subdomain.resolved
+events.assets.ip.created
+events.assets.url.created
+```
+
+### Finding Events
+
+```
+events.findings.nuclei.created      # Generic nuclei finding
+events.findings.typosquat.created   # Typosquat finding
+```
+
+### Workflow Events
+
+```
+events.workflow.started
+events.workflow.completed
+events.workflow.failed
+```
+
+## API Event Publishing
+
+### RobustEventPublisher
+
+The API uses `RobustEventPublisher` for reliable event delivery:
+
+```python
+from services.event_publisher import publisher
+
+# Standard publish (batched)
+await publisher.publish(
+    subject="events.assets.subdomain.created",
+    payload={
+        "event_type": "asset_created",
+        "asset_type": "subdomain",
+        "asset_id": str(asset.id),
+        "program_name": program_name,
+        "name": asset.name,
+        "ip_address": asset.ip_address,
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    }
+)
+
+# Immediate publish (critical events, no batching)
+await publisher.publish_immediate(
+    subject="events.workflow.failed",
+    payload={...}
+)
+```
+
+### API Batching
+
+Events are batched by the API before publishing:
+
+```python
+# Configuration
+EVENT_BATCH_SIZE=50        # Publish when batch reaches this size
+EVENT_BATCH_TIMEOUT=2.0    # Publish after this many seconds
+```
+
+### Batch Event Format
+
+When published to NATS, batch events have this structure:
+
+```json
+{
+    "event": "batch",
+    "count": 3,
+    "events": [
+        {
+            "subject": "events.assets.subdomain.created",
+            "payload": {
+                "name": "sub1.example.com",
+                "program_name": "example",
+                ...
+            },
+            "timestamp": 1234567890.123
+        },
+        {
+            "subject": "events.assets.subdomain.created",
+            "payload": {...},
+            "timestamp": 1234567890.456
+        }
+    ],
+    "batch_id": "batch_1234567890_abc123"
+}
+```
+
+## Event-Handler Batch Processing
+
+### Detecting Batch Events
+
+```python
+# In SimpleNotifierApp.handle_event()
+if payload.get('event') == 'batch':
+    # Process as batch
+    for event_data in payload.get('events', []):
+        await self._handle_single_event(
+            event_data.get('subject'),
+            event_data.get('payload')
+        )
+else:
+    # Process as single event
+    await self._handle_single_event(subject, payload)
+```
+
+### Handler-Level Batching
+
+In addition to API batching, handlers can batch events for aggregated actions:
+
+```yaml
+actions:
+  - type: discord_notification
+    batching:
+      max_events: 10           # Aggregate 10 events
+      max_delay_seconds: 60    # Or flush after 60 seconds
+    batch_title_template: "{domain_count} New Subdomains"
+```
+
+## Program Settings Integration
+
+### ProgramSettingsProvider
+
+Fetches notification settings from the Data API:
+
+```python
+class ProgramSettingsProvider:
+    def __init__(self, cfg: NotifierConfig, redis_client: redis.Redis):
+        self.cfg = cfg
+        self.redis = redis_client
+        self.cache_ttl = 300  # 5 minutes
+    
+    def get_program_settings(self, program_name: str) -> Dict[str, Any]:
+        # Check Redis cache first
+        cache_key = f"notify:settings:{program_name}"
+        cached = self.redis.get(cache_key)
+        if cached:
+            return json.loads(cached)
+        
+        # Fetch from API
+        resp = requests.get(
+            f"{self.cfg.data_api_url}/programs/{program_name}",
+            headers={"Authorization": f"Bearer {self.cfg.internal_service_api_key}"},
+            timeout=self.cfg.api_request_timeout
+        )
+        
+        if resp.status_code == 200:
+            settings = resp.json().get("notification_settings", {})
+        else:
+            settings = {"enabled": False}
+        
+        # Cache result
+        self.redis.setex(cache_key, self.cache_ttl, json.dumps(settings))
+        return settings
+```
+
+### Settings Structure
+
+```json
+{
+    "enabled": true,
+    "discord_webhook_url": "https://discord.com/api/webhooks/...",
+    "events": {
+        "assets": {
+            "created": {
+                "subdomain": true,
+                "ip": true,
+                "url": false
+            },
+            "updated": {
+                "subdomain": false
+            }
+        },
+        "findings": {
+            "nuclei_severities": ["critical", "high", "medium"]
+        }
+    }
+}
+```
+
+### Checking Event Enabled
+
+```python
+@staticmethod
+def is_event_enabled(settings: Dict, family: str, severity: str = None) -> bool:
+    if not settings.get("enabled"):
+        return False
+    
+    events = settings.get("events", {})
+    
+    # Asset events: assets.subdomain -> events.assets.subdomain
+    if family.startswith("assets."):
+        _, asset_type = family.split(".", 1)
+        return events.get("assets", {}).get(asset_type, False)
+    
+    # Nuclei findings: check severity list
+    if family.startswith("findings.nuclei"):
+        allowed = events.get("findings", {}).get("nuclei_severities", [])
+        return severity.lower() in [s.lower() for s in allowed]
+    
+    # Test events always enabled for enabled programs
+    if family.startswith("test."):
+        return True
+    
+    return False
+```
+
+## Discord Integration
+
+### DiscordClient
+
+Simple webhook client with retry logic:
+
+```python
+class DiscordClient:
+    def send(self, webhook_url: str, content: str = None, 
+             embeds: List[Dict] = None, max_retries: int = 3) -> bool:
+        payload = {}
+        if content:
+            payload["content"] = content
+        if embeds:
+            payload["embeds"] = embeds
+        
+        backoff = 1.0
+        for attempt in range(max_retries + 1):
+            try:
+                resp = requests.post(webhook_url, json=payload, timeout=10)
+                
+                if resp.status_code in (200, 204):
+                    return True
+                
+                if resp.status_code == 429:  # Rate limited
+                    retry_after = resp.json().get("retry_after", backoff)
+                    time.sleep(float(retry_after))
+                else:
+                    time.sleep(backoff)
+                    
+            except Exception:
+                time.sleep(backoff)
+            
+            backoff = min(backoff * 2, 30)
+        
+        return False
+```
+
+### Embed Structure
+
+```python
+embed = {
+    "title": "🎯 New Subdomain: sub.example.com",
+    "description": "**Program:** example\n**IP:** 1.2.3.4",
+    "color": 3447003,  # Blue
+    "fields": [
+        {
+            "name": "Status",
+            "value": "Resolved",
+            "inline": True
+        }
+    ],
+    "footer": {
+        "text": "Event-Handler Notification"
+    }
+}
+```
+
+## Workflow Trigger Integration
+
+### API Endpoint
+
+Handlers trigger workflows via `POST /workflows/run`:
+
+```python
+payload = {
+    "workflow_name": "typosquat_analysis",
+    "program_name": "example",
+    "description": "Analyze typosquat domains",
+    "parameters": {
+        "domains": ["domain1.com", "domain2.com"]
+    }
+}
+
+response = requests.post(
+    f"{api_url}/workflows/run",
+    json=payload,
+    headers={
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    },
+    timeout=30
+)
+```
+
+### Response
+
+```json
+{
+    "workflow_id": "uuid",
+    "id": "execution_id",
+    "status": "queued"
+}
+```
+
+## PhishLabs Integration
+
+### Batch Trigger Endpoint
+
+`POST /findings/typosquat/phishlabs/batch`:
+
+```python
+payload = {
+    "finding_ids": ["id1", "id2", "id3"],
+    "catcode": "typosquat"  # Optional
+}
+
+response = requests.post(
+    f"{api_url}/findings/typosquat/phishlabs/batch",
+    json=payload,
+    headers={"Authorization": f"Bearer {api_key}"},
+    timeout=30
+)
+```
+
+### Response
+
+```json
+{
+    "job_id": "uuid",
+    "finding_count": 3,
+    "status": "queued"
+}
+```
+
+## Error Handling
+
+### API Connection Errors
+
+```python
+try:
+    resp = requests.get(url, timeout=timeout)
+except requests.exceptions.Timeout:
+    logger.error("API timeout")
+    return default_settings
+except requests.exceptions.ConnectionError:
+    logger.error("API connection error")
+    return default_settings
+```
+
+### Discord Rate Limiting
+
+Automatic retry with exponential backoff:
+
+```python
+if resp.status_code == 429:
+    retry_after = resp.json().get("retry_after", backoff)
+    time.sleep(float(retry_after))
+```
+
+### Graceful Degradation
+
+- If API unavailable: Use cached settings or disabled defaults
+- If Discord fails: Log error, don't block processing
+- If workflow trigger fails: Log error, continue with other actions
+
+## Environment Variables
+
+### Event-Handler
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DATA_API_URL` | `http://api:8000` | API endpoint |
+| `INTERNAL_SERVICE_API_KEY` | - | API authentication |
+| `EVENTHANDLER_API_TIMEOUT_SECONDS` | `15` | API request timeout |
+| `DISCORD_DRY_RUN` | `true` | Skip Discord sends |
+
+### API Publisher
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `NATS_URL` | `nats://nats:4222` | NATS server |
+| `EVENTS_STREAM` | `EVENTS` | JetStream stream |
+| `EVENT_BATCH_SIZE` | `50` | Batch size |
+| `EVENT_BATCH_TIMEOUT` | `2.0` | Batch timeout (seconds) |
+
+## Testing Integration
+
+### Test Event Publishing
+
+```python
+# Publish test event from API
+await publisher.publish(
+    subject="events.test.workflow.trigger",
+    payload={
+        "program_name": "test_program",
+        "test_data": "hello"
+    }
+)
+```
+
+### Test Handler Configuration
+
+```yaml
+handlers:
+  - id: test_handler
+    event_type: test.workflow.trigger
+    actions:
+      - type: log
+        level: info
+        message_template: "Test event received: {test_data}"
+```
+
+## Common Patterns
+
+### Publish After Database Commit
+
+```python
+# In API service
+async def create_subdomain(data):
+    async with get_db_session() as db:
+        subdomain = Subdomain(**data)
+        db.add(subdomain)
+        await db.commit()
+        await db.refresh(subdomain)
+    
+    # Publish AFTER commit
+    await publisher.publish(
+        subject="events.assets.subdomain.created",
+        payload={
+            "name": subdomain.name,
+            "program_name": data["program_name"],
+            ...
+        }
+    )
+```
+
+### Conditional Notification
+
+```python
+# In handler, check settings before action
+program_settings = event_data.get('program_settings', {})
+
+if not program_settings.get('enabled'):
+    return ActionResult(success=True, message="Notifications disabled")
+
+if not self._is_notification_enabled_for_event(program_settings, event_data):
+    return ActionResult(success=True, message="Event type disabled")
+
+# Proceed with notification
+```
+
+### Batch Context for Templates
+
+```python
+# Create context with aggregated data
+batch_context = {
+    'program_name': program_name,
+    'event_count': len(events),
+    'domain_count': len(unique_domains),
+    'domain_list': ', '.join(unique_domains),
+    'domain_list_array': unique_domains,
+    'batched_events': events
+}
+
+# Use in template
+message = self._substitute_template(
+    "Found {domain_count} domains: {domain_list}",
+    batch_context
+)
+```
+
+## References
+
+- API Event Publisher: `src/api/app/services/event_publisher.py`
+- Program Settings: `src/event-handler/app/program_settings.py`
+- Discord Client: `src/event-handler/app/discord.py`
+- Event Handlers: `src/event-handler/app/event_handlers.py`

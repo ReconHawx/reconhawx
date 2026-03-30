@@ -1,0 +1,23 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: kueue-workload-manager
+rules:
+- apiGroups: ["kueue.x-k8s.io"]
+  resources: ["workloads"]
+  verbs: ["get", "list", "create", "update", "patch", "delete"]
+- apiGroups: ["kueue.x-k8s.io"]
+  resources: ["localqueues", "clusterqueues"]
+  verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: api-kueue-workload-manager
+subjects:
+- kind: ServiceAccount
+  name: api-sa
+roleRef:
+  kind: Role
+  name: kueue-workload-manager
+  apiGroup: rbac.authorization.k8s.io

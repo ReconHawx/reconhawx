@@ -1,0 +1,65 @@
+---
+description: Gather typosquat findings from vendor APIs (ThreatStream, Recorded Future) — task flow, adapters, cross-enrichment, RF playbook policy
+globs:
+  - src/runner/app/tasks/gather_api_findings.py
+  - src/runner/app/tasks/api_vendors/**/*.py
+alwaysApply: false
+---
+
+# Gather typosquat from vendor APIs
+
+This path is **separate** from dnstwist-driven typosquat detection (see [`typosquat-detection.mdc`](typosquat-detection.mdc)). It pulls domains from **ThreatStream** and **Recorded Future** and posts them to the API as typosquat findings.
+
+## Entry points and layout
+
+| Piece | Role |
+|-------|------|
+| [`src/runner/app/tasks/gather_api_findings.py`](src/runner/app/tasks/gather_api_findings.py) | `GatherApiFindingsTask`: credentials, dedupe, batch create/update, cross-enrichment orchestration |
+| [`src/runner/app/tasks/api_vendors/base.py`](src/runner/app/tasks/api_vendors/base.py) | `BaseAPIVendor`: `gather_domains`, `create_finding_data`, credential validation |
+| [`src/runner/app/tasks/api_vendors/threatstream.py`](src/runner/app/tasks/api_vendors/threatstream.py) | TS: `q=` list gather; `fetch_intelligence_by_value` for `?value=` enrichment |
+| [`src/runner/app/tasks/api_vendors/recordedfuture.py`](src/runner/app/tasks/api_vendors/recordedfuture.py) | RF: alert search + `domain_abuse` details; `fetch_enrichment_for_domain` (entity search + details with `ignore_status_filter=True`) |
+| [`src/runner/app/tasks/api_vendors/config.py`](src/runner/app/tasks/api_vendors/config.py) | Runtime query/retry overrides via env |
+
+**ThreatStream list gather** (`gather_domains`, the paginated `q=` intelligence search) requires a non-empty **`custom_query`** from job payload (`job_data.custom_query` for scheduled jobs). Vendor config does not supply a default feed/itype/pattern query; pagination limits still come from [`config.py`](src/runner/app/tasks/api_vendors/config.py) / env.
+
+Register new vendors in `GatherApiFindingsTask._create_vendor_adapter` and implement the base class.
+
+## Credentials
+
+- Primary vendor: `get_program_api_credentials` → GET `/programs/{name}` mapped via `adapter.get_credential_fields()`.
+- Other vendor (cross-enrichment): `_get_vendor_credentials(program_name, "threatstream" \| "recordedfuture")`. If incomplete, skip enrichment; do not fail the job.
+
+## Finding shape and API
+
+- Per domain: `vendor_adapter.create_finding_data(domain_data, program_name)` produces `{typo_domain, program_name, source, ...}` plus `{vendor}_data` JSONB payload.
+- **Batch create**: POST `{api_base}/findings/typosquat` with wrapped `findings.typosquat_domain[]`.
+- **Patches** (updates / enrichment): `PATCH .../typosquat/{id}/recordedfuture-data`, `PATCH .../threatstream-data`, `PATCH .../recordedfuture-derived-columns` (API routes under `/findings`).
+
+WHOIS-related fields in create/update payloads are stored on **`typosquat_apex_domains`** (registrable domain per program); API responses merge those fields onto each finding as flat `whois_*` keys.
+
+## Cross-vendor enrichment (best-effort)
+
+After `create_finding_data`, `_enrich_single_finding_cross_vendor` merges the **other** vendor when credentials exist:
+
+- **RF-primary** → TS: `GET https://api.threatstream.com/api/v2/intelligence/?value={domain}` → `threatstream_data`.
+- **TS-primary** → RF: `POST .../playbook-alert/search` with `entity: ["idn:{domain}"]`, pick alert, then existing **`_fetch_alert_details(..., ignore_status_filter=True)`** → `build_recordedfuture_vendor_blob` → **`recordedfuture_data` only** on the finding (no extra root columns from RF on the batch payload).
+
+## Recorded Future playbook mutations (strict)
+
+**Mutate RF playbook** (e.g. `PUT .../playbook-alert/common/{id}` unassign) **only** when the job is **Recorded Future–primary** (`self.api_vendor == "recordedfuture"`), e.g. `_resolve_recordedfuture_assignees`, `_resolve_filtered_rf_alerts`, `_update_recordedfuture_finding` unassign path.
+
+When **only** enriching from RF (ThreatStream-primary job):
+
+- Do **not** call assignee resolution / RF uhash → `assigned_to` mapping for that enrichment.
+- Do **not** PUT/unassign or otherwise update the playbook for enrichment-only data.
+- Persist **only** `recordedfuture_data` (and internal API patches limited to that for TS update path).
+
+Read-only RF use for enrichment (search, details GET/POST, screenshot **fetch**) is allowed; avoid alert state **writes** unless primary source is RF.
+
+## Operational notes
+
+- Reuse shared `aiohttp` session from `_get_session()` for volume and TLS reuse.
+- RF pre-flight filter + filtered-alert resolve run only for **recordedfuture** vendor on **new** domains.
+- Post-storage screenshots: `_handle_recordedfuture_post_storage` uses RF token from `_get_vendor_credentials(..., "recordedfuture")` and `RecordedFutureAdapter.process_post_storage_tasks` for findings with `raw_details`.
+
+When extending behavior, keep **primary vendor** vs **enrichment-only** semantics explicit so RF customer alerts are never modified by TS-led jobs.

@@ -1,0 +1,2637 @@
+---
+globs:
+  - src/api/app/routes/**
+  - src/api/app/services/**
+description: Routes, services, HTTP errors, events, code organization
+---
+
+# API conventions (routes and services)
+
+Project hub: repository root `AGENTS.md`.
+
+# API Code Organization Standards
+
+## File Naming Conventions
+
+### Routes
+- `routes/subdomain_assets.py` - Subdomain asset endpoints
+- `routes/ip_assets.py` - IP asset endpoints
+- `routes/url_assets.py` - URL asset endpoints
+- `routes/nuclei_findings.py` - Nuclei findings endpoints
+- `routes/typosquat_findings.py` - Typosquat findings endpoints
+- `routes/<entity>.py` - Generic entity endpoints (programs, workflows, auth)
+
+### Repositories
+- `repository/subdomain_assets_repo.py` - Subdomain repository
+- `repository/ip_assets_repo.py` - IP repository
+- `repository/nuclei_findings_repo.py` - Nuclei findings repository
+- `repository/program_repo.py` - Program repository
+- `repository/batch_repository.py` - Batch operations repository
+
+### Services
+- `services/unified_asset_processor.py` - Unified asset processing
+- `services/unified_findings_processor.py` - Unified findings processing
+- `services/event_publisher.py` - NATS event publisher
+- `services/hackerone_service.py` - HackerOne integration
+- `services/internal_token_service.py` - Internal token management
+
+### Models
+- `models/postgres.py` - SQLAlchemy ORM models
+- `models/user_postgres.py` - User Pydantic models
+- `models/<entity>.py` - Entity-specific Pydantic models
+
+## Import Organization
+
+### Standard Import Order
+
+```python
+# 1. Standard library
+import asyncio
+import logging
+from typing import Dict, Any, Optional, List, Union, Literal
+from datetime import datetime, timezone
+
+# 2. Third-party
+from fastapi import APIRouter, HTTPException, Depends, Query
+from pydantic import BaseModel, Field
+from sqlalchemy import func, desc, asc, and_
+
+# 3. Local imports - Auth
+from auth.dependencies import get_current_user_from_middleware, get_user_accessible_programs
+
+# 4. Local imports - Models
+from models.user_postgres import UserResponse
+from models.postgres import Program, Subdomain, IP
+
+# 5. Local imports - Repository/Services
+from repository import SubdomainAssetsRepository
+from services.event_publisher import publisher
+```
+
+## Model Definitions
+
+### Typed Search Request Models
+
+Use Pydantic models with `Field` for search endpoints:
+
+```python
+from pydantic import BaseModel, Field
+from typing import Optional, List, Union, Literal
+
+class SubdomainSearchRequest(BaseModel):
+    """Typed search request for subdomain assets"""
+    search: Optional[str] = Field(None, description="Fuzzy search on subdomain name")
+    exact_match: Optional[str] = Field(None, description="Exact match on subdomain name")
+    apex_domain: Optional[Union[str, List[str]]] = Field(None, description="Apex domain name(s)")
+    wildcard: Optional[bool] = Field(None, description="Filter by wildcard flag")
+    has_ips: Optional[bool] = Field(None, description="Filter subdomains that have any IPs")
+    ip: Optional[Union[str, List[str]]] = Field(None, description="Filter by specific IP address(es)")
+    has_cname: Optional[bool] = Field(None, description="Filter by presence of CNAME record")
+    cname_contains: Optional[str] = Field(None, description="Substring match on CNAME record")
+    program: Optional[Union[str, List[str]]] = Field(None, description="Restrict to program(s)")
+    sort_by: Literal['name','apex_domain','program_name','is_wildcard','updated_at','ip_count','cname_record'] = 'updated_at'
+    sort_dir: Literal['asc','desc'] = 'desc'
+    page: int = Field(1, ge=1)
+    page_size: int = Field(25, ge=1, le=10000)
+```
+
+### Import/Create Request Models
+
+```python
+class DomainImportData(BaseModel):
+    name: str = Field(..., description="Domain name")
+    program_name: Optional[str] = Field(None, description="Program name")
+    is_wildcard: Optional[bool] = Field(False, description="Whether domain is wildcard")
+    ip: Optional[List[str]] = Field(None, description="IP addresses")
+    cname_record: Optional[str] = Field(None, description="CNAME record")
+    notes: Optional[str] = Field(None, description="Investigation notes")
+
+class DomainImportRequest(BaseModel):
+    domains: List[DomainImportData] = Field(..., description="List of domains to import")
+    merge: Optional[bool] = Field(True, description="Whether to merge with existing data")
+    update_existing: Optional[bool] = Field(False, description="Whether to update existing")
+    validate_domains: Optional[bool] = Field(True, description="Whether to validate domain names")
+```
+
+### Distinct/Faceted Filter Request
+
+```python
+class DistinctRequest(BaseModel):
+    filter: Optional[Dict[str, Any]] = None
+    program: Optional[Union[str, List[str]]] = None
+```
+
+### Simple Update Requests
+
+```python
+class NotesUpdateRequest(BaseModel):
+    notes: str = Field(..., description="Investigation notes content")
+```
+
+## Response Model Patterns
+
+### Standard Pagination Response Format
+
+```python
+# All typed search endpoints should return this format
+{
+    "status": "success",
+    "pagination": {
+        "total_items": 100,
+        "total_pages": 4,
+        "current_page": 1,
+        "page_size": 25,
+        "has_next": True,
+        "has_previous": False
+    },
+    "items": [...]
+}
+```
+
+### Implementation:
+
+```python
+total_count = result.get("total_count", 0)
+total_pages = (total_count + request.page_size - 1) // request.page_size if request.page_size > 0 else 1
+
+return {
+    "status": "success",
+    "pagination": {
+        "total_items": total_count,
+        "total_pages": total_pages,
+        "current_page": request.page,
+        "page_size": request.page_size,
+        "has_next": request.page < total_pages,
+        "has_previous": request.page > 1,
+    },
+    "items": result.get("items", []),
+}
+```
+
+### Single Resource Response
+
+```python
+return {
+    "status": "success",
+    "data": resource_dict
+}
+```
+
+### Operation Result Response
+
+```python
+return {
+    "status": "success",
+    "message": "Notes updated successfully",
+    "data": {
+        "notes": request.notes
+    }
+}
+```
+
+### Batch Delete Response
+
+```python
+return {
+    "status": "success",
+    "message": "Batch delete completed for domain/subdomain assets",
+    "results": {
+        "deleted_count": 10,
+        "not_found_count": 2,
+        "error_count": 0,
+        "errors": []
+    }
+}
+```
+
+## Configuration Management
+
+### Environment Variables
+
+```python
+import os
+
+# Database
+POSTGRES_USER = os.getenv("POSTGRES_USER", "admin")
+POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "password")
+POSTGRES_HOST = os.getenv("POSTGRES_HOST", "localhost")
+POSTGRES_PORT = os.getenv("POSTGRES_PORT", "5432")
+POSTGRES_DB = os.getenv("DATABASE_NAME", "recon_db")
+
+# Services
+NATS_URL = os.getenv("NATS_URL", "nats://nats:4222")
+EVENTS_STREAM = os.getenv("EVENTS_STREAM", "EVENTS")
+
+# Feature flags
+DISABLE_AUTH_MIDDLEWARE = os.getenv("DISABLE_AUTH_MIDDLEWARE", "false")
+```
+
+### Settings Class
+
+```python
+from pydantic_settings import BaseSettings
+
+class Settings(BaseSettings):
+    API_V1_STR: str = ""
+    PROJECT_NAME: str = "Workflow API"
+    
+    # Kubernetes settings
+    RUNNER_IMAGE: str = "runner:latest"
+    RUNNER_SERVICE_ACCOUNT: str = "runner-service-account"
+    JOB_TTL_SECONDS: int = 86400
+    
+    # Asset Processing
+    ASSET_BATCH_THRESHOLD: int = 100
+    ASSET_BATCH_SIZE: int = 50
+    
+    # Database Optimization
+    DB_BULK_PROCESSING_THRESHOLD: int = 50
+    DB_CHUNK_SIZE: int = 100
+    DB_CONNECTION_POOL_SIZE: int = 20
+    
+    # Event Publisher
+    EVENT_BATCH_SIZE: int = 50
+    EVENT_BATCH_TIMEOUT: float = 2.0
+    NATS_URL: str = "nats://nats:4222"
+    
+    # Logging
+    LOG_LEVEL: str = "INFO"
+    
+    class Config:
+        case_sensitive = True
+
+settings = Settings()
+```
+
+## Code Structure
+
+### Route File Structure
+
+```python
+# routes/subdomain_assets.py
+
+# 1. Imports
+from fastapi import APIRouter, HTTPException, Depends, Query
+from typing import Dict, Any, Optional, List, Union, Literal
+from pydantic import BaseModel, Field
+from repository import SubdomainAssetsRepository
+from auth.dependencies import get_current_user_from_middleware, get_user_accessible_programs
+from models.user_postgres import UserResponse
+import logging
+
+logger = logging.getLogger(__name__)
+
+# 2. Router initialization
+router = APIRouter()
+
+# 3. Request/Response models (grouped by functionality)
+class SubdomainSearchRequest(BaseModel):
+    # ... typed search fields
+
+class DomainImportRequest(BaseModel):
+    # ... import fields
+
+# 4. Endpoints (grouped by operation type)
+
+# Search endpoints
+@router.post("/subdomain/search", response_model=Dict[str, Any])
+async def search_subdomains_typed(request: SubdomainSearchRequest, ...):
+    ...
+
+# CRUD endpoints
+@router.get("/subdomain", response_model=Dict[str, Any])
+async def get_specific_subdomain(id: Optional[str] = Query(None), ...):
+    ...
+
+@router.post("/subdomain/import", response_model=Dict[str, Any])
+async def import_domains(request: DomainImportRequest, ...):
+    ...
+
+@router.put("/subdomain/{domain_id}/notes", response_model=Dict[str, Any])
+async def update_domain_notes(domain_id: str, request: NotesUpdateRequest):
+    ...
+
+@router.delete("/subdomain/{domain_id}", response_model=Dict[str, Any])
+async def delete_domain(domain_id: str, ...):
+    ...
+
+# Batch endpoints
+@router.delete("/subdomain/batch", response_model=Dict[str, Any])
+async def delete_domains_batch(request_data: dict, ...):
+    ...
+
+# Distinct/faceted endpoints
+@router.post("/subdomain/distinct/{field_name}", response_model=List[str])
+async def get_distinct_subdomain_field_values(field_name: str, ...):
+    ...
+```
+
+### Repository File Structure
+
+```python
+# repository/subdomain_assets_repo.py
+
+from sqlalchemy import func, desc, asc, and_
+from typing import Dict, Any, Optional, List, Union
+import logging
+from datetime import datetime, timezone
+from uuid import UUID
+
+from models.postgres import Program, ApexDomain, Subdomain, IP, SubdomainIP
+from db import get_db_session
+from utils.query_filters import ProgramAccessMixin
+
+logger = logging.getLogger(__name__)
+
+class SubdomainAssetsRepository(ProgramAccessMixin):
+    """PostgreSQL repository for subdomain assets"""
+    
+    # Simple CRUD methods
+    @staticmethod
+    async def get_domain_by_id(domain_id: str) -> Optional[Dict[str, Any]]:
+        ...
+    
+    @staticmethod
+    async def update_domain(domain_id: str, domain_data: Dict[str, Any]) -> bool:
+        ...
+    
+    # Typed search method
+    @staticmethod
+    async def search_subdomains_typed(
+        *,  # Force keyword arguments
+        search: Optional[str] = None,
+        exact_match: Optional[str] = None,
+        apex_domain: Optional[Union[str, List[str]]] = None,
+        wildcard: Optional[bool] = None,
+        programs: Optional[List[str]] = None,
+        sort_by: str = "updated_at",
+        sort_dir: str = "desc",
+        limit: int = 25,
+        skip: int = 0,
+    ) -> Dict[str, Any]:
+        """Execute a strongly-typed search optimized for PostgreSQL"""
+        ...
+    
+    # Create/Update with event data
+    @staticmethod
+    async def create_or_update_subdomain(subdomain_data: Dict[str, Any]) -> tuple[str, str, Optional[Dict[str, Any]]]:
+        """Returns (subdomain_id, action, event_data)
+        action is 'created', 'updated', 'skipped', or 'out_of_scope'
+        """
+        ...
+    
+    # Batch operations
+    @staticmethod
+    async def delete_subdomains_batch(subdomain_ids: List[str]) -> Dict[str, Any]:
+        ...
+    
+    # Distinct values for faceted filtering
+    @staticmethod
+    async def get_distinct_values(field_name: str, filter_data: Optional[Dict[str, Any]] = None) -> List[str]:
+        ...
+```
+
+## Best Practices
+
+### DO:
+- ✅ Use consistent file naming (`subdomain_assets.py`, `subdomain_assets_repo.py`)
+- ✅ Organize imports logically (stdlib, third-party, local)
+- ✅ Use Pydantic models with `Field` for all request validation
+- ✅ Use `Literal` types for constrained string fields (sort_by, sort_dir)
+- ✅ Follow consistent response formats (pagination, status, data)
+- ✅ Document complex functions with docstrings
+- ✅ Use keyword-only arguments (`*,`) for typed search methods
+- ✅ Group endpoints by operation type in route files
+
+### DON'T:
+- ❌ Mix naming conventions across files
+- ❌ Create circular imports
+- ❌ Skip type hints on function parameters
+- ❌ Use inconsistent response formats
+- ❌ Return raw SQLAlchemy objects (convert to dicts)
+- ❌ Use positional arguments for complex search methods
+
+# API Error Handling Standards
+
+## HTTPException Usage
+
+### Standard Pattern
+
+```python
+from fastapi import HTTPException, status
+
+# Not found
+raise HTTPException(
+    status_code=status.HTTP_404_NOT_FOUND,
+    detail="Resource not found"
+)
+
+# Validation error
+raise HTTPException(
+    status_code=status.HTTP_400_BAD_REQUEST,
+    detail="Invalid input data"
+)
+
+# Permission denied
+raise HTTPException(
+    status_code=status.HTTP_403_FORBIDDEN,
+    detail="Permission denied"
+)
+
+# Authentication required
+raise HTTPException(
+    status_code=status.HTTP_401_UNAUTHORIZED,
+    detail="Authentication required",
+    headers={"WWW-Authenticate": "Bearer"}
+)
+
+# Conflict (duplicate)
+raise HTTPException(
+    status_code=status.HTTP_409_CONFLICT,
+    detail="Resource already exists"
+)
+```
+
+## Error Handling in Routes
+
+### Standard Pattern
+
+```python
+@router.post("/endpoint")
+async def my_endpoint(request: RequestModel):
+    try:
+        # Business logic
+        result = await service.process(request)
+        return result
+    
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is
+        raise
+    
+    except ValueError as ve:
+        # Validation errors -> 400
+        logger.warning(f"Validation error: {ve}")
+        raise HTTPException(status_code=400, detail=str(ve))
+    
+    except Exception as e:
+        # Unexpected errors -> 500
+        logger.exception(f"Unexpected error: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"An internal server error occurred: {str(e)}"
+        )
+```
+
+### Typed Search Endpoint Error Handling
+
+```python
+@router.post("/subdomain/search", response_model=Dict[str, Any])
+async def search_subdomains_typed(
+    request: SubdomainSearchRequest,
+    current_user: UserResponse = Depends(get_current_user_from_middleware)
+):
+    try:
+        # Program access logic
+        accessible = get_user_accessible_programs(current_user)
+        # ... program filtering logic
+        
+        # Execute search
+        result = await SubdomainAssetsRepository.search_subdomains_typed(
+            search=request.search,
+            exact_match=request.exact_match,
+            # ... more parameters
+        )
+        
+        # Build response
+        return {
+            "status": "success",
+            "pagination": {...},
+            "items": result.get("items", []),
+        }
+    
+    except Exception as e:
+        logger.error(f"Error executing typed subdomain search: {str(e)}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Error executing typed subdomain search: {str(e)}"
+        )
+```
+
+### Import Endpoint Error Handling
+
+```python
+@router.post("/subdomain/import", response_model=Dict[str, Any])
+async def import_domains(
+    request: DomainImportRequest,
+    current_user: UserResponse = Depends(get_current_user_from_middleware)
+):
+    try:
+        # Validation
+        if request.validate_domains:
+            invalid_domains = validate_domain_names(request.domains)
+            if invalid_domains:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid domain names: {', '.join(invalid_domains[:10])}"
+                )
+        
+        # Authorization check
+        allowed_domains = filter_by_program_access(request.domains, current_user)
+        if not allowed_domains:
+            raise HTTPException(
+                status_code=403,
+                detail="No domains to import - all belong to unauthorized programs"
+            )
+        
+        # Process domains
+        imported_count = 0
+        errors = []
+        
+        for domain_data in allowed_domains:
+            try:
+                domain_id, action, event_data = await repository.create_or_update(domain_data)
+                if domain_id:
+                    imported_count += 1
+            except Exception as e:
+                errors.append(f"Error processing {domain_data.name}: {str(e)}")
+        
+        # Return appropriate response based on results
+        if errors and imported_count == 0:
+            return {
+                "status": "error",
+                "message": "Import failed: no domains were processed",
+                "data": {"errors": errors[:10]}
+            }
+        elif errors:
+            return {
+                "status": "partial_success",
+                "message": f"Import completed: {imported_count} processed ({len(errors)} errors)",
+                "data": {"processed_count": imported_count, "errors": errors[:10]}
+            }
+        else:
+            return {
+                "status": "success",
+                "message": f"Import completed: {imported_count} processed",
+                "data": {"processed_count": imported_count}
+            }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in domain import: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error importing domains: {str(e)}"
+        )
+```
+
+### Batch Delete Error Handling
+
+```python
+@router.delete("/subdomain/batch", response_model=Dict[str, Any])
+async def delete_domains_batch(
+    request_data: dict,
+    current_user: UserResponse = Depends(require_admin_or_manager)
+):
+    try:
+        asset_ids = request_data.get("asset_ids", [])
+        
+        if not asset_ids:
+            raise HTTPException(status_code=400, detail="No asset IDs provided")
+        
+        result = await SubdomainAssetsRepository.delete_subdomains_batch(asset_ids)
+        
+        return {
+            "status": "success",
+            "message": "Batch delete completed",
+            "results": result
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error batch deleting: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+```
+
+### Distinct Values Endpoint Error Handling
+
+```python
+@router.post("/subdomain/distinct/{field_name}", response_model=List[str])
+async def get_distinct_field_values(
+    field_name: str,
+    query: Optional[DistinctRequest] = None,
+    current_user: UserResponse = Depends(get_current_user_from_middleware),
+):
+    try:
+        # ... program filtering logic
+        
+        distinct_values = await repository.get_distinct_values(field_name, filter_data)
+        return [v for v in distinct_values if v is not None]
+    
+    except ValueError as ve:
+        # Field not supported
+        logger.error(f"Value error for field {field_name}: {ve}")
+        raise HTTPException(status_code=400, detail=str(ve))
+    
+    except Exception as e:
+        logger.error(f"Error getting distinct values: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error retrieving distinct values for field '{field_name}'"
+        )
+```
+
+## Status Codes
+
+### Common Status Codes
+
+| Code | Name | Usage |
+|------|------|-------|
+| `200` | OK | Successful GET, PUT, PATCH |
+| `201` | Created | Successful POST (creation) |
+| `400` | Bad Request | Validation error, bad input |
+| `401` | Unauthorized | Authentication required |
+| `403` | Forbidden | Permission denied |
+| `404` | Not Found | Resource not found |
+| `409` | Conflict | Duplicate resource |
+| `500` | Internal Server Error | Unexpected server error |
+| `502` | Bad Gateway | External service error |
+| `503` | Service Unavailable | Service temporarily unavailable |
+
+### When to Use Each
+
+```python
+# 400 - Bad Request: Invalid input
+if not valid_domain_format(domain):
+    raise HTTPException(status_code=400, detail="Invalid domain format")
+
+# 401 - Unauthorized: No authentication
+if not current_user:
+    raise HTTPException(status_code=401, detail="Authentication required")
+
+# 403 - Forbidden: Authenticated but not authorized
+if not check_program_permission(current_user, program_name, "manager"):
+    raise HTTPException(status_code=403, detail="Manager access required")
+
+# 404 - Not Found: Resource doesn't exist (or hidden for security)
+# IMPORTANT: Use 404 even when access is denied to not leak resource existence
+if not resource or not has_access(current_user, resource):
+    raise HTTPException(status_code=404, detail="Resource not found")
+
+# 409 - Conflict: Duplicate or conflicting data
+if await repository.exists(name=request.name):
+    raise HTTPException(status_code=409, detail="Resource already exists")
+```
+
+## Error Response Format
+
+### Standard Format
+
+```python
+# FastAPI automatically formats HTTPException as:
+{
+    "detail": "Error message"
+}
+
+# Custom error response with more detail
+raise HTTPException(
+    status_code=400,
+    detail={
+        "error": "validation_error",
+        "message": "Invalid input",
+        "fields": ["name", "email"]
+    }
+)
+```
+
+### Batch Operation Error Response
+
+```python
+return {
+    "status": "partial_success",  # or "error" or "success"
+    "message": "Batch delete completed with errors",
+    "results": {
+        "deleted_count": 8,
+        "not_found_count": 2,
+        "error_count": 1,
+        "errors": ["Error deleting abc123: Database error"]
+    }
+}
+```
+
+## Logging Patterns
+
+### Error Logging
+
+```python
+import logging
+
+logger = logging.getLogger(__name__)
+
+# Warning for expected/validation errors
+logger.warning(f"Validation error: {error}")
+
+# Error for unexpected but handled errors
+logger.error(f"Error processing request: {error}")
+
+# Exception for full stack trace (unexpected errors)
+logger.exception(f"Unexpected error: {error}")
+```
+
+### Logging Best Practices
+
+```python
+@router.post("/endpoint")
+async def my_endpoint(request: RequestModel):
+    try:
+        result = await service.process(request)
+        return result
+    
+    except HTTPException:
+        raise  # Don't log HTTPExceptions - they're intentional
+    
+    except ValueError as ve:
+        # Log as warning - expected validation error
+        logger.warning(f"Validation error in endpoint: {ve}")
+        raise HTTPException(status_code=400, detail=str(ve))
+    
+    except Exception as e:
+        # Log with full traceback - unexpected error
+        logger.exception(f"Unexpected error in endpoint: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+```
+
+## Exception Propagation
+
+### Repository Layer
+
+Repositories should let exceptions propagate or convert to ValueError:
+
+```python
+@staticmethod
+async def create_subdomain(subdomain_data: Dict[str, Any]) -> str:
+    """Create subdomain - let exceptions propagate"""
+    async with get_db_session() as db:
+        try:
+            subdomain = Subdomain(**subdomain_data)
+            db.add(subdomain)
+            db.commit()
+            db.refresh(subdomain)
+            return str(subdomain.id)
+        except IntegrityError as e:
+            # Convert to ValueError for route handler
+            raise ValueError(f"Subdomain already exists: {e}")
+
+@staticmethod
+async def get_distinct_values(field_name: str, filter_data: Dict) -> List[str]:
+    """Get distinct values - raise ValueError for unsupported fields"""
+    if field_name not in SUPPORTED_FIELDS:
+        raise ValueError(f"Unsupported field '{field_name}'")
+    
+    # ... implementation
+```
+
+### Service Layer
+
+Services should handle business logic errors:
+
+```python
+async def process_assets(assets: List[Dict]) -> str:
+    """Process assets - raise ValueError for validation"""
+    if not assets:
+        raise ValueError("No assets provided")
+    
+    if not program_name:
+        raise ValueError("program_name is required")
+    
+    # ... processing logic
+```
+
+## Security Considerations
+
+### Don't Leak Information
+
+```python
+# BAD - Reveals resource exists to unauthorized user
+if not check_access(current_user, resource):
+    raise HTTPException(status_code=403, detail="Access denied")
+
+# GOOD - Hides resource existence
+if not resource or not check_access(current_user, resource):
+    raise HTTPException(status_code=404, detail="Resource not found")
+```
+
+### Don't Expose Internal Details
+
+```python
+# BAD - Exposes database structure
+raise HTTPException(status_code=500, detail=f"SQL error: {sql_error}")
+
+# GOOD - Generic message, details in logs
+logger.error(f"Database error: {sql_error}")
+raise HTTPException(status_code=500, detail="An internal error occurred")
+```
+
+## Best Practices
+
+### DO:
+- ✅ Use appropriate HTTP status codes
+- ✅ Provide clear, user-friendly error messages
+- ✅ Log errors with context
+- ✅ Re-raise HTTPException in routes (don't wrap them)
+- ✅ Convert database errors to user-friendly messages
+- ✅ Use `logger.exception()` for unexpected errors (includes traceback)
+- ✅ Return 404 instead of 403 for hidden resources
+- ✅ Use consistent error response format
+
+### DON'T:
+- ❌ Expose internal error details to users
+- ❌ Swallow exceptions silently
+- ❌ Use generic error messages without logging details
+- ❌ Skip error handling
+- ❌ Return 500 for validation errors (use 400)
+- ❌ Return 403 for resources (reveals existence)
+- ❌ Log HTTPExceptions (they're intentional)
+
+## References
+
+- FastAPI error handling: https://fastapi.tiangolo.com/tutorial/handling-errors/
+- Example routes: `src/api/app/routes/subdomain_assets.py`
+
+# API Event Publishing Patterns
+
+## Event-Driven Architecture
+
+The API uses **NATS JetStream** for event publishing, enabling decoupled, event-driven communication with downstream services (like the notifier).
+
+## RobustEventPublisher
+
+The `RobustEventPublisher` class provides reliable event publishing with batching, connection management, and graceful degradation.
+
+### Class Overview
+
+```python
+from dataclasses import dataclass
+from typing import Dict, Any, List, Optional
+import asyncio
+import os
+import time
+
+from nats.aio.client import Client as NATS
+from nats.js.api import StreamConfig, RetentionPolicy
+
+@dataclass
+class EventBatch:
+    """Represents a batch of events to be published"""
+    events: List[Dict[str, Any]]
+    created_at: float
+    max_age: float = 5.0  # Max age before forcing publish
+
+class RobustEventPublisher:
+    """
+    Robust NATS publisher with:
+    - Single persistent NATS connection
+    - Event batching for high-volume scenarios
+    - Connection health monitoring
+    - Exponential backoff retry logic
+    - Graceful fallback to logging when NATS unavailable
+    - Background batch processing
+    """
+    
+    def __init__(self):
+        self.nats_url = os.getenv("NATS_URL", "nats://nats:4222")
+        self.stream = os.getenv("EVENTS_STREAM", "EVENTS")
+        
+        # Connection management
+        self._nc: Optional[NATS] = None
+        self._connected = False
+        self._connection_lock = asyncio.Lock()
+        self._connection_retry_delay = 1.0  # Exponential backoff
+        
+        # Batching configuration
+        self.batch_size = int(os.getenv("EVENT_BATCH_SIZE", "50"))
+        self.batch_timeout = float(os.getenv("EVENT_BATCH_TIMEOUT", "2.0"))
+        self._event_queue: asyncio.Queue = asyncio.Queue(maxsize=1000)
+        self._current_batch: Optional[EventBatch] = None
+        self._batch_lock = asyncio.Lock()
+        
+        # Background processing
+        self._batch_processor_task: Optional[asyncio.Task] = None
+
+# Global instance
+publisher = RobustEventPublisher()
+```
+
+### Using the Event Publisher
+
+```python
+from services.event_publisher import publisher
+
+# Publish event (batched automatically)
+await publisher.publish(
+    subject="events.asset.created",
+    payload={
+        "event_type": "asset_created",
+        "asset_type": "subdomain",
+        "asset_id": asset_id,
+        "program_name": program_name,
+        "data": {...}
+    }
+)
+
+# Publish immediate event (no batching, for critical events)
+await publisher.publish_immediate(
+    subject="events.workflow.failed",
+    payload={...}
+)
+```
+
+## Event Batching
+
+### How Batching Works
+
+Events are automatically batched for efficiency:
+
+1. Events are queued in memory
+2. Batch is published when **either**:
+   - Batch size reached (default: 50 events)
+   - Batch timeout expired (default: 2.0 seconds)
+3. Events are grouped by subject for efficient publishing
+4. Background task monitors batch age and publishes timed-out batches
+
+### Configuration
+
+```bash
+# Environment variables
+EVENT_BATCH_SIZE=50        # Publish when batch reaches this size
+EVENT_BATCH_TIMEOUT=2.0    # Publish after this many seconds
+NATS_URL=nats://nats:4222
+EVENTS_STREAM=EVENTS
+```
+
+### Batch Format
+
+```python
+# Individual event structure (internal)
+{
+    "subject": "events.asset.created",
+    "payload": {...},
+    "timestamp": 1234567890.123
+}
+
+# Batched events (published to NATS)
+{
+    "event": "batch",
+    "count": 3,
+    "events": [
+        {"subject": "events.asset.created", "payload": {...}, "timestamp": ...},
+        {"subject": "events.asset.created", "payload": {...}, "timestamp": ...},
+        {"subject": "events.asset.updated", "payload": {...}, "timestamp": ...}
+    ],
+    "batch_id": "batch_1234567890_abc123"
+}
+```
+
+## Event Subject Naming
+
+### Naming Convention
+
+Follow consistent subject naming:
+
+```
+events.<entity>.<action>
+```
+
+**Entity Types**:
+- `asset` - Asset-related events
+- `finding` - Security findings events
+- `workflow` - Workflow execution events
+- `program` - Program management events
+
+**Action Types**:
+- `created` - New entity created
+- `updated` - Entity modified
+- `deleted` - Entity removed
+- `started` - Process started
+- `completed` - Process finished
+- `failed` - Process failed
+
+### Examples
+
+```
+events.asset.created
+events.asset.updated
+events.asset.deleted
+events.finding.created
+events.finding.updated
+events.workflow.started
+events.workflow.completed
+events.workflow.failed
+events.program.created
+events.program.updated
+```
+
+## Event Payload Structure
+
+### Standard Payload Format
+
+```python
+from datetime import datetime, timezone
+
+event_payload = {
+    # Event metadata
+    "event_type": "asset_created",     # Human-readable event type
+    "asset_type": "subdomain",          # Entity subtype
+    "asset_id": str(asset.id),          # Entity ID
+    "program_name": program_name,       # Program context
+    
+    # Event data
+    "data": {
+        "name": asset.name,
+        "ip_address": asset.ip_address,
+        "resolved": asset.resolved,
+        "apex_domain": asset.apex_domain
+    },
+    
+    # Metadata
+    "timestamp": datetime.now(timezone.utc).isoformat(),
+    "source": "api",                    # Source of the event
+    "user_id": current_user.id if current_user else None
+}
+```
+
+### Payload Best Practices
+
+1. **Include Context**: Always include `program_name`, entity IDs
+2. **Include Data**: Include relevant entity data in `data` field
+3. **Timestamps**: Use ISO format with timezone (UTC)
+4. **Source**: Identify where event originated (`api`, `unified_asset_processor`, etc.)
+5. **User Context**: Include user ID when available for audit trail
+
+## Publishing Events
+
+### Asset Events
+
+```python
+# After creating asset
+await publisher.publish(
+    subject="events.asset.created",
+    payload={
+        "event_type": "asset_created",
+        "asset_type": "subdomain",
+        "asset_id": str(subdomain.id),
+        "program_name": program_name,
+        "data": {
+            "name": subdomain.name,
+            "ip_address": subdomain.ip_address,
+            "resolved": subdomain.resolved,
+            "apex_domain": subdomain.apex_domain
+        },
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "source": "api"
+    }
+)
+
+# After updating asset
+await publisher.publish(
+    subject="events.asset.updated",
+    payload={
+        "event_type": "asset_updated",
+        "asset_type": "subdomain",
+        "asset_id": str(subdomain.id),
+        "program_name": program_name,
+        "data": {
+            "changes": {"resolved": True, "ip_count": 3}
+        },
+        "previous_ip_count": 0,
+        "new_ip_count": 3,
+        "resolution_status": "resolved",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "source": "api"
+    }
+)
+```
+
+### Finding Events
+
+```python
+await publisher.publish(
+    subject="events.finding.created",
+    payload={
+        "event_type": "finding_created",
+        "finding_type": "nuclei",
+        "finding_id": str(finding.id),
+        "program_name": program_name,
+        "data": {
+            "template_id": finding.template_id,
+            "severity": finding.severity,
+            "url": finding.url,
+            "matched_at": finding.matched_at
+        },
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "source": "api"
+    }
+)
+```
+
+### Workflow Events
+
+```python
+# Workflow started
+await publisher.publish_immediate(  # Use immediate for critical events
+    subject="events.workflow.started",
+    payload={
+        "event_type": "workflow_started",
+        "workflow_id": workflow_id,
+        "program_name": program_name,
+        "data": {
+            "workflow_name": workflow_name,
+            "execution_id": execution_id
+        },
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "source": "api"
+    }
+)
+
+# Workflow completed
+await publisher.publish(
+    subject="events.workflow.completed",
+    payload={
+        "event_type": "workflow_completed",
+        "workflow_id": workflow_id,
+        "program_name": program_name,
+        "data": {
+            "status": "completed",
+            "duration_seconds": duration,
+            "assets_created": asset_count
+        },
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "source": "api"
+    }
+)
+
+# Workflow failed
+await publisher.publish_immediate(
+    subject="events.workflow.failed",
+    payload={
+        "event_type": "workflow_failed",
+        "workflow_id": workflow_id,
+        "program_name": program_name,
+        "data": {
+            "status": "failed",
+            "error": str(error)
+        },
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "source": "api"
+    }
+)
+```
+
+## Connection Management
+
+### Automatic Connection
+
+The publisher automatically manages NATS connection:
+
+```python
+async def _ensure_connection(self) -> bool:
+    """Ensure NATS connection with exponential backoff"""
+    if self._connected and self._nc and not self._nc.is_closed:
+        return True
+    
+    async with self._connection_lock:
+        # Check again after acquiring lock
+        if self._connected and self._nc and not self._nc.is_closed:
+            return True
+        
+        # Exponential backoff
+        current_time = time.time()
+        if current_time - self._last_connection_attempt < self._connection_retry_delay:
+            return False
+        
+        self._last_connection_attempt = current_time
+        
+        try:
+            self._nc = NATS()
+            await self._nc.connect(
+                self.nats_url,
+                connect_timeout=10,
+                reconnect_time_wait=1.0,
+                max_reconnect_attempts=5,
+                ping_interval=20,
+                max_outstanding_pings=5
+            )
+            
+            self._connected = True
+            self._connection_retry_delay = 1.0  # Reset on success
+            
+            # Ensure stream exists
+            await self._ensure_stream()
+            return True
+            
+        except Exception as e:
+            self._connected = False
+            self._connection_retry_delay = min(self._connection_retry_delay * 2, 60.0)
+            logger.warning(f"NATS connection failed, retry in {self._connection_retry_delay}s: {e}")
+            return False
+```
+
+### Stream Configuration
+
+```python
+async def _ensure_stream(self) -> bool:
+    """Ensure JetStream stream exists"""
+    js = self._nc.jetstream()
+    
+    try:
+        await js.stream_info(self.stream)
+        return True
+    except Exception:
+        # Create stream
+        stream_config = StreamConfig(
+            name=self.stream,
+            subjects=["events.>"],  # Match all events.* subjects
+            retention=RetentionPolicy.WORK_QUEUE,
+            max_age=86400,              # 24 hours
+            max_msgs=1000000,           # 1M messages
+            max_bytes=1024*1024*1024,   # 1GB
+        )
+        await js.add_stream(stream_config)
+        return True
+```
+
+## Error Handling
+
+### Graceful Degradation
+
+The publisher handles errors gracefully:
+
+```python
+# If NATS is unavailable:
+# 1. Events are logged as warnings
+# 2. Application continues normally
+# 3. Connection retried with exponential backoff
+# 4. Events queued until connection restored
+```
+
+### Retry Logic
+
+```python
+async def _publish_single_event(self, subject: str, payload: Dict) -> bool:
+    """Publish with retry logic"""
+    if not await self._ensure_connection():
+        return False
+    
+    max_retries = 3
+    retry_delay = 0.1
+    
+    for attempt in range(max_retries):
+        try:
+            js = self._nc.jetstream()
+            data = json.dumps(payload).encode("utf-8")
+            ack = await js.publish(subject, data, timeout=10)
+            return True
+            
+        except Exception as e:
+            if attempt < max_retries - 1:
+                logger.warning(f"Publish attempt {attempt + 1} failed: {e}")
+                await asyncio.sleep(retry_delay)
+                retry_delay *= 2  # Exponential backoff
+                
+                # Reconnect if connection issues
+                if "connection" in str(e).lower():
+                    self._connected = False
+                    await self._ensure_connection()
+            else:
+                logger.error(f"Publish failed after {max_retries} attempts: {e}")
+                return False
+    
+    return False
+```
+
+## Flushing and Shutdown
+
+### Manual Flush
+
+```python
+# Force publish all pending batches
+await publisher.flush_batches()
+```
+
+### Graceful Shutdown
+
+```python
+async def shutdown(self):
+    """Graceful shutdown"""
+    # Stop batch processor
+    if self._batch_processor_task and not self._batch_processor_task.done():
+        self._batch_processor_task.cancel()
+        try:
+            await self._batch_processor_task
+        except asyncio.CancelledError:
+            pass
+    
+    # Flush remaining batches
+    await self.flush_batches()
+    
+    # Close NATS connection
+    if self._nc:
+        try:
+            await self._nc.close()
+        except Exception:
+            pass
+    
+    logger.info("Event publisher shutdown complete")
+```
+
+## Batch Status Monitoring
+
+```python
+def get_batch_status(self) -> Dict[str, Any]:
+    """Get current batch status for debugging"""
+    if not self._current_batch:
+        return {"status": "no_batch", "events": 0}
+    
+    batch_age = time.time() - self._current_batch.created_at
+    
+    return {
+        "status": "active",
+        "events": len(self._current_batch.events),
+        "age_seconds": batch_age,
+        "batch_timeout": self.batch_timeout,
+        "batch_size": self.batch_size,
+        "will_publish_on_timeout": batch_age >= self.batch_timeout,
+        "will_publish_on_size": len(self._current_batch.events) >= self.batch_size
+    }
+```
+
+## Legacy Compatibility
+
+The module provides a legacy wrapper for backward compatibility:
+
+```python
+class EventPublisher:
+    """Legacy compatibility wrapper"""
+    
+    def __init__(self):
+        self.publisher = publisher
+    
+    def publish(self, subject: str, payload: Dict[str, Any]):
+        """Legacy sync publish - delegates to async publisher"""
+        try:
+            asyncio.create_task(self.publisher.publish(subject, payload))
+        except RuntimeError:
+            logger.error("No event loop available for publishing event")
+
+# Create legacy instance
+legacy_publisher = EventPublisher()
+```
+
+## Best Practices
+
+### DO:
+- ✅ Publish events for all data changes (create, update, delete)
+- ✅ Use consistent subject naming (`events.<entity>.<action>`)
+- ✅ Include program context in all events
+- ✅ Include relevant entity data in payload
+- ✅ Use ISO timestamps with UTC timezone
+- ✅ Let batching handle high-volume scenarios
+- ✅ Use `publish_immediate()` for critical events only (failures, alerts)
+- ✅ Publish events **after** database commit (not during transaction)
+- ✅ Include source field to identify event origin
+
+### DON'T:
+- ❌ Skip event publishing for data changes
+- ❌ Use inconsistent subject naming
+- ❌ Publish sensitive data (passwords, tokens, API keys)
+- ❌ Block API waiting for event publish
+- ❌ Manually batch events (let publisher handle it)
+- ❌ Publish events inside transactions (publish after commit)
+- ❌ Use publish_immediate for bulk operations
+
+## Common Patterns
+
+### Publish After Database Commit
+
+```python
+async def create_asset(asset_data: Dict[str, Any]) -> str:
+    # Database operation
+    async with get_db_session() as db:
+        asset = Asset(**asset_data)
+        db.add(asset)
+        db.commit()
+        db.refresh(asset)
+        asset_id = str(asset.id)
+    
+    # Publish event AFTER successful commit
+    await publisher.publish(
+        subject="events.asset.created",
+        payload={
+            "event_type": "asset_created",
+            "asset_id": asset_id,
+            "program_name": asset_data["program_name"],
+            "data": asset_data,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "source": "api"
+        }
+    )
+    
+    return asset_id
+```
+
+### Batch Processing with Events
+
+```python
+# Process multiple assets - events automatically batched
+for asset in assets:
+    asset_id, action, event_data = await repository.create_or_update_asset(asset)
+    
+    if event_data:  # Only publish if there's event data
+        await publisher.publish(
+            subject=f"events.asset.{action}",
+            payload=event_data
+        )
+
+# Batch is automatically published when:
+# - 50 events queued (EVENT_BATCH_SIZE)
+# - 2 seconds elapsed (EVENT_BATCH_TIMEOUT)
+```
+
+### Critical Event (Immediate)
+
+```python
+# For critical events that must be published immediately
+await publisher.publish_immediate(
+    subject="events.workflow.failed",
+    payload={
+        "event_type": "workflow_failed",
+        "workflow_id": workflow_id,
+        "program_name": program_name,
+        "error": str(error),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "source": "api"
+    }
+)
+```
+
+## References
+
+- Event publisher: `src/api/app/services/event_publisher.py`
+- Unified asset processor: `src/api/app/services/unified_asset_processor.py`
+- Unified findings processor: `src/api/app/services/unified_findings_processor.py`
+
+# API Route Development Patterns
+
+## Route Structure
+
+Routes define HTTP endpoints and handle request/response logic. They should be thin - delegate business logic to services or repositories.
+
+### Basic Route Pattern
+
+```python
+from fastapi import APIRouter, HTTPException, Depends, Query, status
+from typing import Dict, Any, Optional, List, Union, Literal
+from pydantic import BaseModel, Field
+from auth.dependencies import get_current_user_from_middleware, get_user_accessible_programs
+from models.user_postgres import UserResponse
+import logging
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter()
+
+# Request model
+class CreateAssetRequest(BaseModel):
+    name: str = Field(..., description="Asset name")
+    program_name: str = Field(..., description="Program name")
+
+# Response model
+class AssetResponse(BaseModel):
+    id: str
+    name: str
+    program_name: str
+
+@router.post("", response_model=Dict[str, Any])
+async def create_asset(
+    request: CreateAssetRequest,
+    current_user: UserResponse = Depends(get_current_user_from_middleware)
+):
+    """Create a new asset"""
+    try:
+        # Check permissions
+        if not check_program_permission(current_user, request.program_name, "manager"):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Manager access required for program {request.program_name}"
+            )
+        
+        # Call repository
+        asset_id, action, event_data = await repository.create_or_update_asset(request.model_dump())
+        
+        return {
+            "status": "success",
+            "data": {"id": asset_id, **request.model_dump()}
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating asset: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+```
+
+## Typed Search Endpoints
+
+### Request Model Pattern
+
+Use Pydantic models with `Literal` for constrained choices:
+
+```python
+from typing import Optional, List, Union, Literal
+from pydantic import BaseModel, Field
+
+class SubdomainSearchRequest(BaseModel):
+    """Typed search request for subdomain assets"""
+    search: Optional[str] = Field(None, description="Fuzzy search on subdomain name")
+    exact_match: Optional[str] = Field(None, description="Exact match on subdomain name")
+    apex_domain: Optional[Union[str, List[str]]] = Field(None, description="Apex domain name(s)")
+    wildcard: Optional[bool] = Field(None, description="Filter by wildcard flag")
+    has_ips: Optional[bool] = Field(None, description="Filter subdomains that have any IPs")
+    ip: Optional[Union[str, List[str]]] = Field(None, description="Filter by specific IP address(es)")
+    has_cname: Optional[bool] = Field(None, description="Filter by presence of CNAME record")
+    cname_contains: Optional[str] = Field(None, description="Substring match on CNAME record")
+    program: Optional[Union[str, List[str]]] = Field(None, description="Restrict to program(s)")
+    sort_by: Literal['name','apex_domain','program_name','is_wildcard','updated_at','ip_count','cname_record'] = 'updated_at'
+    sort_dir: Literal['asc','desc'] = 'desc'
+    page: int = Field(1, ge=1)
+    page_size: int = Field(25, ge=1, le=10000)
+```
+
+### Typed Search Endpoint Implementation
+
+```python
+@router.post("/subdomain/search", response_model=Dict[str, Any])
+async def search_subdomains_typed(
+    request: SubdomainSearchRequest,
+    current_user: UserResponse = Depends(get_current_user_from_middleware)
+):
+    """Strongly-typed subdomain search with pagination"""
+    try:
+        # Determine program access and intersect with requested program(s)
+        accessible = get_user_accessible_programs(current_user)
+        
+        # Parse requested programs
+        requested_programs: Optional[List[str]] = None
+        if isinstance(request.program, str) and request.program.strip():
+            requested_programs = [request.program.strip()]
+        elif isinstance(request.program, list):
+            requested_programs = [p for p in request.program if isinstance(p, str) and p.strip()]
+        
+        # Compute final programs list based on user access
+        programs: Optional[List[str]] = None
+        if current_user.is_superuser or "admin" in current_user.roles:
+            # Unrestricted - use requested or None for all
+            programs = requested_programs if requested_programs else None
+        else:
+            allowed = accessible or []
+            if not allowed:
+                # No access - return empty result
+                return _empty_paginated_response(request)
+            if requested_programs:
+                # Intersect with allowed
+                programs = [p for p in requested_programs if p in allowed]
+                if not programs:
+                    return _empty_paginated_response(request)
+            else:
+                programs = allowed
+        
+        # Compute pagination offset
+        skip = (request.page - 1) * request.page_size
+        
+        # Call repository
+        result = await SubdomainAssetsRepository.search_subdomains_typed(
+            search=request.search,
+            exact_match=request.exact_match,
+            apex_domain=request.apex_domain,
+            wildcard=request.wildcard,
+            has_ips=request.has_ips,
+            ip=request.ip,
+            has_cname=request.has_cname,
+            cname_contains=request.cname_contains,
+            programs=programs,
+            sort_by=request.sort_by,
+            sort_dir=request.sort_dir,
+            limit=request.page_size,
+            skip=skip,
+        )
+        
+        # Build paginated response
+        total_count = result.get("total_count", 0)
+        total_pages = (total_count + request.page_size - 1) // request.page_size if request.page_size > 0 else 1
+        
+        return {
+            "status": "success",
+            "pagination": {
+                "total_items": total_count,
+                "total_pages": total_pages,
+                "current_page": request.page,
+                "page_size": request.page_size,
+                "has_next": request.page < total_pages,
+                "has_previous": request.page > 1,
+            },
+            "items": result.get("items", []),
+        }
+    except Exception as e:
+        logger.error(f"Error executing typed subdomain search: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Error executing search: {str(e)}")
+
+def _empty_paginated_response(request) -> Dict[str, Any]:
+    """Return empty paginated response"""
+    return {
+        "status": "success",
+        "pagination": {
+            "total_items": 0,
+            "total_pages": 1,
+            "current_page": request.page,
+            "page_size": request.page_size,
+            "has_next": False,
+            "has_previous": False,
+        },
+        "items": [],
+    }
+```
+
+## Authentication Dependencies
+
+### Standard Authentication
+
+```python
+from auth.dependencies import get_current_user_from_middleware
+
+@router.get("/endpoint")
+async def my_endpoint(
+    current_user: UserResponse = Depends(get_current_user_from_middleware)
+):
+    # current_user is guaranteed to be authenticated via middleware
+    pass
+```
+
+### Permission Checks
+
+```python
+from auth.dependencies import (
+    require_admin,
+    require_admin_or_manager,
+    check_program_permission,
+    get_user_accessible_programs
+)
+
+@router.post("/admin/endpoint")
+async def admin_endpoint(
+    current_user: UserResponse = Depends(require_admin)
+):
+    # Only admins/superusers can access
+    pass
+
+@router.delete("/subdomain/{domain_id}")
+async def delete_domain(
+    domain_id: str,
+    current_user: UserResponse = Depends(require_admin_or_manager)
+):
+    # Admins or program managers can access
+    pass
+
+@router.post("/programs/{program_name}/workflows")
+async def create_workflow(
+    program_name: str,
+    workflow: WorkflowDefinition,
+    current_user: UserResponse = Depends(get_current_user_from_middleware)
+):
+    # Check specific program permission
+    if not check_program_permission(current_user, program_name, "manager"):
+        raise HTTPException(
+            status_code=403,
+            detail=f"Manager access required for program {program_name}"
+        )
+    # ...
+```
+
+### Program Access Helpers
+
+```python
+from auth.dependencies import get_user_accessible_programs
+
+@router.get("/assets")
+async def list_assets(
+    current_user: UserResponse = Depends(get_current_user_from_middleware)
+):
+    # Get user's accessible programs
+    accessible = get_user_accessible_programs(current_user)
+    
+    # accessible is:
+    # - Empty list for superusers/admins (no restrictions)
+    # - List of program names for regular users
+    # - Empty list for users with no access (returns no results)
+    
+    if current_user.is_superuser or "admin" in current_user.roles:
+        # No filtering needed
+        programs = None
+    else:
+        if not accessible:
+            return {"status": "success", "items": []}
+        programs = accessible
+    
+    # Pass to repository
+    result = await repository.get_assets(programs=programs)
+    return {"status": "success", "items": result}
+```
+
+## Query Parameters
+
+### Simple Query Parameters
+
+```python
+@router.get("/subdomain")
+async def get_specific_subdomain(
+    id: Optional[str] = Query(None, description="Subdomain ID"),
+    current_user: UserResponse = Depends(get_current_user_from_middleware)
+):
+    """Get subdomain by ID or list (unified endpoint)"""
+    if id:
+        domain = await SubdomainAssetsRepository.get_domain_by_id(id)
+        if not domain:
+            raise HTTPException(status_code=404, detail=f"Domain {id} not found")
+        
+        # Check program access
+        domain_program = domain.get("program_name")
+        if domain_program:
+            accessible_programs = get_user_accessible_programs(current_user)
+            if accessible_programs and domain_program not in accessible_programs:
+                raise HTTPException(status_code=404, detail=f"Domain {id} not found")
+        
+        return {"status": "success", "data": domain}
+```
+
+## Batch Operations
+
+### Batch Delete Endpoint
+
+```python
+@router.delete("/subdomain/batch", response_model=Dict[str, Any])
+async def delete_domains_batch(
+    request_data: dict,
+    current_user: UserResponse = Depends(require_admin_or_manager)
+):
+    """Delete multiple domains/subdomains by their IDs"""
+    try:
+        asset_ids = request_data.get("asset_ids", [])
+        
+        if not asset_ids:
+            raise HTTPException(status_code=400, detail="No asset IDs provided")
+        
+        result = await SubdomainAssetsRepository.delete_subdomains_batch(asset_ids)
+        
+        return {
+            "status": "success",
+            "message": "Batch delete completed for domain/subdomain assets",
+            "results": result
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error batch deleting: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+```
+
+## Distinct/Faceted Filtering
+
+### Distinct Values Endpoint
+
+```python
+class DistinctRequest(BaseModel):
+    filter: Optional[Dict[str, Any]] = None
+    program: Optional[Union[str, List[str]]] = None
+
+@router.post("/subdomain/distinct/{field_name}", response_model=List[str])
+async def get_distinct_subdomain_field_values(
+    field_name: str,
+    query: Optional[DistinctRequest] = None,
+    current_user: UserResponse = Depends(get_current_user_from_middleware),
+):
+    """Get distinct values for a specified field, optionally filtered by program"""
+    try:
+        # Parse incoming filter
+        incoming_filter: Dict[str, Any] = {}
+        if query and isinstance(query.filter, dict):
+            incoming_filter = dict(query.filter)
+        
+        # Determine requested programs
+        requested_programs: Optional[List[str]] = None
+        if query and query.program is not None:
+            if isinstance(query.program, str) and query.program.strip():
+                requested_programs = [query.program.strip()]
+            elif isinstance(query.program, list):
+                requested_programs = [p for p in query.program if isinstance(p, str) and p.strip()]
+        elif "program_name" in incoming_filter:
+            pn = incoming_filter.get("program_name")
+            if isinstance(pn, str) and pn.strip():
+                requested_programs = [pn.strip()]
+            elif isinstance(pn, list):
+                requested_programs = [p for p in pn if isinstance(p, str) and p.strip()]
+        
+        # Enforce program scoping
+        accessible = get_user_accessible_programs(current_user)
+        programs: Optional[List[str]] = None
+        
+        if current_user.is_superuser or 'admin' in current_user.roles:
+            programs = requested_programs if requested_programs else None
+        else:
+            allowed = accessible or []
+            if not allowed:
+                return []
+            if requested_programs:
+                programs = [p for p in requested_programs if p in allowed]
+                if not programs:
+                    return []
+            else:
+                programs = allowed
+        
+        # Build filter_data
+        filter_data: Dict[str, Any] = dict(incoming_filter)
+        if programs is not None:
+            filter_data["program_name"] = programs
+        
+        # Get distinct values
+        distinct_values = await SubdomainAssetsRepository.get_distinct_values(field_name, filter_data)
+        return [value for value in distinct_values if value is not None]
+    
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        logger.error(f"Error getting distinct values: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error retrieving distinct values")
+```
+
+## Import Endpoints
+
+```python
+class DomainImportData(BaseModel):
+    name: str = Field(..., description="Domain name")
+    program_name: Optional[str] = Field(None, description="Program name")
+    is_wildcard: Optional[bool] = Field(False, description="Whether domain is wildcard")
+    ip: Optional[List[str]] = Field(None, description="IP addresses")
+    cname_record: Optional[str] = Field(None, description="CNAME record")
+    notes: Optional[str] = Field(None, description="Investigation notes")
+
+class DomainImportRequest(BaseModel):
+    domains: List[DomainImportData] = Field(..., description="List of domains to import")
+    merge: Optional[bool] = Field(True, description="Whether to merge with existing data")
+    update_existing: Optional[bool] = Field(False, description="Whether to update existing")
+    validate_domains: Optional[bool] = Field(True, description="Whether to validate domain names")
+
+@router.post("/subdomain/import", response_model=Dict[str, Any])
+async def import_domains(
+    request: DomainImportRequest,
+    current_user: UserResponse = Depends(get_current_user_from_middleware)
+):
+    """Import multiple domains from various sources"""
+    try:
+        import re
+        
+        # Validate domain names if requested
+        if request.validate_domains:
+            domain_pattern = re.compile(
+                r'^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$'
+            )
+            invalid_domains = [d.name for d in request.domains if not domain_pattern.match(d.name)]
+            if invalid_domains:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid domain names: {', '.join(invalid_domains[:10])}"
+                )
+        
+        # Filter by user program permissions
+        allowed_domains = []
+        for domain_data in request.domains:
+            if hasattr(current_user, 'program_permissions') and current_user.program_permissions:
+                if domain_data.program_name and domain_data.program_name not in current_user.program_permissions:
+                    continue
+            allowed_domains.append(domain_data)
+        
+        if not allowed_domains:
+            raise HTTPException(
+                status_code=403,
+                detail="No domains to import - all belong to unauthorized programs"
+            )
+        
+        # Process domains
+        imported_count = 0
+        errors = []
+        
+        for domain_data in allowed_domains:
+            try:
+                domain_dict = {
+                    "name": domain_data.name.lower().strip(),
+                    "program_name": domain_data.program_name,
+                    "is_wildcard": domain_data.is_wildcard or False,
+                    "ip": domain_data.ip or [],
+                    "cname_record": domain_data.cname_record,
+                    "notes": domain_data.notes
+                }
+                domain_dict = {k: v for k, v in domain_dict.items() if v is not None and v != ""}
+                
+                domain_id, action, event_data = await SubdomainAssetsRepository.create_or_update_subdomain(domain_dict)
+                if domain_id:
+                    imported_count += 1
+            except Exception as e:
+                errors.append(f"Error processing {domain_data.name}: {str(e)}")
+        
+        response_data = {
+            "status": "success",
+            "message": f"Import completed: {imported_count} processed",
+            "data": {
+                "processed_count": imported_count,
+                "total_processed": len(allowed_domains),
+                "total_submitted": len(request.domains)
+            }
+        }
+        
+        if errors:
+            response_data["data"]["errors"] = errors[:10]
+            response_data["data"]["error_count"] = len(errors)
+            if imported_count == 0:
+                response_data["status"] = "error"
+            else:
+                response_data["status"] = "partial_success"
+        
+        return response_data
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in domain import: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error importing domains: {str(e)}")
+```
+
+## Error Handling
+
+### Standard Error Pattern
+
+```python
+@router.post("/endpoint")
+async def my_endpoint(request: RequestModel):
+    try:
+        result = await service.process(request)
+        return result
+    
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is
+        raise
+    
+    except ValueError as ve:
+        # Validation errors -> 400
+        logger.warning(f"Validation error: {ve}")
+        raise HTTPException(status_code=400, detail=str(ve))
+    
+    except Exception as e:
+        # Unexpected errors -> 500
+        logger.exception(f"Unexpected error: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"An internal server error occurred: {str(e)}"
+        )
+```
+
+### Status Codes
+
+- `200 OK`: Successful GET, PUT, PATCH
+- `201 Created`: Successful POST (creation)
+- `400 Bad Request`: Validation error, bad input
+- `401 Unauthorized`: Authentication required
+- `403 Forbidden`: Permission denied
+- `404 Not Found`: Resource not found
+- `409 Conflict`: Duplicate resource
+- `500 Internal Server Error`: Unexpected server error
+
+## Response Formats
+
+### Paginated Response
+
+```python
+{
+    "status": "success",
+    "pagination": {
+        "total_items": 100,
+        "total_pages": 4,
+        "current_page": 1,
+        "page_size": 25,
+        "has_next": True,
+        "has_previous": False
+    },
+    "items": [...]
+}
+```
+
+### Single Resource Response
+
+```python
+{
+    "status": "success",
+    "data": {...}
+}
+```
+
+### Operation Result Response
+
+```python
+{
+    "status": "success",
+    "message": "Operation completed successfully",
+    "data": {...}
+}
+```
+
+### Batch Operation Response
+
+```python
+{
+    "status": "success",
+    "message": "Batch delete completed",
+    "results": {
+        "deleted_count": 10,
+        "not_found_count": 2,
+        "error_count": 0,
+        "errors": []
+    }
+}
+```
+
+## Best Practices
+
+### DO:
+- ✅ Use Pydantic models for all request/response validation
+- ✅ Apply authentication dependencies to protected routes
+- ✅ Check program permissions before program-scoped operations
+- ✅ Use `get_user_accessible_programs()` for filtering queries
+- ✅ Handle errors with appropriate HTTPException status codes
+- ✅ Use descriptive docstrings for endpoints
+- ✅ Return consistent response formats (status, pagination, items/data)
+- ✅ Log errors with context
+- ✅ Use `Literal` types for constrained string fields
+
+### DON'T:
+- ❌ Put business logic in routes (use services/repositories)
+- ❌ Skip authentication checks
+- ❌ Trust client-provided program names without validation
+- ❌ Return SQLAlchemy objects directly
+- ❌ Swallow exceptions silently
+- ❌ Use generic error messages
+- ❌ Skip input validation
+- ❌ Use positional arguments for complex methods
+
+## References
+
+- Example routes: `src/api/app/routes/subdomain_assets.py`, `src/api/app/routes/programs.py`
+- Auth dependencies: `src/api/app/auth/dependencies.py`
+- Main app: `src/api/app/main.py`
+
+# API Service Layer Patterns
+
+## Service Layer Purpose
+
+Services handle business logic, external integrations, and async operations. They sit between routes and repositories.
+
+### Service Responsibilities
+
+1. **Business Logic**: Complex operations that span multiple repositories
+2. **External Integrations**: Third-party API calls (HackerOne, Bugcrowd, YesWeHack, Intigriti)
+3. **Async Processing**: Background jobs, unified processors
+4. **Event Publishing**: Publishing events to NATS via RobustEventPublisher
+5. **Orchestration**: Coordinating multiple operations
+
+## Available Services
+
+```
+src/api/app/services/
+├── unified_asset_processor.py     # Unified asset processing
+├── unified_findings_processor.py  # Unified findings processing
+├── event_publisher.py             # NATS event publishing (RobustEventPublisher)
+├── kubernetes.py                  # Kubernetes job management
+├── hackerone_service.py           # HackerOne API integration
+├── bugcrowd_service.py            # Bugcrowd API integration
+├── yeswehack_service.py           # YesWeHack API integration
+├── intigriti_service.py           # Intigriti API integration
+├── internal_token_service.py      # Internal service token management
+├── job_scheduler.py               # Job scheduling
+├── job_submission.py              # Job submission
+├── google_safe_browsing_service.py # Google Safe Browsing API
+└── recordedfuture_api_client.py   # Recorded Future API
+```
+
+## Unified Processors
+
+### Unified Asset Processor
+
+The `UnifiedAssetProcessor` handles all asset types consistently:
+
+```python
+from services.unified_asset_processor import unified_asset_processor
+
+# Process assets asynchronously
+job_id = await unified_asset_processor.process_assets_unified(
+    asset_data={
+        "subdomain": [...],
+        "ip": [...],
+        "url": [...],
+        "service": [...],
+        "certificate": [...],
+        "apex_domain": [...],
+    },
+    program_name="example"
+)
+
+# Check job status
+status = await unified_asset_processor.get_job_status(job_id)
+```
+
+**Key Features**:
+- Always async (never blocks API)
+- Intelligent batching
+- Consistent event publishing
+- Job tracking with status updates
+
+### Processing Result Dataclasses
+
+```python
+from dataclasses import dataclass, field
+from typing import Dict, List, Any, Optional
+from datetime import datetime, timezone
+
+@dataclass
+class ProcessingResult:
+    """Result of processing a single asset"""
+    asset_type: str
+    asset_name: str
+    action: str  # 'created', 'updated', 'skipped', 'out_of_scope', 'failed'
+    record_id: Optional[str] = None
+    error: Optional[str] = None
+    event_payload: Optional[Dict[str, Any]] = None
+
+@dataclass
+class AssetBatchResult:
+    """Result of processing a batch of assets"""
+    asset_type: str
+    total_count: int = 0
+    success_count: int = 0
+    created_count: int = 0
+    updated_count: int = 0
+    skipped_count: int = 0
+    out_of_scope_count: int = 0
+    failed_count: int = 0
+    created_assets: List[Dict[str, Any]] = field(default_factory=list)
+    updated_assets: List[Dict[str, Any]] = field(default_factory=list)
+    skipped_assets: List[Dict[str, Any]] = field(default_factory=list)
+    failed_assets: List[Dict[str, Any]] = field(default_factory=list)
+    errors: List[str] = field(default_factory=list)
+
+@dataclass
+class UnifiedProcessingResult:
+    """Complete result of unified asset processing"""
+    job_id: str
+    program_name: str
+    status: str = "processing"
+    total_assets: int = 0
+    processed_assets: int = 0
+    success_count: int = 0
+    failed_count: int = 0
+    asset_results: Dict[str, AssetBatchResult] = field(default_factory=dict)
+    processing_time: float = 0.0
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    completed_at: Optional[datetime] = None
+    error: Optional[str] = None
+```
+
+### Unified Findings Processor
+
+Similar pattern for security findings:
+
+```python
+from services.unified_findings_processor import unified_findings_processor
+
+job_id = await unified_findings_processor.process_findings_unified(
+    finding_data={
+        "nuclei": [...],
+        "typosquat_domain": [...],
+        "wpscan": [...],
+        "broken_link": [...],
+    },
+    program_name="example"
+)
+```
+
+## Event Publishing with RobustEventPublisher
+
+### Using the Event Publisher
+
+```python
+from services.event_publisher import publisher
+
+# Publish event (batched automatically)
+await publisher.publish(
+    subject="events.asset.created",
+    payload={
+        "event_type": "asset_created",
+        "asset_type": "subdomain",
+        "asset_id": asset_id,
+        "program_name": program_name,
+        "data": {...}
+    }
+)
+
+# Publish immediate event (no batching)
+await publisher.publish_immediate(
+    subject="events.workflow.started",
+    payload={...}
+)
+```
+
+### RobustEventPublisher Class
+
+```python
+from dataclasses import dataclass
+from typing import Dict, Any, List, Optional
+import asyncio
+import os
+import time
+
+from nats.aio.client import Client as NATS
+from nats.js.api import StreamConfig, RetentionPolicy
+
+@dataclass
+class EventBatch:
+    """Represents a batch of events to be published"""
+    events: List[Dict[str, Any]]
+    created_at: float
+    max_age: float = 5.0
+
+class RobustEventPublisher:
+    """
+    Robust NATS publisher with:
+    - Single persistent NATS connection
+    - Event batching for high-volume scenarios
+    - Connection health monitoring
+    - Exponential backoff retry logic
+    - Graceful fallback to logging when NATS unavailable
+    - Background batch processing
+    """
+    
+    def __init__(self):
+        self.nats_url = os.getenv("NATS_URL", "nats://nats:4222")
+        self.stream = os.getenv("EVENTS_STREAM", "EVENTS")
+        
+        # Batching configuration
+        self.batch_size = int(os.getenv("EVENT_BATCH_SIZE", "50"))
+        self.batch_timeout = float(os.getenv("EVENT_BATCH_TIMEOUT", "2.0"))
+        
+        # Connection management
+        self._nc: Optional[NATS] = None
+        self._connected = False
+        self._connection_retry_delay = 1.0
+        
+        # Batch management
+        self._current_batch: Optional[EventBatch] = None
+        self._batch_processor_task: Optional[asyncio.Task] = None
+    
+    async def publish(self, subject: str, payload: Dict[str, Any]):
+        """Publish event with automatic batching"""
+        # Events are batched for efficiency
+        # Batch published when: size >= batch_size OR timeout >= batch_timeout
+        ...
+    
+    async def publish_immediate(self, subject: str, payload: Dict[str, Any]) -> bool:
+        """Publish immediately without batching (for critical events)"""
+        ...
+    
+    async def flush_batches(self):
+        """Force publish all pending batches"""
+        ...
+    
+    def get_batch_status(self) -> Dict[str, Any]:
+        """Get current batch status for debugging"""
+        return {
+            "status": "active",
+            "events": len(self._current_batch.events),
+            "age_seconds": time.time() - self._current_batch.created_at,
+            "batch_timeout": self.batch_timeout,
+            "batch_size": self.batch_size,
+        }
+    
+    async def shutdown(self):
+        """Graceful shutdown - flush batches and close connections"""
+        ...
+
+# Global instance
+publisher = RobustEventPublisher()
+```
+
+### Event Subject Naming
+
+Follow consistent naming:
+- `events.asset.created`
+- `events.asset.updated`
+- `events.finding.created`
+- `events.workflow.started`
+- `events.workflow.completed`
+- `events.workflow.failed`
+
+### Event Payload Structure
+
+```python
+event_payload = {
+    "event_type": "asset_created",
+    "asset_type": "subdomain",
+    "asset_id": str(asset.id),
+    "program_name": program_name,
+    "data": {
+        "name": asset.name,
+        "ip_address": asset.ip_address,
+        "resolved": asset.resolved
+    },
+    "timestamp": datetime.now(timezone.utc).isoformat(),
+    "source": "api"
+}
+```
+
+## Async Processing Patterns
+
+### Job-Based Processing
+
+For long-running operations, use job IDs:
+
+```python
+class UnifiedAssetProcessor:
+    def __init__(self):
+        self.active_jobs: Dict[str, UnifiedProcessingResult] = {}
+        self.asset_type_handlers: Dict[str, Callable] = {
+            'ip': self._handle_ip_assets,
+            'subdomain': self._handle_subdomain_assets,
+            'url': self._handle_url_assets,
+            'service': self._handle_service_assets,
+            'certificate': self._handle_certificate_assets,
+            'apex_domain': self._handle_apex_domain_assets,
+        }
+    
+    async def process_assets_unified(
+        self,
+        asset_data: Dict[str, List],
+        program_name: str
+    ) -> str:
+        """Main unified processing method - returns job_id immediately"""
+        if not program_name:
+            raise ValueError("program_name is required")
+        
+        job_id = str(uuid.uuid4())
+        result = UnifiedProcessingResult(
+            job_id=job_id,
+            program_name=program_name,
+            total_assets=self._calculate_total_assets(asset_data)
+        )
+        
+        self.active_jobs[job_id] = result
+        
+        # Start async processing
+        asyncio.create_task(self._process_assets_async(job_id, asset_data, program_name))
+        
+        return job_id
+    
+    async def get_job_status(self, job_id: str) -> Optional[Dict[str, Any]]:
+        """Get the status of a processing job"""
+        result = self.active_jobs.get(job_id)
+        if not result:
+            return None
+        
+        return {
+            "job_id": result.job_id,
+            "status": result.status,
+            "program_name": result.program_name,
+            "total_assets": result.total_assets,
+            "processed_assets": result.processed_assets,
+            "success_count": result.success_count,
+            "failed_count": result.failed_count,
+            "processing_time": result.processing_time,
+            "created_at": result.created_at.isoformat(),
+            "completed_at": result.completed_at.isoformat() if result.completed_at else None,
+            "error": result.error,
+            "asset_results": {
+                asset_type: {
+                    "total_count": batch.total_count,
+                    "created_count": batch.created_count,
+                    "updated_count": batch.updated_count,
+                    "skipped_count": batch.skipped_count,
+                    "failed_count": batch.failed_count,
+                }
+                for asset_type, batch in result.asset_results.items()
+            }
+        }
+
+# Global singleton instance
+unified_asset_processor = UnifiedAssetProcessor()
+```
+
+## External Service Integrations
+
+### HackerOne Service Pattern
+
+```python
+import httpx
+import logging
+
+logger = logging.getLogger(__name__)
+
+class HackerOneService:
+    def __init__(self, api_token: str):
+        self.api_token = api_token
+        self.base_url = "https://api.hackerone.com/v1"
+        self.timeout = 30.0
+    
+    async def fetch_program_details(self, program_handle: str) -> Dict[str, Any]:
+        """Fetch program details from HackerOne API"""
+        headers = {
+            "Authorization": f"Bearer {self.api_token}",
+            "Accept": "application/json"
+        }
+        
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.get(
+                    f"{self.base_url}/programs/{program_handle}",
+                    headers=headers
+                )
+                response.raise_for_status()
+                return response.json()
+        
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise ValueError("Invalid HackerOne API token")
+            elif e.response.status_code == 404:
+                raise ValueError(f"Program '{program_handle}' not found")
+            elif e.response.status_code == 429:
+                raise ValueError("Rate limit exceeded")
+            else:
+                raise ValueError(f"HackerOne API error: {e.response.status_code}")
+        
+        except httpx.TimeoutException:
+            raise ValueError("Request to HackerOne API timed out")
+        
+        except Exception as e:
+            logger.exception(f"Unexpected error: {e}")
+            raise ValueError(f"Failed to fetch program: {str(e)}")
+```
+
+### Internal Token Service
+
+```python
+class InternalTokenService:
+    """Manages internal service tokens for service-to-service auth"""
+    
+    DEFAULT_TOKEN_NAME = "default-internal-token"
+    
+    async def ensure_table_exists(self):
+        """Ensure the internal_service_tokens table exists"""
+        ...
+    
+    async def validate_token(self, token: str) -> Optional[Dict[str, Any]]:
+        """Validate an internal service token"""
+        ...
+    
+    async def get_or_create_default_token(self) -> str:
+        """Get existing default token or create new one"""
+        ...
+    
+    async def create_internal_token(
+        self,
+        name: str,
+        description: str = None
+    ) -> str:
+        """Create a new internal service token"""
+        ...
+```
+
+## Kubernetes Service
+
+### Job Management
+
+```python
+from services.kubernetes import KubernetesService
+
+k8s_service = KubernetesService()
+
+# Create workflow job
+job = await k8s_service.create_workflow_job(
+    workflow_id=workflow_id,
+    program_name=program_name,
+    workflow_data=workflow_data
+)
+
+# Get job status
+status = await k8s_service.get_job_status(job_name)
+
+# Delete job
+await k8s_service.delete_job(job_name)
+```
+
+## Service Initialization
+
+### Singleton Pattern
+
+For services that maintain state:
+
+```python
+class UnifiedAssetProcessor:
+    _instance = None
+    
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            cls._instance.active_jobs = {}
+        return cls._instance
+
+# Global instance
+unified_asset_processor = UnifiedAssetProcessor()
+```
+
+### Service Shutdown
+
+```python
+class UnifiedAssetProcessor:
+    async def shutdown(self):
+        """Clean up resources"""
+        # Cancel background tasks
+        for job_id, result in self.active_jobs.items():
+            if result.status == "processing":
+                result.status = "cancelled"
+                result.error = "Shutdown requested"
+        
+        # Flush event batches
+        await publisher.flush_batches()
+        
+        logger.info("Unified asset processor shutdown complete")
+```
+
+## Retry Logic
+
+### Exponential Backoff
+
+```python
+async def fetch_with_retry(self, url: str, max_retries: int = 3) -> Dict[str, Any]:
+    """Fetch with exponential backoff retry"""
+    for attempt in range(max_retries):
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.get(url, headers=self.headers)
+                response.raise_for_status()
+                return response.json()
+        
+        except (httpx.HTTPStatusError, httpx.TimeoutException) as e:
+            if attempt == max_retries - 1:
+                raise
+            
+            # Exponential backoff with cap
+            delay = min(2 ** attempt, 30.0)
+            logger.warning(f"Attempt {attempt + 1} failed, retrying in {delay}s")
+            await asyncio.sleep(delay)
+    
+    raise ValueError("Max retries exceeded")
+```
+
+## Best Practices
+
+### DO:
+- ✅ Use unified processors for assets/findings
+- ✅ Publish events using `publisher.publish()` from event_publisher
+- ✅ Handle external API errors gracefully with specific error messages
+- ✅ Use job IDs for long-running operations
+- ✅ Implement retry logic with exponential backoff
+- ✅ Log errors with context
+- ✅ Clean up resources on shutdown (flush batches, cancel tasks)
+- ✅ Use async/await for all I/O operations
+- ✅ Use dataclasses for result types
+
+### DON'T:
+- ❌ Block the API with synchronous operations
+- ❌ Skip error handling in external API calls
+- ❌ Store large amounts of state in services
+- ❌ Mix business logic with route handlers
+- ❌ Skip event publishing for data changes
+- ❌ Use blocking I/O operations
+- ❌ Forget to implement shutdown handlers
+
+## References
+
+- Unified asset processor: `src/api/app/services/unified_asset_processor.py`
+- Unified findings processor: `src/api/app/services/unified_findings_processor.py`
+- Event publisher: `src/api/app/services/event_publisher.py`
+- Kubernetes service: `src/api/app/services/kubernetes.py`
+- Internal token service: `src/api/app/services/internal_token_service.py`
+- External services: `src/api/app/services/hackerone_service.py`, etc.

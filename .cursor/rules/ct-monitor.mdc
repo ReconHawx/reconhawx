@@ -1,0 +1,354 @@
+---
+globs: ["src/ct-monitor/app/*.py", "src/ct-monitor/**/*.py", "src/ct-monitor/tests/**/*.py", "kubernetes/**/ct-monitor/**"]
+---
+
+# CT Monitor Service Architecture
+
+## Overview
+
+The CT Monitor Service is a real-time Certificate Transparency log monitoring system that detects typosquatting attacks by analyzing newly issued SSL/TLS certificates. It streams certificates from CT logs, matches them against protected domains using dnstwist variations and similarity algorithms, and publishes alerts to NATS for downstream processing.
+
+## Core Architecture
+
+```
+CTMonitorService (main.py)
+├── CT Log Sources
+│   ├── CTLogPoller (ct_log_poller.py) - RECOMMENDED: Direct polling
+│   └── CertStreamConsumer (certstream_consumer.py) - FALLBACK: WebSocket
+├── Domain Matching (two-stage)
+│   ├── DnstwistVariationGenerator (variation_generator.py) - PRIMARY: O(1) exact variation
+│   └── protected_domain_similarity.py - FALLBACK: API-aligned score + keywords
+├── Alert Publishing
+│   └── CTAlertPublisher (alert_publisher.py) - NATS JetStream
+└── Data Models (models.py)
+    ├── CertificateInfo
+    ├── MatchResult
+    ├── CTAlert
+    └── ProcessingStats
+```
+
+## Component Responsibilities
+
+### CTMonitorService (`main.py`)
+- **Purpose**: Main orchestrator that coordinates all components
+- **Responsibilities**:
+  - Manages service lifecycle (start/stop)
+  - Handles HTTP API endpoints for control
+  - Coordinates certificate processing pipeline
+  - Refreshes protected domains from API
+  - Tracks processing statistics
+- **Key Methods**:
+  - `start()` - Initialize and start monitoring
+  - `stop()` - Graceful shutdown
+  - `_on_certificate()` - Process incoming certificates
+  - `_refresh_protected_domains()` - Fetch domains from API
+  - `get_status()` - Return service status and stats
+- **Program gating**: `_refresh_protected_domains()` only builds `program_match_states` for programs where the Recon API returns `ct_monitoring_enabled=true` (column on `programs`). Each refresh clears `program_match_states` / `protected_domains` / variations and rebuilds.
+- **Pod auto-start**: Lifespan probes the API then calls `start()` so NATS, domain refresh, and stats run. **CT log / CertStream fetching** starts only when `≥1` program has `ct_monitoring_enabled` (`_ct_ingestion_loop` + `_reconcile_ct_ingestion`). With zero such programs, no traffic to CT providers. Set `CT_MONITOR_AUTO_START=false` to skip auto-`start()`.
+- **Config reload from API**: When `ct_monitoring_enabled` changes on a program, the Recon API calls `sync_ct_monitor_program_config()` (`src/api/app/services/ct_monitor_client.py`): `POST /start` if needed, then `POST /refresh-domains` to reload program match config without restarting the pod. `POST /refresh-domains` on ct-monitor reapplies all programs with the flag enabled.
+
+### Configuration sources (runtime tuning)
+
+| What | Where | Notes |
+|------|--------|--------|
+| CT source (`ct_logs` vs `certstream`) | Env `CT_SOURCE` / K8s ConfigMap `ct-source` | Still cluster-level |
+| Global intervals + CT poll sizing | DB `system_settings.key = ct_monitor_runtime`; API `GET /internal/ct-monitor/runtime-settings` (internal token); admin UI System Settings → CT monitor | ct-monitor merges with `CTMonitorConfig` env defaults on boot; refreshes overlay on each domain-refresh loop; `POST /reload-runtime-settings` applies poll changes (restarts ingestion if batch/poll/offset changed) |
+| Per-program TLD allowlist + similarity | DB `programs.ct_monitor_program_settings`; returned on `GET /programs/{name}` | Union of enabled programs’ TLD sets drives `CTLogPoller` / `CertStreamConsumer` filter; `similarity_threshold` applies to API-aligned scores in `protected_domain_similarity.py` (duplicate of API service) |
+
+### CTLogPoller (`ct_log_poller.py`) - **RECOMMENDED**
+- **Purpose**: Direct polling of CT logs (Sectigo, Let's Encrypt, Google)
+- **Why Recommended**: More reliable, no third-party dependency
+- **Responsibilities**:
+  - Polls multiple CT logs in parallel
+  - Tracks tree size and last processed index per log
+  - Fetches entries in batches
+  - Parses X.509 certificates from CT log entries
+  - Applies TLD filtering
+- **Key Methods**:
+  - `start()` - Begin polling loop
+  - `_poll_all_logs()` - Poll all configured logs
+  - `_get_entries()` - Fetch entries from CT log API
+  - `_parse_entry()` - Extract certificate info from entry
+
+### CertStreamConsumer (`certstream_consumer.py`) - **FALLBACK**
+- **Purpose**: WebSocket stream from certstream.calidog.io
+- **Why Fallback**: Depends on external service, may be unreliable
+- **Responsibilities**:
+  - Connects to CertStream WebSocket
+  - Processes certificate updates in real-time
+  - Handles reconnection on disconnect
+  - Applies TLD filtering
+- **Key Methods**:
+  - `start()` - Connect and consume stream
+  - `_consume_stream()` - WebSocket connection loop
+  - `_process_certificate()` - Extract and filter certificates
+
+### DnstwistVariationGenerator (`variation_generator.py`) - **PRIMARY MATCHER**
+- **Purpose**: Fast O(1) lookup for pre-computed typosquat variations
+- **Why Primary**: Handles millions of certificates per day efficiently
+- **Responsibilities**:
+  - Pre-generates all typosquat variations using dnstwist library
+  - Uses fuzzers: homoglyph, bitsquatting, replacement, insertion, omission, etc.
+  - Stores variations in memory for instant lookup
+  - Tracks protected domains and variations per program
+- **Key Methods**:
+  - `add_protected_domains()` - Generate variations for domains
+  - `match()` - O(1) lookup for variation match
+  - `is_legitimate_subdomain()` - Filter legitimate subdomains
+  - `is_protected_domain()` - Check if domain is protected (not variation)
+
+### `protected_domain_similarity.py`
+- Duplicate of the pure logic in `src/api/app/services/protected_domain_similarity_service.py` (keep in sync manually).
+- After a dnstwist miss: substring match on `protected_subdomain_prefixes`, then `best_similarity_typo_to_protected` vs each protected domain compared to `ct_monitor_program_settings.similarity_threshold`.
+
+### CTAlertPublisher (`alert_publisher.py`)
+- **Purpose**: Publishes alerts to NATS JetStream EVENTS stream
+- **Responsibilities**:
+  - Connects to NATS JetStream
+  - Ensures EVENTS stream exists with correct subjects
+  - Publishes alerts with proper payload structure
+  - Calculates alert priority based on match characteristics
+- **Key Methods**:
+  - `connect()` - Connect to NATS and ensure stream
+  - `publish_alert()` - Publish single alert
+  - `_calculate_priority()` - Determine alert priority level
+
+## Data Flow
+
+```
+CT Logs (Sectigo/LE/Google) or CertStream
+    ↓
+CTLogPoller/CertStreamConsumer
+    ↓ (CertificateInfo)
+CTMonitorService._on_certificate()
+    ↓
+Stage 1: DnstwistVariationGenerator.match() [O(1) lookup]
+    ↓ (if match)
+    → CTAlertPublisher.publish_alert()
+    ↓
+Stage 2: keywords + protected_similarity (API-aligned) [fallback]
+    ↓ (if match)
+    → CTAlertPublisher.publish_alert()
+    ↓
+NATS JetStream (EVENTS stream, subject: events.typosquat.ct_alert)
+    ↓
+event-handler → workflows/notifications
+```
+
+## Configuration
+
+### Environment Variables (via `config.py`)
+
+**Required:**
+- `DATA_API_URL`: API base URL (default: `http://api:8000`)
+- `NATS_URL`: NATS server URL (default: `nats://nats:4222`)
+- `INTERNAL_SERVICE_API_KEY`: API authentication key
+
+**CT Source Selection:**
+- `CT_SOURCE`: `"ct_logs"` (recommended) or `"certstream"` (fallback)
+
+**Matching Configuration:**
+- `CT_TLD_FILTER`: Comma-separated TLDs (default: `com,net,org,io,co,app,xyz,online,site,info,biz`)
+- Per-program similarity: `programs.ct_monitor_program_settings.similarity_threshold` (not env)
+
+**CT Log Polling** (when `CT_SOURCE=ct_logs`):
+- `CT_POLL_INTERVAL`: Seconds between polls (default: `10`)
+- `CT_BATCH_SIZE`: Entries per API request (default: `100`)
+- `CT_MAX_ENTRIES_PER_POLL`: Max entries per cycle (default: `1000`)
+- `CT_START_OFFSET`: Entries behind to start (default: `0`, set to e.g. `5000` for testing)
+
+**Domain Refresh:**
+- `CT_DOMAIN_REFRESH_INTERVAL`: Seconds between API refreshes (default: `300`)
+
+**HTTP Server:**
+- `CT_MONITOR_HTTP_HOST`: HTTP server host (default: `0.0.0.0`)
+- `CT_MONITOR_HTTP_PORT`: HTTP server port (default: `8002`)
+
+**Logging:**
+- `LOG_LEVEL`: Logging level (default: `INFO`)
+
+## Protected Domains Loading
+
+The service fetches protected domains from the API for all programs:
+
+1. GET `/programs` - Get list of all programs
+2. For each program: GET `/programs/{program_name}` - Get program details
+3. Collects domains from:
+   - `protected_domains` (explicit list)
+   - `seed_domains` (main domains)
+   - `settings.root_domains` (root domain settings)
+4. Keywords from `protected_subdomain_prefixes` (substring match when no variation hit)
+
+Domains are refreshed periodically (default: every 5 minutes) via `_domain_refresh_loop()`.
+
+## Matching Algorithm
+
+### Stage 1: Dnstwist Variation Lookup (Primary)
+- Pre-computes all variations using dnstwist fuzzers
+- O(1) dictionary lookup: `variation_generator.match(domain)`
+- Returns `VariationInfo` with fuzzer type and protected domain
+- **Fast**: Handles millions of certificates per day
+
+### Stage 2: Keywords + API-aligned similarity (fallback)
+1. **Keyword**: any `protected_subdomain_prefixes` token appears as substring in the hostname (lowercased).
+2. **Similarity**: best score over protected domains using suffix scan + apex + collapsed string (same as API typosquat similarity); alert if `score >= similarity_threshold`.
+
+### Legitimate Subdomain Filtering
+- Skips legitimate subdomains: `subdomain.example.com` is NOT flagged for `example.com`
+- Uses `is_legitimate_subdomain()` check
+
+## Alert Publishing
+
+Alerts are published to NATS JetStream with this structure:
+
+```python
+{
+    "event": "ct_typosquat_alert",
+    "program_name": "...",
+    "timestamp": "...",
+    "auto_analyze": True,
+    "priority": "critical|high|medium|low",
+    "protected_domain": "...",
+    "detected_domain": "...",
+    "similarity_score": 0.95,
+    "match_type": "dnstwist:<fuzzer>|keyword|protected_similarity",
+    "match_details": {...},
+    "detected_domain_list_array": ["..."],
+    "certificate": {...},
+    "source": "ct_monitor"
+}
+```
+
+**Priority Calculation:**
+- `critical`: Homoglyph attacks
+- `high`: TLD swap or similarity ≥ 0.95
+- `medium`: Similarity ≥ 0.85
+- `low`: Similarity otherwise above program threshold
+
+## Integration Points
+
+### API Integration
+- Fetches protected domains from `/programs` and `/programs/{name}` endpoints
+- Uses `INTERNAL_SERVICE_API_KEY` for authentication
+- Refreshes domains periodically
+
+### NATS Integration
+- Publishes to `EVENTS` stream
+- Subject: `events.typosquat.ct_alert`
+- Event-handler processes these events and triggers:
+  - Automatic typosquat analysis workflows
+  - Discord notifications (for critical/high priority)
+  - Dashboard updates
+
+### HTTP Control API
+- `GET /status` - Get service status and statistics
+- `POST /start` - Start monitoring service
+- `POST /stop` - Stop monitoring service
+- `GET /health` - Health check
+
+## Development Guidelines
+
+### Adding New Matching Techniques
+1. Extend `_match_keyword_or_similarity()` / `protected_domain_similarity.py` (keep in sync with API)
+2. Update `MatchResult.match_type` enum
+3. Ensure priority calculation in `CTAlertPublisher._calculate_priority()`
+4. Test with real certificate data
+
+### Adding New CT Logs
+1. Add log entry to `DEFAULT_CT_LOGS` in `ct_log_poller.py`
+2. Format: `{"name": "...", "url": "...", "operator": "..."}`
+3. Logs are sharded by year/half-year (e.g., `2026h1`, `2026h2`)
+4. Re-evaluate yearly as logs expire
+
+### Performance Considerations
+- **TLD filtering is critical**: Without it, processes ALL certificates (millions/day)
+- **Variation generation**: Pre-computes variations at startup, uses O(1) lookup
+- **Batch processing**: CT logs are fetched in batches (default: 100 entries)
+- **Parallel polling**: Multiple CT logs polled concurrently
+- **Memory usage**: Variations stored in memory (can be large for many domains)
+
+### Error Handling
+- CT log polling errors are tracked per log (removed after repeated failures)
+- CertStream reconnects automatically on disconnect
+- NATS connection errors trigger retries
+- Certificate parsing errors are logged but don't stop processing
+
+### Testing
+- Use `CT_START_OFFSET` to process historical certificates
+- Set `CT_MAX_ENTRIES_PER_POLL` to limit processing during testing
+- Monitor stats via `/status` endpoint
+- Check NATS stream for published alerts
+
+## Key Dependencies
+
+- `dnstwist`: Domain variation generation (typosquatting detection)
+- `cryptography`: X.509 certificate parsing
+- `nats-py`: NATS JetStream client
+- `aiohttp`: Async HTTP client for API calls
+- `websockets`: CertStream WebSocket client (fallback)
+- `tldextract`: TLD extraction for filtering
+- `fastapi`/`uvicorn`: HTTP control API
+
+## Common Patterns
+
+### Certificate Processing
+```python
+async def _on_certificate(self, cert_info: CertificateInfo):
+    # Stage 1: exact dnstwist variation
+    variation_info = self.variation_generator.match(domain)
+    if variation_info:
+        await self._publish_alert(...)
+    # Stage 2: per SAN — keywords then best_similarity_typo_to_protected vs program list
+    match = self._match_keyword_or_similarity(domain_lower, state, cert_info)
+```
+
+### Domain Refresh
+```python
+# Fetches from API and regenerates variations
+await self._refresh_protected_domains()
+# Runs periodically via _domain_refresh_loop()
+```
+
+### Stats Reporting
+```python
+# Logs stats every stats_interval seconds
+# Includes: received, processed, filtered, matches, alerts, rate
+self._log_stats()
+```
+
+## Troubleshooting
+
+### No Alerts Generated
+- Check protected domains are loaded: `/status` endpoint shows `protected_domains.total > 0`
+- Verify TLD filter matches your domains
+- Check similarity threshold isn't too high
+- Ensure dnstwist is installed and working
+
+### High Memory Usage
+- Reduce `max_variations_per_domain` in variation generation
+- Limit number of protected domains per program
+- Use TLD filtering to reduce certificate volume
+
+### CT Log Connection Issues
+- Check log URLs are current (logs expire yearly)
+- Verify network connectivity to CT log servers
+- Check logs aren't rate-limiting requests
+
+### NATS Publishing Failures
+- Verify NATS connection: `publisher.is_connected`
+- Check EVENTS stream exists and has correct subjects
+- Verify event-handler is consuming from stream
+
+## File Organization
+
+```
+src/ct-monitor/app/
+├── main.py                 # CTMonitorService, HTTP API, main entry point
+├── config.py              # Configuration from environment variables
+├── models.py              # Data models (CertificateInfo, MatchResult, etc.)
+├── ct_log_poller.py       # Direct CT log polling (recommended)
+├── certstream_consumer.py # CertStream WebSocket consumer (fallback)
+├── protected_domain_similarity.py  # Duplicated API similarity helpers
+├── variation_generator.py # Dnstwist variation generation (primary)
+└── alert_publisher.py     # NATS JetStream alert publishing
+```

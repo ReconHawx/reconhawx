@@ -1,0 +1,350 @@
+---
+globs: ["scripts/deploy.py", "kubernetes/overlays/**/kustomization.yaml"]
+---
+
+# Deployment and Operations Guide
+
+For a short command index and links to READMEs, see **`AGENTS.md`** at the repository root. This rule is the long-form operations reference.
+
+## Deployment Methods
+
+### Method 1: Deploy Script (Recommended)
+
+```bash
+# Deploy to dev environment (default); subcommands: b=build, d=deploy, bd=both
+python scripts/deploy.py -e dev d all
+
+# Deploy specific service
+python scripts/deploy.py -e dev d api
+python scripts/deploy.py -e dev d frontend
+
+# Build and deploy (rebuilds container / image first)
+python scripts/deploy.py -e dev bd api
+python scripts/deploy.py -e dev bd event-handler
+
+# Production deployment
+python scripts/deploy.py -e production d all
+```
+
+### Method 2: Direct Kustomize
+
+```bash
+# Preview resources
+kubectl kustomize kubernetes/overlays/dev
+
+# Apply to cluster
+kubectl apply -k kubernetes/overlays/dev
+
+# Apply specific service overlay
+kubectl apply -k kubernetes/overlays/dev/api
+```
+
+## Deployment Order
+
+Critical: Deploy in dependency order to avoid startup failures.
+
+```bash
+# 1. Core infrastructure (databases, messaging)
+kubectl apply -k kubernetes/overlays/dev/postgresql
+kubectl apply -k kubernetes/overlays/dev/redis
+kubectl apply -k kubernetes/overlays/dev/nats
+kubectl apply -k kubernetes/overlays/dev/kueue
+
+# Wait for readiness
+kubectl wait --for=condition=available deployment/postgresql -n recon
+kubectl wait --for=condition=available deployment/nats -n recon
+kubectl wait --for=condition=available deployment/redis -n recon
+
+# 2. Configuration
+kubectl apply -k kubernetes/overlays/dev/config
+
+# 3. Application services
+kubectl apply -k kubernetes/overlays/dev/api
+kubectl apply -k kubernetes/overlays/dev/frontend
+kubectl apply -k kubernetes/overlays/dev/event-handler
+
+# 4. Job templates (not running services)
+kubectl apply -k kubernetes/overlays/dev/runner
+kubectl apply -k kubernetes/overlays/dev/worker
+```
+
+## Environment Selection
+
+| Environment | Overlay Path | Cluster | Use Case |
+|-------------|--------------|---------|----------|
+| dev | `overlays/dev/` | dev | Local development, testing |
+| production | `overlays/production/` | prod | Production deployment |
+| vrev | `overlays/vrev/` | vrev | VRev-specific configuration |
+
+## Common Operations
+
+### View Pod Status
+```bash
+kubectl get pods -n recon
+kubectl get pods -n recon -l app=api
+kubectl get pods -n recon -o wide  # With node info
+```
+
+### View Logs
+```bash
+# Deployment logs
+kubectl logs -n recon deployment/api
+kubectl logs -n recon deployment/api -f  # Follow
+kubectl logs -n recon deployment/api --previous  # Previous container
+
+# Pod logs
+kubectl logs -n recon {pod-name}
+kubectl logs -n recon {pod-name} -c {container}  # Specific container
+```
+
+### Restart Deployment
+```bash
+# Rolling restart
+kubectl rollout restart deployment/api -n recon
+
+# Force recreation
+kubectl delete pod -n recon -l app=api
+```
+
+### Scale Deployment
+```bash
+kubectl scale deployment/api -n recon --replicas=3
+```
+
+### Port Forwarding
+```bash
+# API
+kubectl port-forward -n recon svc/api 8000:8000
+
+# NATS
+kubectl port-forward -n recon svc/nats 4222:4222
+
+# PostgreSQL
+kubectl port-forward -n recon svc/postgresql 5432:5432
+```
+
+### Execute Commands
+```bash
+# Shell into pod
+kubectl exec -it -n recon deployment/api -- /bin/bash
+
+# Run command
+kubectl exec -n recon deployment/api -- python -c "print('hello')"
+
+# NATS CLI
+kubectl exec -n recon deployment/nats -- nats stream ls
+```
+
+## Job Operations
+
+### View Runner Jobs
+```bash
+kubectl get jobs -n recon -l app=runner
+kubectl get jobs -n recon --sort-by=.metadata.creationTimestamp
+```
+
+### View Job Logs
+```bash
+# Get pods for job
+kubectl get pods -n recon -l job-name={job-name}
+
+# View logs
+kubectl logs -n recon job/{job-name}
+```
+
+### Clean Up Completed Jobs
+```bash
+# Delete completed jobs older than 1 hour
+kubectl delete jobs -n recon --field-selector status.successful=1
+
+# Delete all failed jobs
+kubectl delete jobs -n recon --field-selector status.failed=1
+```
+
+## Secret Management
+
+### Create Secrets
+```bash
+# PostgreSQL credentials
+kubectl create secret generic postgres-secret -n recon \
+    --from-literal=postgres-root-username=admin \
+    --from-literal=postgres-root-password='secure-password'
+
+# JWT secrets
+kubectl create secret generic jwt-secret -n recon \
+    --from-literal=jwt-secret-key='your-jwt-secret' \
+    --from-literal=refresh-secret-key='your-refresh-secret'
+
+# Internal service token
+kubectl create secret generic internal-service-secret -n recon \
+    --from-literal=token='internal-service-api-key'
+```
+
+### Update Secrets
+```bash
+# Delete and recreate
+kubectl delete secret jwt-secret -n recon
+kubectl create secret generic jwt-secret -n recon \
+    --from-literal=jwt-secret-key='new-jwt-secret' \
+    --from-literal=refresh-secret-key='new-refresh-secret'
+```
+
+### View Secrets
+```bash
+# List secrets
+kubectl get secrets -n recon
+
+# Decode secret value
+kubectl get secret postgres-secret -n recon -o jsonpath='{.data.postgres-root-password}' | base64 -d
+```
+
+## ConfigMap Operations
+
+### View ConfigMaps
+```bash
+kubectl get configmap -n recon
+kubectl describe configmap recon-config -n recon
+kubectl get configmap recon-config -n recon -o yaml
+```
+
+### Update ConfigMap
+```bash
+# Edit directly
+kubectl edit configmap recon-config -n recon
+
+# Apply from file
+kubectl apply -f kubernetes/base/config/service-config.yaml -n recon
+```
+
+## Troubleshooting
+
+### Pod Not Starting
+```bash
+# Check events
+kubectl describe pod -n recon {pod-name}
+
+# Check resource quotas
+kubectl describe resourcequota -n recon
+
+# Check node resources
+kubectl top nodes
+kubectl describe node {node-name}
+```
+
+### Container CrashLoopBackOff
+```bash
+# Check previous logs
+kubectl logs -n recon {pod-name} --previous
+
+# Check container exit code
+kubectl describe pod -n recon {pod-name} | grep -A5 "Last State"
+```
+
+### Network Issues
+```bash
+# Check service endpoints
+kubectl get endpoints -n recon
+
+# Test DNS resolution
+kubectl exec -n recon deployment/api -- nslookup nats
+
+# Check network policies
+kubectl get networkpolicies -n recon
+kubectl describe networkpolicy -n recon {policy-name}
+```
+
+### Image Pull Errors
+```bash
+# Check image name
+kubectl describe pod -n recon {pod-name} | grep -A5 "Container ID"
+
+# Verify image exists locally (for dev)
+docker images | grep api
+
+# Check registry credentials (for prod)
+kubectl get secret regcred -n recon
+```
+
+## Monitoring
+
+### Resource Usage
+```bash
+# Pod resources
+kubectl top pods -n recon
+
+# Container resources
+kubectl top pods -n recon --containers
+
+# Namespace total
+kubectl describe resourcequota -n recon
+```
+
+### Health Checks
+```bash
+# Check probe status
+kubectl describe pod -n recon {pod-name} | grep -A10 "Liveness"
+
+# Manual health check
+kubectl exec -n recon deployment/api -- curl -s localhost:8000/health
+```
+
+## Rollback
+
+### Deployment Rollback
+```bash
+# View history
+kubectl rollout history deployment/api -n recon
+
+# Rollback to previous
+kubectl rollout undo deployment/api -n recon
+
+# Rollback to specific revision
+kubectl rollout undo deployment/api -n recon --to-revision=2
+```
+
+### Full Environment Rollback
+```bash
+# Git revert to previous manifests
+git log --oneline kubernetes/
+git checkout {commit-hash} -- kubernetes/
+
+# Reapply
+kubectl apply -k kubernetes/overlays/dev
+```
+
+## Cleanup
+
+### Remove All Resources
+```bash
+# Delete overlay resources
+kubectl delete -k kubernetes/overlays/dev
+
+# Delete namespace (removes everything)
+kubectl delete namespace recon
+```
+
+### Prune Resources
+```bash
+# Remove resources not in manifests
+kubectl apply -k kubernetes/overlays/dev --prune -l app.kubernetes.io/name=recon
+```
+
+## CI/CD Integration
+
+### Dry Run Validation
+```bash
+# Validate manifests
+kubectl apply -k kubernetes/overlays/dev --dry-run=client
+
+# Server-side validation
+kubectl apply -k kubernetes/overlays/dev --dry-run=server
+
+# Diff against live
+kubectl diff -k kubernetes/overlays/dev
+```
+
+### Automated Deployment
+```bash
+# In CI pipeline (ensure KUBECONFIG / kubeconfig paths match deploy.py expectations)
+python scripts/deploy.py -e ${ENVIRONMENT} d all
+```

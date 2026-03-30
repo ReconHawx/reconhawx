@@ -1,0 +1,485 @@
+---
+globs: ["src/runner/app/tasks/detect_broken_links.py", "src/worker/app/check_broken_links.py"]
+---
+
+# Broken Links Detection Task
+
+## Overview
+
+The broken links detection system identifies potentially hijackable links across two categories:
+1. **Social Media Links**: Facebook, Instagram, Twitter/X, LinkedIn profiles that no longer exist
+2. **General Links**: URLs pointing to unregistered domains (domain takeover opportunities)
+
+This is a **finding-producing task** (outputs `FindingType.BROKEN_LINK`), not an asset-producing task.
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           RUNNER POD                                         │
+│  ┌────────────────────────────────────────────────────────────────────────┐ │
+│  │  detect_broken_links.py (Runner Task)                                   │ │
+│  │  • Receives URLs as STRING input                                        │ │
+│  │  • Generates heredoc command piping URLs to worker script               │ │
+│  │  • Parses JSON output into BROKEN_LINK findings                         │ │
+│  └────────────────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    │ Spawns worker job with command
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           WORKER POD                                         │
+│  ┌────────────────────────────────────────────────────────────────────────┐ │
+│  │  check_broken_links.py (Worker Script)                                  │ │
+│  │  • Reads URLs from stdin                                                │ │
+│  │  • Detects platform type (social media vs general)                      │ │
+│  │  • Social media: headless browser or HTTP checks                        │ │
+│  │  • General: DNS resolution check                                        │ │
+│  │  • Outputs JSON array of findings to stdout                             │ │
+│  └────────────────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+## Runner Task: detect_broken_links.py
+
+### Task Definition
+
+```python
+class DetectBrokenLinks(Task):
+    name = "detect_broken_links"
+    description = "Detect broken links: social media links and general links with unregistered domains"
+    input_type = AssetType.STRING    # Input: URLs as strings
+    output_types = [FindingType.BROKEN_LINK]  # Output: broken link findings
+```
+
+### Command Generation Pattern
+
+The runner uses the **heredoc pattern** to pipe multiple URLs to the worker script:
+
+```python
+def get_command(self, input_data: Any, params: Optional[Dict] = None) -> str:
+    # Handle both string and list inputs
+    targets_to_process = input_data if isinstance(input_data, list) else [input_data]
+    
+    # Filter valid URLs (must start with http:// or https://)
+    valid_inputs = [target.strip() for target in targets_to_process 
+                   if isinstance(target, str) and target.strip().startswith(('http://', 'https://'))]
+    
+    if not valid_inputs:
+        return ""  # Empty command for no valid inputs
+    
+    inputs_text = '\n'.join(valid_inputs)
+    return f"cat << 'EOF' | python3 check_broken_links.py\n{inputs_text}\nEOF"
+```
+
+**Input Validation Rules:**
+- Must be a string
+- Must start with `http://` or `https://`
+- Whitespace is stripped
+
+### Output Parsing Pattern
+
+The parser handles JSON output from the worker script:
+
+```python
+def parse_output(self, output, params: Optional[Dict] = None) -> Dict[AssetType, List[Any]]:
+    # 1. Normalize output format (handles string or dict from WorkerJobManager)
+    normalized_output = self.normalize_output_for_parsing(output)
+    
+    # 2. Try to parse as JSON
+    try:
+        data = json.loads(normalized_output)
+        findings = data if isinstance(data, list) else [data]
+    except json.JSONDecodeError:
+        # Fallback: find JSON in line-by-line output
+        for line in normalized_output.strip().split('\n'):
+            if line.strip().startswith(('{', '[')):
+                try:
+                    findings.extend(json.loads(line))
+                except json.JSONDecodeError:
+                    continue
+    
+    # 3. Return as BROKEN_LINK findings
+    return {FindingType.BROKEN_LINK: findings}
+```
+
+## Worker Script: check_broken_links.py
+
+### Input/Output Format
+
+**Input:** URLs from stdin, one per line
+```
+https://facebook.com/nonexistent-page
+https://instagram.com/deleted-account
+https://example-unregistered-domain.xyz/page
+```
+
+**Output:** JSON array to stdout
+```json
+[
+  {
+    "link_type": "social_media",
+    "media_type": "facebook",
+    "status": "broken",
+    "url": "https://facebook.com/nonexistent-page",
+    "error_code": "content_unavailable",
+    "response_data": {"final_url": "...", "message": "Content not available"},
+    "checked_at": "2025-01-12T10:30:00Z",
+    "program_name": "example-program"
+  },
+  {
+    "link_type": "general",
+    "domain": "example-unregistered-domain.xyz",
+    "reason": "domain_not_registered",
+    "status": "broken",
+    "url": "https://example-unregistered-domain.xyz/page",
+    "checked_at": "2025-01-12T10:30:00Z",
+    "program_name": "example-program"
+  }
+]
+```
+
+### Finding Status Values
+
+| Status | Description |
+|--------|-------------|
+| `broken` | Link is definitively broken (profile doesn't exist, domain not registered) |
+| `valid` | Link is valid and accessible |
+| `error` | Could not determine validity (timeout, login required, etc.) |
+| `throttled` | Rate limited by platform (429 response) |
+
+### Social Media Platform Detection
+
+```python
+def detect_social_media_platform(url):
+    """Detect social media platform from URL domain"""
+    domain = urlparse(url).hostname.lower().lstrip('www.')
+    
+    platform_map = {
+        ('facebook.com', 'fb.com'): 'facebook',
+        ('instagram.com',): 'instagram',
+        ('twitter.com', 'x.com'): 'twitter',  # Both map to 'twitter'
+        ('linkedin.com',): 'linkedin'
+    }
+    
+    for domains, platform in platform_map.items():
+        if domain in domains:
+            return platform
+    return None  # Not a social media link
+```
+
+### Platform-Specific Check Methods
+
+#### Facebook (`check_facebook`)
+- **Method:** HTTP GET with content analysis using pre-compiled regex patterns
+- **Detection:** Confidence-based scoring with single-pass content analysis
+
+**Pattern Categories:**
+```python
+# High confidence (immediate match = broken)
+FACEBOOK_ERROR_PATTERNS_IMMEDIATE = [
+    r"content\s+is\s*n['\u2019]?t\s+available\s+at\s+the\s+moment",
+    r"this\s+page\s+is\s*n['\u2019]?t\s+available",
+    r"go\s+to\s+(news\s+)?feed",  # Error page UI element
+    # ... handles both English and French
+]
+
+# Medium confidence (needs context validation)
+FACEBOOK_ERROR_PATTERNS_CONTEXT = [
+    r"content\s+is\s+not\s+available",
+    # ... validated against FACEBOOK_ERROR_CONTEXT_WORDS nearby
+]
+```
+
+**Detection Phases:**
+1. Login page detection → `error` (inconclusive)
+2. Immediate error patterns → `broken` (confidence: 0.95)
+3. Context-dependent patterns → `broken` (confidence: 0.8)
+4. Error phrase + no valid content → `broken` (confidence: 0.7)
+5. No error indicators → `valid`
+
+**Regex Features:**
+- Handles apostrophe variations: `'` and `'` (curly)
+- Flexible whitespace: `\s+` and `\s*`
+- Case-insensitive matching
+- Pre-compiled at module load for performance
+
+#### Instagram (`check_instagram`)
+- **Method:** Headless browser (Playwright)
+- **Reason:** Instagram heavily blocks non-browser requests
+- **Detection:**
+  - Check for redirect to `/accounts/login/` or `/explore/`
+  - Look for error text: "profile isn't available", "link may be broken"
+  - Validate with profile indicators: `profile_pic_url`, `edge_followed_by`, etc.
+- **Cloudflare Handling:** Waits up to 15s for Cloudflare challenge to pass
+- **Anti-Detection:** Custom user agent, viewport, stealth scripts
+
+#### Twitter/X (`check_twitter`)
+- **Method:** Headless browser (Playwright)
+- **Detection:**
+  - Look for "this account doesn't exist" or "account suspended"
+  - Validate with profile indicators: `followers_count`, `following_count`
+- **Wait Time:** 8 seconds for page content to load
+
+#### LinkedIn (`check_linkedin`)
+- **Method:** HTTP GET (no redirects followed)
+- **Detection:** Simple status code check
+- **Special Codes:**
+  - 404: Broken
+  - 200: Valid
+  - 429: Throttled
+  - 999: LinkedIn login required (error)
+
+### General Link Checking
+
+For non-social-media URLs, the worker checks domain registration via DNS:
+
+```python
+def _blocking_dns_lookup(domain: str) -> str:
+    """Blocking DNS lookup - runs in thread pool executor"""
+    return socket.gethostbyname(domain)
+
+
+async def check_domain_registration(domain):
+    """Check if domain is registered via async DNS resolution"""
+    loop = asyncio.get_event_loop()
+    
+    try:
+        # Run blocking DNS in thread pool to avoid blocking event loop
+        ip = await asyncio.wait_for(
+            loop.run_in_executor(None, _blocking_dns_lookup, domain),
+            timeout=DNS_RESOLUTION_TIMEOUT
+        )
+        return True  # Domain resolves = registered
+    except socket.gaierror:
+        return False  # DNS failure = not registered (hijackable)
+    except asyncio.TimeoutError:
+        return True  # Timeout = assume registered (safe default)
+```
+
+**Key Behavior:**
+- Only returns findings for **unregistered domains** (hijackable)
+- Does NOT return 404s on registered domains (not hijackable)
+- DNS timeout defaults to "registered" (safe assumption)
+- **Uses thread pool executor** to avoid blocking the async event loop
+- **Does NOT use `socket.setdefaulttimeout()`** to avoid global side effects
+
+### Timeout Configuration
+
+```python
+REQUEST_TIMEOUT = 30          # Total request timeout
+CONNECT_TIMEOUT = 10          # Connection establishment
+RESPONSE_READ_TIMEOUT = 10    # Reading response body
+CREDENTIAL_FETCH_TIMEOUT = 10 # Fetching API credentials
+DNS_RESOLUTION_TIMEOUT = 5    # DNS resolution
+MAX_CONCURRENT_REQUESTS = 5   # Semaphore limit for parallel checks
+```
+
+### Input Deduplication
+
+Duplicate URLs are removed at both runner task and worker script levels:
+
+```python
+# Worker script deduplication
+raw_inputs = [line.strip() for line in sys.stdin if line.strip()]
+seen = set()
+inputs = []
+for url in raw_inputs:
+    if url not in seen:
+        seen.add(url)
+        inputs.append(url)
+```
+
+### Browser Manager (Shared Browser Instance)
+
+Instagram and Twitter checks use a shared browser instance to avoid launching a new browser per URL:
+
+```python
+class BrowserManager:
+    """Manages browser lifecycle - single browser, multiple contexts"""
+    
+    async def get_browser(self):
+        """Get or create browser (thread-safe with async lock)"""
+        async with self._lock:
+            if self._browser is None:
+                self._playwright = await async_playwright().start()
+                self._browser = await self._playwright.chromium.launch(...)
+            return self._browser
+    
+    async def create_context(self, user_agent=None, extra_headers=None):
+        """Create isolated context for each URL check"""
+        browser = await self.get_browser()
+        context = await browser.new_context(...)
+        await context.add_init_script(self._stealth_script)
+        return context
+
+# Usage in check functions:
+browser_manager = await get_browser_manager()
+context = await browser_manager.create_context(...)
+try:
+    page = await context.new_page()
+    # ... check logic ...
+finally:
+    if context:
+        await context.close()  # Context closed, browser stays open
+```
+
+### Concurrency Pattern
+
+```python
+async def check_broken_links():
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
+        
+        async def process_url(url):
+            async with semaphore:
+                media_type = detect_social_media_platform(url)
+                if media_type:
+                    return await process_social_media_link(session, url, media_type, ...)
+                else:
+                    return await check_general_link(session, url)
+        
+        # Process all URLs concurrently
+        findings_list = await asyncio.gather(
+            *[process_url(url) for url in inputs],
+            return_exceptions=True
+        )
+    
+    # Cleanup browser after all checks complete
+    await cleanup_browser_manager()
+```
+
+## Environment Variables
+
+The worker script uses these environment variables:
+
+| Variable | Purpose | Default |
+|----------|---------|---------|
+| `DATA_API_URL` | API base URL for fetching credentials | `http://api:8000` |
+| `INTERNAL_SERVICE_API_KEY` | Auth token for API requests | `""` |
+| `PROGRAM_NAME` | Program context for findings | `""` |
+
+## Credential Fetching
+
+For social media platforms that support authenticated checking:
+
+```python
+# Fetch credentials from API
+creds = None
+if internal_api_key:
+    async with session.get(
+        f"{api_base_url}/social-media-credentials/{media_type}",
+        headers={"Authorization": f"Bearer {internal_api_key}"}
+    ) as resp:
+        if resp.status == 200:
+            creds = await resp.json()
+```
+
+Currently, credentials are fetched but only used for Instagram (prepared for future authenticated checking).
+
+## Finding Output Schema
+
+### Social Media Finding
+
+```json
+{
+  "link_type": "social_media",
+  "media_type": "facebook|instagram|twitter|linkedin",
+  "status": "broken|valid|error|throttled",
+  "url": "https://...",
+  "error_code": "content_unavailable|redirect_to_login|account_not_found|...",
+  "response_data": {
+    "final_url": "...",
+    "message": "...",
+    "indicator": "...",
+    "error": "..."
+  },
+  "checked_at": "ISO8601 timestamp",
+  "program_name": "from PROGRAM_NAME env var"
+}
+```
+
+### General Link Finding
+
+```json
+{
+  "link_type": "general",
+  "domain": "example.com",
+  "reason": "domain_not_registered",
+  "status": "broken",
+  "url": "https://example.com/path",
+  "checked_at": "ISO8601 timestamp",
+  "program_name": "from PROGRAM_NAME env var"
+}
+```
+
+## Error Codes Reference
+
+### Facebook
+- `content_unavailable` - Page content not available
+- `redirected_away` - Redirected off Facebook domain
+- `login_required` - Login page shown (inconclusive)
+- `insufficient_content` - Response too short
+- `content_read_timeout` - Timeout reading response
+
+### Instagram
+- `redirect_to_login` - Redirected to login/explore
+- `error_page_detected` - Error page content found
+- `cloudflare_challenge` - Blocked by Cloudflare
+- `unclear_response` - Could not determine validity
+- `timeout` - Page load timeout
+- `browser_error` - Playwright error
+
+### Twitter
+- `account_not_found` - Account doesn't exist/suspended
+- `cloudflare_challenge` - Blocked by Cloudflare
+- `unclear_response` - Could not determine validity
+- `timeout` - Page load timeout
+- `browser_error` - Playwright error
+
+### LinkedIn
+- HTTP status code as string (`404`, `429`, `999`, etc.)
+
+### General
+- `timeout` / `server_timeout` - Request timeout
+- Various aiohttp exception names
+
+## Dependencies
+
+### Worker Script
+```
+aiohttp          # Async HTTP client
+playwright       # Headless browser for Instagram/Twitter
+```
+
+### Playwright Setup
+The worker image must have Playwright browsers installed:
+```bash
+playwright install chromium
+```
+
+## Best Practices
+
+### When Adding New Social Media Platforms
+
+1. Add domain detection in `detect_social_media_platform()`
+2. Create `check_<platform>()` function
+3. Add case in `check_platform()` dispatcher
+4. Define error indicators specific to the platform
+5. Test with both valid and invalid profiles
+
+### When Modifying Detection Logic
+
+1. Be conservative - prefer `error` status over false `broken`
+2. Use specific error indicators (not generic text that might appear on valid pages)
+3. Check for login/challenge pages that make results inconclusive
+4. Log detection decisions for debugging
+
+### Testing Changes
+
+```bash
+# Test locally with sample URLs
+echo "https://facebook.com/test-page
+https://instagram.com/test-user
+https://unregistered-domain-xyz.com" | python3 check_broken_links.py
+```

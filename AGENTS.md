@@ -1,0 +1,112 @@
+# Agent and contributor hub
+
+Use this file as a **first stop** for how the repo is laid out and how to run common operations. Deeper conventions live in [`.cursor/rules/`](.cursor/rules/) (scoped by area) and service READMEs—avoid duplicating long prose here.
+
+## Repository map
+
+| Area | Role | Path |
+|------|------|------|
+| API | FastAPI backend | [`src/api/`](src/api/) |
+| Frontend | React UI | [`src/frontend/`](src/frontend/) |
+| Runner | Workflow and batch job orchestration | [`src/runner/`](src/runner/) |
+| Worker | Workflow task worker (dispatched by runner) | [`src/worker/`](src/worker/) |
+| CT-Monitor | Certificate transparency log monitoring | [`src/ct-monitor/`](src/ct-monitor/) |
+| Event handler | Event consumers / handlers | [`src/event-handler/`](src/event-handler/) |
+| Migrations | PostgreSQL schema migrations (SQL + CLI) | [`src/migrations/`](src/migrations/) |
+| Kubernetes | Base manifests and Kueue (deploy with `kubectl apply -k kubernetes/base/`) | [`kubernetes/`](kubernetes/) |
+
+## Shell and devenv
+
+Many dev tools live only on `PATH` after [devenv](https://devenv.sh/) loads (see [`devenv.nix`](devenv.nix): e.g. `kubectl`, `helm`, `docker`, `grype`, `node`/`npm`, Postgres client binaries, `k9s`, and others). **Agent and CI subshells often skip direnv**, so a bare command can fail with “not found” even though your interactive shell works.
+
+From the **repository root**, wrap those invocations:
+
+```bash
+devenv shell -- kubectl get pods
+devenv shell -- grype --version
+```
+
+[`migrate.sh`](scripts/migrate.sh) already prefers `.devenv/state/venv/bin/python` when that path exists; you do not need `devenv shell` just for that wrapper. Agent-facing detail: [`.cursor/rules/devenv-shell.mdc`](.cursor/rules/devenv-shell.mdc).
+
+## Golden commands
+
+### Database migrations
+
+Set `DATABASE_URL` for your environment. The wrapper defaults to a local Postgres URL—see [`scripts/migrate.sh`](scripts/migrate.sh). If **`.devenv/state/venv/bin/python`** exists, the wrapper uses it (instead of system `python3`).
+
+```bash
+./scripts/migrate.sh status
+./scripts/migrate.sh run --dry-run
+./scripts/migrate.sh run
+./scripts/migrate.sh create "Short description of change"
+```
+
+Equivalent CLI: `python src/migrations/migrate.py ...` (see [`src/migrations/migrate.py`](src/migrations/migrate.py)).
+
+**Conventions** (versioning, UP/DOWN SQL, model alignment): [`.cursor/rules/migrations.mdc`](.cursor/rules/migrations.mdc).
+
+### Kubernetes deploy
+
+Preferred entrypoint is [`scripts/deploy.py`](scripts/deploy.py) (requires `rich`, `pyyaml`; Docker + `kubectl` for real deploys).
+
+```bash
+python scripts/deploy.py -e dev d all
+python scripts/deploy.py -e dev d api
+python scripts/deploy.py -e dev bd api
+python scripts/deploy.py -e production d all
+```
+
+(Subcommands: `b` build, `d` deploy, `bd` build+deploy—see [`scripts/README.md`](scripts/README.md).)
+
+**Detail** (service list, flags, build/deploy flows): [`scripts/README.md`](scripts/README.md), [`kubernetes/README.md`](kubernetes/README.md). **Ordering, kubectl snippets, environments**: [`.cursor/rules/kubernetes-deployment-operations.mdc`](.cursor/rules/kubernetes-deployment-operations.mdc).
+
+### GitHub Container Registry (CI)
+
+Workflow [`.github/workflows/docker-ghcr.yml`](.github/workflows/docker-ghcr.yml) pushes to `ghcr.io/<lowercase_github_owner>/reconhawx/<service>`. **Branch pushes** (`main` / `master`): only builds images under paths that changed per `dorny/paths-filter` (`src/api/**`, `src/frontend/**`, …). Editing only the workflow file does **not** auto-build all images; use **workflow_dispatch** (or a release tag) for a full build. **`v*` tags** and **workflow_dispatch**: always build every image. Worker image is built for **linux/amd64** only (single job, same tagging pattern as other services).
+
+### Frontend local dev
+
+See [`src/frontend/README.md`](src/frontend/README.md).
+
+## Scoped Cursor rules (high level)
+
+Browse [`.cursor/rules/`](.cursor/rules/). Entry points by component (globs in each file decide when it attaches):
+
+| Component | Path | Rule files |
+|-----------|------|------------|
+| API | [`src/api/`](src/api/) | [`api-core.mdc`](.cursor/rules/api-core.mdc), [`api-data.mdc`](.cursor/rules/api-data.mdc), [`api-http.mdc`](.cursor/rules/api-http.mdc), [`api-testing.mdc`](.cursor/rules/api-testing.mdc), [`api-workflow-k8s.mdc`](.cursor/rules/api-workflow-k8s.mdc) |
+| Frontend | [`src/frontend/`](src/frontend/) | [`frontend-architecture.mdc`](.cursor/rules/frontend-architecture.mdc), [`frontend-api-services.mdc`](.cursor/rules/frontend-api-services.mdc), [`frontend-component-patterns.mdc`](.cursor/rules/frontend-component-patterns.mdc), [`frontend-state-management.mdc`](.cursor/rules/frontend-state-management.mdc), [`frontend-workflow-builder.mdc`](.cursor/rules/frontend-workflow-builder.mdc) |
+| Runner | [`src/runner/`](src/runner/) | [`runner-architecture.mdc`](.cursor/rules/runner-architecture.mdc), [`runner-job-management.mdc`](.cursor/rules/runner-job-management.mdc), [`runner-models.mdc`](.cursor/rules/runner-models.mdc), [`runner-task-patterns.mdc`](.cursor/rules/runner-task-patterns.mdc) |
+| Worker | [`src/worker/`](src/worker/) | [`worker-architecture.mdc`](.cursor/rules/worker-architecture.mdc) |
+| CT-Monitor | [`src/ct-monitor/`](src/ct-monitor/) | [`ct-monitor.mdc`](.cursor/rules/ct-monitor.mdc) |
+| Event handler | [`src/event-handler/`](src/event-handler/) | [`event-handler-architecture.mdc`](.cursor/rules/event-handler-architecture.mdc), [`event-handler-integration.mdc`](.cursor/rules/event-handler-integration.mdc), [`event-handler-patterns.mdc`](.cursor/rules/event-handler-patterns.mdc) |
+| Kubernetes | [`kubernetes/`](kubernetes/) | [`k8s-architecture.mdc`](.cursor/rules/kubernetes-architecture.mdc), [`k8s-deployment-operations.mdc`](.cursor/rules/kubernetes-deployment-operations.mdc), [`k8s-kustomize-patterns.mdc`](.cursor/rules/kubernetes-kustomize-patterns.mdc), [`k8s-nats-messaging.mdc`](.cursor/rules/kubernetes-nats-messaging.mdc) |
+| Migrations | [`src/migrations/`](src/migrations/) | [`migrations.mdc`](.cursor/rules/migrations.mdc) |
+| Always-on | — | [`project-hub.mdc`](.cursor/rules/project-hub.mdc), [`devenv-shell.mdc`](.cursor/rules/devenv-shell.mdc), [`dynamic-wordlists.mdc`](.cursor/rules/dynamic-wordlists.mdc) (`alwaysApply`) |
+
+**Feature / domain rules** (narrow globs): [`typosquat-detection.mdc`](.cursor/rules/typosquat-detection.mdc), [`gather-typosquat-vendor-api.mdc`](.cursor/rules/gather-typosquat-vendor-api.mdc), [`broken-links-detection.mdc`](.cursor/rules/broken-links-detection.mdc), [`ai-analysis-runner.mdc`](.cursor/rules/ai-analysis-runner.mdc)
+
+## Agent workflow (minimal)
+
+1. **Schema changes**: Add a new migration under `src/migrations/`; do not rewrite applied migration files. Keep SQLAlchemy models in sync (see migrations rule). Verify with `status` / `run --dry-run` before applying.
+2. **Deploy / Kueue**: Public users deploy directly from `kubernetes/base/` (see [`kubernetes/README.md`](kubernetes/README.md)). Internal environments use `scripts/deploy.py` with private overlays under `kubernetes/overlays/` (gitignored). Respect infrastructure and app ordering from the k8s deployment rule when applying manually.
+3. **Feature work**: Use the **Scoped Cursor rules** table above for the area you edit (API, frontend, runner, worker, event-handler, ct-monitor, k8s).
+
+## Maintenance
+
+When a change updates **how a component works**, **how to run or operate it**, or **invariants agents should follow**, update documentation in the **same** branch—do not leave `AGENTS.md`, READMEs, and Cursor rules drifting from the code.
+
+**Typical touchpoints:**
+
+| What changed | Prefer updating |
+|--------------|-----------------|
+| Any listed component (API, frontend, runner, worker, CT-monitor, event-handler) | Matching `.mdc` row in **Scoped Cursor rules**, and [`AGENTS.md`](AGENTS.md) if commands, paths, or overview change |
+| Schema / migrations | [`migrations.mdc`](.cursor/rules/migrations.mdc), [`scripts/README.md`](scripts/README.md) if CLI changes |
+| Deploy, overlays, Kueue, cluster layout | [`k8s-*.mdc`](.cursor/rules/), [`scripts/README.md`](scripts/README.md), [`kubernetes/README.md`](kubernetes/README.md), this file |
+| [`scripts/`](scripts/) (deploy, migrate, init DB, admin user, …) | [`scripts/README.md`](scripts/README.md) and this file if behavior or flags change |
+| CI: Docker builds to GHCR | This file (**GitHub Container Registry**), [`.github/workflows/docker-ghcr.yml`](.github/workflows/docker-ghcr.yml) |
+| Domain features (e.g. typosquat, broken links, vendor API gather) | Respective feature `.mdc` under `.cursor/rules/` |
+
+**Always-on or cross-cutting rules** ([`project-hub.mdc`](.cursor/rules/project-hub.mdc), [`devenv-shell.mdc`](.cursor/rules/devenv-shell.mdc), [`dynamic-wordlists.mdc`](.cursor/rules/dynamic-wordlists.mdc)): change when the hub instructions, devenv CLI conventions, or dynamic-wordlist behavior warrant it.
+
+Optional link hygiene (local): `npx markdown-link-check -q AGENTS.md` if Node is available.

@@ -1,0 +1,338 @@
+---
+globs: ["src/frontend/src/services/**", "src/frontend/src/services/api/**"]
+---
+
+# Frontend API Services
+
+## API Client Architecture
+
+The API layer uses Axios with interceptors for authentication and token refresh.
+
+### Client Configuration (`client.js`)
+
+```javascript
+import axios from 'axios';
+
+const API_BASE_URL = '/api';
+export { API_BASE_URL };
+
+const api = axios.create({
+  baseURL: API_BASE_URL,
+  headers: { 'Content-Type': 'application/json' }
+});
+```
+
+### Request Interceptor (Auth Token)
+
+```javascript
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem('access_token');
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+```
+
+### Response Interceptor (Token Refresh)
+
+```javascript
+api.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    if (error.response?.status === 401 && !originalRequest._retry) {
+      originalRequest._retry = true;
+      
+      const refreshToken = localStorage.getItem('refresh_token');
+      if (refreshToken) {
+        const response = await api.post('/auth/refresh', { refresh_token: refreshToken });
+        localStorage.setItem('access_token', response.data.access_token);
+        
+        // Retry original request with new token
+        originalRequest.headers.Authorization = `Bearer ${response.data.access_token}`;
+        return api(originalRequest);
+      }
+    }
+    return Promise.reject(error);
+  }
+);
+```
+
+## API Module Structure
+
+### Barrel Exports (`index.js`)
+
+All APIs are exported from a central barrel file:
+
+```javascript
+// Named exports for direct imports
+export { assetAPI, domainAPI, ipAPI, urlAPI } from './assets';
+export { nucleiAPI, typosquatAPI } from './findings';
+export { workflowAPI, scheduledJobsAPI } from './workflows';
+export { authAPI, userManagementAPI } from './admin';
+export { programAPI } from './programs';
+
+// Default export for backward compatibility
+export default {
+  auth: authAPI,
+  assets: { domains: domainAPI, ips: ipAPI, urls: urlAPI },
+  findings: { nuclei: nucleiAPI, typosquat: typosquatAPI },
+  workflows: workflowAPI,
+  programs: programAPI
+};
+```
+
+### Import Patterns
+
+```javascript
+// Preferred: Named imports
+import { domainAPI, urlAPI } from '../services/api';
+import { workflowAPI, programAPI } from '../services/api';
+
+// Alternative: Default import (backward compatible)
+import apiObject from '../services/api';
+apiObject.auth.login(username, password);
+```
+
+## Asset APIs (`assets.js`)
+
+### Standard CRUD Pattern
+
+Each asset type follows a consistent pattern:
+
+```javascript
+export const domainAPI = {
+  // Search with typed parameters
+  searchSubdomains: async (params = {}) => {
+    // params: { search, apex_domain, wildcard, has_ips, sort_by, sort_dir, page, page_size }
+    const response = await api.post('/assets/subdomain/search', params);
+    return response.data;
+  },
+
+  // Get by ID
+  getById: async (id) => {
+    const response = await api.get('/assets/subdomain', { params: { id } });
+    if (response.data?.data) return response.data.data;
+    throw new Error('Domain not found');
+  },
+
+  // Get by unique field (name, URL, etc.)
+  getByName: async (domainName) => {
+    const response = await api.get(`/assets/subdomain/name/${encodeURIComponent(domainName)}`);
+    if (response.data.status === 'success') return response.data.data;
+    throw new Error('Domain not found');
+  },
+
+  // Update notes
+  updateNotes: async (domainId, notes) => {
+    const response = await api.put(`/assets/subdomain/${domainId}/notes`, { notes });
+    return response.data;
+  },
+
+  // Delete single
+  delete: async (domainId) => {
+    const response = await api.delete(`/assets/subdomain/${domainId}`);
+    return response.data;
+  },
+
+  // Batch delete
+  deleteBatch: async (domainIds, options = {}) => {
+    const response = await api.delete('/assets/subdomain/batch', {
+      data: { asset_ids: domainIds, ...options }
+    });
+    return response.data;
+  },
+
+  // Import
+  import: async (domains, options = {}) => {
+    const response = await api.post('/assets/subdomain/import', { domains, ...options });
+    return response.data;
+  },
+
+  // Get distinct values for filtering
+  getDistinctValues: async (fieldName, program = undefined) => {
+    const body = program ? { program } : {};
+    const response = await api.post(`/assets/subdomain/distinct/${fieldName}`, body);
+    return response.data;
+  }
+};
+```
+
+### Available Asset APIs
+
+| API | Endpoint Prefix | Key Methods |
+|-----|-----------------|-------------|
+| `domainAPI` | `/assets/subdomain` | `searchSubdomains`, `getById`, `getByName`, `updateNotes`, `delete` |
+| `apexDomainAPI` | `/assets/apex-domain` | `search`, `getById`, `import`, `delete` |
+| `ipAPI` | `/assets/ip` | `searchIPs`, `getByAddress`, `getById`, `updateNotes`, `delete` |
+| `urlAPI` | `/assets/url` | `searchURLs`, `getByUrl`, `getById`, `updateNotes`, `delete`, `getTechnologiesSummary` |
+| `serviceAPI` | `/assets/service` | `searchServices`, `getByIpPort`, `getById`, `updateNotes`, `delete` |
+| `certificateAPI` | `/assets/certificate` | `searchCertificates`, `getById`, `updateNotes`, `delete` |
+| `screenshotAPI` | `/assets/screenshot` | `searchScreenshots`, `getById`, `delete` |
+
+## Workflow APIs (`workflows.js`)
+
+### Workflow Definitions (Templates)
+
+```javascript
+export const workflowAPI = {
+  // Get all saved workflow definitions
+  getWorkflows: async (programName = null) => {
+    const params = programName ? `?program_name=${encodeURIComponent(programName)}` : '';
+    const response = await api.get(`/workflows/definitions${params}`);
+    return response.data;
+  },
+
+  // Save a new workflow definition
+  saveWorkflow: async (workflowData) => {
+    const response = await api.post('/workflows/definitions', {
+      name: workflowData.workflow_name,
+      program_name: workflowData.program_name,
+      description: workflowData.description,
+      steps: workflowData.steps,
+      variables: workflowData.variables || {},
+      inputs: workflowData.inputs || {}
+    });
+    return response.data;
+  },
+
+  // Update existing workflow definition
+  updateWorkflow: async (workflowId, workflowData) => {
+    const response = await api.put(`/workflows/definitions/${workflowId}`, { ... });
+    return response.data;
+  },
+
+  // Delete workflow definition
+  deleteWorkflow: async (workflowId) => {
+    const response = await api.delete(`/workflows/definitions/${workflowId}`);
+    return response.data;
+  }
+};
+```
+
+### Workflow Executions
+
+```javascript
+export const workflowAPI = {
+  // Run a workflow
+  runWorkflow: async (workflowData) => {
+    const response = await api.post('/workflows/run', {
+      workflow_name: workflowData.workflow_name,
+      program_name: workflowData.program_name,
+      steps: workflowData.steps,
+      variables: workflowData.variables || {},
+      inputs: workflowData.inputs || {},
+      workflow_definition_id: workflowData.workflow_definition_id
+    });
+    return response.data;
+  },
+
+  // Get execution status list (paginated)
+  getWorkflowStatus: async (page = 1, limit = 25, programName = null, sortField = null, sortOrder = 'desc') => {
+    const params = new URLSearchParams({ page, limit });
+    if (programName) params.append('program_name', programName);
+    if (sortField) params.append('sort_field', sortField);
+    const response = await api.get(`/workflows/executions?${params}`);
+    return response.data;
+  },
+
+  // Get detailed execution status
+  getWorkflowStatusDetail: async (workflowId) => {
+    const response = await api.get(`/workflows/executions/${workflowId}`);
+    return response.data;
+  },
+
+  // Stop a running workflow
+  stopWorkflow: async (workflowId) => {
+    const response = await api.post(`/workflows/executions/${workflowId}/stop`);
+    return response.data;
+  }
+};
+```
+
+## Auth APIs (`admin.js`)
+
+```javascript
+export const authAPI = {
+  login: async (username, password) => {
+    const formData = new URLSearchParams();
+    formData.append('username', username);
+    formData.append('password', password);
+    
+    const response = await api.post('/auth/login', formData, {
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+    });
+    return response.data;
+  },
+
+  refreshToken: async (refreshToken) => {
+    const response = await api.post('/auth/refresh', { refresh_token: refreshToken });
+    return response.data;
+  },
+
+  logout: async (refreshToken) => {
+    const response = await api.post('/auth/logout', { refresh_token: refreshToken });
+    return response.data;
+  }
+};
+```
+
+## Response Patterns
+
+### Standard Response Format
+
+```javascript
+// Success response
+{
+  status: 'success',
+  data: { ... },           // Single item
+  items: [ ... ],          // List items
+  total_items: 100,        // For pagination
+  page: 1,
+  page_size: 25
+}
+
+// Error response
+{
+  status: 'error',
+  message: 'Error description'
+}
+```
+
+### Handling Responses
+
+```javascript
+const loadItems = async () => {
+  try {
+    const response = await assetAPI.search({ program: selectedProgram });
+    
+    // Handle different response structures
+    if (response.items) {
+      setItems(response.items);
+      setTotalItems(response.total_items || 0);
+    } else if (response.data) {
+      setItem(response.data);
+    } else if (Array.isArray(response)) {
+      setItems(response);
+    }
+  } catch (error) {
+    if (error.response?.status === 404) {
+      setError('Item not found');
+    } else if (error.response?.status === 403) {
+      setError('Permission denied');
+    } else {
+      setError('Failed to load data');
+    }
+  }
+};
+```
+
+## Best Practices
+
+1. **Always use typed search endpoints** - Use `searchSubdomains`, `searchURLs`, etc. for filtering
+2. **Encode URL parameters** - Use `encodeURIComponent()` for dynamic path segments
+3. **Handle all error cases** - Check for 401, 403, 404, and generic errors
+4. **Use batch operations** - Use `deleteBatch` for multi-select operations
+5. **Pass program filter** - Most search endpoints accept a `program` parameter
+6. **Use consistent param naming** - `page`, `page_size`, `sort_by`, `sort_dir`
+7. **Check response structure** - Different endpoints may return `data`, `items`, or arrays

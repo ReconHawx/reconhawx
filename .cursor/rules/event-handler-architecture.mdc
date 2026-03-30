@@ -1,0 +1,237 @@
+---
+globs: ["src/event-handler/app/main.py", "src/event-handler/app/config.py", "src/event-handler/app/nats_client.py"]
+---
+
+# Event-Handler Architecture Overview
+
+## Core Architecture
+
+The event-handler (notifier) service processes events from NATS JetStream and executes configured actions like Discord notifications, workflow triggers, and logging.
+
+**Handler definitions** are loaded from the Data API (`GET /internal/event-handler-configs?program_name=...`), which merges: system handlers (API codebase) → global handlers (DB) → program addons or legacy snapshot → generated `notify_*` handlers from notification settings. See `src/api/app/repository/event_handler_config_repo.py`.
+
+```
+Event-Handler Service (SimpleNotifierApp)
+├── EventsSubscriber (nats_client.py)
+│   ├── NATS JetStream connection
+│   ├── Durable consumer management
+│   └── Message acknowledgment
+├── ProgramSettingsProvider (program_settings.py)
+│   ├── API-based settings fetch
+│   └── Redis caching (5 min TTL)
+├── SimpleHandlerRegistry (event_handlers.py)
+│   ├── Handler registration
+│   ├── Event type matching
+│   └── Action execution
+└── SimpleBatchManager (event_handlers.py)
+    ├── Redis-backed batch storage
+    ├── Timeout-based flush
+    └── Expired batch recovery
+```
+
+## Event Flow
+
+```mermaid
+sequenceDiagram
+    participant API as Data API
+    participant NATS as NATS JetStream
+    participant EH as Event-Handler
+    participant Redis as Redis
+    participant Discord as Discord/API
+
+    API->>NATS: Publish event batch
+    NATS->>EH: Deliver messages
+    EH->>EH: Parse & normalize event
+    EH->>API: Fetch program settings
+    API-->>EH: Return settings
+    EH->>EH: Match handlers
+    
+    alt Batching enabled
+        EH->>Redis: Add to batch
+        Redis-->>EH: Batch status
+        alt Batch full or expired
+            EH->>EH: Execute batch actions
+            EH->>Discord: Send notification
+        end
+    else No batching
+        EH->>Discord: Execute action immediately
+    end
+    
+    EH->>NATS: ACK message
+```
+
+## Component Responsibilities
+
+### SimpleNotifierApp (`main.py`)
+- **Purpose**: Main application orchestration
+- **Responsibilities**:
+  - Initialize all components (Redis, NATS, settings provider)
+  - Route events to appropriate handlers
+  - Handle batch vs single events from API
+  - Run batch recovery background loop
+- **Key Methods**:
+  - `start()` - Initialize and start event loop
+  - `handle_event()` - Main event routing
+  - `_handle_batch_event()` - Process API batch events
+  - `_handle_single_event()` - Process individual events
+  - `_batch_recovery_loop()` - Background expired batch processing
+
+### NotifierConfig (`config.py`)
+- **Purpose**: Environment-based configuration
+- **Responsibilities**:
+  - NATS connection settings
+  - Redis connection settings
+  - Batching parameters
+  - Handler configuration path
+
+### EventsSubscriber (`nats_client.py`)
+- **Purpose**: NATS JetStream subscription management
+- **Responsibilities**:
+  - Establish NATS connection
+  - Create/use durable consumer
+  - Pull and deliver messages
+  - Handle ACK/NAK
+- **Key Methods**:
+  - `connect()` - Establish connection and consumer
+  - `run()` - Main message processing loop
+  - `close()` - Graceful shutdown
+
+## Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `NATS_URL` | `nats://nats:4222` | NATS server URL |
+| `EVENTS_STREAM` | `EVENTS` | JetStream stream name |
+| `EVENTS_SUBJECT` | `events.>` | Subject pattern to subscribe |
+| `REDIS_URL` | `redis://redis:6379/0` | Redis URL for batching |
+| `EVENTHANDLER_LOG_LEVEL` | `INFO` | Logging level |
+| `DATA_API_URL` | `http://api:8000` | Data API endpoint |
+| `INTERNAL_SERVICE_API_KEY` | - | API authentication token |
+| `DISCORD_DRY_RUN` | `true` | Skip actual Discord sends |
+| `EVENTHANDLER_MAX_ITEMS` | `100` | Default batch max items |
+| `EVENTHANDLER_MAX_DELAY_SECONDS` | `300` | Default batch max delay |
+| `EVENTHANDLER_DEDUP_WINDOW_SECONDS` | `900` | Deduplication window |
+| `EVENTHANDLER_INCLUDE_SAMPLES` | `10` | Sample count in notifications |
+| `EVENTHANDLER_ENABLE_BATCH_PROCESSING` | `true` | Enable batch processing |
+| `EVENTHANDLER_MAX_BATCH_SIZE` | `1000` | Max events per batch |
+| `EVENTHANDLER_ENABLE_EVENT_HANDLERS` | `true` | Enable handler system |
+| `EVENTHANDLER_API_CONFIG_CACHE_TTL` | `60` | Redis cache TTL (seconds) for per-program handler config from the API |
+| `EVENTHANDLER_API_TIMEOUT_SECONDS` | `15` | API request timeout |
+
+## NATS Consumer Configuration
+
+```python
+ConsumerConfig(
+    name="notifier",
+    deliver_policy=DeliverPolicy.ALL,      # Receive all messages
+    ack_policy=AckPolicy.EXPLICIT,          # Explicit ACK required
+    filter_subject="events.>",              # Match all events
+    durable_name="notifier",                # Persist consumer state
+    max_deliver=3,                          # 3 redelivery attempts
+    ack_wait=30,                            # 30s to acknowledge
+)
+```
+
+## Message Processing
+
+### Pull Subscription
+```python
+# Fetch up to 200 messages with 0.5s timeout
+msgs = await self.subscription.fetch(200, timeout=0.5)
+
+for msg in msgs:
+    subject = msg.subject
+    payload = json.loads(msg.data.decode("utf-8"))
+    
+    ok = await handler(subject, payload)
+    
+    if ok:
+        await msg.ack()
+    else:
+        await msg.nak()  # Trigger redelivery
+```
+
+### Batch Event Detection
+```python
+# API sends batch events with this structure
+if payload.get('event') == 'batch':
+    # Process as batch - iterate through payload['events']
+    for event_data in payload.get('events', []):
+        await self._handle_single_event(event_data['subject'], event_data['payload'])
+else:
+    # Process as single event
+    await self._handle_single_event(subject, payload)
+```
+
+## Background Tasks
+
+### Batch Recovery Loop
+Runs every 15 seconds to process expired batches:
+
+```python
+async def _batch_recovery_loop(self):
+    while True:
+        try:
+            processed = await registry.process_expired_batches()
+            if processed > 0:
+                logger.info(f"Processed {processed} expired batches")
+            await asyncio.sleep(15)
+        except Exception as e:
+            logger.error(f"Error in batch recovery: {e}")
+            await asyncio.sleep(30)
+```
+
+## Error Handling
+
+### Connection Errors
+- NATS reconnection with backoff
+- Redis connection pooling
+- API client timeout handling
+
+### Message Processing Errors
+- Individual event failures don't stop processing
+- Failed messages get NAK'd for redelivery
+- Max 3 redelivery attempts per message
+- Errors logged with full traceback
+
+### Graceful Shutdown
+```python
+async def shutdown(self):
+    await self.subscriber.close()  # Drain and close NATS
+```
+
+## File Organization
+
+```
+src/event-handler/app/
+├── main.py              # Application entry point
+├── config.py            # Environment configuration
+├── nats_client.py       # NATS subscription
+├── routing.py           # Event parsing/normalization
+├── event_handlers.py    # Handler system core
+├── handler_config.py    # HandlerSet / in-memory handler registry from API-shaped dicts
+├── program_settings.py  # API settings provider
+├── discord.py           # Discord client
+├── batching.py          # Batch manager aliases
+├── typosquat_handler.py # Specialized handler
+└── config_generator.py  # Config file generator
+```
+
+## Startup Sequence
+
+1. Load `NotifierConfig` from environment
+2. Setup logging
+3. Connect to Redis
+4. Create `EventsSubscriber` and connect to NATS
+5. Create `ProgramSettingsProvider`
+6. Create `SimpleBatchManager` and `ApiConfigProvider`
+7. Resolve handlers per program from the API (with Redis cache) when processing events
+8. Start batch recovery background task
+9. Start main event processing loop
+
+## References
+
+- NATS client: `src/event-handler/app/nats_client.py`
+- Configuration: `src/event-handler/app/config.py`
+- Main application: `src/event-handler/app/main.py`
+- API event publisher: `src/api/app/services/event_publisher.py`

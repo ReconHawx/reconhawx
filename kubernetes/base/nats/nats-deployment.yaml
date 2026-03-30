@@ -1,0 +1,182 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nats
+  labels:
+    app: nats
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nats
+  template:
+    metadata:
+      labels:
+        app: nats
+    spec:
+      nodeSelector:
+        reconhawx.runner: "true"
+      containers:
+      - name: nats
+        image: nats:2.9.21-alpine
+        ports:
+        - containerPort: 4222
+          name: client
+        - containerPort: 8222
+          name: monitoring
+        command: ["/entrypoint.sh"]
+        resources:
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
+          requests:
+            cpu: "200m"
+            memory: "256Mi"
+        volumeMounts:
+        - name: nats-data
+          mountPath: /data
+        - name: nats-scripts
+          mountPath: /entrypoint.sh
+          subPath: entrypoint.sh
+        - name: nats-scripts
+          mountPath: /init.sh
+          subPath: init.sh
+      volumes:
+      - name: nats-data
+        emptyDir: {}
+      - name: nats-scripts
+        configMap:
+          name: nats-scripts
+          defaultMode: 0755
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nats
+spec:
+  selector:
+    app: nats
+  ports:
+  - port: 4222
+    targetPort: client
+    name: client
+  - port: 8222
+    targetPort: monitoring
+    name: monitoring
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nats-scripts
+data:
+  entrypoint.sh: |
+    #!/bin/sh
+    
+    # Start NATS server in the background with JetStream enabled
+    nats-server -js --store_dir=/data -m 8222 &
+    
+    # Check if nats CLI is installed
+    if [ -z $(which nats) ]; then
+        echo "Installing nats CLI"
+        attempts=0
+        max_attempts=3
+        success=false
+    
+        while [ $attempts -lt $max_attempts ] && [ "$success" = false ]; do
+            if wget https://github.com/nats-io/natscli/releases/download/v0.1.5/nats-0.1.5-linux-amd64.zip && \
+               unzip nats-0.1.5-linux-amd64.zip && \
+               mv nats-0.1.5-linux-amd64/nats /usr/local/bin/ && \
+               rm -rf nats-0.1.5-linux-amd64*; then
+                success=true
+            else
+                attempts=$((attempts + 1))
+                if [ $attempts -lt $max_attempts ]; then
+                    echo "Attempt $attempts failed. Retrying in 10 seconds..."
+                    sleep 10
+                else
+                    echo "Failed to install nats CLI after $max_attempts attempts"
+                    exit 1
+                fi
+            fi
+        done
+    fi
+    
+    # Run init script to create streams
+    sh /init.sh
+    
+    # Wait for NATS server to exit
+    wait
+  init.sh: |
+    #!/bin/sh
+    
+    # Wait for NATS to be ready
+    sleep 2
+    
+    # Function to check if stream exists
+    stream_exists() {
+        nats stream info "$1" --server=nats://localhost:4222 > /dev/null 2>&1
+        return $?
+    }
+    
+    # Create TASKS stream if it doesn't exist
+    if ! stream_exists "TASKS"; then
+        nats stream add TASKS \
+            --subjects "tasks.pending" \
+            --retention limits \
+            --max-age 24h \
+            --storage file \
+            --replicas 1 \
+            --discard old \
+            --max-msgs=-1 \
+            --max-msgs-per-subject=-1 \
+            --max-bytes=-1 \
+            --max-msg-size=-1 \
+            --dupe-window 2m \
+            --no-allow-rollup \
+            --no-deny-delete \
+            --no-deny-purge \
+            --server=nats://localhost:4222
+        echo "Created TASKS stream"
+    fi
+    
+    # Create OUTPUTS stream if it doesn't exist
+    if ! stream_exists "OUTPUTS"; then
+        nats stream add OUTPUTS \
+            --subjects "tasks.output.>" \
+            --retention limits \
+            --max-age 24h \
+            --storage file \
+            --replicas 1 \
+            --discard old \
+            --max-msgs=-1 \
+            --max-msgs-per-subject=-1 \
+            --max-bytes=-1 \
+            --max-msg-size=-1 \
+            --dupe-window 2m \
+            --no-allow-rollup \
+            --no-deny-delete \
+            --no-deny-purge \
+            --server=nats://localhost:4222
+        echo "Created OUTPUTS stream"
+    fi 
+
+    # Create EVENTS stream for event-handler if it doesn't exist
+    if ! stream_exists "EVENTS"; then
+        nats stream add EVENTS \
+            --subjects "events.>" \
+            --retention limits \
+            --max-age 24h \
+            --storage file \
+            --replicas 1 \
+            --discard old \
+            --max-msgs=-1 \
+            --max-msgs-per-subject=-1 \
+            --max-bytes=-1 \
+            --max-msg-size=-1 \
+            --dupe-window 2m \
+            --no-allow-rollup \
+            --no-deny-delete \
+            --no-deny-purge \
+            --server=nats://localhost:4222
+        echo "Created EVENTS stream"
+    fi

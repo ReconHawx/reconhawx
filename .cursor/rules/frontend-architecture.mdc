@@ -1,0 +1,182 @@
+---
+globs: ["src/frontend/src/**", "src/frontend/src/App.js", "src/frontend/src/index.js", "src/frontend/src/index.css"]
+---
+
+# Frontend Architecture Overview
+
+## Tech Stack
+
+- **React 18** with functional components and hooks
+- **React Router v6** for client-side routing
+- **React Bootstrap** for UI components
+- **Axios** for HTTP requests with interceptors
+- **Zustand** for workflow state management
+- **React Context** for global state (Auth, Theme, Program Filter)
+- **React Flow** for visual workflow builder
+- **date-fns** for date formatting
+
+## Application Structure
+
+```
+src/frontend/src/
+├── App.js                 # Main application component
+├── index.js               # React entry point
+├── index.css              # Global styles (light/dark theme)
+├── contexts/              # React Context providers
+│   ├── AuthContext.js     # Authentication state & JWT management
+│   ├── ThemeContext.js    # Light/dark theme toggle
+│   └── ProgramFilterContext.js  # Global program filter
+├── services/              # API layer
+│   └── api/
+│       ├── client.js      # Axios instance with interceptors
+│       ├── index.js       # Barrel exports for all APIs
+│       ├── admin.js       # Auth, user management APIs
+│       ├── assets.js      # Asset CRUD APIs
+│       ├── findings.js    # Findings APIs
+│       ├── programs.js    # Program APIs
+│       ├── workflows.js   # Workflow execution APIs
+│       └── stats.js       # Statistics APIs
+├── stores/                # Zustand stores
+│   └── workflowStore.js   # Visual workflow builder state
+├── components/            # Reusable components
+│   ├── Navigation.js      # Top navigation bar
+│   ├── ProtectedRoute.js  # Auth-protected route wrapper
+│   ├── Login.js           # Login form
+│   ├── LoadingFallback.js # Lazy loading spinner
+│   ├── ThemeToggle.js     # Theme switcher
+│   ├── NotesSection.js    # Editable notes component
+│   └── workflow/          # Visual workflow builder components
+├── pages/                 # Page components (lazy loaded)
+│   ├── Dashboard.js       # Main dashboard
+│   ├── admin/             # Admin pages
+│   ├── assets/            # Asset list/detail pages
+│   ├── findings/          # Findings pages
+│   ├── programs/          # Program management
+│   ├── workflows/         # Workflow pages
+│   ├── dashboards/        # Specialized dashboards
+│   └── scheduled-jobs/    # Scheduled job pages
+└── utils/                 # Utility functions
+    ├── dateUtils.js       # Date formatting helpers
+    ├── userUtils.js       # User-related utilities
+    └── workflowTemplates.js # Workflow template definitions
+```
+
+## Provider Hierarchy
+
+The app uses nested context providers for global state:
+
+```jsx
+function App() {
+  return (
+    <ThemeProvider>           {/* Theme management (light/dark) */}
+      <AuthProvider>          {/* Authentication state & JWT tokens */}
+        <ProgramFilterProvider>  {/* Global program filter */}
+          <AppContent />         {/* Router and main content */}
+        </ProgramFilterProvider>
+      </AuthProvider>
+    </ThemeProvider>
+  );
+}
+```
+
+## Routing Pattern
+
+- All routes use **lazy loading** with `React.lazy()` for code splitting
+- Protected routes wrap pages with `<ProtectedRoute>` component
+- Routes support `requireSuperuser`, `requireAdmin`, and `requiredPermission` props
+
+```jsx
+// Lazy load pattern
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+
+// Protected route pattern
+<Route path="/dashboard" element={
+  <ProtectedRoute>
+    <Dashboard />
+  </ProtectedRoute>
+} />
+
+// Admin-only route
+<Route path="/admin/users" element={
+  <ProtectedRoute requireSuperuser={true}>
+    <UserManagement />
+  </ProtectedRoute>
+} />
+```
+
+## Route Structure
+
+| Path | Component | Access |
+|------|-----------|--------|
+| `/` | Dashboard | Protected |
+| `/assets/*` | Asset pages | Protected |
+| `/findings/*` | Findings pages | Protected |
+| `/programs/*` | Program pages | Protected |
+| `/workflows/*` | Workflow pages | Protected |
+| `/scheduled-jobs/*` | Scheduled job pages | Protected |
+| `/admin/*` | Admin pages | Superuser only |
+| `/login` | Login | Public |
+
+## Styling System
+
+### CSS Variables for Theming
+
+```css
+/* Light theme (default) */
+body {
+  --bg-primary: #ffffff;
+  --bg-secondary: #f8f9fa;
+  --text-primary: #212529;
+  --border-color: #dee2e6;
+  /* ... more variables */
+}
+
+/* Dark theme */
+body[data-theme="dark"] {
+  --bg-primary: #1a1a2e;
+  --bg-secondary: #16213e;
+  --text-primary: #e4e4e4;
+  --border-color: #2d3436;
+  /* ... more variables */
+}
+```
+
+### Bootstrap Integration
+
+- Uses React Bootstrap components (`Card`, `Badge`, `Button`, `Table`, etc.)
+- Custom CSS overrides for theme support
+- Fluid containers with responsive grid
+
+## Key Architectural Patterns
+
+### 1. Context-Based Global State
+- Use contexts for truly global state (auth, theme, program filter)
+- Zustand for complex local state (workflow builder)
+
+### 2. API Layer Abstraction
+- All API calls go through `services/api/` modules
+- Axios interceptors handle auth tokens and refresh
+- Consistent error handling
+
+### 3. Code Splitting
+- All page components are lazy loaded
+- Suspense fallback shows loading spinner
+
+### 4. Program-Scoped Data
+- Most data views filter by selected program
+- Program filter stored in localStorage for persistence
+- `useProgramFilter()` hook for accessing filter
+
+### 5. Protected Routes
+- `ProtectedRoute` handles auth checks
+- Redirects to `/login` if not authenticated
+- Shows "Access Denied" for insufficient permissions
+
+## Best Practices
+
+1. **Use existing contexts** - Don't create new state management patterns
+2. **Follow API patterns** - Use the established API service structure
+3. **Lazy load pages** - All new pages should use `React.lazy()`
+4. **Respect theme** - Use CSS variables, not hardcoded colors
+5. **Filter by program** - Honor `selectedProgram` from context
+6. **Use formatDate utilities** - Don't create new date formatting functions

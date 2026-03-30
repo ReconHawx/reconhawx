@@ -1,0 +1,443 @@
+---
+globs: ["src/event-handler/app/event_handlers.py", "src/event-handler/app/handler_config.py", "src/event-handler/app/routing.py"]
+---
+
+# Event-Handler Patterns
+
+## Handler Configuration
+
+Handler definitions are stored and edited via the API (effective config from `GET /internal/event-handler-configs`). The event-handler builds `HandlerSet` instances from that JSON. The shape below matches what the API returns (historically documented as YAML for readability).
+
+### Basic Handler Structure
+
+```yaml
+handlers:
+  - id: subdomain_resolved           # Unique handler ID
+    event_type: assets.subdomain.resolved  # Event type to match
+    description: Handle resolved subdomains
+    conditions:                      # All conditions must pass
+      - type: field_exists
+        field: name
+    actions:                         # Actions executed in order
+      - type: log
+        level: info
+        message_template: "Subdomain {name} resolved"
+```
+
+### Handler Fields
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `id` | No | Unique identifier (defaults to event_type with dots replaced) |
+| `event_type` | Yes | Event type to match (e.g., `assets.subdomain.created`) |
+| `description` | No | Human-readable description |
+| `conditions` | No | List of conditions that must all pass |
+| `actions` | Yes | List of actions to execute |
+
+## Condition Types
+
+### field_exists
+Check if a field exists and is not null:
+
+```yaml
+conditions:
+  - type: field_exists
+    field: name
+  - type: field_exists
+    field: program_settings.discord_webhook_url
+```
+
+### field_value
+Compare field value with operators:
+
+```yaml
+conditions:
+  # Equals
+  - type: field_value
+    field: severity
+    operator: equals
+    expected_value: critical
+
+  # Not equals
+  - type: field_value
+    field: status
+    operator: not_equals
+    expected_value: ignored
+
+  # Null or empty
+  - type: field_value
+    field: domain_registered
+    operator: null_or_empty
+
+  # Not exists (alias for null_or_empty)
+  - type: field_value
+    field: ip_address
+    operator: not_exists
+
+  # Exists (has value)
+  - type: field_value
+    field: resolved_ips
+    operator: exists
+
+  # Not empty
+  - type: field_value
+    field: assets
+    operator: not_empty
+
+  # Greater/less than
+  - type: field_value
+    field: severity_score
+    operator: greater_than
+    expected_value: 7
+
+  # In list
+  - type: field_value
+    field: severity
+    operator: in
+    expected_value: [high, critical]
+```
+
+### asset_filter
+Filter assets in batch events:
+
+```yaml
+conditions:
+  - type: asset_filter
+    asset_field: assets           # Field containing asset array
+    filter_field: resolved        # Field to filter on
+    filter_operator: exists       # Filter operation
+```
+
+**Filter Operators**:
+- `exists` - Field has a non-empty value
+- `not_exists` - Field is null, empty, or missing
+- `equals` - Field equals `filter_value`
+- `not_equals` - Field does not equal `filter_value`
+
+## Action Types
+
+### log
+Write to application log:
+
+```yaml
+actions:
+  - type: log
+    level: info                    # debug, info, warning, error
+    message_template: "Event: {name} ({program_name})"
+    
+    # For batched actions
+    batching:
+      max_events: 10
+      max_delay_seconds: 60
+    batch_message_template: "Processed {event_count} events: {domain_list}"
+```
+
+### discord_notification
+Send Discord webhook notification:
+
+```yaml
+actions:
+  - type: discord_notification
+    webhook_url: "{program_settings.discord_webhook_url}"
+    
+    # Single event templates
+    title_template: "🎯 New Subdomain: {name}"
+    description_template: "**Program:** {program_name}\n**IP:** {ip_address}"
+    color: 3447003                 # Embed color (decimal)
+    
+    # Batch templates
+    batching:
+      max_events: 10
+      max_delay_seconds: 60
+    batch_title_template: "🎯 {domain_count} New Subdomains"
+    batch_description_template: "**Program:** {program_name}\n\n{domain_list}"
+    batch_color: 3066993
+```
+
+**Color Values**:
+- Red (alerts): `15158332`
+- Yellow (warnings): `16776960`
+- Green (success): `3066993`
+- Blue (info): `3447003`
+
+### workflow_trigger
+Trigger a workflow via API:
+
+```yaml
+actions:
+  - type: workflow_trigger
+    workflow_name: typosquat_analysis
+    api_url: "{api_base_url}"
+    api_key: "{internal_api_key}"
+    use_custom_payload: true       # Use parameters directly as payload
+    
+    batching:
+      max_events: 10
+      max_delay_seconds: 60
+    
+    parameters:
+      workflow_name: typosquat_analysis
+      program_name: "{program_name}"
+      description: "Analyze typosquat domains"
+      inputs:
+        domains:
+          type: direct
+          values: "{domain_list_array}"   # Expands to actual array
+          value_type: domains
+```
+
+### phishlabs_batch_trigger
+Trigger PhishLabs batch processing:
+
+```yaml
+actions:
+  - type: phishlabs_batch_trigger
+    api_url: "{api_base_url}"
+    api_key: "{internal_api_key}"
+    finding_id_template: "{id}"    # Extract finding ID from each event
+    catcode: "typosquat"           # Optional category code
+    
+    batching:
+      max_events: 50
+      max_delay_seconds: 300
+```
+
+## Template Substitution
+
+Templates use `{field}` syntax with dot notation for nested fields.
+
+### Available Variables
+
+**Event Data**:
+- `{name}` - Asset/finding name
+- `{program_name}` - Program name
+- `{event_type}` - Parsed event type
+- `{subject}` - Original NATS subject
+- `{timestamp}` - Event timestamp
+
+**Program Settings**:
+- `{program_settings.enabled}` - Notifications enabled
+- `{program_settings.discord_webhook_url}` - Webhook URL
+- `{program_settings.events.assets.created.subdomain}` - Event enabled
+
+**API Configuration**:
+- `{api_base_url}` - Data API URL
+- `{internal_api_key}` - API authentication key
+
+**Batch Variables** (available in batch templates):
+- `{event_count}` - Number of events in batch
+- `{domain_count}` - Number of unique domains
+- `{domain_list}` - Comma-separated domain names
+- `{domain_list_array}` - Array of domain names (for workflow inputs)
+- `{ip_count}` - Number of unique IPs
+- `{ip_list}` - Comma-separated IP addresses
+- `{ip_list_array}` - Array of IP addresses
+- `{url_count}` - Number of unique URLs
+- `{url_list}` - Comma-separated URLs
+- `{url_list_array}` - Array of URLs
+- `{batched_events}` - Full array of batched event data
+
+### Array Expansion
+
+Templates like `{domain_list_array}` expand to actual arrays when used in workflow parameters:
+
+```yaml
+parameters:
+  domains: "{domain_list_array}"  # Becomes ["a.com", "b.com", "c.com"]
+```
+
+## Batching Configuration
+
+### Handler-Level Batching
+
+```yaml
+actions:
+  - type: discord_notification
+    batching:
+      max_events: 10           # Flush after 10 events
+      max_delay_seconds: 60    # Flush after 60 seconds
+```
+
+### Batch Processing Flow
+
+1. Event arrives, matches handler with batching
+2. Event added to Redis batch: `notify:batch:{handler_id}:{program_name}:items`
+3. First event timestamp stored: `notify:batch:{handler_id}:{program_name}:first_ts`
+4. Batch flushes when:
+   - `max_events` reached, OR
+   - `max_delay_seconds` elapsed
+5. Background loop checks for expired batches every 15 seconds
+
+### Redis Keys
+
+| Key Pattern | Type | Description |
+|-------------|------|-------------|
+| `notify:batch:{handler}:{program}:items` | List | Batched event data (JSON) |
+| `notify:batch:{handler}:{program}:first_ts` | String | First event timestamp |
+| `notify:settings:{program}` | String | Cached program settings |
+
+## Event Type Parsing
+
+### Subject to Event Type
+
+The `parse_event_type()` function converts NATS subjects:
+
+```
+events.assets.subdomain.created  →  assets.subdomain.created
+events.assets.subdomain.resolved →  assets.subdomain.resolved
+events.findings.typosquat.created → findings.typosquat.created
+events.findings.nuclei.created   →  findings.nuclei.{severity}  (uses payload)
+```
+
+### Nuclei Severity Routing
+
+For nuclei findings, the severity from payload determines event type:
+
+```python
+# Payload: {"severity": "critical", ...}
+# Event type: findings.nuclei.critical
+```
+
+## Event Normalization
+
+The `normalize_event_data()` function creates consistent event data:
+
+```python
+normalized = {
+    'subject': 'events.assets.subdomain.created',
+    'event_type': 'assets.subdomain.created',
+    'event_family': 'assets.subdomain.created',  # Alias
+    'program_name': 'example_program',
+    'timestamp': 1234567890.123,
+    'api_base_url': 'http://api:8000',
+    'internal_api_key': '...',
+    
+    # All payload fields promoted to root level
+    'name': 'sub.example.com',
+    'ip_address': '1.2.3.4',
+    ...
+    
+    # Batch variables for asset events
+    'domain_list': 'a.com, b.com',
+    'domain_list_array': ['a.com', 'b.com'],
+    'domain_count': 2
+}
+```
+
+## Handler Registry
+
+### Registration
+
+```python
+# Handlers registered at startup from YAML
+registry.register_handler(handler)
+
+# Access handlers by event type
+handlers = registry.get_handlers('assets.subdomain.created')
+```
+
+### Event Handling
+
+```python
+# Process event with all matching handlers
+results = await registry.handle_event(event_type, event_data)
+
+# Results contain success/failure for each action
+for result in results:
+    if result.success:
+        logger.info(result.message)
+    else:
+        logger.error(result.message)
+```
+
+## Notification Settings Check
+
+Discord actions check program settings before sending:
+
+```python
+# Check if globally enabled
+if not program_settings.get('enabled', False):
+    return  # Skip notification
+
+# Check if event type enabled
+events = program_settings.get('events', {})
+# For assets.subdomain.created:
+if not events.get('assets', {}).get('created', {}).get('subdomain', False):
+    return  # Skip notification
+```
+
+## Complete Handler Example
+
+```yaml
+handlers:
+  - id: typosquat_phishlabs
+    event_type: findings.typosquat.created
+    description: Trigger PhishLabs analysis for new typosquat domains
+    conditions:
+      - type: field_exists
+        field: name
+      - type: field_value
+        field: domain_registered
+        operator: exists
+    actions:
+      - type: log
+        level: info
+        message_template: "Typosquat finding: {name}"
+        batching:
+          max_events: 50
+          max_delay_seconds: 300
+        batch_message_template: "Processing {event_count} typosquat domains"
+      
+      - type: phishlabs_batch_trigger
+        api_url: "{api_base_url}"
+        api_key: "{internal_api_key}"
+        finding_id_template: "{id}"
+        batching:
+          max_events: 50
+          max_delay_seconds: 300
+      
+      - type: discord_notification
+        webhook_url: "{program_settings.discord_webhook_url}"
+        title_template: "🔍 Typosquat Domain: {name}"
+        description_template: "**Domain:** {name}\n**Program:** {program_name}"
+        color: 15158332
+        batching:
+          max_events: 10
+          max_delay_seconds: 60
+        batch_title_template: "🔍 {domain_count} Typosquat Domains Found"
+        batch_description_template: "**Program:** {program_name}\n\n**Domains:**\n{domain_list}"
+        batch_color: 15158332
+```
+
+## Adding New Asset Types
+
+To support new asset types (e.g., `assets.certificate`):
+
+1. Add normalization in `routing.py`:
+```python
+elif event_type.startswith('assets.certificate'):
+    certs = [asset.get('subject') for asset in payload.get('assets', [])]
+    normalized['cert_list'] = ', '.join(certs)
+    normalized['cert_list_array'] = certs
+    normalized['cert_count'] = len(certs)
+```
+
+2. Add batch context in `event_handlers.py` `_create_batch_context()`:
+```python
+certificates = []
+for event in batched_events:
+    cert = payload.get('subject')
+    if cert and cert not in certificates:
+        certificates.append(cert)
+
+batch_context['cert_count'] = len(certificates)
+batch_context['cert_list'] = ', '.join(certificates)
+batch_context['cert_list_array'] = certificates
+```
+
+## References
+
+- Event handlers: `src/event-handler/app/event_handlers.py`
+- Handler config: `src/event-handler/app/handler_config.py`
+- Routing: `src/event-handler/app/routing.py`
+- Config generator: `src/event-handler/app/config_generator.py`

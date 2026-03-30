@@ -1,0 +1,357 @@
+---
+globs: ["src/frontend/src/components/workflow/**", "src/frontend/src/stores/workflowStore.js", "src/frontend/src/pages/workflows/**", "src/frontend/src/components/VisualWorkflowBuilder.js"]
+---
+
+# Visual Workflow Builder
+
+## Overview
+
+The visual workflow builder uses **React Flow** for node-based workflow design with **Zustand** for state management.
+
+## Architecture
+
+```
+src/frontend/src/
+├── components/
+│   ├── VisualWorkflowBuilder.js   # Main workflow builder component
+│   ├── VisualWorkflowBuilder.css  # Builder styles
+│   └── workflow/
+│       ├── constants.js           # Task types, categories, colors
+│       ├── FlowCanvas.js          # React Flow canvas wrapper
+│       ├── TaskNode.js            # Task node component
+│       ├── InputNode.js           # Input/source node component
+│       ├── StepBackground.js      # Visual step backgrounds
+│       ├── StepManagementPanel.js # Step add/remove controls
+│       ├── TaskLibrarySidebar.js  # Draggable task palette
+│       ├── TaskParameterSelector.js # Task configuration modal
+│       ├── NucleiTemplateSelector.js # Nuclei template picker
+│       ├── WordlistSelector.js    # Wordlist picker
+│       ├── ProgramAssetSelector.js # Program asset selector
+│       └── SingleTaskModal.js     # Single task execution modal
+├── stores/
+│   └── workflowStore.js           # Zustand store for workflow state
+└── pages/workflows/
+    ├── Workflows.js               # Workflow main page (tabs)
+    ├── WorkflowList.js            # Saved workflows list
+    ├── WorkflowCreate.js          # Create/edit workflow
+    ├── WorkflowRun.js             # Run workflow page
+    ├── WorkflowStatus.js          # Execution status list
+    └── WorkflowStatusDetail.js    # Single execution detail
+```
+
+## Task Types (`constants.js`)
+
+### Task Categories
+
+| Category | Color | Description |
+|----------|-------|-------------|
+| DNS | `#4CAF50` | Domain resolution tasks |
+| Discovery | `#2196F3` | Subdomain/URL discovery |
+| Scanning | `#FF9800` | Port scanning |
+| Vulnerability | `#F44336` | Nuclei, WPScan scans |
+| Security | `#9C27B0` | Typosquat, broken links |
+| Utility | `#607D8B` | Shell commands |
+
+### Task Type Definition
+
+```javascript
+export const TASK_TYPES = {
+  resolve_domain: {
+    name: 'Domain Resolution',
+    description: 'Resolve domain names to IP addresses using dnsx',
+    category: 'DNS',
+    icon: '🔍',
+    inputs: ['domains'],           // Input handle types
+    outputs: ['domains', 'ips'],   // Output handle types
+    params: {
+      timeout: { 
+        type: 'number', 
+        default: 120, 
+        description: 'Timeout in seconds' 
+      }
+    }
+  },
+  // ... more task types
+};
+```
+
+### Available Tasks
+
+| Task | Category | Inputs | Outputs | Description |
+|------|----------|--------|---------|-------------|
+| `resolve_domain` | DNS | domains | domains, ips | DNS resolution |
+| `resolve_ip` | DNS | ips | domains, ips | Reverse DNS |
+| `resolve_ip_cidr` | DNS | cidrs | domains, ips | CIDR block resolution |
+| `subdomain_finder` | Discovery | domains | domains | Subfinder discovery |
+| `subdomain_permutations` | Discovery | domains | domains | Gotator permutations |
+| `port_scan` | Scanning | ips | services | Nmap scanning |
+| `nuclei_scan` | Vulnerability | domains, ips, urls | findings, domains, ips, services, urls | Nuclei scanner |
+| `wpscan` | Vulnerability | urls | findings | WordPress scanning |
+| `test_http` | Discovery | domains, urls | services, domains, ips, urls, certificates | HTTPX probing |
+| `typosquat_detection` | Security | domains | findings | DNSTwist analysis |
+| `detect_broken_links` | Security | urls | findings | Social media link check |
+| `screenshot_website` | Discovery | urls | screenshots | Website screenshots |
+| `crawl_website` | Discovery | urls | urls | Katana crawling |
+| `fuzz_website` | Discovery | urls | urls | Path fuzzing |
+| `shell_command` | Utility | strings | strings | Custom commands |
+
+### Data Type Colors
+
+```javascript
+export const DATA_TYPE_COLORS = {
+  domains: '#4CAF50',     // Green
+  ips: '#2196F3',         // Blue
+  urls: '#FF9800',        // Orange
+  cidrs: '#9C27B0',       // Purple
+  services: '#F44336',    // Red
+  findings: '#E91E63',    // Pink
+  screenshots: '#795548', // Brown
+  certificates: '#607D8B', // Gray
+  strings: '#FF5722'      // Deep Orange
+};
+```
+
+## Workflow Store
+
+### State Structure
+
+```javascript
+const useWorkflowStore = create((set, get) => ({
+  // React Flow state
+  nodes: [{ id: 'source', type: 'inputNode', position: { x: 20, y: 20 }, ... }],
+  edges: [],
+  
+  // Workflow metadata
+  workflowName: '',
+  programName: '',
+  workflowDescription: '',
+  
+  // Workflow configuration
+  variables: {},      // User variables (key-value)
+  inputs: {},         // Input configurations
+  steps: [            // Visual step definitions
+    { id: 'step-1', name: 'Step 1', yPosition: 200, height: 300 }
+  ],
+  
+  // UI state
+  isTaskModalOpen: false,
+  isInputConfigModalOpen: false,
+  selectedNodeId: null
+}));
+```
+
+### Key Actions
+
+```javascript
+// Node management
+addNode(node)           // Add task node to canvas
+deleteNode(nodeId)      // Remove node (except source)
+updateNodeData(nodeId, data)  // Update task configuration
+
+// Connection handling
+onNodesChange(changes)  // React Flow node changes
+onEdgesChange(changes)  // React Flow edge changes
+onConnect(connection)   // Create new edge
+
+// Step management
+addStep()               // Add new execution step
+updateStepName(stepId, name)
+removeStep(stepId)      // Remove step + contained nodes
+getStepForPosition(y)   // Find step at Y coordinate
+
+// Workflow conversion
+convertWorkflowToNodes(workflowDef)  // Load from API format
+getWorkflowPayload()    // Export to API format
+clearWorkflow()         // Reset state
+```
+
+## Node Components
+
+### TaskNode
+
+Displays a task with input/output handles:
+
+```jsx
+const TaskNode = ({ data, selected, id }) => {
+  const taskType = TASK_TYPES[data.taskType];
+  
+  return (
+    <div className="task-node">
+      {/* Input handles on left */}
+      {taskType?.inputs?.map((inputType, index) => (
+        <Handle
+          type="target"
+          position={Position.Left}
+          id={inputType}
+          style={{ background: getDataTypeColor(inputType) }}
+        />
+      ))}
+      
+      {/* Task content */}
+      <div className="task-header">
+        <span>{taskType?.icon}</span>
+        <span>{taskType?.name}</span>
+        <Badge>{taskType?.category}</Badge>
+      </div>
+      
+      {/* Output handles on right */}
+      {taskType?.outputs?.map((outputType, index) => (
+        <Handle
+          type="source"
+          position={Position.Right}
+          id={outputType}
+          style={{ background: getDataTypeColor(outputType) }}
+        />
+      ))}
+    </div>
+  );
+};
+```
+
+### InputNode
+
+Workflow input source node:
+
+```jsx
+const InputNode = ({ data }) => {
+  return (
+    <div className="input-node">
+      <div>📥 Input Source</div>
+      {data.inputs && Object.keys(data.inputs).map(inputName => (
+        <Handle
+          type="source"
+          position={Position.Right}
+          id={inputName}
+        />
+      ))}
+    </div>
+  );
+};
+```
+
+## Workflow Payload Format
+
+### API Format
+
+```javascript
+{
+  workflow_name: 'my_workflow',
+  program_name: 'my_program',
+  description: 'Workflow description',
+  inputs: {
+    domains: {
+      type: 'domains',
+      source: 'program',  // or 'manual', 'previous_step'
+      value: []
+    }
+  },
+  variables: {
+    timeout: 300
+  },
+  steps: [
+    {
+      name: 'step_1',
+      tasks: [
+        {
+          name: 'subdomain_finder',
+          task_type: 'subdomain_finder',
+          params: { timeout: 300 },
+          force: false,
+          input_mapping: {
+            domains: 'inputs.domains'
+          }
+        },
+        {
+          name: 'resolve_domain',
+          task_type: 'resolve_domain',
+          params: {},
+          force: false,
+          input_mapping: {
+            domains: 'steps.step_1.subdomain_finder.outputs.domains'
+          }
+        }
+      ]
+    }
+  ]
+}
+```
+
+### Input Mapping Patterns
+
+```javascript
+// From workflow input
+input_mapping: { domains: 'inputs.domains' }
+
+// From previous task output
+input_mapping: { domains: 'steps.step_1.subdomain_finder.outputs.domains' }
+
+// From previous step task
+input_mapping: { urls: 'steps.discovery.test_http.outputs.urls' }
+```
+
+## Adding New Task Types
+
+1. Add task definition to `constants.js`:
+
+```javascript
+export const TASK_TYPES = {
+  // ... existing tasks
+  my_new_task: {
+    name: 'My New Task',
+    description: 'Description of what it does',
+    category: 'Discovery',  // Use existing category
+    icon: '🆕',
+    inputs: ['domains'],    // What it accepts
+    outputs: ['urls'],      // What it produces
+    params: {
+      my_param: { 
+        type: 'string',     // string, number, boolean, array
+        default: '',
+        description: 'Parameter description'
+      }
+    }
+  }
+};
+```
+
+2. Handle special parameter types in `TaskParameterSelector.js` if needed
+
+3. Implement corresponding task in the runner backend
+
+## Component Communication
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                 VisualWorkflowBuilder                    │
+│  ┌───────────────┐  ┌───────────────────────────────┐   │
+│  │TaskLibrary    │  │        FlowCanvas             │   │
+│  │ Sidebar       │  │  ┌─────────┐   ┌─────────┐    │   │
+│  │               │  │  │InputNode│──▶│TaskNode │    │   │
+│  │ [Drag Tasks]  │  │  └─────────┘   └────┬────┘    │   │
+│  │               │  │                     │         │   │
+│  └───────────────┘  │                     ▼         │   │
+│                     │              ┌─────────┐      │   │
+│  ┌───────────────┐  │              │TaskNode │      │   │
+│  │StepManagement │  │              └─────────┘      │   │
+│  │    Panel      │  └───────────────────────────────┘   │
+│  └───────────────┘                                       │
+└─────────────────────────────────────────────────────────┘
+                            │
+                            ▼
+                    ┌───────────────┐
+                    │workflowStore  │ (Zustand)
+                    │ - nodes       │
+                    │ - edges       │
+                    │ - steps       │
+                    └───────────────┘
+```
+
+## Best Practices
+
+1. **Use store selectors** - Subscribe only to needed state
+2. **Honor step boundaries** - Tasks belong to visual steps
+3. **Validate connections** - Only connect compatible types
+4. **Show configuration state** - Display "Configured" badge
+5. **Handle edge cases** - Empty workflows, deleted nodes
+6. **Preserve node positions** - Save/restore layout
+7. **Use consistent colors** - Follow data type color scheme

@@ -1,0 +1,92 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ct-monitor
+  namespace: recon
+  labels:
+    app: ct-monitor
+    component: monitoring
+spec:
+  replicas: 1  # Single instance is sufficient for CT stream
+  selector:
+    matchLabels:
+      app: ct-monitor
+  strategy:
+    type: Recreate  # Don't run multiple instances
+  template:
+    metadata:
+      labels:
+        app: ct-monitor
+        component: monitoring
+    spec:
+      nodeSelector:
+        reconhawx.runner: "true"
+      serviceAccountName: ct-monitor
+      containers:
+      - name: ct-monitor
+        image: ghcr.io/h3xitsec/reconhawx/ct-monitor:latest
+        imagePullPolicy: IfNotPresent
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        env:
+        - name: API_URL
+          valueFrom:
+            configMapKeyRef:
+              name: service-config
+              key: api.url
+        
+        - name: NATS_URL
+          valueFrom:
+            configMapKeyRef:
+              name: service-config
+              key: nats.url
+        
+        - name: INTERNAL_SERVICE_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: internal-service-secret
+              key: token
+              optional: true
+        
+        - name: LOG_LEVEL
+          value: "DEBUG"
+        
+        - name: CT_MONITOR_HTTP_HOST
+          value: "0.0.0.0"
+        
+        - name: CT_MONITOR_HTTP_PORT
+          value: "8002"
+        
+        ports:
+        - name: http
+          containerPort: 8002
+          protocol: TCP
+        
+        livenessProbe:
+          exec:
+            command:
+            - python
+            - -c
+            - "from main import CTMonitorService; print('OK')"
+          initialDelaySeconds: 30
+          periodSeconds: 60
+          timeoutSeconds: 10
+          failureThreshold: 3
+        
+        readinessProbe:
+          exec:
+            command:
+            - python
+            - -c
+            - "import aiohttp; import nats; import cryptography; print('OK')"
+          initialDelaySeconds: 10
+          periodSeconds: 30
+          timeoutSeconds: 5
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 30
+

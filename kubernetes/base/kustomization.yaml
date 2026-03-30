@@ -1,0 +1,22 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: reconhawx
+
+# Preserve `resources` list order so Secrets apply before workloads (default sort is by kind).
+sortOptions:
+  order: fifo
+
+resources:
+  - config
+  - secrets/jwt-secret.yaml
+  - secrets/postgres-secret.yaml
+  - postgresql
+  - nats
+  - redis
+  - kueue
+  - api
+  - frontend
+  - event-handler
+  - ct-monitor
+  - runner

@@ -1,0 +1,64 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: event-handler
+  labels:
+    app: event-handler
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: event-handler
+  template:
+    metadata:
+      labels:
+        app: event-handler
+    spec:
+      nodeSelector:
+        reconhawx.runner: "true"
+      containers:
+      - name: event-handler
+        image: ghcr.io/h3xitsec/reconhawx/event-handler:latest
+        env:
+        - name: NATS_URL
+          valueFrom:
+            configMapKeyRef:
+              name: service-config
+              key: nats.url
+        
+        - name: REDIS_URL
+          valueFrom:
+            configMapKeyRef:
+              name: service-config
+              key: redis.url
+        
+        - name: INTERNAL_SERVICE_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: internal-service-secret
+              key: token
+              optional: true
+        
+        - name: API_URL
+          valueFrom:
+            configMapKeyRef:
+              name: service-config
+              key: api.url
+        
+        - name: EVENTHANDLER_API_TIMEOUT_SECONDS
+          value: "15"
+        
+        - name: EVENTHANDLER_ENABLE_EVENT_HANDLERS
+          value: "true"
+        
+        - name: LOG_LEVEL
+          value: "DEBUG"
+        
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+---

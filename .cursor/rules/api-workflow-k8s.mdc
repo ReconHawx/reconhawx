@@ -1,0 +1,498 @@
+---
+globs:
+  - src/api/app/routes/workflows.py
+  - src/api/app/services/kubernetes.py
+  - src/api/app/services/job_*.py
+  - src/api/app/models/workflow.py
+description: Workflow routes, Kubernetes jobs, Kueue-related API patterns
+---
+
+# API conventions (workflows and Kubernetes)
+
+Project hub: repository root `AGENTS.md`.
+
+# API Workflow & Kubernetes Patterns
+
+## Overview
+
+This document covers workflow execution and Kubernetes integration patterns used in the API for orchestrating recon tasks.
+
+## Kubernetes Service Pattern
+
+### Service Initialization
+
+```python
+from kubernetes import client, config
+from kubernetes.client.rest import ApiException
+
+class KubernetesService:
+    def __init__(self):
+        try:
+            # Try to load in-cluster config first
+            config.load_incluster_config()
+            logger.debug("Loaded in-cluster Kubernetes configuration")
+        except config.ConfigException:
+            try:
+                # Fall back to kubeconfig file
+                config.load_kube_config()
+                logger.debug("Loaded kubeconfig file")
+            except config.ConfigException:
+                logger.warning("Could not load Kubernetes configuration")
+
+        self.v1 = client.CoreV1Api()
+        self.batch_v1 = client.BatchV1Api()
+        self.custom_objects_v1 = client.CustomObjectsApi()
+```
+
+### Kueue Integration
+
+Kueue provides workload queuing and resource management:
+
+```python
+# Kueue configuration from environment
+self.kueue_enabled = os.getenv('KUEUE_ENABLED', 'true').lower() == 'true'
+self.kueue_workflow_queue = os.getenv('KUEUE_WORKFLOW_QUEUE', 'recon-runner-queue')
+self.kueue_cluster_queue = os.getenv('KUEUE_CLUSTER_QUEUE', 'cluster-queue')
+self.kueue_priority_class = os.getenv('KUEUE_PRIORITY_CLASS', 'workflow-priority')
+self.workflow_default_priority = os.getenv('WORKFLOW_DEFAULT_PRIORITY', 'normal')
+
+# Kueue status mapping
+KUEUE_STATUS_MAPPING = {
+    'Pending': 'Queued',           # Waiting in queue
+    'Admitted': 'Admitted',        # Admitted to cluster queue
+    'Running': 'Running',          # Job created and running
+    'Finished': 'Completed',       # Workload completed
+    'Failed': 'Failed',            # Workload failed
+    'Rejected': 'Rejected'         # Rejected by admission controller
+}
+```
+
+### Resource Requirements
+
+```python
+# Resource requirements from environment
+self.workflow_resource_requests = {
+    'cpu': os.getenv('WORKFLOW_CPU_REQUEST', '500m'),
+    'memory': os.getenv('WORKFLOW_MEMORY_REQUEST', '1Gi')
+}
+self.workflow_resource_limits = {
+    'cpu': os.getenv('WORKFLOW_CPU_LIMIT', '2000m'),
+    'memory': os.getenv('WORKFLOW_MEMORY_LIMIT', '4Gi')
+}
+```
+
+### Priority Values
+
+```python
+def _get_priority_value(self, priority: str) -> int:
+    """Convert priority string to integer value"""
+    priority_values = {
+        'low': 1,
+        'normal': 5,
+        'high': 10,
+        'critical': 20
+    }
+    return priority_values.get(priority.lower(), 5)
+```
+
+## Job Creation Patterns
+
+### ConfigMap for Workflow Data
+
+```python
+# Create ConfigMap with workflow data
+configmap_name = f"workflow-data-{execution_id}"
+workflow_json = json.dumps(workflow_data)
+
+configmap = client.V1ConfigMap(
+    metadata=client.V1ObjectMeta(
+        name=configmap_name,
+        namespace=namespace,
+        labels={
+            "app": "workflow-runner",
+            "workflow-id": execution_id,
+            "execution-id": execution_id
+        }
+    ),
+    data={
+        "workflow.json": workflow_json
+    }
+)
+
+try:
+    self.v1.create_namespaced_config_map(namespace=namespace, body=configmap)
+except ApiException as e:
+    if e.status == 409:  # Conflict - already exists
+        self.v1.patch_namespaced_config_map(
+            name=configmap_name,
+            namespace=namespace,
+            body=configmap
+        )
+    else:
+        raise
+```
+
+### Job with Kueue Annotations
+
+```python
+job = {
+    "apiVersion": "batch/v1",
+    "kind": "Job",
+    "metadata": {
+        "name": f"workflow-{execution_id}",
+        "namespace": namespace,
+        "labels": {
+            "app": "workflow-runner",
+            "execution-id": execution_id,
+            "workflow-id": execution_id,
+            "program": workflow_data.get('program_name', ''),
+            "priority": priority
+        },
+        "annotations": {
+            "kueue.x-k8s.io/queue-name": self.kueue_workflow_queue,
+            "kueue.x-k8s.io/priority-class": self.kueue_priority_class
+        }
+    },
+    "spec": {
+        "parallelism": 1,
+        "completions": 1,
+        "backoffLimit": 0,
+        "ttlSecondsAfterFinished": 300,
+        "template": pod_template
+    }
+}
+```
+
+### Pod Template Pattern
+
+```python
+pod_template = {
+    "metadata": {
+        "labels": {
+            "app": "workflow-runner",
+            "workflow-id": execution_id,
+            "execution-id": execution_id
+        }
+    },
+    "spec": {
+        "containers": [{
+            "name": "workflow-runner",
+            "image": runner_image,
+            "imagePullPolicy": os.getenv('IMAGE_PULL_POLICY', 'Always'),
+            "command": ["/usr/local/bin/python"],
+            "args": ["/app/run-workflow.py", "/workflow-data/workflow.json"],
+            "env": env_vars,
+            "resources": {
+                "requests": self.workflow_resource_requests,
+                "limits": self.workflow_resource_limits
+            },
+            "volumeMounts": [{
+                "name": "workflow-data",
+                "mountPath": "/workflow-data"
+            }]
+        }],
+        "serviceAccountName": service_account,
+        "restartPolicy": "Never",
+        "nodeSelector": {
+            "type": "runner"
+        },
+        "volumes": [{
+            "name": "workflow-data",
+            "configMap": {
+                "name": configmap_name,
+                "items": [{
+                    "key": "workflow.json",
+                    "path": "workflow.json"
+                }]
+            }
+        }]
+    }
+}
+```
+
+## Resource Cleanup Pattern
+
+```python
+def _cleanup_existing_resources(self, execution_id: str, namespace: str):
+    """Clean up any existing resources for the execution ID"""
+    try:
+        # Clean up existing ConfigMap
+        configmap_name = f"workflow-data-{execution_id}"
+        try:
+            self.v1.delete_namespaced_config_map(name=configmap_name, namespace=namespace)
+        except ApiException as e:
+            if e.status != 404:  # Ignore if not found
+                logger.warning(f"Failed to cleanup ConfigMap: {e}")
+        
+        # Clean up existing workload (Kueue)
+        workload_name = f"workflow-{execution_id}"
+        try:
+            self.custom_objects_v1.delete_namespaced_custom_object(
+                group="kueue.x-k8s.io",
+                version="v1beta1",
+                namespace=namespace,
+                plural="workloads",
+                name=workload_name
+            )
+        except ApiException as e:
+            if e.status != 404:
+                logger.warning(f"Failed to cleanup workload: {e}")
+        
+        # Clean up existing job
+        try:
+            self.batch_v1.delete_namespaced_job(
+                name=workload_name,
+                namespace=namespace,
+                propagation_policy='Background'
+            )
+        except ApiException as e:
+            if e.status != 404:
+                logger.warning(f"Failed to cleanup job: {e}")
+                
+    except Exception as e:
+        logger.warning(f"Error during resource cleanup: {e}")
+```
+
+### Workflow ConfigMap lifecycle
+
+After `create_namespaced_job` succeeds, the API patches `workflow-data-{execution_id}` with `metadata.ownerReferences` pointing at that Job (`batch/v1`, merge patch). When the Job is garbage-collected (`ttlSecondsAfterFinished` or manual delete), the ConfigMap is removed with it. The runner may also trigger an early ConfigMap delete on terminal `result` via `POST /workflows/executions/{id}/logs`. `DELETE .../executions/{id}` uses `stop_workflow` for full Kubernetes cleanup.
+
+## Workflow Models
+
+### Input Definition
+
+```python
+class InputDefinition(BaseModel):
+    """Definition for a single workflow input source."""
+    type: str = Field(..., description="Type: 'program_asset', 'program_finding', or 'direct'")
+    asset_type: Optional[str] = Field(None, description="For program_asset: 'apex-domain', etc.")
+    finding_type: Optional[str] = Field(None, description="For program_finding: 'typosquat_url', etc.")
+    value_type: Optional[str] = Field(None, description="For direct input: 'domains', 'urls', etc.")
+    values: Optional[List[Any]] = Field(None, description="For direct input, the list of static values")
+    filter: Optional[str] = Field(None, description="Jinja2 filter to apply")
+    filter_type: Optional[str] = Field(None, description="Filter type: 'resolved', 'unresolved'")
+    limit: Optional[int] = Field(None, description="Limit the number of items")
+```
+
+### Task Definition
+
+```python
+class TaskDefinition(BaseModel):
+    """Task definition for workflow execution"""
+    name: str = Field(..., description="Unique name for this task instance")
+    task_type: Optional[str] = Field(None, description="Task type: 'subdomain_finder', etc.")
+    input_mapping: Optional[Dict[str, str]] = Field(None, description="Map inputs to workflow inputs or previous outputs")
+    params: Optional[Dict[str, Any]] = Field(default_factory=dict)
+    force: Optional[bool] = False
+    output_mode: Optional[str] = Field(None, description="Output mode: 'assets' or 'typosquat_findings'")
+    use_proxy: Optional[bool] = Field(None, description="Enable AWS API Gateway proxying via FireProx")
+```
+
+### Workflow Step
+
+```python
+class WorkflowStep(BaseModel):
+    """Step model for workflow execution"""
+    name: str
+    tasks: List[TaskDefinition]
+```
+
+### Workflow Request
+
+```python
+class WorkflowRequest(BaseModel):
+    """Request for creating/running a workflow"""
+    workflow_name: str
+    program_name: Optional[str] = Field(None, description="Program name. If null, workflow is global")
+    description: Optional[str] = None
+    variables: Optional[Dict[str, Any]] = Field(default_factory=dict)
+    inputs: Optional[Dict[str, InputDefinition]] = Field(default_factory=dict)
+    steps: List[WorkflowStep]
+    workflow_definition_id: Optional[str] = Field(None, description="ID of saved workflow if running existing")
+```
+
+## Thread Pool Pattern for Blocking Operations
+
+Kubernetes operations are blocking and should run in a thread pool:
+
+```python
+from concurrent.futures import ThreadPoolExecutor
+
+# Create a thread pool executor for running blocking Kubernetes operations
+thread_pool = ThreadPoolExecutor(max_workers=4)
+
+@router.post("/executions/{workflow_id}/stop")
+async def stop_workflow_execution(workflow_id: str):
+    """Stop a running workflow execution"""
+    
+    # Update status immediately
+    await workflow_repository.create_workflow_log({
+        "result": "stopping",
+        "execution_id": workflow_id
+    })
+    
+    # Run K8s cleanup in background thread
+    def run_k8s_cleanup():
+        try:
+            stop_results = k8s_service.stop_workflow(workflow_id)
+            
+            # Update status after cleanup (from background thread)
+            loop = asyncio.get_event_loop()
+            future = asyncio.run_coroutine_threadsafe(
+                workflow_repository.create_workflow_log({
+                    "result": "stopped",
+                    "execution_id": workflow_id,
+                    "stop_results": stop_results
+                }), 
+                loop
+            )
+            future.result()
+        except Exception as e:
+            logger.error(f"Cleanup failed: {e}")
+    
+    # Submit to thread pool (non-blocking)
+    thread_pool.submit(run_k8s_cleanup)
+    
+    return {"status": "stopping", "workflow_id": workflow_id}
+```
+
+## Workflow Route Patterns
+
+### Workflow Definition CRUD
+
+```python
+@router.get("/definitions", response_model=WorkflowListResponse)
+async def get_workflow_definitions(
+    program_name: Optional[str] = Query(None),
+    current_user: UserResponse = Depends(get_current_user_from_middleware)
+):
+    """Get all saved workflow definitions"""
+    workflows_data = await workflow_definition_repository.get_workflow_definitions(program_name)
+    
+    # Filter based on user permissions
+    accessible_workflows = []
+    for workflow_data in workflows_data:
+        workflow_program = workflow_data.get("program_name")
+        
+        # Global workflows are accessible to everyone
+        if not workflow_program:
+            accessible_workflows.append(workflow_data)
+            continue
+        
+        # Check program permission for program-specific workflows
+        if check_program_permission(current_user, workflow_program, "analyst"):
+            accessible_workflows.append(workflow_data)
+    
+    return WorkflowListResponse(workflows=accessible_workflows, count=len(accessible_workflows))
+```
+
+### Workflow Execution with Retry
+
+```python
+@router.post("/run", response_model=WorkflowCreateResponse)
+async def run_workflow(
+    workflow_request: WorkflowRequest,
+    priority: str = Query("normal", description="Priority: low, normal, high, critical"),
+    current_user: UserResponse = Depends(get_current_user_from_middleware)
+):
+    """Execute a workflow"""
+    
+    # Check program permission
+    if workflow_request.program_name:
+        if not check_program_permission(current_user, workflow_request.program_name, "manager"):
+            raise HTTPException(status_code=403, detail="Manager access required")
+    
+    execution_id = str(uuid.uuid4())
+    
+    workflow_data = {
+        "workflow_id": workflow_request.workflow_definition_id,
+        "execution_id": execution_id,
+        "program_name": workflow_request.program_name,
+        "name": workflow_request.workflow_name,
+        "priority": priority,
+        "steps": [step.dict(exclude_none=False) for step in workflow_request.steps]
+    }
+    
+    # Retry logic for K8s job creation
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            await k8s_service.create_runner_job(workflow_data)
+            break
+        except Exception as e:
+            if attempt == max_retries - 1:
+                raise HTTPException(status_code=500, detail=f"Failed after {max_retries} attempts")
+            time.sleep(1)
+    
+    return WorkflowCreateResponse(
+        workflow_id=execution_id,
+        status="started",
+        status_url=create_status_url(request, "workflow", execution_id)
+    )
+```
+
+## Queue Management Endpoints
+
+### Queue Status
+
+```python
+@router.get("/queue/status", response_model=QueueCapacityResponse)
+async def get_queue_status():
+    """Get current queue status and capacity"""
+    capacity_info = k8s_service.check_queue_capacity()
+    return QueueCapacityResponse(**capacity_info)
+
+# Response includes:
+# - queue_length: Current number of workloads
+# - has_capacity: Boolean indicating if queue can accept more
+# - estimated_wait_time: Rough estimate in minutes
+# - queue_name: Name of the Kueue queue
+```
+
+### Workload Priority Update
+
+```python
+class PriorityUpdateRequest(BaseModel):
+    priority: str = Field(..., description="Priority: low, normal, high, critical")
+
+@router.put("/queue/workloads/{execution_id}/priority")
+async def update_workload_priority(
+    execution_id: str,
+    priority_request: PriorityUpdateRequest
+):
+    """Update workload priority in queue"""
+    valid_priorities = ['low', 'normal', 'high', 'critical']
+    if priority_request.priority not in valid_priorities:
+        raise HTTPException(status_code=400, detail=f"Invalid priority")
+    
+    success = k8s_service.update_workload_priority(execution_id, priority_request.priority)
+    if not success:
+        raise HTTPException(status_code=404, detail="Workload not found")
+    
+    return {"status": "success", "priority": priority_request.priority}
+```
+
+## Environment Variables
+
+Key environment variables for workflow execution:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `KUBERNETES_NAMESPACE` | `default` | Namespace for K8s resources |
+| `KUEUE_ENABLED` | `true` | Enable Kueue integration |
+| `KUEUE_WORKFLOW_QUEUE` | `recon-runner-queue` | Local queue name |
+| `KUEUE_CLUSTER_QUEUE` | `cluster-queue` | Cluster queue name |
+| `WORKFLOW_CPU_REQUEST` | `500m` | CPU request |
+| `WORKFLOW_CPU_LIMIT` | `2000m` | CPU limit |
+| `WORKFLOW_MEMORY_REQUEST` | `1Gi` | Memory request |
+| `WORKFLOW_MEMORY_LIMIT` | `4Gi` | Memory limit |
+| `RUNNER_IMAGE` | `runner:latest` | Runner container image |
+| `WORKER_IMAGE` | `worker:latest` | Worker container image |
+| `JOB_TTL_SECONDS` | `300` | TTL after job completion |
+| `INTERNAL_SERVICE_API_KEY` | - | API key for internal auth |
+
+## Related Patterns
+
+- See `api-auth-patterns.mdc` for program permission checking
+- See `api-service-patterns.mdc` for service initialization patterns
+- See `api-route-patterns.mdc` for route handler patterns

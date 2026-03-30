@@ -1,0 +1,492 @@
+---
+globs: ["src/runner/app/worker_job_manager.py", "src/runner/app/task_queue_client.py", "src/runner/app/task_executor.py"]
+---
+
+# Runner Job Management Patterns
+
+## Overview
+
+The runner uses two main components for job management:
+- **WorkerJobManager**: Spawns and monitors Kubernetes worker jobs
+- **TaskQueueClient**: Handles NATS communication for task output collection
+
+## WorkerJobManager
+
+### Purpose
+Centralized manager for spawning worker pods and collecting their outputs via NATS.
+
+### Core Classes
+
+```python
+class JobResult:
+    """Container for individual job execution results"""
+    task_id: str
+    job_name: str
+    status: str  # "pending", "running", "completed", "failed", "timeout"
+    output: Optional[str]
+    error: Optional[str]
+    start_time: Optional[float]
+    end_time: Optional[float]
+    task_name: Optional[str]
+    task_params: Optional[Dict]
+
+class BatchResult:
+    """Container for batch execution results"""
+    batch_id: str
+    jobs: Dict[str, JobResult]
+    
+    @property
+    def success_rate(self) -> float:
+        return self.successful_jobs / self.total_jobs
+```
+
+### Initialization
+
+```python
+class WorkerJobManager:
+    def __init__(self, task_queue_client=None, k8s_service=None):
+        self.task_queue_client = task_queue_client
+        self.k8s_service = k8s_service  # Lazily initialized
+        
+        # Job tracking
+        self.active_jobs: Dict[str, JobResult] = {}
+        self.active_batches: Dict[str, BatchResult] = {}
+        self.output_handlers: Dict[str, Callable] = {}
+        
+        # Configuration
+        self.default_timeout = 1800  # 30 minutes
+        self.check_interval = 2      # seconds
+        self.batch_spawn_delay = 0.5 # seconds between spawns
+        
+        # Environment context
+        self.workflow_id = os.getenv('WORKFLOW_ID')
+        self.execution_id = os.getenv('EXECUTION_ID')
+        self.program_name = os.getenv('PROGRAM_NAME')
+```
+
+### Spawning Single Jobs
+
+```python
+async def spawn_job(self, task_name: str, command: str, 
+                    timeout: int = None, **kwargs) -> JobResult:
+    """Spawn a single worker job and return its result"""
+    
+    # Build job parameters
+    job_params = self._build_job_params(task_name, command, timeout, **kwargs)
+    
+    # Create K8s job
+    task_ids = await self.k8s_service.queue_worker_tasks([job_params])
+    task_id = task_ids[0]
+    
+    # Register output handler
+    job_result = JobResult(task_id, f"worker-{task_id}")
+    self.active_jobs[task_id] = job_result
+    self._register_output_handler(task_id)
+    
+    # Wait for completion
+    await self._wait_for_job(task_id, timeout)
+    
+    return job_result
+```
+
+### Spawning Batch Jobs
+
+```python
+async def spawn_batch(self, task_name: str, commands: List[str],
+                      batch_size: int = 20, timeout: int = 1800,
+                      progress_callback: Callable = None) -> BatchResult:
+    """Spawn multiple jobs in controlled batches"""
+    
+    batch = BatchResult(batch_id=str(uuid.uuid4()))
+    total_jobs = len(commands)
+    
+    # Process in sequential batches to avoid overwhelming Kueue
+    for i in range(0, total_jobs, batch_size):
+        batch_commands = commands[i:i + batch_size]
+        
+        # Build job params for this batch
+        job_params_list = [
+            self._build_job_params(task_name, cmd, timeout)
+            for cmd in batch_commands
+        ]
+        
+        # Submit batch to K8s
+        task_ids = await self.k8s_service.queue_worker_tasks(job_params_list)
+        
+        # Register handlers and track jobs
+        for task_id in task_ids:
+            job_result = JobResult(task_id, f"worker-{task_id}")
+            batch.add_job(job_result)
+            self._register_output_handler(task_id)
+        
+        # Wait for current batch before starting next
+        await self._wait_for_batch_completion(task_ids, timeout)
+        
+        if progress_callback:
+            progress_callback(len(batch.jobs), total_jobs)
+        
+        # Small delay between batches
+        await asyncio.sleep(self.batch_spawn_delay)
+    
+    return batch
+```
+
+### Job Parameters
+
+```python
+def _build_job_params(self, task_name: str, command: str, 
+                     timeout: int = None, **kwargs) -> Dict:
+    """Build standardized job parameters"""
+    
+    safe_task_name = self._make_rfc1123_compliant(task_name)
+    job_name = f"{safe_task_name}-{uuid.uuid4().hex[:8]}"
+    
+    return {
+        "workflow_id": self.execution_id,  # For NATS routing
+        "workflow_name": self.program_name,
+        "program_name": self.program_name,
+        "task_name": safe_task_name,
+        "step_num": kwargs.get('step_num', 0),
+        "step_name": kwargs.get('step_name', safe_task_name),
+        "job_name": job_name,
+        "image": os.getenv('WORKER_IMAGE', 'worker:latest'),
+        "image_pull_policy": os.getenv('IMAGE_PULL_POLICY', 'Always'),
+        "args": [command],
+        "timeout": timeout or self.default_timeout
+    }
+```
+
+### RFC 1123 Compliance
+
+Kubernetes names must be RFC 1123 compliant:
+
+```python
+def _make_rfc1123_compliant(self, name: str) -> str:
+    """Make name valid for Kubernetes resources"""
+    # Replace underscores with hyphens
+    safe_name = name.replace('_', '-').lower()
+    # Remove non-alphanumeric except hyphens
+    safe_name = ''.join(c for c in safe_name if c.isalnum() or c == '-')
+    # Ensure starts/ends with alphanumeric
+    safe_name = safe_name.strip('-')
+    if not safe_name:
+        safe_name = 'job'
+    if not safe_name[0].isalpha():
+        safe_name = 'job-' + safe_name
+    return safe_name
+```
+
+### Output Collection
+
+```python
+def _register_output_handler(self, task_id: str):
+    """Register NATS handler for job output"""
+    def handler(payload: Dict):
+        job = self.active_jobs.get(task_id)
+        if job:
+            job.output = payload.get('output', '')
+            job.status = 'completed' if payload.get('success') else 'failed'
+            job.end_time = time.time()
+    
+    self.task_queue_client.output_handlers[task_id] = handler
+```
+
+## TaskQueueClient
+
+### Purpose
+Manages NATS JetStream connections for task output collection.
+
+### Initialization
+
+```python
+class TaskQueueClient:
+    def __init__(self):
+        self.nc = None  # NATS connection
+        self.js = None  # JetStream context
+        self.output_handlers: Dict[str, Callable] = {}
+        self.task_outputs = {}
+        self.task_chunks = {}  # For chunked outputs
+        
+        # Workflow-specific subject
+        self.execution_id = os.getenv('EXECUTION_ID')
+        self.workflow_output_subject = f"tasks.output.{self.execution_id}"
+```
+
+### Connection Setup
+
+```python
+async def setup(self):
+    """Set up NATS connection and subscriptions"""
+    # Connect to NATS
+    self.nc = NATS()
+    await self.nc.connect(NATS_URL, connect_timeout=5)
+    self.js = self.nc.jetstream()
+    
+    # Create workflow-specific consumer
+    consumer_config = ConsumerConfig(
+        name=f"runner-{uuid.uuid4().hex[:8]}-workflow",
+        deliver_policy=DeliverPolicy.ALL,
+        ack_policy=AckPolicy.EXPLICIT,
+        filter_subject=self.workflow_output_subject
+    )
+    
+    await self.js.add_consumer(OUTPUT_QUEUE_STREAM, consumer_config)
+    
+    # Subscribe to workflow outputs
+    self.workflow_subscription = await self.js.pull_subscribe(
+        self.workflow_output_subject,
+        consumer_config.name
+    )
+    
+    # Start output listener
+    self.running = True
+    self.output_listener_task = asyncio.create_task(self.listen_for_outputs())
+```
+
+### Output Listening
+
+```python
+async def listen_for_outputs(self):
+    """Listen for task outputs via NATS"""
+    while self.running:
+        try:
+            # Pull messages in batches
+            messages = await self.workflow_subscription.fetch(
+                batch=10, timeout=5
+            )
+            
+            for msg in messages:
+                await self._process_message(msg)
+                await msg.ack()
+                
+        except asyncio.TimeoutError:
+            continue  # Normal timeout, keep listening
+        except Exception as e:
+            logger.error(f"Error in output listener: {e}")
+            await asyncio.sleep(1)
+```
+
+### Chunk Reassembly
+
+Large outputs are sent in chunks and must be reassembled:
+
+```python
+async def _process_message(self, msg):
+    """Process incoming NATS message"""
+    payload = json.loads(msg.data.decode())
+    task_id = payload.get('task_id')
+    
+    # Handle chunked messages
+    if payload.get('total_chunks', 1) > 1:
+        chunk_num = payload.get('chunk_num')
+        total_chunks = payload.get('total_chunks')
+        
+        # Store chunk
+        if task_id not in self.task_chunks:
+            self.task_chunks[task_id] = {}
+        self.task_chunks[task_id][chunk_num] = payload
+        
+        # Check if all chunks received
+        if len(self.task_chunks[task_id]) == total_chunks:
+            # Reassemble output
+            combined_output = ""
+            for i in range(1, total_chunks + 1):
+                combined_output += self.task_chunks[task_id][i].get('output', '')
+            
+            payload['output'] = combined_output
+            payload['is_chunked'] = True
+            del self.task_chunks[task_id]
+        else:
+            return  # Wait for more chunks
+    
+    # Store output and call handler
+    self.task_outputs[task_id] = payload
+    
+    if task_id in self.output_handlers:
+        handler = self.output_handlers[task_id]
+        handler(payload)
+```
+
+## Kubernetes Job CRD Generation
+
+### Job Manifest Structure
+
+```python
+def generate_job_crd(self, job_params: Dict) -> client.V1Job:
+    """Generate Kubernetes Job manifest"""
+    
+    metadata = client.V1ObjectMeta(
+        name=f"worker-{job_params['job_id']}",
+        labels={
+            "kueue.x-k8s.io/queue-name": f"{namespace}-worker-queue",
+            "app": "worker",
+            "task-id": job_params["job_id"],
+            "workflow-id": job_params["workflow_id"],
+            "program-name": job_params["program_name"],
+            "task-name": job_params["task_name"],
+            "step-name": job_params["step_name"]
+        }
+    )
+    
+    container = client.V1Container(
+        image=job_params["image"],
+        name=job_params["job_name"],
+        # Command wrapper handles execution and NATS output
+        command=["sh", "-c", 
+            f"python3 /usr/local/bin/command_wrapper.py {quoted_command}"],
+        env=[
+            client.V1EnvVar(name="NATS_URL", value=os.getenv('NATS_URL')),
+            client.V1EnvVar(name="TASK_ID", value=job_params["job_id"]),
+            client.V1EnvVar(name="OUTPUT_QUEUE_SUBJECT", 
+                value=f"tasks.output.{job_params['workflow_id']}"),
+            client.V1EnvVar(name="STEP_NAME", value=job_params["step_name"]),
+            client.V1EnvVar(name="WORKFLOW_ID", value=job_params["workflow_id"]),
+            client.V1EnvVar(name="PROGRAM_NAME", value=job_params["program_name"]),
+        ],
+        resources={
+            "requests": {"cpu": "800m", "memory": "200Mi"},
+            "limits": {"cpu": "1000m", "memory": "4096Mi"}
+        }
+    )
+    
+    return client.V1Job(
+        metadata=metadata,
+        spec=client.V1JobSpec(
+            parallelism=1,
+            completions=1,
+            suspend=True,  # Kueue controls scheduling
+            ttl_seconds_after_finished=300,
+            active_deadline_seconds=job_params["timeout"],
+            backoff_limit=0,  # No retries
+            template=template
+        )
+    )
+```
+
+## TaskExecutor Execution Paths
+
+The TaskExecutor requires WorkerJobManager to be initialized. If not, it raises `RuntimeError("WorkerJobManager not initialized - cannot execute tasks")`.
+
+```mermaid
+flowchart TD
+    A[execute_task] --> B{job_manager?}
+    B -->|None| E[RuntimeError]
+    B -->|Set| C{Proxy enabled?}
+    C -->|Yes| P[_execute_task_with_job_manager]
+    C -->|No| U[_execute_task_unified]
+```
+
+### Unified Path (_execute_task_unified)
+
+All non-proxy tasks use the unified path. Tasks produce commands via `generate_commands`; the executor handles spawn, parse, and merge.
+
+```python
+# 1. Build context (step_name, program_name, task_def, job_manager, task_queue_client)
+# 2. Get commands: command_specs = await task_instance.generate_commands(input_data, params, context)
+# 3. Get synthetic assets: synthetic = await task_instance.get_synthetic_assets(context)
+# 4. Group CommandSpecs by task_name (for multi-task orchestrators like resolve_ip_cidr)
+# 5. For each task_name: spawn_batch -> wait -> parse with task's parse_output -> merge
+# 6. Merge synthetic assets, handle typosquat_findings output_mode
+```
+
+### Proxy Path (_execute_task_with_job_manager)
+
+Tasks with `use_proxy=True` and `supports_proxy()` use the proxy path. It adds:
+
+- **extract_proxy_targets**: Get URLs to proxy before execution
+- **Batch-wise proxy creation**: Create FireProx API Gateways in batches of PROXY_BATCH_SIZE (5)
+- **replace_targets_with_proxies**: Rewrite URLs in commands before spawn
+- **replace_proxies_in_output**: Restore original URLs in output before parsing
+- **Proxy cleanup**: Delete API Gateways after each batch
+
+Proxy tasks still use `get_command` (chunk-based) because proxy targets must align 1:1 with commands.
+
+## Usage Patterns
+
+### Unified Path (Standard + Orchestrator Tasks)
+
+```python
+# All tasks implement generate_commands - executor does the rest
+command_specs = await task_instance.generate_commands(input_data, params, context)
+
+# Group by task_name for multi-task orchestrators (resolve_ip_cidr spawns resolve_ip + port_scan)
+for task_name, specs in by_task.items():
+    commands = [s.command for s in specs]
+    batch_result = await self.job_manager.spawn_batch(
+        task_name=task_name,
+        commands=commands,
+        batch_size=20,
+        timeout=timeout,
+        process_incrementally=self.progressive_streaming_enabled,
+        result_processor=result_processor,
+        step_name=step_name
+    )
+    # Parse with task_registry.get_task(task_name)().parse_output()
+```
+
+### Proxy Path (Tasks with use_proxy)
+
+```python
+# Uses get_command per chunk, then proxy batch flow
+proxy_targets_for_batching = task_instance.extract_proxy_targets(input_data, params)
+
+for batch_num in range(total_batches):
+    # Create FireProx API Gateways for this batch
+    proxy_mappings = {url: fireprox.create_proxy(url).proxy_url for url in batch_targets}
+    proxied_commands = [task_instance.replace_targets_with_proxies(cmd, proxy_mappings) for cmd in batch_commands]
+    
+    batch_result = await self.job_manager.spawn_batch(task_name, proxied_commands, ...)
+    await self.job_manager.wait_for_batch(batch_result, ...)
+    
+    # In result_processor: replace_proxies_in_output before parse_output
+    fireprox.cleanup_all()  # Delete API Gateways after batch
+```
+
+## Error Handling
+
+### Timeout Handling
+
+```python
+async def _wait_for_job(self, task_id: str, timeout: int):
+    """Wait for job completion with timeout"""
+    start = time.time()
+    job = self.active_jobs[task_id]
+    
+    while not job.is_completed:
+        if time.time() - start > timeout:
+            job.status = 'timeout'
+            job.error = f"Job timed out after {timeout}s"
+            break
+        await asyncio.sleep(self.check_interval)
+```
+
+### Partial Results on Shutdown
+
+```python
+async def shutdown(self):
+    """Handle partial chunks during shutdown"""
+    for task_id, chunks in self.task_chunks.items():
+        if chunks:
+            # Reassemble partial output
+            combined = ""
+            for i in sorted(chunks.keys()):
+                combined += chunks[i].get("output", "")
+            
+            payload = chunks[max(chunks.keys())].copy()
+            payload["output"] = combined
+            payload["is_partial"] = True
+            
+            self.task_outputs[task_id] = payload
+            
+            if task_id in self.output_handlers:
+                self.output_handlers[task_id](payload)
+```
+
+## Best Practices
+
+1. **Batch Size**: Use `batch_size=20` to avoid overwhelming Kueue
+2. **Timeouts**: Set appropriate timeouts per task type (5min for DNS, 30min for scans)
+3. **Output Handlers**: Always register handlers before spawning jobs
+4. **Cleanup**: Call `cleanup_all()` when done to clear tracking state
+5. **RFC 1123**: Always sanitize task names for K8s compatibility
+6. **Sequential Batches**: Wait for batch completion before spawning next batch

@@ -1,0 +1,76 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  labels:
+    app: frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      nodeSelector:
+        reconhawx.runner: "true"
+      # Substitute DNS_SERVER_PLACEHOLDER in frontend-nginx-config (see nginx-config.yaml)
+      # with the pod's cluster DNS IP so nginx resolver works in every cluster.
+      initContainers:
+      - name: nginx-config-setup
+        image: busybox
+        command:
+        - sh
+        - -c
+        - |
+          # Get DNS server from resolv.conf
+          DNS_SERVER=$(grep nameserver /etc/resolv.conf | awk '{print $2}')
+          echo "Using DNS server: $DNS_SERVER"
+
+          # Replace placeholder in nginx config with actual DNS server
+          sed "s/DNS_SERVER_PLACEHOLDER/$DNS_SERVER/g" /tmp/nginx-config/default.conf > /shared-config/default.conf
+
+          echo "Generated nginx config:"
+          cat /shared-config/default.conf
+        volumeMounts:
+        - name: nginx-config
+          mountPath: /tmp/nginx-config
+        - name: shared-config
+          mountPath: /shared-config
+      containers:
+      - name: frontend
+        image: ghcr.io/h3xitsec/reconhawx/frontend:latest
+        ports:
+        - containerPort: 80
+
+        volumeMounts:
+        - name: shared-config
+          mountPath: /etc/nginx/conf.d
+
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 5
+      volumes:
+      - name: nginx-config
+        configMap:
+          name: frontend-nginx-config
+      - name: shared-config
+        emptyDir: {}

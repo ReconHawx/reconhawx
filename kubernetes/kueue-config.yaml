@@ -1,0 +1,46 @@
+# Kueue Configuration for Recon Workflow Queuing
+# This file contains the necessary Kueue resources for workflow runner queuing
+
+---
+apiVersion: kueue.x-k8s.io/v1beta1
+kind: LocalQueue
+metadata:
+  name: default-workflow-queue
+  namespace: default
+spec:
+  clusterQueue: default-cluster-queue
+
+---
+apiVersion: kueue.x-k8s.io/v1beta1
+kind: ClusterQueue
+metadata:
+  name: default-cluster-queue
+spec:
+  resourceGroups:
+  - coveredResources: ["cpu", "memory"]
+    flavors:
+    - name: "default"
+      resources:
+      - name: "cpu"
+        nominalQuota: 10
+      - name: "memory"
+        nominalQuota: 20Gi
+  - coveredResources: ["nvidia.com/gpu"]
+    flavors:
+    - name: "default"
+      resources:
+      - name: "nvidia.com/gpu"
+        nominalQuota: 2
+  stopPolicy: HoldAndDrain
+  preemption:
+    reclaimWithinCohort: Never
+    withinClusterQueue: LowerPriority
+
+---
+apiVersion: kueue.x-k8s.io/v1beta1
+kind: ResourceFlavor
+metadata:
+  name: default
+spec:
+  nodeLabels:
+    kubernetes.io/arch: amd64

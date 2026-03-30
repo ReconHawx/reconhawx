@@ -1,0 +1,374 @@
+---
+globs: ["kubernetes/**/kustomization.yaml", "kubernetes/overlays/**/*.yaml"]
+---
+
+# Kustomize Patterns and Conventions
+
+## Directory Structure
+
+```
+kubernetes/
+├── base/                    # Base resources - NEVER deploy directly
+│   ├── {service}/
+│   │   ├── kustomization.yaml    # Service-level aggregation
+│   │   ├── {service}-deployment.yaml
+│   │   ├── {service}-service.yaml
+│   │   └── {service}-rbac.yaml   # If needed
+│   └── kustomization.yaml        # Root aggregation
+│
+└── overlays/
+    ├── dev/
+    │   ├── {service}/
+    │   │   ├── kustomization.yaml
+    │   │   ├── patches/
+    │   │   │   └── deployment-patch.yaml
+    │   │   └── {service}-secret.yaml
+    │   └── kustomization.yaml    # Environment aggregation
+    └── production/
+        └── ... (same structure)
+```
+
+## Base Kustomization Pattern
+
+### Root Base (`kubernetes/base/kustomization.yaml`)
+```yaml
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - config        # ConfigMaps, policies (always first)
+  - nats          # Core infrastructure
+  - postgresql
+  - redis
+  - kueue
+  - api           # Application services
+  - frontend
+  - event-handler
+  - runner        # Job templates (not persistent)
+```
+
+### Service Base (`kubernetes/base/{service}/kustomization.yaml`)
+```yaml
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - {service}-deployment.yaml
+  - {service}-service.yaml
+  - {service}-rbac.yaml  # Optional
+```
+
+## Overlay Kustomization Pattern
+
+### Environment Overlay (`kubernetes/overlays/dev/kustomization.yaml`)
+```yaml
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: recon  # All resources go to this namespace
+
+resources:
+  # Core infrastructure
+  - postgresql
+  - nats
+  - redis
+  - kueue
+  
+  # Application services
+  - api
+  - frontend
+  - event-handler
+  
+  # Configuration
+  - config
+  
+  # Job templates
+  - runner
+  - worker
+
+labels:
+- includeSelectors: false
+  pairs:
+    deployment: dev  # Environment label
+```
+
+### Service Overlay (`kubernetes/overlays/dev/{service}/kustomization.yaml`)
+```yaml
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: recon
+
+labels:
+- includeSelectors: false
+  pairs:
+    environment: development
+
+patches:
+- path: patches/deployment-patch.yaml
+  target:
+    kind: Deployment
+    name: {service}
+- path: patches/ingress-patch.yaml
+  target:
+    kind: Ingress
+    name: {service}-ingress
+
+resources:
+- {service}-secret.yaml        # Environment-specific secrets
+- ../../../base/{service}      # Reference to base
+```
+
+## Patch Patterns
+
+### Strategic Merge Patch (Preferred)
+```yaml
+# patches/deployment-patch.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+spec:
+  template:
+    spec:
+      containers:
+      - name: api
+        env:
+        - name: LOG_LEVEL
+          value: "DEBUG"  # Override for dev
+        resources:
+          limits:
+            memory: "1Gi"  # Increased for dev
+```
+
+### JSON Patch (For Precise Changes)
+```yaml
+# patches/replicas-patch.yaml
+- op: replace
+  path: /spec/replicas
+  value: 3
+```
+
+### Target-Based Patching
+```yaml
+patches:
+- path: patches/deployment-patch.yaml
+  target:
+    kind: Deployment
+    name: api
+    labelSelector: "app=api"
+```
+
+## ConfigMapGenerator Pattern
+
+```yaml
+# Generate ConfigMaps from files
+configMapGenerator:
+- name: app-config
+  files:
+  - config.yaml
+  options:
+    disableNameSuffixHash: true
+
+# Generate from literals
+configMapGenerator:
+- name: env-config
+  literals:
+  - LOG_LEVEL=DEBUG
+  - ENVIRONMENT=development
+```
+
+## SecretGenerator Pattern
+
+```yaml
+secretGenerator:
+- name: db-credentials
+  literals:
+  - username=admin
+  - password=secret123
+  options:
+    disableNameSuffixHash: true  # Keep predictable name
+```
+
+## Image Transformers
+
+### Development (Local Images)
+```yaml
+# No images section - use defaults from base
+```
+
+### Production (Registry Images)
+```yaml
+images:
+- name: api
+  newName: registry.example.com/recon/api
+  newTag: v1.2.3
+- name: runner
+  newName: registry.example.com/recon/runner
+  newTag: v1.2.3
+```
+
+## Common Labels
+
+```yaml
+labels:
+- includeSelectors: false  # Don't add to selector (breaks updates)
+  pairs:
+    app.kubernetes.io/name: recon
+    app.kubernetes.io/component: api
+    environment: development
+```
+
+## Namespace Management
+
+All overlays set namespace at the top level:
+```yaml
+namespace: recon
+```
+
+This automatically applies to all resources, eliminating the need for per-resource namespace specifications.
+
+## Resource Ordering
+
+Kustomize applies resources in a specific order. For explicit control:
+
+```yaml
+resources:
+  # 1. Namespace and RBAC
+  - namespace.yaml
+  - serviceaccount.yaml
+  - role.yaml
+  - rolebinding.yaml
+  
+  # 2. ConfigMaps and Secrets
+  - configmap.yaml
+  - secret.yaml
+  
+  # 3. Services
+  - service.yaml
+  
+  # 4. Deployments/StatefulSets
+  - deployment.yaml
+  
+  # 5. Ingress
+  - ingress.yaml
+```
+
+## Common Mistakes to Avoid
+
+### ❌ Don't Deploy Base Directly
+```bash
+# WRONG
+kubectl apply -k kubernetes/base
+
+# CORRECT
+kubectl apply -k kubernetes/overlays/dev
+```
+
+### ❌ Don't Hardcode Namespaces in Base
+```yaml
+# WRONG (in base)
+metadata:
+  name: api
+  namespace: recon  # Don't set here
+
+# CORRECT (let overlay set it)
+metadata:
+  name: api
+```
+
+### ❌ Don't Duplicate Base Resources in Overlay
+```yaml
+# WRONG - duplicates entire deployment
+resources:
+- api-deployment.yaml
+- ../../../base/api
+
+# CORRECT - only reference base, use patches
+resources:
+- ../../../base/api
+patches:
+- path: patches/deployment-patch.yaml
+```
+
+### ❌ Don't Use includeSelectors: true for Labels
+```yaml
+# WRONG - will break rolling updates
+labels:
+- includeSelectors: true
+  pairs:
+    version: v1.0.0
+
+# CORRECT
+labels:
+- includeSelectors: false
+  pairs:
+    version: v1.0.0
+```
+
+## Validation Commands
+
+```bash
+# Preview what will be applied
+kubectl kustomize kubernetes/overlays/dev
+
+# Dry-run apply
+kubectl apply -k kubernetes/overlays/dev --dry-run=client
+
+# Diff against live
+kubectl diff -k kubernetes/overlays/dev
+
+# Validate YAML structure
+kustomize build kubernetes/overlays/dev | kubectl apply --validate=true --dry-run=client -f -
+```
+
+## Adding a New Service
+
+1. **Create base structure:**
+   ```bash
+   mkdir -p kubernetes/base/{service}
+   ```
+
+2. **Create base kustomization.yaml:**
+   ```yaml
+   apiVersion: kustomize.config.k8s.io/v1beta1
+   kind: Kustomization
+   resources:
+     - {service}-deployment.yaml
+     - {service}-service.yaml
+   ```
+
+3. **Add to base aggregation:**
+   ```yaml
+   # kubernetes/base/kustomization.yaml
+   resources:
+     - ...existing...
+     - {service}
+   ```
+
+4. **Create overlay structure:**
+   ```bash
+   mkdir -p kubernetes/overlays/dev/{service}/patches
+   ```
+
+5. **Create overlay kustomization.yaml:**
+   ```yaml
+   apiVersion: kustomize.config.k8s.io/v1beta1
+   kind: Kustomization
+   namespace: recon
+   resources:
+     - ../../../base/{service}
+   patches:
+     - path: patches/deployment-patch.yaml
+       target:
+         kind: Deployment
+         name: {service}
+   ```
+
+6. **Add to environment aggregation:**
+   ```yaml
+   # kubernetes/overlays/dev/kustomization.yaml
+   resources:
+     - ...existing...
+     - {service}
+   ```

@@ -1,0 +1,308 @@
+---
+globs: ["kubernetes/base/nats/**", "kubernetes/overlays/*/nats/**", "src/**/nats*.py", "src/**/event*.py"]
+---
+
+# NATS JetStream Messaging Architecture
+
+## Overview
+
+NATS with JetStream provides durable, distributed messaging for the Recon platform. Streams are auto-created on NATS startup via init scripts.
+
+## Deployment Configuration
+
+### NATS Deployment (`kubernetes/base/nats/nats-deployment.yaml`)
+
+```yaml
+spec:
+  containers:
+  - name: nats
+    image: nats:2.9.21-alpine
+    ports:
+    - containerPort: 4222    # Client connections
+      name: client
+    - containerPort: 8222    # Monitoring/HTTP API
+      name: monitoring
+    command: ["/entrypoint.sh"]
+    volumeMounts:
+    - name: nats-data
+      mountPath: /data       # JetStream storage
+    - name: nats-scripts
+      mountPath: /entrypoint.sh
+      subPath: entrypoint.sh
+```
+
+## JetStream Streams
+
+### Stream Definitions (Created by `init.sh`)
+
+| Stream | Subjects | Retention | Max Age | Purpose |
+|--------|----------|-----------|---------|---------|
+| `TASKS` | `tasks.pending` | limits | 24h | Task queue for workers |
+| `OUTPUTS` | `tasks.output.>` | limits | 24h | Task results from workers |
+| `EVENTS` | `events.>` | limits | 24h | Asset/findings change events |
+
+### Stream Creation Script
+
+```bash
+# TASKS stream - Worker task submission
+nats stream add TASKS \
+    --subjects "tasks.pending" \
+    --retention limits \
+    --max-age 24h \
+    --storage file \
+    --replicas 1 \
+    --discard old \
+    --dupe-window 2m
+
+# OUTPUTS stream - Task results
+nats stream add OUTPUTS \
+    --subjects "tasks.output.>" \
+    --retention limits \
+    --max-age 24h \
+    --storage file
+
+# EVENTS stream - Event-handler notifications
+nats stream add EVENTS \
+    --subjects "events.>" \
+    --retention limits \
+    --max-age 24h \
+    --storage file
+```
+
+## Subject Patterns
+
+### TASKS Stream
+```
+tasks.pending              # All pending tasks (consumed by workers)
+```
+
+### OUTPUTS Stream
+```
+tasks.output.{execution_id}    # Results for specific workflow execution
+tasks.output.abc123            # Example: outputs for execution abc123
+```
+
+### EVENTS Stream
+```
+events.{event_type}.{program_name}     # Event routing pattern
+events.asset.created.acme              # New asset in Acme program
+events.finding.created.bugbounty       # New finding in BugBounty program
+events.asset.updated.acme              # Updated asset
+```
+
+## Message Formats
+
+### Task Message (TASKS stream)
+```json
+{
+  "task_id": "uuid-string",
+  "workflow_id": "execution-id",
+  "step_name": "resolve_domain",
+  "step_num": 0,
+  "command": "subfinder -d example.com",
+  "timeout": 300,
+  "task_definition": {
+    "name": "subfinder",
+    "parser": "subdomain_parser"
+  }
+}
+```
+
+### Output Message (OUTPUTS stream)
+```json
+{
+  "task_id": "uuid-string",
+  "workflow_id": "execution-id",
+  "step_name": "resolve_domain",
+  "step_num": 0,
+  "success": true,
+  "output": "sub1.example.com\nsub2.example.com",
+  "is_final": true,
+  "chunk_num": 1,
+  "total_chunks": 1,
+  "timestamp": 1234567890.123
+}
+```
+
+### Event Message (EVENTS stream)
+```json
+{
+  "event_type": "asset.created",
+  "program_name": "acme",
+  "asset_type": "subdomain",
+  "data": {
+    "id": 12345,
+    "subdomain": "api.example.com",
+    "apex_domain": "example.com",
+    "status": "active"
+  },
+  "timestamp": "2024-01-15T10:30:00Z"
+}
+```
+
+## Environment Variables
+
+### Consumer Side (API, Runner, Event-Handler)
+```yaml
+env:
+- name: NATS_URL
+  valueFrom:
+    configMapKeyRef:
+      name: recon-config
+      key: nats.url              # nats://nats:4222
+- name: TASK_QUEUE_STREAM
+  value: "TASKS"
+- name: TASK_QUEUE_SUBJECT
+  value: "tasks.pending"
+- name: OUTPUT_QUEUE_STREAM
+  value: "OUTPUTS"
+- name: OUTPUT_QUEUE_SUBJECT
+  value: "tasks.output"
+- name: EVENTS_STREAM
+  value: "EVENTS"
+```
+
+## Service Communication Flow
+
+```
+┌─────────────┐     tasks.pending      ┌─────────────┐
+│   Runner    │ ────────────────────▶  │   Worker    │
+│  (Producer) │                        │  (Consumer) │
+└─────────────┘                        └──────┬──────┘
+       ▲                                      │
+       │         tasks.output.{id}            │
+       └──────────────────────────────────────┘
+
+┌─────────────┐     events.{type}.{prog}   ┌───────────────┐
+│     API     │ ────────────────────────▶  │ Event-Handler │
+│  (Producer) │                            │  (Consumer)   │
+└─────────────┘                            └───────────────┘
+```
+
+## Consumer Patterns
+
+### Durable Consumer (Event-Handler)
+```python
+# Subscribe with durable consumer for reliable delivery
+subscription = await js.subscribe(
+    "events.>",
+    durable="event-handler-consumer",
+    deliver_policy=DeliverPolicy.ALL,
+    ack_policy=AckPolicy.EXPLICIT
+)
+```
+
+### Ephemeral Consumer (Runner)
+```python
+# Subscribe for specific execution outputs
+subscription = await js.subscribe(
+    f"tasks.output.{execution_id}",
+    deliver_policy=DeliverPolicy.NEW
+)
+```
+
+## RobustEventPublisher Pattern
+
+The API uses `RobustEventPublisher` for reliable event publishing:
+
+```python
+from services.event_publisher import publisher
+
+# Publish single event
+await publisher.publish(
+    subject=f"events.asset.created.{program_name}",
+    data=asset_data
+)
+
+# Batch publishing with automatic flushing
+async with publisher.batch_context():
+    for asset in assets:
+        await publisher.publish(
+            subject=f"events.asset.created.{program_name}",
+            data=asset
+        )
+```
+
+Features:
+- Automatic connection recovery
+- Message batching for high throughput
+- Graceful degradation when NATS unavailable
+- Configurable batch size and timeout
+
+## Debugging NATS
+
+### Check Stream Status
+```bash
+# Exec into NATS pod
+kubectl exec -n recon deployment/nats -- sh
+
+# List streams
+nats stream ls
+
+# Stream info
+nats stream info EVENTS
+nats stream info TASKS
+nats stream info OUTPUTS
+
+# View messages
+nats stream view EVENTS --last 10
+```
+
+### Monitor Messages
+```bash
+# Subscribe to all events
+nats sub "events.>" --server=nats://nats:4222
+
+# Subscribe to specific program events
+nats sub "events.*.acme" --server=nats://nats:4222
+```
+
+### Purge Stream (Development Only)
+```bash
+nats stream purge EVENTS --force
+```
+
+## High Availability Considerations
+
+Current setup uses single replica for development:
+```yaml
+--replicas 1
+```
+
+For production HA:
+```yaml
+--replicas 3  # Requires NATS cluster
+```
+
+## Connection URLs
+
+| Environment | URL |
+|-------------|-----|
+| In-Cluster | `nats://nats:4222` |
+| Port-Forward | `nats://localhost:4222` |
+| External (NodePort) | `nats://{node-ip}:30422` |
+
+## Troubleshooting
+
+### Stream Not Created
+Check NATS pod logs for init script errors:
+```bash
+kubectl logs -n recon deployment/nats
+```
+
+### Messages Not Delivered
+1. Verify stream exists: `nats stream info {STREAM}`
+2. Check consumer: `nats consumer info {STREAM} {CONSUMER}`
+3. Verify subject pattern matches
+
+### Connection Refused
+1. Check NATS pod status: `kubectl get pods -n recon -l app=nats`
+2. Verify service: `kubectl get svc -n recon nats`
+3. Check network policies allow connection
+
+## References
+
+- NATS deployment: `kubernetes/base/nats/nats-deployment.yaml`
+- Init script: `kubernetes/base/nats/init.sh`
+- Event publisher: `src/api/app/services/event_publisher.py`
+- Task queue client: `src/runner/app/task_queue_client.py`

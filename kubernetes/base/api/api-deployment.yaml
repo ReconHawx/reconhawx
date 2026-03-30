@@ -1,0 +1,161 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  labels:
+    app: api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: api
+  template:
+    metadata:
+      labels:
+        app: api
+    spec:
+      nodeSelector:
+        reconhawx.runner: "true"
+      serviceAccountName: api-sa
+      containers:
+      - name: api
+        image: ghcr.io/h3xitsec/reconhawx/api:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8000
+          protocol: TCP
+        
+        env:
+        - name: POSTGRES_HOST
+          value: "postgresql"
+        
+        - name: DATABASE_NAME
+          valueFrom:
+            configMapKeyRef:
+              name: service-config
+              key: database.name
+        
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: postgres-root-username
+        
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: postgres-root-password
+        
+        # Kubernetes Configuration
+        - name: KUBERNETES_NAMESPACE
+          valueFrom:
+            configMapKeyRef:
+              name: service-config
+              key: kubernetes.namespace
+          
+        - name: RUNNER_IMAGE
+          valueFrom:
+            configMapKeyRef:
+              name: service-config
+              key: runner.image
+        
+        - name: WORKER_IMAGE
+          valueFrom:
+            configMapKeyRef:
+              name: service-config
+              key: worker.image
+        
+        - name: IMAGE_PULL_POLICY
+          valueFrom:
+            configMapKeyRef:
+              name: service-config
+              key: image.pull.policy
+
+        - name: RUNNER_SERVICE_ACCOUNT
+          valueFrom:
+            configMapKeyRef:
+              name: service-config
+              key: runner.serviceaccount
+        
+        - name: JOB_TTL_SECONDS
+          valueFrom:
+            configMapKeyRef:
+              name: service-config
+              key: job.ttl
+
+        # Authentication
+        - name: ACCESS_TOKEN_EXPIRE_MINUTES
+          valueFrom:
+            configMapKeyRef:
+              name: service-config
+              key: access.token.expire.minutes
+        
+        - name: REFRESH_TOKEN_EXPIRE_DAYS
+          valueFrom:
+            configMapKeyRef:
+              name: service-config
+              key: refresh.token.expire.days
+
+        - name: JWT_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: jwt-secret
+              key: jwt-secret-key
+        
+        - name: REFRESH_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: jwt-secret
+              key: refresh-secret-key
+        
+        - name: INTERNAL_SERVICE_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: internal-service-secret
+              key: token
+              optional: true
+        
+        # Service URLs for runner jobs
+        - name: REDIS_URL
+          valueFrom:
+            configMapKeyRef:
+              name: service-config
+              key: redis.url
+        
+        - name: NATS_URL
+          valueFrom:
+            configMapKeyRef:
+              name: service-config
+              key: nats.url
+        
+        - name: API_URL
+          valueFrom:
+            configMapKeyRef:
+              name: service-config
+              key: api.url
+
+        # Typosquat detection configuration
+        - name: TYPOSQUAT_CACHE_TTL
+          valueFrom:
+            configMapKeyRef:
+              name: service-config
+              key: runner.typosquat.cache.ttl
+        
+        - name: TYPOSQUAT_USE_CACHE
+          valueFrom:
+            configMapKeyRef:
+              name: service-config
+              key: runner.typosquat.use.cache
+        
+        # Logging
+        - name: LOG_LEVEL
+          value: "INFO"
+        
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "200m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m" 

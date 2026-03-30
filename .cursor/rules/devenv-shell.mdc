@@ -1,0 +1,29 @@
+---
+description: Run shell commands under devenv when tools come from devenv.nix (agent subshells skip direnv)
+alwaysApply: true
+---
+
+# Devenv shell for CLI tools
+
+Automated shells (including the agent’s terminal tool) often **do not** load direnv/devenv. Many CLIs are provided only via [`devenv.nix`](../../devenv.nix) at the repo root (`kubectl`, `helm`, `docker`, `docker-compose`, `grype`, `nodejs` / `npm` / `npx`, `postgresql` client tools, `k9s`, `nginx`, `trufflehog`, `process-compose`, `minikube`, etc.).
+
+**From the repository root**, run one-shot commands through devenv:
+
+```bash
+devenv shell -- <command> [args...]
+```
+
+**Examples:**
+
+```bash
+devenv shell -- kubectl get pods
+devenv shell -- grype dir:./src/runner
+devenv shell -- helm version
+```
+
+If a command fails with `command not found` (or similar) for a tool you expect in dev, retry with `devenv shell --` before assuming it is missing from the machine.
+
+**Exceptions:**
+
+- **`./scripts/migrate.sh`** and similar wrappers already prefer **`.devenv/state/venv/bin/python`** when present; they do not need `devenv shell --` for that reason alone.
+- Prefer the **project venv / documented interpreter** for Python (see [`AGENTS.md`](../../AGENTS.md) migrations section) rather than relying on bare `python3` on PATH.

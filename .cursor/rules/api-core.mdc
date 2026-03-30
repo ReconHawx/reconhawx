@@ -1,0 +1,979 @@
+---
+globs:
+  - src/api/app/main.py
+  - src/api/app/db.py
+  - src/api/app/config/**
+  - src/api/app/middleware/**
+  - src/api/app/auth/**
+description: FastAPI app shell, layered architecture, authentication and authorization
+---
+
+# API conventions (core)
+
+Project hub: repository root `AGENTS.md`. API rules are split across `api-core`, `api-data`, `api-http`, `api-testing`, and `api-workflow-k8s` so only relevant sections attach for the files you edit.
+
+# API Architecture Overview
+
+## Core Architecture
+
+The API follows a clean, layered architecture with clear separation of concerns:
+
+```
+FastAPI Application (main.py)
+├── Routes (routes/*.py)
+│   ├── Request/Response Models (Pydantic)
+│   ├── Authentication Dependencies
+│   └── Business Logic Orchestration
+├── Services (services/*.py)
+│   ├── Unified Processors (assets/findings)
+│   ├── External Integrations (HackerOne, Bugcrowd, etc.)
+│   ├── Event Publishing (NATS via RobustEventPublisher)
+│   └── Kubernetes Operations
+├── Repositories (repository/*.py)
+│   ├── Data Access Layer
+│   ├── Program Access Control
+│   └── Query Filtering
+└── Database (db.py, models/postgres.py)
+    ├── SQLAlchemy Models
+    └── Session Management
+```
+
+## Component Responsibilities
+
+### Routes (`routes/*.py`)
+- **Purpose**: HTTP endpoint definitions, request/response handling
+- **Responsibilities**:
+  - Define API endpoints with FastAPI decorators
+  - Validate requests using Pydantic models
+  - Apply authentication/authorization dependencies
+  - Call service layer or repositories
+  - Handle HTTP exceptions and return responses
+- **Key Pattern**: Routes should be thin - delegate business logic to services/repositories
+
+### Services (`services/*.py`)
+- **Purpose**: Business logic, external integrations, async processing
+- **Available Services**:
+  - `unified_asset_processor.py` - Unified asset processing
+  - `unified_findings_processor.py` - Unified findings processing
+  - `event_publisher.py` - NATS event publishing (RobustEventPublisher)
+  - `kubernetes.py` - Kubernetes job management
+  - `hackerone_service.py` - HackerOne API integration
+  - `bugcrowd_service.py` - Bugcrowd API integration
+  - `yeswehack_service.py` - YesWeHack API integration
+  - `intigriti_service.py` - Intigriti API integration
+  - `internal_token_service.py` - Internal service token management
+  - `job_scheduler.py` - Job scheduling
+  - `job_submission.py` - Job submission
+  - `google_safe_browsing_service.py` - Google Safe Browsing API
+  - `recordedfuture_api_client.py` - Recorded Future API
+- **Key Pattern**: Services handle complex business logic and async operations
+
+### Repositories (`repository/*.py`)
+- **Purpose**: Data access abstraction layer
+- **Available Repositories**:
+  - `subdomain_assets_repo.py` - Subdomain operations
+  - `ip_assets_repo.py` - IP address operations
+  - `url_assets_repo.py` - URL operations
+  - `service_assets_repo.py` - Service operations
+  - `apexdomain_assets_repo.py` - Apex domain operations
+  - `certificate_assets_repo.py` - Certificate operations
+  - `screenshot_repo.py` - Screenshot operations
+  - `nuclei_findings_repo.py` - Nuclei findings
+  - `typosquat_findings_repo.py` - Typosquat findings
+  - `wpscan_findings_repo.py` - WPScan findings
+  - `broken_links_repo.py` - Broken links
+  - `program_repo.py` - Program management
+  - `batch_repository.py` - Batch operations
+  - And more...
+- **Key Pattern**: Repositories abstract database details from business logic
+
+### Models (`models/*.py`)
+- **Purpose**: Data structures and validation
+- **Files**:
+  - `postgres.py` - SQLAlchemy ORM models
+  - `user_postgres.py` - User models
+  - `program.py` - Program Pydantic models
+  - `workflow.py` - Workflow models
+  - `job.py` - Job models
+  - `findings.py` - Findings models
+  - `common.py` - Common/shared models
+- **Key Pattern**: Models define the data contract
+
+## File Organization
+
+```
+src/api/app/
+├── main.py                 # FastAPI app initialization, middleware, startup/shutdown
+├── db.py                   # Database connection and session management
+├── __init__.py
+├── config/
+│   └── settings.py         # Application configuration (Pydantic BaseSettings)
+├── routes/                 # API route handlers (26+ route modules)
+│   ├── auth.py             # Authentication endpoints
+│   ├── assets.py           # Generic asset endpoints
+│   ├── subdomain_assets.py # Subdomain-specific endpoints
+│   ├── ip_assets.py        # IP-specific endpoints
+│   ├── url_assets.py       # URL-specific endpoints
+│   ├── service_assets.py   # Service-specific endpoints
+│   ├── apexdomain_assets.py # Apex domain endpoints
+│   ├── certificate_assets.py # Certificate endpoints
+│   ├── screenshot_assets.py # Screenshot endpoints
+│   ├── common_assets.py    # Common asset operations
+│   ├── findings.py         # Generic findings endpoints
+│   ├── nuclei_findings.py  # Nuclei findings endpoints
+│   ├── typosquat_findings.py # Typosquat findings endpoints
+│   ├── wpscan_findings.py  # WPScan findings endpoints
+│   ├── broken_links.py     # Broken links findings
+│   ├── common_findings.py  # Common findings operations
+│   ├── programs.py         # Program management
+│   ├── workflows.py        # Workflow execution
+│   ├── nuclei_templates.py # Nuclei template management
+│   ├── wordlists.py        # Wordlist management
+│   ├── jobs.py             # Job management
+│   ├── scheduled_jobs.py   # Scheduled job management
+│   ├── admin.py            # Admin endpoints
+│   ├── debug.py            # Debug endpoints
+│   ├── action_logs.py      # Action logging
+│   └── social_media_credentials.py # Social media credentials
+├── services/               # Business logic layer
+│   ├── unified_asset_processor.py
+│   ├── unified_findings_processor.py
+│   ├── event_publisher.py  # RobustEventPublisher
+│   ├── kubernetes.py
+│   ├── hackerone_service.py
+│   ├── bugcrowd_service.py
+│   ├── yeswehack_service.py
+│   ├── intigriti_service.py
+│   ├── internal_token_service.py
+│   ├── job_scheduler.py
+│   ├── job_submission.py
+│   └── ...
+├── repository/             # Data access layer
+│   ├── subdomain_assets_repo.py
+│   ├── ip_assets_repo.py
+│   ├── url_assets_repo.py
+│   ├── program_repo.py
+│   ├── batch_repository.py
+│   └── ...
+├── models/                 # Data models
+│   ├── postgres.py         # SQLAlchemy models
+│   ├── user_postgres.py    # User models
+│   ├── program.py          # Pydantic models
+│   └── ...
+├── middleware/             # Request middleware
+│   └── auth.py             # Authentication middleware
+├── auth/                   # Authentication utilities
+│   ├── dependencies.py     # Auth dependencies
+│   └── utils.py            # Auth helpers
+└── utils/                  # Shared utilities
+    ├── query_filters.py    # Query filtering utilities (ProgramAccessMixin)
+    ├── domain_utils.py     # Domain extraction utilities
+    └── ...
+```
+
+## Route Registration
+
+Routes are registered in `main.py` with the following prefixes:
+
+```python
+# Authentication
+app.include_router(auth.router, prefix="/auth")
+
+# Asset endpoints (all under /assets)
+app.include_router(assets.router, prefix="/assets")
+app.include_router(subdomain_assets.router, prefix="/assets")
+app.include_router(ip_assets.router, prefix="/assets")
+app.include_router(url_assets.router, prefix="/assets")
+app.include_router(service_assets.router, prefix="/assets")
+app.include_router(apexdomain_assets.router, prefix="/assets")
+app.include_router(certificate_assets.router, prefix="/assets")
+app.include_router(screenshot_assets.router, prefix="/assets")
+app.include_router(common_assets.router, prefix="/assets")
+
+# Findings endpoints (all under /findings)
+app.include_router(findings.router, prefix="/findings")
+app.include_router(typosquat_findings.router, prefix="/findings")
+app.include_router(nuclei_findings.router, prefix="/findings")
+app.include_router(wpscan_findings.router, prefix="/findings")
+app.include_router(broken_links.router, prefix="/findings")
+app.include_router(common_findings.router, prefix="/findings")
+
+# Other endpoints
+app.include_router(programs.router, prefix="/programs")
+app.include_router(nuclei_templates.router, prefix="/nuclei-templates")
+app.include_router(wordlists.router, prefix="/wordlists")
+app.include_router(jobs.router, prefix="/jobs")
+app.include_router(scheduled_jobs.router, prefix="/scheduled-jobs")
+app.include_router(workflows.router, prefix="/workflows")
+app.include_router(admin.router, prefix="/admin")
+app.include_router(debug.router, prefix="/debug")
+app.include_router(action_logs.router, prefix="/action-logs")
+app.include_router(social_media_credentials.router, prefix="")
+```
+
+## Application Lifecycle
+
+### Startup (`main.py` - `startup_event`)
+
+```python
+@app.on_event("startup")
+async def startup_event():
+    """Initialize database and services on startup"""
+    # 1. Initialize database tables and default data
+    initialize_database()
+    
+    # 2. Ensure internal service tokens table exists
+    from services.internal_token_service import InternalTokenService
+    token_service = InternalTokenService()
+    await token_service.ensure_table_exists()
+    
+    # 3. Initialize internal service token (creates/reads from K8s Secret)
+    await initialize_internal_service_token()
+    
+    # 4. Verify environment configuration
+    final_token = os.getenv("INTERNAL_SERVICE_API_KEY")
+    if not final_token:
+        logger.error("Internal service token environment variable NOT set!")
+```
+
+**Startup Order**:
+1. Database initialization (tables, default recon task parameters)
+2. Internal service tokens table creation
+3. Internal service token initialization (with K8s Secret sync)
+4. Environment validation
+
+### Shutdown (`main.py` - `shutdown_event`)
+
+```python
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Clean up resources on shutdown"""
+    # 1. Shutdown workflow thread pool
+    if hasattr(workflows, 'thread_pool'):
+        workflows.thread_pool.shutdown(wait=True)
+    
+    # 2. Shutdown unified asset processor
+    from services.unified_asset_processor import unified_asset_processor
+    await unified_asset_processor.shutdown()
+```
+
+**Shutdown Order**:
+1. Shutdown workflow thread pools
+2. Shutdown unified asset processor (flushes event batches)
+3. Close NATS connections (handled by processor shutdown)
+
+## Middleware Stack
+
+```python
+# Applied in order (first added = innermost):
+
+# 1. AuthMiddleware (can be disabled via DISABLE_AUTH_MIDDLEWARE=true)
+if os.getenv("DISABLE_AUTH_MIDDLEWARE", "false").lower() != "true":
+    app.add_middleware(AuthMiddleware)
+
+# 2. CORSMiddleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://dev.h3x.recon",
+        "http://prod.h3x.recon",
+        "http://local.h3x.recon",
+        "http://dev.h3x.recon:8080",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000"
+    ],
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["*"],
+    expose_headers=["*"],
+    max_age=3600,
+)
+```
+
+## Key Architectural Patterns
+
+### 1. Dependency Injection
+- FastAPI's dependency injection system is used throughout
+- Authentication dependencies: `get_current_user_from_middleware`, `require_authentication`
+- Database sessions: `get_db_session()`, `get_batch_db_session()`
+
+### 2. Repository Pattern
+- All database access goes through repository classes
+- Repositories use `ProgramAccessMixin` for program-based filtering
+- Static methods for stateless operations
+- `create_or_update_*` methods return `(id, action, event_data)` tuples
+
+### 3. Service Layer
+- Business logic lives in services, not routes
+- Services handle async operations and external integrations
+- Unified processors for consistent asset/findings handling
+- `RobustEventPublisher` for reliable NATS event publishing
+
+### 4. Event-Driven Architecture
+- NATS JetStream for event publishing
+- Events published for asset/findings changes
+- Automatic batching for high-volume scenarios
+- Graceful degradation when NATS unavailable
+
+### 5. Program-Based Access Control
+- All data is scoped to programs
+- User permissions checked at route level with `check_program_permission()`
+- Repository queries filtered by `filter_by_user_programs()`
+- `get_user_accessible_programs()` returns user's allowed programs
+
+## Configuration Management
+
+Configuration is managed through:
+- **Environment variables**: Database, NATS, Kubernetes settings
+- **Pydantic Settings** (`config/settings.py`): Type-safe configuration
+- **Runtime configuration**: Program settings fetched from API
+
+### Key Settings
+
+```python
+class Settings(BaseSettings):
+    API_V1_STR: str = ""
+    PROJECT_NAME: str = "Workflow API"
+    
+    # Kubernetes
+    RUNNER_IMAGE: str = "runner:latest"
+    RUNNER_SERVICE_ACCOUNT: str = "runner-service-account"
+    JOB_TTL_SECONDS: int = 86400
+    
+    # Asset Processing
+    ASSET_BATCH_THRESHOLD: int = 100
+    ASSET_QUEUE_MAX_SIZE: int = 1000
+    ASSET_PROCESSING_TIMEOUT: int = 300
+    ASSET_BATCH_SIZE: int = 50
+    
+    # Database Optimization
+    DB_BULK_PROCESSING_THRESHOLD: int = 50
+    DB_CHUNK_SIZE: int = 100
+    DB_CONNECTION_POOL_SIZE: int = 20
+    DB_MAX_OVERFLOW: int = 40
+    
+    # Event Publisher
+    EVENT_BATCH_SIZE: int = 50
+    EVENT_BATCH_TIMEOUT: float = 2.0
+    NATS_URL: str = "nats://nats:4222"
+    EVENTS_STREAM: str = "EVENTS"
+```
+
+## Key Design Principles
+
+1. **Separation of Concerns**: Routes → Services → Repositories → Database
+2. **Async-First**: All I/O operations are async
+3. **Program Scoping**: All data operations respect program boundaries
+4. **Unified Processing**: Consistent patterns for assets and findings
+5. **Event-Driven**: Changes published as events for downstream processing
+6. **Type Safety**: Pydantic models for validation, SQLAlchemy for ORM
+7. **Typed Search**: Strongly-typed search endpoints with Pydantic request models
+
+## Common Patterns
+
+### Adding a New Endpoint
+
+1. **Define Pydantic models** in route file or `models/`
+2. **Create route handler** in appropriate `routes/*.py` file
+3. **Add authentication dependency** (`get_current_user_from_middleware`)
+4. **Check program permissions** if needed (`check_program_permission`)
+5. **Call repository or service** for business logic
+6. **Handle errors** with `HTTPException`
+7. **Return response model** with standard format
+
+### Adding a New Repository
+
+1. **Inherit from `ProgramAccessMixin`** if program-scoped
+2. **Use static methods** for stateless operations
+3. **Use `get_db_session()`** or `get_batch_db_session()` for database access
+4. **Apply program filtering** using `apply_program_access_filter()`
+5. **Implement `create_or_update_*`** returning `(id, action, event_data)` tuple
+6. **Implement `search_*_typed`** for typed search endpoints
+7. **Handle errors** appropriately
+
+### Adding a New Service
+
+1. **Create service class** in `services/`
+2. **Handle async operations** properly
+3. **Publish events** using `publisher.publish()` from `event_publisher`
+4. **Use unified processors** for asset/findings processing
+5. **Handle external API errors** gracefully
+
+## References
+
+- Main application: `src/api/app/main.py`
+- Settings: `src/api/app/config/settings.py`
+- Database: `src/api/app/db.py`
+- Models: `src/api/app/models/postgres.py`
+- Query filters: `src/api/app/utils/query_filters.py`
+- Auth dependencies: `src/api/app/auth/dependencies.py`
+
+# API Authentication and Authorization Patterns
+
+## Authentication Methods
+
+The API supports three authentication methods:
+
+1. **JWT Tokens**: Stateless authentication for web frontend
+2. **API Tokens**: Long-lived tokens for programmatic access (prefixed with `recon_`)
+3. **Internal Service Tokens**: Service-to-service authentication (prefixed with `recon_internal_`)
+
+## Authentication Middleware
+
+### AuthMiddleware (`middleware/auth.py`)
+
+The `AuthMiddleware` is applied globally and:
+- Checks for authentication on all routes except public paths
+- Extracts token from `Authorization: Bearer <token>` header
+- Supports query parameter tokens for screenshot endpoints (browser compatibility)
+- Sets `request.state.current_user` for use in route handlers
+
+**Public Paths** (no authentication required):
+- `/status`
+- `/docs`, `/redoc`, `/openapi.json`
+- `/auth/login`, `/auth/refresh`
+- `/debug`
+- `/nuclei-templates/raw`
+
+### Disabling Authentication
+
+For development/testing:
+```bash
+DISABLE_AUTH_MIDDLEWARE=true
+```
+
+## Authentication Dependencies
+
+### Getting Current User (Recommended)
+
+**From Middleware** - use in route handlers:
+```python
+from auth.dependencies import get_current_user_from_middleware
+
+@router.get("/endpoint")
+async def my_endpoint(
+    current_user: UserResponse = Depends(get_current_user_from_middleware)
+):
+    # current_user is guaranteed to be authenticated via middleware
+    pass
+```
+
+**Direct Dependency** - for custom auth logic:
+```python
+from auth.dependencies import get_current_user, require_authentication
+
+@router.get("/endpoint")
+async def my_endpoint(
+    current_user: UserResponse = Depends(require_authentication)
+):
+    # require_authentication raises 401 if not authenticated
+    pass
+```
+
+### Optional Authentication
+
+```python
+from auth.dependencies import optional_authentication
+
+@router.get("/endpoint")
+async def my_endpoint(
+    current_user: Optional[UserResponse] = Depends(optional_authentication)
+):
+    # current_user may be None for unauthenticated requests
+    if current_user:
+        # User is authenticated
+        pass
+```
+
+## Authorization Patterns
+
+### Role-Based Access
+
+**Superuser/Admin Check**:
+```python
+from auth.dependencies import require_admin, require_superuser
+
+@router.post("/admin/endpoint")
+async def admin_endpoint(
+    current_user: UserResponse = Depends(require_admin)
+):
+    # Only admins/superusers can access
+    pass
+```
+
+**Admin or Manager**:
+```python
+from auth.dependencies import require_admin_or_manager
+
+@router.delete("/subdomain/{domain_id}")
+async def delete_domain(
+    domain_id: str,
+    current_user: UserResponse = Depends(require_admin_or_manager)
+):
+    # Admins or program managers can access
+    pass
+```
+
+### Program-Based Permissions
+
+**Check Program Permission**:
+```python
+from auth.dependencies import check_program_permission
+
+@router.post("/programs/{program_name}/workflows")
+async def create_workflow(
+    program_name: str,
+    workflow: WorkflowDefinition,
+    current_user: UserResponse = Depends(get_current_user_from_middleware)
+):
+    # Check specific program permission
+    if not check_program_permission(current_user, program_name, "manager"):
+        raise HTTPException(
+            status_code=403,
+            detail=f"Manager access required for program {program_name}"
+        )
+    # ...
+```
+
+**Permission Levels**:
+- `"analyst"`: Read access to program data
+- `"manager"`: Full access to program (create workflows, delete assets, etc.)
+
+**Permission Hierarchy**:
+- Superusers/Admins: Access to all programs at manager level
+- Managers: Full access to assigned programs
+- Analysts: Read access to assigned programs
+
+## Program Access Helper Functions
+
+### get_user_accessible_programs()
+
+Returns the list of programs a user can access:
+
+```python
+from auth.dependencies import get_user_accessible_programs
+
+def get_user_accessible_programs(user: UserResponse) -> List[str]:
+    """
+    Get list of programs the user has access to.
+    
+    Returns:
+    - Empty list for superusers/admins (no restrictions = access to all)
+    - List of program names for regular users
+    - Empty list for users with no access (returns no results in queries)
+    
+    Note: Empty list has different meanings depending on user type!
+    """
+    # Superusers/admins: no restrictions
+    if user.is_superuser or "admin" in user.roles:
+        return []  # Empty = no restrictions
+    
+    # Regular users: return their allowed programs
+    program_permissions = user.program_permissions or {}
+    
+    if isinstance(program_permissions, list):
+        # Old format: list of program names
+        return program_permissions
+    elif isinstance(program_permissions, dict):
+        # New format: dict of program -> permission level
+        return list(program_permissions.keys())
+    
+    return []  # Empty = no access for regular users
+```
+
+**Usage in Routes**:
+```python
+@router.post("/subdomain/search")
+async def search_subdomains(
+    request: SearchRequest,
+    current_user: UserResponse = Depends(get_current_user_from_middleware)
+):
+    accessible = get_user_accessible_programs(current_user)
+    
+    if current_user.is_superuser or "admin" in current_user.roles:
+        # No filtering needed - user sees all
+        programs = None
+    else:
+        if not accessible:
+            # No access - return empty results
+            return {"status": "success", "items": []}
+        programs = accessible
+    
+    # Pass to repository
+    result = await repository.search(programs=programs)
+```
+
+### filter_by_user_programs()
+
+Adds program filtering to a query filter based on user permissions:
+
+```python
+from auth.dependencies import filter_by_user_programs
+
+def filter_by_user_programs(base_filter: dict, user: UserResponse) -> dict:
+    """
+    Add program filtering to a query filter based on user permissions.
+    
+    Security features:
+    - Always enforces program restriction at TOP LEVEL as `program_name`
+    - Normalizes any provided program_name condition
+    - Handles $in, $eq operators
+    - Returns {"program_name": {"$in": []}} for no access (empty results)
+    """
+    # Unrestricted for superusers/admins
+    if user.is_superuser or "admin" in user.roles:
+        return base_filter
+    
+    # Get user's accessible programs
+    accessible_programs = [...]  # From program_permissions
+    
+    # No access -> force empty result
+    if not accessible_programs:
+        return {"program_name": {"$in": []}}
+    
+    # Intersect with any requested programs
+    # Enforce at top-level
+    new_filter = dict(base_filter or {})
+    new_filter["program_name"] = {"$in": accessible_programs}
+    return new_filter
+```
+
+**Usage**:
+```python
+@router.post("/assets/search")
+async def search_assets(
+    query: QueryFilter,
+    current_user: UserResponse = Depends(get_current_user_from_middleware)
+):
+    # Apply program filtering to query
+    filtered_filter = filter_by_user_programs(query.filter, current_user)
+    
+    # Repository will respect this filter
+    results = await repository.get_assets(filtered_filter)
+    return results
+```
+
+### check_program_permission()
+
+Check if user has required permission level for a specific program:
+
+```python
+from auth.dependencies import check_program_permission
+
+def check_program_permission(user: UserResponse, program_name: str, required_level: str = "analyst") -> bool:
+    """
+    Check if user has the required permission level for a specific program.
+    
+    Args:
+        user: The user to check permissions for
+        program_name: Name of the program to check
+        required_level: Required permission level ("analyst" or "manager")
+    
+    Returns:
+        True if user has required permission level or higher
+    """
+    # Superusers/admins have full access
+    if user.is_superuser or "admin" in user.roles:
+        return True
+    
+    # Get user's permission for this program
+    program_permissions = user.program_permissions or {}
+    
+    if isinstance(program_permissions, list):
+        # Old format: list = analyst level
+        user_level = "analyst" if program_name in program_permissions else None
+    elif isinstance(program_permissions, dict):
+        # New format: dict with levels
+        user_level = program_permissions.get(program_name)
+    else:
+        user_level = None
+    
+    if not user_level:
+        return False
+    
+    # Permission hierarchy: manager > analyst
+    if required_level == "analyst":
+        return user_level in ["analyst", "manager"]
+    elif required_level == "manager":
+        return user_level == "manager"
+    
+    return False
+```
+
+### check_program_permission_by_id()
+
+Check permission using program ID instead of name:
+
+```python
+from auth.dependencies import check_program_permission_by_id
+
+async def check_program_permission_by_id(
+    user: UserResponse, 
+    program_id: str, 
+    required_level: str = "analyst"
+) -> bool:
+    """Check permission by program ID (looks up program name first)"""
+    # Superusers/admins have full access
+    if user.is_superuser or "admin" in user.roles:
+        return True
+    
+    # Look up program name
+    from repository import ProgramRepository
+    program_data = await ProgramRepository.get_program(program_id)
+    
+    if not program_data:
+        return False
+    
+    program_name = program_data.get("name")
+    return check_program_permission(user, program_name, required_level)
+```
+
+### get_user_program_permission_level()
+
+Get the user's permission level for a specific program:
+
+```python
+from auth.dependencies import get_user_program_permission_level
+
+def get_user_program_permission_level(user: UserResponse, program_name: str) -> Optional[str]:
+    """
+    Get the user's permission level for a specific program.
+    
+    Returns:
+        Permission level ("analyst" or "manager"), or None if no access
+    """
+    # Superusers/admins have manager-level access
+    if user.is_superuser or "admin" in user.roles:
+        return "manager"
+    
+    program_permissions = user.program_permissions or {}
+    
+    if isinstance(program_permissions, list):
+        return "analyst" if program_name in program_permissions else None
+    elif isinstance(program_permissions, dict):
+        return program_permissions.get(program_name)
+    
+    return None
+```
+
+## User Response Model
+
+```python
+class UserResponse(BaseModel):
+    id: str
+    username: str
+    email: str
+    is_active: bool
+    is_superuser: bool
+    is_admin: bool
+    program_permissions: Union[List[str], Dict[str, str]]  # Old: list, New: dict
+    roles: List[str]
+    created_at: datetime
+    updated_at: datetime
+```
+
+**Program Permissions Format**:
+- **Old format**: `["program1", "program2"]` (treated as analyst level)
+- **New format**: `{"program1": "analyst", "program2": "manager"}`
+
+## Internal Service Authentication
+
+### Internal Service Tokens
+
+For service-to-service communication (e.g., workers calling API):
+
+```python
+from auth.dependencies import require_internal_service_or_authentication
+
+@router.post("/internal/process")
+async def internal_process(
+    current_user: UserResponse = Depends(require_internal_service_or_authentication)
+):
+    # Accepts either internal service token OR regular user auth
+    # User auth takes precedence for proper action logging
+    pass
+```
+
+**Token Format**: `recon_internal_<token_id>`
+
+### Getting Internal Service User
+
+```python
+from auth.dependencies import get_internal_service_user
+
+async def get_internal_service_user() -> Optional[UserResponse]:
+    """Get internal service user from INTERNAL_SERVICE_API_KEY env var"""
+    internal_api_key = os.getenv("INTERNAL_SERVICE_API_KEY")
+    if not internal_api_key:
+        return None
+    
+    # Validate token
+    from services.internal_token_service import InternalTokenService
+    token_service = InternalTokenService()
+    token_data = await token_service.validate_token(internal_api_key)
+    
+    if not token_data:
+        return None
+    
+    # Return internal service user with full permissions
+    return UserResponse(
+        id=f"internal-service-{token_data['id']}",
+        username=f"internal-service-{token_data['name']}",
+        email="internal-service@recon.local",
+        is_active=True,
+        is_superuser=True,
+        is_admin=True,
+        program_permissions=[]
+    )
+```
+
+## API Token Authentication
+
+### Token Format
+- Prefix: `recon_`
+- Stored in database with user association
+- Can have expiration dates
+- Can have specific permissions
+
+### Token Permissions
+
+```python
+from auth.dependencies import require_permission
+
+@router.post("/endpoint")
+async def restricted_endpoint(
+    current_user: UserResponse = Depends(require_permission("assets:write"))
+):
+    # Only tokens with "assets:write" permission can access
+    # JWT users inherit their user permissions and bypass token checks
+    pass
+```
+
+## Common Patterns
+
+### Typed Search with Program Filtering
+
+```python
+@router.post("/subdomain/search")
+async def search_subdomains_typed(
+    request: SubdomainSearchRequest,
+    current_user: UserResponse = Depends(get_current_user_from_middleware)
+):
+    # Get accessible programs
+    accessible = get_user_accessible_programs(current_user)
+    
+    # Parse requested programs from request
+    requested_programs = parse_program_filter(request.program)
+    
+    # Compute final programs list
+    if current_user.is_superuser or "admin" in current_user.roles:
+        programs = requested_programs if requested_programs else None
+    else:
+        allowed = accessible or []
+        if not allowed:
+            return empty_response(request)
+        if requested_programs:
+            programs = [p for p in requested_programs if p in allowed]
+            if not programs:
+                return empty_response(request)
+        else:
+            programs = allowed
+    
+    # Query with program filter
+    result = await repository.search(programs=programs)
+    return paginated_response(result, request)
+```
+
+### Route with Program Permission Check
+
+```python
+@router.post("/programs/{program_name}/workflows")
+async def create_workflow(
+    program_name: str,
+    workflow: WorkflowDefinition,
+    current_user: UserResponse = Depends(get_current_user_from_middleware)
+):
+    # Check manager permission
+    if not check_program_permission(current_user, program_name, "manager"):
+        raise HTTPException(
+            status_code=403,
+            detail=f"Manager access required for program {program_name}"
+        )
+    
+    # Create workflow
+    result = await workflow_service.create(workflow, program_name)
+    return {"status": "success", "data": result}
+```
+
+### Resource Access Check
+
+```python
+@router.get("/subdomain/{domain_id}")
+async def get_subdomain(
+    domain_id: str,
+    current_user: UserResponse = Depends(get_current_user_from_middleware)
+):
+    domain = await SubdomainAssetsRepository.get_domain_by_id(domain_id)
+    
+    if not domain:
+        raise HTTPException(status_code=404, detail="Domain not found")
+    
+    # Check program access
+    domain_program = domain.get("program_name")
+    if domain_program:
+        accessible = get_user_accessible_programs(current_user)
+        # For non-admins, check if program is in accessible list
+        if accessible and domain_program not in accessible:
+            raise HTTPException(status_code=404, detail="Domain not found")
+    
+    return {"status": "success", "data": domain}
+```
+
+## Security Best Practices
+
+### DO:
+- ✅ Always use `get_current_user_from_middleware` in routes
+- ✅ Check program permissions before program-scoped operations
+- ✅ Use `filter_by_user_programs` for query filtering
+- ✅ Validate program access in both route and repository
+- ✅ Use `require_admin` or `require_superuser` for admin endpoints
+- ✅ Check `is_active` status (handled by auth dependencies)
+- ✅ Use `check_program_permission` with appropriate level ("analyst" or "manager")
+- ✅ Return 404 (not 403) when resource access is denied (don't leak existence)
+
+### DON'T:
+- ❌ Skip authentication checks assuming middleware handles everything
+- ❌ Trust client-provided program names without validation
+- ❌ Bypass program filtering in repositories
+- ❌ Use `is_superuser` checks without `require_authentication`
+- ❌ Store sensitive data in JWT tokens
+- ❌ Return 403 for resources (reveals existence - use 404)
+
+## Token Lifecycle
+
+### JWT Tokens
+1. User logs in via `/auth/login`
+2. Access token (short-lived) + refresh token (long-lived) returned
+3. Access token used in `Authorization: Bearer <token>` header
+4. Refresh token used via `/auth/refresh` to get new access token
+
+### API Tokens
+1. Created via `/auth/api-tokens` endpoint
+2. Stored in database with user association
+3. Can be revoked by user or admin
+4. Can have expiration dates
+5. Last used timestamp tracked
+
+### Internal Service Tokens
+1. Created automatically on API startup
+2. Stored in database and Kubernetes Secret
+3. Rotated when needed
+4. Used by internal services (workers, etc.)
+
+## References
+
+- Authentication middleware: `src/api/app/middleware/auth.py`
+- Auth dependencies: `src/api/app/auth/dependencies.py`
+- Auth utilities: `src/api/app/auth/utils.py`
+- Auth routes: `src/api/app/routes/auth.py`
+- Internal token service: `src/api/app/services/internal_token_service.py`

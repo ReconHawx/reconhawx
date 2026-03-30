@@ -1,0 +1,41 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: resource-profiles
+  labels:
+    app: reconhawx
+    component: resource-management
+data:
+  # Micro Service Profile (API, Frontend)
+  micro.requests.cpu: "100m"
+  micro.requests.memory: "128Mi"
+  micro.limits.cpu: "500m"
+  micro.limits.memory: "512Mi"
+  
+  # Standard Service Profile (Most services)
+  standard.requests.cpu: "200m"
+  standard.requests.memory: "256Mi"
+  standard.limits.cpu: "1000m"
+  standard.limits.memory: "1Gi"
+  
+  # Database Profile (MongoDB, Redis)
+  database.requests.cpu: "250m"
+  database.requests.memory: "512Mi"
+  database.limits.cpu: "1000m"
+  database.limits.memory: "2Gi"
+  
+  # Messaging Profile (NATS)
+  messaging.requests.cpu: "200m"
+  messaging.requests.memory: "256Mi"
+  messaging.limits.cpu: "500m"
+  messaging.limits.memory: "512Mi"
+  
+  # Job Profile (Workers, Runners)
+  job.requests.cpu: "100m"
+  job.requests.memory: "128Mi"
+  job.limits.cpu: "2000m"
+  job.limits.memory: "4Gi"
+  
+  # Production Multipliers
+  prod.cpu.multiplier: "2"
+  prod.memory.multiplier: "2" 

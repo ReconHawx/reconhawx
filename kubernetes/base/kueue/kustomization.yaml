@@ -1,0 +1,16 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - cluster-queue.yaml
+  - default-flavor.yaml
+  - runner-flavor.yaml
+  - worker-flavor.yaml
+  - runner-cluster-queue.yaml
+  - worker-cluster-queue.yaml
+  - ai-analysis-cluster-queue.yaml
+  - api-rbac.yaml
+  - runner-queue.yaml
+  - worker-queue.yaml
+  - ai-analysis-queue.yaml
+  - user-queue.yaml 

@@ -1,0 +1,192 @@
+---
+globs: ["src/runner/app/*.py", "src/runner/app/services/*.py"]
+---
+
+# Runner Architecture Overview
+
+## Core Architecture
+
+The workflow runner orchestrates reconnaissance task execution in a distributed Kubernetes environment:
+
+```
+Workflow Runner (run-workflow.py)
+├── TaskExecutor (task_executor.py)
+│   ├── TaskRegistry - Dynamic task discovery
+│   ├── WorkerJobManager - K8s job spawning & monitoring
+│   ├── TaskQueueClient - NATS communication
+│   ├── DataAPIClient - Asset/finding submission
+│   └── AssetProcessor - Result processing
+├── KubernetesService (services/kubernetes.py)
+│   ├── Job CRD generation
+│   ├── Kueue integration
+│   └── Job status monitoring
+└── Models (models/*.py)
+    ├── Workflow/Step/Task definitions
+    ├── Asset models
+    └── Finding models
+```
+
+## Execution Flow
+
+```mermaid
+sequenceDiagram
+    participant API as Data API
+    participant Runner as run-workflow.py
+    participant TE as TaskExecutor
+    participant WJM as WorkerJobManager
+    participant K8S as Kubernetes
+    participant NATS as NATS JetStream
+    participant Worker as Worker Pod
+
+    API->>Runner: Start workflow execution
+    Runner->>TE: Load workflow definition
+    TE->>TE: Resolve input mappings
+    
+    loop For each step
+        loop For each task in step
+            TE->>WJM: Spawn worker jobs
+            WJM->>K8S: Create Job CRDs
+            K8S->>Worker: Schedule pods
+            Worker->>Worker: Execute command
+            Worker->>NATS: Publish output (chunked)
+            NATS->>TE: Receive output
+            TE->>TE: Parse output to assets
+            TE->>API: Send assets/findings
+        end
+    end
+    
+    Runner->>API: Update workflow status
+```
+
+## Component Responsibilities
+
+### TaskExecutor (`task_executor.py`)
+- **Purpose**: Main orchestration engine for workflow execution
+- **Responsibilities**:
+  - Initialize task queue client and job manager
+  - Resolve input mappings from workflow definition
+  - Execute tasks via WorkerJobManager
+  - Process and aggregate task results
+  - Send assets/findings to Data API
+  - Track task execution timestamps (Redis)
+- **Key Methods**:
+  - `initialize()` - Set up NATS subscriptions and API clients
+  - `execute_task()` - Execute a single task definition
+  - `_prepare_input_data_async()` - Resolve inputs from workflow context
+  - `shutdown()` - Clean up resources
+
+### KubernetesService (`services/kubernetes.py`)
+- **Purpose**: Kubernetes API interaction layer
+- **Responsibilities**:
+  - Generate Job CRDs with Kueue annotations
+  - Queue worker tasks (single and batch)
+  - Monitor job status
+  - Retrieve pod logs
+- **Key Methods**:
+  - `queue_worker_task()` - Submit single task
+  - `queue_worker_tasks()` - Submit batch of tasks
+  - `generate_job_crd()` - Create K8s Job manifest
+  - `wait_for_jobs_completion()` - Monitor job completion
+  - `get_pod_logs()` - Retrieve logs from worker pods
+
+## Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DATA_API_URL` | `http://dev-api:8000` | Data API endpoint |
+| `REDIS_URL` | `redis://dev-redis:6379/0` | Redis for task timestamps |
+| `NATS_URL` | `nats://dev-nats:4222` | NATS server URL |
+| `WORKFLOW_ID` | Required | Workflow definition ID |
+| `EXECUTION_ID` | Required | Unique execution instance ID |
+| `PROGRAM_NAME` | Required | Program context for assets |
+| `KUBERNETES_NAMESPACE` | Required | Target K8s namespace |
+| `DOCKER_REGISTRY` | - | Container registry prefix |
+| `WORKER_IMAGE` | `worker:latest` | Worker container image |
+| `IMAGE_PULL_POLICY` | `Always` | K8s image pull policy |
+| `INTERNAL_SERVICE_API_KEY` | Required | API authentication token |
+
+## NATS Subject Patterns
+
+| Subject | Direction | Purpose |
+|---------|-----------|---------|
+| `tasks.pending` | Runner → Worker | Task submission (legacy) |
+| `tasks.output.{execution_id}` | Worker → Runner | Task results |
+
+**Output Message Format**:
+```json
+{
+  "task_id": "uuid",
+  "workflow_id": "execution_id",
+  "step_name": "resolve_domain",
+  "step_num": 0,
+  "success": true,
+  "output": "...",
+  "is_final": true,
+  "chunk_num": 1,
+  "total_chunks": 1,
+  "timestamp": 1234567890.123
+}
+```
+
+## Key Patterns
+
+### Workflow Context Resolution
+The runner resolves inputs from multiple sources:
+
+1. **Direct Values**: Static values in workflow definition
+2. **Program Assets**: Fetched from API based on asset type
+3. **Previous Step Outputs**: Reference outputs from earlier steps
+4. **Workflow Variables**: Substituted at runtime
+
+```python
+# Example input mapping resolution
+input_mapping:
+  targets: "inputs.domains"           # From workflow inputs
+  previous_results: "steps.resolve.subdomain"  # From previous step
+```
+
+### Task Deduplication
+Tasks track execution via Redis timestamps:
+- Hash key: `task_execution_timestamp:{hash}`
+- Value: Last execution timestamp
+- TTL: Based on `last_execution_threshold` parameter
+
+### Progressive Asset Streaming
+For large result sets, assets are streamed incrementally:
+- Assets sent as chunks complete (not waiting for all)
+- Reduces memory pressure on runner
+- Faster data visibility in API
+
+## Error Handling
+
+### Workflow-Level Errors
+- Signal handlers (SIGTERM, SIGINT) for graceful shutdown
+- Workflow status updated to "failed" with error details
+- All pending tasks marked as completed
+
+### Task-Level Errors
+- Individual task failures don't stop workflow
+- Failed tasks logged with error details
+- Partial results still processed and sent
+
+### Connection Errors
+- NATS reconnection with backoff
+- API client retry logic
+- Redis connection pooling
+
+## File Organization
+
+```
+src/runner/app/
+├── run-workflow.py         # Entry point, workflow loading
+├── task_executor.py        # Main execution engine
+├── task_components.py      # Decomposed execution components
+├── task_queue_client.py    # NATS client
+├── data_api_client.py      # API client
+├── worker_job_manager.py   # Job management
+├── services/
+│   └── kubernetes.py       # K8s operations
+├── tasks/                  # Task implementations
+├── models/                 # Data models
+└── utils/                  # Utilities
+```

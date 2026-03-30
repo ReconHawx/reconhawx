@@ -1,0 +1,461 @@
+---
+globs: ["src/worker/app/*.py"]
+---
+
+# Worker Architecture Overview
+
+## Core Architecture
+
+Worker pods execute commands and return results to the runner via NATS:
+
+```
+Worker Pod Execution
+├── command_wrapper.py (Entry Point)
+│   ├── Execute shell command
+│   ├── Capture stdout/stderr
+│   ├── Chunk large outputs
+│   └── Publish to NATS
+└── Tool Wrappers (Optional)
+    ├── dnsx_wrapper.py - DNS resolution
+    ├── ffuf_wrapper.py - Web fuzzing
+    ├── typosquat_worker.py - Typosquat detection
+    └── check_broken_links.py - Link checking
+```
+
+## Execution Flow
+
+```mermaid
+sequenceDiagram
+    participant K8S as Kubernetes
+    participant CW as command_wrapper.py
+    participant Tool as Tool/Script
+    participant NATS as NATS JetStream
+
+    K8S->>CW: Start pod with command
+    CW->>Tool: Execute command (subprocess)
+    Tool->>Tool: Process targets
+    Tool->>CW: Return stdout/stderr
+    CW->>CW: Check output size
+    
+    alt Output <= 500KB
+        CW->>NATS: Publish single message
+    else Output > 500KB
+        CW->>CW: Split into chunks
+        loop For each chunk
+            CW->>NATS: Publish chunk
+        end
+    end
+    
+    K8S->>K8S: Pod completes
+```
+
+## Command Wrapper (`command_wrapper.py`)
+
+### Purpose
+Universal entry point that executes any command and publishes results to NATS.
+
+### Entry Point
+
+```python
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print("No command provided", file=sys.stderr)
+        sys.exit(1)
+    
+    command = " ".join(sys.argv[1:])
+    print(f"Executing command: {command}", file=sys.stderr)
+    run_command(command)
+```
+
+### Command Execution
+
+```python
+def run_command(command):
+    """Execute command and publish results"""
+    process = subprocess.Popen(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        shell=True
+    )
+    
+    # Collect stdout (actual output)
+    all_lines = []
+    for line in process.stdout:
+        line = line.rstrip('\n')
+        if line:
+            all_lines.append(line)
+    
+    # Collect stderr (for logging only)
+    stderr_lines = []
+    for line in process.stderr:
+        line = line.rstrip('\n')
+        if line:
+            stderr_lines.append(line)
+            print(f"stderr: {line}", file=sys.stderr)
+    
+    process.wait()
+    success = process.returncode == 0
+    
+    # CRITICAL: Only send stdout to NATS
+    # stderr is logged but not included in output
+    output = "\n".join(all_lines)
+    
+    # Publish with chunking if needed
+    asyncio.run(send_chunked_output(output, success))
+    
+    sys.exit(process.returncode)
+```
+
+### Output Chunking
+
+Large outputs are split to avoid exceeding NATS payload limits (1MB):
+
+```python
+CHUNK_SIZE = 500 * 1024  # 500KB chunks
+JSON_OVERHEAD = 200      # Reserved for metadata
+
+async def send_chunked_output(output, success):
+    """Split output into chunks and send to NATS"""
+    
+    # Small outputs: send as single message
+    if len(output) <= CHUNK_SIZE - JSON_OVERHEAD:
+        await publish_result(output, success, 
+                           is_final=True, chunk_num=1, total_chunks=1)
+        return
+    
+    # Split by lines to preserve data integrity
+    lines = output.split('\n')
+    chunks = []
+    current_chunk = []
+    current_size = 0
+    effective_chunk_size = CHUNK_SIZE - JSON_OVERHEAD
+    
+    for line in lines:
+        line_size = len(line) + 1  # +1 for newline
+        
+        if current_size + line_size > effective_chunk_size and current_chunk:
+            # Finalize current chunk
+            chunks.append('\n'.join(current_chunk))
+            current_chunk = [line]
+            current_size = len(line)
+        else:
+            current_chunk.append(line)
+            current_size += line_size
+    
+    # Add last chunk
+    if current_chunk:
+        chunks.append('\n'.join(current_chunk))
+    
+    # Send each chunk
+    total_chunks = len(chunks)
+    for i, chunk in enumerate(chunks):
+        chunk_num = i + 1
+        is_final = (chunk_num == total_chunks)
+        
+        await publish_chunk(chunk, success, chunk_num, total_chunks, is_final)
+        await asyncio.sleep(0.2)  # Prevent overwhelming NATS
+```
+
+### NATS Publishing
+
+```python
+async def publish_result(output, success, is_final=True, 
+                        chunk_num=None, total_chunks=None):
+    """Publish result message to NATS"""
+    
+    # Get configuration from environment
+    nats_url = os.getenv("NATS_URL", "nats://nats:4222")
+    task_id = os.getenv("TASK_ID")
+    workflow_id = os.getenv("WORKFLOW_ID")
+    step_name = os.getenv("STEP_NAME")
+    step_num = os.getenv("STEP_NUM", "0")
+    output_subject = os.getenv('OUTPUT_QUEUE_SUBJECT')
+    
+    # Build result message
+    result = {
+        "task_id": task_id,
+        "workflow_id": workflow_id,
+        "step_name": step_name,
+        "step_num": int(step_num),
+        "success": success,
+        "output": output,
+        "execution_time": time.time(),
+        "is_final": is_final,
+        "chunk_num": chunk_num,
+        "total_chunks": total_chunks,
+        "timestamp": time.time()
+    }
+    
+    # Validate size before sending
+    encoded = json.dumps(result).encode()
+    if len(encoded) > 1000000:  # 1MB limit
+        print(f"ERROR: Message too large ({len(encoded)} bytes)", 
+              file=sys.stderr)
+        return False
+    
+    # Connect and publish with retry
+    for retry in range(3):
+        try:
+            nc = await nats.connect(nats_url, connect_timeout=5)
+            js = nc.jetstream()
+            ack = await js.publish(output_subject, encoded)
+            await nc.close()
+            return True
+        except Exception as e:
+            if retry < 2:
+                await asyncio.sleep(0.5 * (2 ** retry))
+    
+    return False
+```
+
+## Environment Variables
+
+| Variable | Description |
+|----------|-------------|
+| `NATS_URL` | NATS server URL |
+| `TASK_ID` | Unique task identifier |
+| `WORKFLOW_ID` | Workflow execution ID |
+| `OUTPUT_QUEUE_SUBJECT` | NATS subject for output (e.g., `tasks.output.{workflow_id}`) |
+| `STEP_NAME` | Current step name |
+| `STEP_NUM` | Step number in workflow |
+| `PROGRAM_NAME` | Program context |
+| `DATA_API_URL` | API endpoint for direct calls |
+| `INTERNAL_SERVICE_API_KEY` | API authentication |
+
+## Tool Wrappers
+
+### dnsx_wrapper.py
+
+DNS resolution with cloud provider IP enrichment:
+
+```python
+#!/usr/bin/env python3
+"""DNS resolution wrapper with cloud provider detection"""
+
+import subprocess
+import sys
+import json
+
+def resolve_domains(domains: List[str]) -> Dict:
+    """Resolve domains using dnsx and enrich with cloud data"""
+    results = {}
+    
+    # Run dnsx
+    process = subprocess.run(
+        ["dnsx", "-silent", "-json", "-a", "-cname"],
+        input='\n'.join(domains),
+        capture_output=True,
+        text=True
+    )
+    
+    # Parse JSON output
+    for line in process.stdout.splitlines():
+        data = json.loads(line)
+        domain = data.get('host', '').lower()
+        results[domain] = {
+            "dnsx": data,
+            "is_wildcard": check_wildcard(domain),
+            "cloud_provider": identify_cloud_provider(data.get('a', []))
+        }
+    
+    # Output as JSON (consumed by runner's parse_output)
+    print(json.dumps(results))
+
+if __name__ == "__main__":
+    domains = sys.stdin.read().strip().split('\n')
+    resolve_domains(domains)
+```
+
+### ffuf_wrapper.py
+
+Web fuzzing with structured output:
+
+```python
+#!/usr/bin/env python3
+"""Web fuzzing wrapper using ffuf"""
+
+import subprocess
+import json
+import sys
+
+def fuzz_target(url: str, wordlist: str) -> List[Dict]:
+    """Fuzz URL and return discovered paths"""
+    
+    cmd = [
+        "ffuf",
+        "-u", f"{url}/FUZZ",
+        "-w", wordlist,
+        "-json",
+        "-silent",
+        "-mc", "200,201,301,302,403"
+    ]
+    
+    process = subprocess.run(cmd, capture_output=True, text=True)
+    
+    results = []
+    if process.stdout:
+        data = json.loads(process.stdout)
+        for result in data.get('results', []):
+            results.append({
+                "url": result.get('url'),
+                "status": result.get('status'),
+                "length": result.get('length'),
+                "words": result.get('words'),
+                "lines": result.get('lines')
+            })
+    
+    # Output JSON lines (one per result)
+    for r in results:
+        print(json.dumps(r))
+
+if __name__ == "__main__":
+    url = sys.argv[1] if len(sys.argv) > 1 else sys.stdin.read().strip()
+    wordlist = sys.argv[2] if len(sys.argv) > 2 else "/wordlists/common.txt"
+    fuzz_target(url, wordlist)
+```
+
+### typosquat_worker.py
+
+Typosquat domain detection with enrichment:
+
+```python
+#!/usr/bin/env python3
+"""Typosquat detection with DNS/WHOIS/risk analysis"""
+
+import sys
+import json
+
+def analyze_typosquat(original_domain: str, typo_domain: str) -> Dict:
+    """Analyze a typosquat domain"""
+    
+    result = {
+        "original_domain": original_domain,
+        "typo_domain": typo_domain,
+        "domain_registered": False,
+        "dns_a_records": [],
+        "whois_data": {},
+        "risk_score": 0
+    }
+    
+    # Check DNS
+    dns_result = resolve_dns(typo_domain)
+    if dns_result:
+        result["domain_registered"] = True
+        result["dns_a_records"] = dns_result.get("a", [])
+    
+    # Get WHOIS if registered
+    if result["domain_registered"]:
+        result["whois_data"] = get_whois(typo_domain)
+        result["risk_score"] = calculate_risk(result)
+    
+    return result
+
+if __name__ == "__main__":
+    # Read input as JSON lines
+    for line in sys.stdin:
+        data = json.loads(line.strip())
+        result = analyze_typosquat(
+            data.get("original_domain"),
+            data.get("typo_domain")
+        )
+        print(json.dumps(result))
+```
+
+## Output Format Patterns
+
+### JSON Object Output
+
+For tools that produce structured data:
+
+```json
+{
+  "example.com": {
+    "dnsx": {
+      "host": "example.com",
+      "a": ["93.184.216.34"],
+      "cname": []
+    },
+    "is_wildcard": false
+  }
+}
+```
+
+### JSON Lines Output
+
+For tools that produce multiple results:
+
+```json
+{"url": "https://example.com/admin", "status": 200, "length": 1234}
+{"url": "https://example.com/login", "status": 200, "length": 5678}
+```
+
+### Plain Text Output
+
+For simple tools (one result per line):
+
+```
+sub1.example.com
+sub2.example.com
+sub3.example.com
+```
+
+## Error Handling
+
+### Subprocess Errors
+
+```python
+try:
+    process = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+    if process.returncode != 0:
+        print(f"Command failed: {process.stderr}", file=sys.stderr)
+        # Still output partial results if available
+        if process.stdout:
+            print(process.stdout)
+except subprocess.TimeoutExpired:
+    print("Command timed out", file=sys.stderr)
+    sys.exit(1)
+```
+
+### NATS Connection Errors
+
+```python
+async def publish_with_retry(subject, data, max_retries=3):
+    """Publish with exponential backoff retry"""
+    for attempt in range(max_retries):
+        try:
+            nc = await nats.connect(NATS_URL, connect_timeout=5)
+            js = nc.jetstream()
+            await js.publish(subject, data)
+            await nc.close()
+            return True
+        except Exception as e:
+            if attempt < max_retries - 1:
+                wait = 0.5 * (2 ** attempt)
+                await asyncio.sleep(wait)
+            else:
+                print(f"Failed after {max_retries} attempts: {e}", 
+                      file=sys.stderr)
+                return False
+```
+
+## Best Practices
+
+1. **Separate stdout/stderr**: Only stdout goes to NATS output
+2. **Log to stderr**: Use `print(..., file=sys.stderr)` for logging
+3. **Output valid JSON**: Runner expects parseable output
+4. **Handle large outputs**: Implement chunking for > 500KB
+5. **Use timeouts**: Prevent hanging processes
+6. **Lowercase domains**: Always normalize domain names
+7. **Validate inputs**: Check for empty/invalid data before processing
+8. **Exit codes**: Return non-zero on failure for proper status tracking
+
+## Container Requirements
+
+Worker containers must have:
+- Python 3.x with `nats-py` package
+- Required security tools (nuclei, dnsx, ffuf, etc.)
+- `command_wrapper.py` at `/usr/local/bin/`
+- Tool-specific wrappers in `/workspace/` or `/app/`
+- Required wordlists and configuration files

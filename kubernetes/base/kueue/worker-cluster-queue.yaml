@@ -1,0 +1,15 @@
+apiVersion: kueue.x-k8s.io/v1beta1
+kind: ClusterQueue
+metadata:
+  name: "worker-cluster-queue"
+spec:
+  namespaceSelector: {} # match all.
+  resourceGroups:
+  - coveredResources: ["cpu", "memory"]
+    flavors:
+    - name: "worker-flavor"
+      resources:
+      - name: "cpu"
+        nominalQuota: 4
+      - name: "memory"
+        nominalQuota: 8Gi

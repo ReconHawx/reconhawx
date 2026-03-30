@@ -1,0 +1,12 @@
+---
+description: Project entrypoint — read repository root AGENTS.md first for layout, commands, and documentation links
+alwaysApply: true
+---
+
+# Project hub
+
+Open **`AGENTS.md`** at the repository root before large changes. It maps components (`src/api`, `src/runner`, `k8s`, etc.), lists migration and deploy commands, and points to READMEs and scoped rules under `.cursor/rules/`. For shell commands that need tools from **`devenv.nix`**, follow **`devenv-shell.mdc`** (`devenv shell -- …` from repo root).
+
+Match conventions for the paths you edit; avoid scope creep beyond the user’s task.
+
+If the change establishes new invariants (architecture, how to run things, or agent-facing conventions), update **`AGENTS.md`** and/or the relevant **`.cursor/rules/*.mdc`** in the same change—see the **Maintenance** section in `AGENTS.md`.

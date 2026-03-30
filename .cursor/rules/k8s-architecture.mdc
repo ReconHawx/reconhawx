@@ -1,0 +1,282 @@
+---
+globs: ["kubernetes/**/*.yaml", "kubernetes/**/*.sh", "scripts/deploy.py"]
+---
+
+# Kubernetes Architecture Overview
+
+## Architecture Summary
+
+The Recon platform uses a Kustomize-based Kubernetes deployment with a single consolidated namespace (`recon`) and environment-specific overlays.
+
+```
+kubernetes/
+├── base/                    # Base configurations (DO NOT deploy directly)
+│   ├── config/              # Centralized ConfigMaps, policies, quotas
+│   ├── api/                 # Backend API deployment
+│   ├── frontend/            # Web UI deployment
+│   ├── nats/                # Message broker with JetStream
+│   ├── postgresql/          # Primary database
+│   ├── redis/               # Caching and task timestamps
+│   ├── runner/              # Workflow orchestration (Job template)
+│   ├── event-handler/       # NATS event processing
+│   ├── kueue/               # Job queue management
+│   └── kustomization.yaml   # Base resource aggregation
+│
+└── overlays/                # Environment-specific configurations
+    ├── dev/                 # Development (local images, debug settings)
+    ├── production/          # Production (registry images, scaled resources)
+    └── vrev/                # VRev-specific configuration
+```
+
+## Service Categories
+
+### Persistent Services (Always Running)
+| Service | Purpose | Port(s) |
+|---------|---------|---------|
+| `api` | Backend REST API, job spawning | 8000 |
+| `frontend` | React web interface | 80 |
+| `nats` | Message broker (JetStream) | 4222 (client), 8222 (monitoring) |
+| `postgresql` | Primary database | 5432 |
+| `redis` | Caching, task timestamps | 6379 |
+| `event-handler` | NATS event processing, Discord notifications | - |
+
+### On-Demand Resources (Job Templates)
+| Resource | Purpose | Triggered By |
+|----------|---------|--------------|
+| `runner` | Workflow orchestration | API via Kubernetes Job CRD |
+| `worker` | Task execution | Runner via Kueue |
+
+## NATS JetStream Streams
+
+NATS is configured with JetStream for durable messaging. Streams are auto-created on startup:
+
+| Stream | Subjects | Purpose |
+|--------|----------|---------|
+| `TASKS` | `tasks.pending` | Runner → Worker task submission |
+| `OUTPUTS` | `tasks.output.>` | Worker → Runner task results (chunked) |
+| `EVENTS` | `events.>` | Asset/findings change events for event-handler |
+
+**Subject Patterns:**
+- `events.{event_type}.{program_name}` - Event publishing pattern
+- `tasks.output.{execution_id}` - Task output routing
+
+## ConfigMap Architecture
+
+### `recon-config` (Central Configuration)
+Located in `base/config/service-config.yaml`:
+
+```yaml
+# Service URLs
+api.url: "http://api:8000"
+nats.url: "nats://nats:4222"
+redis.url: "redis://redis:6379/0"
+
+# Kubernetes
+kubernetes.namespace: "recon"
+runner.serviceaccount: "runner-service-account"
+runner.image: "runner:latest"
+worker.image: "worker:latest"
+
+# Application Settings
+job.ttl: "86400"
+task.timeout: "300"
+access.token.expire.minutes: "15"
+refresh.token.expire.days: "30"
+```
+
+Services reference these values using `valueFrom.configMapKeyRef`:
+```yaml
+env:
+- name: NATS_URL
+  valueFrom:
+    configMapKeyRef:
+      name: recon-config
+      key: nats.url
+```
+
+### `resource-profiles` (Resource Templates)
+Standardized resource allocation profiles:
+
+| Profile | CPU Request | Memory Request | CPU Limit | Memory Limit |
+|---------|-------------|----------------|-----------|--------------|
+| micro | 100m | 128Mi | 500m | 512Mi |
+| standard | 200m | 256Mi | 1000m | 1Gi |
+| database | 250m | 512Mi | 1000m | 2Gi |
+| messaging | 200m | 256Mi | 500m | 512Mi |
+| job | 100m | 128Mi | 2000m | 4Gi |
+
+## Runner/Worker Job Pattern
+
+### Runner Job Template (`base/runner/runner-job-template.yaml`)
+The API spawns Runner jobs dynamically:
+
+```yaml
+apiVersion: batch/v1
+kind: Job
+spec:
+  template:
+    spec:
+      nodeSelector:
+        type: runner         # Runs on runner-labeled nodes
+      serviceAccountName: runner-service-account
+      containers:
+      - name: runner
+        command: ["python", "run-workflow.py"]
+        args: ["{workflow_json}"]  # Workflow definition injected by API
+        env:
+        - name: PROGRAM_NAME      # Set by API, never hardcoded
+          value: "{{PROGRAM_NAME}}"
+        - name: NATS_URL
+          value: "nats://nats:4222"
+```
+
+**Critical Pattern:** Runner tasks NEVER hardcode program names. The `PROGRAM_NAME` environment variable is set by the API when starting the runner pod.
+
+### RBAC (`base/runner/runner-rbac.yaml`)
+Runner service account permissions:
+```yaml
+rules:
+- apiGroups: ["batch"]
+  resources: ["jobs", "jobs/status"]
+  verbs: ["create", "get", "list", "watch", "delete"]
+- apiGroups: [""]
+  resources: ["pods", "pods/log", "pods/status"]
+  verbs: ["get", "list", "watch"]
+```
+
+## Kueue Integration
+
+Kueue manages job queuing and resource allocation:
+
+```yaml
+# ClusterQueue defines resource limits
+apiVersion: kueue.x-k8s.io/v1beta1
+kind: ClusterQueue
+metadata:
+  name: default-cluster-queue
+spec:
+  resourceGroups:
+  - coveredResources: ["cpu", "memory"]
+    flavors:
+    - name: "default"
+      resources:
+      - name: "cpu"
+        nominalQuota: 10
+      - name: "memory"
+        nominalQuota: 20Gi
+```
+
+## Network Policies
+
+Zero-trust networking with explicit allowlists in `base/config/security-policies.yaml`:
+
+| Policy | Pod Selector | Ingress From | Egress To |
+|--------|--------------|--------------|-----------|
+| `default-deny-all` | All | None | None |
+| `allow-api-access` | `app: api` | frontend, ingress | mongodb, nats, redis, kube-dns, HTTPS |
+| `allow-frontend-access` | `app: frontend` | ingress | api, kube-dns |
+| `allow-database-access` | `app: mongodb` | api | - |
+
+## Environment Overlays
+
+### Development (`overlays/dev/`)
+- Local images (no registry prefix)
+- Debug logging enabled
+- Lower resource limits
+- `environment: development` label
+
+### Production (`overlays/production/`)
+- Registry-prefixed images
+- Production logging levels
+- 2x resource multipliers
+- `environment: production` label
+
+## Deployment Commands
+
+```bash
+# Using deploy.py (recommended)
+python scripts/deploy.py -e dev deploy all          # Deploy all to dev
+python scripts/deploy.py -e prod deploy all         # Deploy all to production
+python scripts/deploy.py -e dev bd api              # Build and deploy API
+
+# Manual Kustomize
+kubectl apply -k kubernetes/overlays/dev                   # Apply dev overlay
+kubectl apply -k kubernetes/overlays/production            # Apply production overlay
+```
+
+## Key Patterns
+
+### 1. Namespace Consolidation
+All services run in the single `recon` namespace. No per-environment namespaces.
+
+### 2. ConfigMap References
+Always use `valueFrom.configMapKeyRef` for shared configuration. Never hardcode service URLs.
+
+### 3. Overlay Structure
+Each overlay directory contains:
+- `kustomization.yaml` - References base + patches
+- `patches/` - Deployment/ingress patches
+- `*-secret.yaml` - Environment-specific secrets
+
+### 4. Image Management
+- Dev: `image: api:latest` (local)
+- Production: `image: registry.example.com/api:v1.0.0`
+
+### 5. Secret Management
+Secrets are defined in overlay directories, not base:
+- `postgres-secret` - Database credentials
+- `jwt-secret` - JWT signing keys
+- `internal-service-secret` - Inter-service authentication
+
+## Common Operations
+
+### Adding a New Service
+
+1. Create base directory: `kubernetes/base/{service}/`
+2. Add deployment.yaml, service.yaml
+3. Add to `base/kustomization.yaml` resources
+4. Create overlay patches in `overlays/{env}/{service}/`
+5. Update network policies if needed
+
+### Modifying Configuration
+
+1. Update `base/config/service-config.yaml`
+2. Reference in deployment with `configMapKeyRef`
+3. Redeploy affected services
+
+### Debugging
+
+```bash
+# Check pod status
+kubectl get pods -n recon
+
+# View logs
+kubectl logs -n recon deployment/api
+
+# Check NATS streams
+kubectl exec -n recon deployment/nats -- nats stream ls
+
+# View runner job status
+kubectl get jobs -n recon -l app=runner
+```
+
+## Event-Handler Configuration
+
+The event-handler subscribes to the EVENTS stream and processes notifications. **Handler definitions** are loaded from the API (`/internal/event-handler-configs`) with Redis caching; there is no local YAML handler file.
+
+```yaml
+env:
+- name: EVENTHANDLER_ENABLE_EVENT_HANDLERS
+  value: "true"
+- name: DISCORD_DRY_RUN
+  value: "false"
+```
+
+Program notification settings are also fetched from the API at runtime.
+
+## References
+
+- Architecture doc: `kubernetes/ARCHITECTURE.md`
+- Deploy script: `scripts/deploy.py`
+- NATS init script: `kubernetes/base/nats/init.sh`
+- Kueue config: `kubernetes/kueue-config.yaml`

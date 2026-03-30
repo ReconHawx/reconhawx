@@ -1,0 +1,1201 @@
+---
+globs:
+  - src/api/app/models/**
+  - src/api/app/repository/**
+  - src/api/app/utils/**
+description: SQLAlchemy models, repositories, query helpers, database patterns
+---
+
+# API conventions (data layer)
+
+Project hub: repository root `AGENTS.md`. Use `api-core` for app/auth context and `api-http` when routes or services must align with repository changes.
+
+# API Database Patterns
+
+## Database Architecture
+
+The API uses **PostgreSQL** with **SQLAlchemy ORM** for database operations.
+
+### Connection Management
+
+Database connections are managed through SQLAlchemy engine and session factories:
+
+```python
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
+# PostgreSQL connection
+POSTGRES_URL = f"postgresql://{user}:{password}@{host}:{port}/{db}"
+
+# Engine with optimized settings
+engine = create_engine(
+    POSTGRES_URL,
+    echo=bool(os.getenv("SQL_ECHO", "false").lower() == "true"),
+    pool_size=int(os.getenv("DB_POOL_SIZE", "20")),
+    max_overflow=int(os.getenv("DB_MAX_OVERFLOW", "40")),
+    pool_pre_ping=True,      # Verify connections before use
+    pool_recycle=3600,       # Recycle connections every hour
+    pool_timeout=30,         # Wait up to 30s for connection
+    connect_args={
+        "connect_timeout": 10,
+        "options": "-c statement_timeout=300000"  # 5 min query timeout
+    }
+)
+
+# Standard session factory
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+# Batch session factory (optimized for bulk operations)
+BatchSessionLocal = sessionmaker(
+    autocommit=False,
+    autoflush=False,
+    bind=engine,
+    expire_on_commit=False  # Keep objects accessible after commit
+)
+```
+
+## SQLAlchemy Models
+
+### Core Model Pattern
+
+```python
+from sqlalchemy import Column, String, DateTime, Boolean, ForeignKey, Text, ARRAY
+from sqlalchemy.dialects.postgresql import UUID, INET, JSONB
+from sqlalchemy.orm import relationship
+from sqlalchemy.ext.declarative import declarative_base
+from datetime import datetime
+import uuid
+
+Base = declarative_base()
+
+class Program(Base):
+    """Bug bounty programs - central entity for scoping assets"""
+    __tablename__ = "programs"
+    
+    # Primary key (UUID)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    
+    # Required fields
+    name = Column(String(255), unique=True, nullable=False, index=True)
+    
+    # Array fields
+    domain_regex = Column(ARRAY(Text), default=[])      # Regex patterns for scope
+    out_of_scope_regex = Column(ARRAY(Text), default=[]) # Exclusion patterns
+    cidr_list = Column(ARRAY(Text), default=[])         # CIDR ranges
+    safe_registrar = Column(ARRAY(Text), default=[])    # Trusted registrars
+    
+    # JSONB for flexible data
+    notification_settings = Column(JSONB, default=dict)
+    
+    # Optional fields
+    phishlabs_api_key = Column(String(255), nullable=True)
+    recordedfuture_api_key = Column(String(255), nullable=True)
+    
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    
+    # Relationships
+    apex_domains = relationship("ApexDomain", back_populates="program", cascade="all, delete-orphan")
+    subdomains = relationship("Subdomain", back_populates="program", cascade="all, delete-orphan")
+    ips = relationship("IP", back_populates="program", cascade="all, delete-orphan")
+    # ... more relationships
+```
+
+### Asset Models
+
+```python
+class ApexDomain(Base):
+    """Root/apex domains (e.g., example.com)"""
+    __tablename__ = "apex_domains"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name = Column(String(255), unique=True, nullable=False, index=True)
+    program_id = Column(UUID(as_uuid=True), ForeignKey("programs.id"), nullable=False, index=True)
+    notes = Column(Text)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    
+    # Relationships
+    program = relationship("Program", back_populates="apex_domains")
+    subdomains = relationship("Subdomain", back_populates="apex_domain", cascade="all, delete-orphan")
+
+
+class Subdomain(Base):
+    """Subdomain assets"""
+    __tablename__ = "subdomains"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name = Column(String(255), nullable=False, index=True)
+    program_id = Column(UUID(as_uuid=True), ForeignKey("programs.id"), nullable=False, index=True)
+    apex_domain_id = Column(UUID(as_uuid=True), ForeignKey("apex_domains.id"), nullable=False, index=True)
+    is_wildcard = Column(Boolean, default=False, index=True)
+    cname_record = Column(String(255))
+    wildcard_types = Column(ARRAY(Text), default=[])
+    notes = Column(Text)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    
+    # Relationships
+    program = relationship("Program", back_populates="subdomains")
+    apex_domain = relationship("ApexDomain", back_populates="subdomains")
+    ips = relationship("IP", secondary="subdomain_ips", back_populates="subdomains")
+```
+
+### IP Model with INET Type
+
+```python
+class IP(Base):
+    """IP addresses with PTR and geolocation data"""
+    __tablename__ = "ips"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    
+    # INET type for proper IP address handling
+    ip_address = Column(INET, unique=True, nullable=False, index=True)
+    
+    ptr_record = Column(String(255), index=True)  # Reverse DNS
+    service_provider = Column(String(255))
+    program_id = Column(UUID(as_uuid=True), ForeignKey("programs.id"), nullable=False, index=True)
+    notes = Column(Text)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    
+    # Relationships
+    program = relationship("Program", back_populates="ips")
+    subdomains = relationship("Subdomain", secondary="subdomain_ips", back_populates="ips")
+```
+
+### Association Tables
+
+```python
+class SubdomainIP(Base):
+    """Association table for subdomain-IP many-to-many relationship"""
+    __tablename__ = "subdomain_ips"
+    
+    subdomain_id = Column(UUID(as_uuid=True), ForeignKey("subdomains.id"), primary_key=True)
+    ip_id = Column(UUID(as_uuid=True), ForeignKey("ips.id"), primary_key=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+```
+
+## Key Model Patterns
+
+1. **UUID Primary Keys**: Use `UUID(as_uuid=True)` for all primary keys
+2. **INET Type**: Use PostgreSQL `INET` type for IP addresses
+3. **JSONB**: Use for flexible, schema-less data
+4. **ARRAY**: Use for lists (domain_regex, cidr_list, etc.)
+5. **Indexes**: Add indexes on frequently queried fields
+6. **Timestamps**: Always include `created_at` and `updated_at`
+7. **Relationships**: Define bidirectional relationships with `back_populates`
+8. **Cascade Delete**: Use `cascade="all, delete-orphan"` for owned relationships
+
+## Relationships
+
+### One-to-Many
+
+```python
+class Program(Base):
+    __tablename__ = "programs"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    
+    # One program has many subdomains
+    subdomains = relationship(
+        "Subdomain",
+        back_populates="program",
+        cascade="all, delete-orphan"  # Delete subdomains when program deleted
+    )
+
+class Subdomain(Base):
+    __tablename__ = "subdomains"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    program_id = Column(UUID(as_uuid=True), ForeignKey("programs.id"), nullable=False)
+    
+    # Many subdomains belong to one program
+    program = relationship("Program", back_populates="subdomains")
+```
+
+### Many-to-Many with Association Table
+
+```python
+class SubdomainIP(Base):
+    """Association table"""
+    __tablename__ = "subdomain_ips"
+    subdomain_id = Column(UUID(as_uuid=True), ForeignKey("subdomains.id"), primary_key=True)
+    ip_id = Column(UUID(as_uuid=True), ForeignKey("ips.id"), primary_key=True)
+
+class Subdomain(Base):
+    # Many-to-many through association table
+    ips = relationship("IP", secondary="subdomain_ips", back_populates="subdomains")
+
+class IP(Base):
+    subdomains = relationship("Subdomain", secondary="subdomain_ips", back_populates="ips")
+```
+
+## Query Patterns
+
+### Basic Queries
+
+```python
+from db import get_db_session
+from models.postgres import Subdomain, Program, IP, SubdomainIP
+
+# Get all
+async with get_db_session() as db:
+    subdomains = db.query(Subdomain).all()
+
+# Get by ID
+async with get_db_session() as db:
+    subdomain = db.query(Subdomain).filter(Subdomain.id == subdomain_id).first()
+
+# Filter with join
+async with get_db_session() as db:
+    subdomains = db.query(Subdomain).join(Program).filter(
+        Program.name == program_name,
+        Subdomain.is_wildcard == True
+    ).all()
+
+# Limit and offset
+async with get_db_session() as db:
+    subdomains = db.query(Subdomain).limit(10).offset(20).all()
+```
+
+### Working with INET Type
+
+```python
+from sqlalchemy import func
+
+# Query IP addresses
+async with get_db_session() as db:
+    # Get host part of IP address
+    ips = db.query(func.host(IP.ip_address)).all()
+    
+    # Filter by IP string
+    ip = db.query(IP).filter(func.host(IP.ip_address) == "192.168.1.1").first()
+    
+    # Filter by list of IPs
+    ips = db.query(IP).filter(func.host(IP.ip_address).in_(["192.168.1.1", "10.0.0.1"])).all()
+```
+
+### Aggregations with Arrays
+
+```python
+from sqlalchemy import func
+
+async with get_db_session() as db:
+    # Aggregate IPs into array
+    ip_array_col = func.array_remove(
+        func.array_agg(func.distinct(func.host(IP.ip_address))),
+        None,
+    )
+    
+    # Unnest array for distinct values
+    values = db.query(func.unnest(Subdomain.wildcard_types)).distinct().all()
+    
+    # Count distinct
+    count = func.count(func.distinct(IP.id))
+```
+
+### Joins for IP Relationships
+
+```python
+async with get_db_session() as db:
+    # Get subdomain with IPs through association table
+    ip_addresses = db.query(IP.ip_address).join(
+        SubdomainIP, IP.id == SubdomainIP.ip_id
+    ).filter(
+        SubdomainIP.subdomain_id == subdomain.id
+    ).all()
+    
+    ip_list = [ip[0] for ip in ip_addresses]
+```
+
+### Complex Aggregation Query
+
+```python
+async with get_db_session() as db:
+    # Build query with aggregation columns
+    count_ip_col = func.count(func.distinct(IP.id))
+    ip_array_col = func.array_remove(
+        func.array_agg(func.distinct(func.host(IP.ip_address))),
+        None,
+    )
+    
+    base_query = (
+        db.query(
+            Subdomain.id.label("id"),
+            Subdomain.name.label("name"),
+            Program.name.label("program_name"),
+            ApexDomain.name.label("apex_domain"),
+            ip_array_col.label("ip"),
+            count_ip_col.label("ip_count"),
+        )
+        .select_from(Subdomain)
+        .join(Program, Program.id == Subdomain.program_id)
+        .join(ApexDomain, ApexDomain.id == Subdomain.apex_domain_id)
+        .outerjoin(SubdomainIP, Subdomain.id == SubdomainIP.subdomain_id)
+        .outerjoin(IP, IP.id == SubdomainIP.ip_id)
+        .group_by(Subdomain.id, Subdomain.name, Program.name, ApexDomain.name)
+    )
+    
+    # HAVING clause for filtering on aggregates
+    base_query = base_query.having(func.count(func.distinct(IP.id)) > 0)
+    
+    rows = base_query.all()
+```
+
+## Batch Operations
+
+### Bulk Insert
+
+```python
+from db import get_batch_db_session
+
+async def bulk_create_subdomains(subdomains: List[Dict[str, Any]]):
+    """Bulk insert subdomains"""
+    async with get_batch_db_session() as db:
+        db.bulk_insert_mappings(Subdomain, subdomains)
+        db.commit()
+```
+
+### Chunked Bulk Insert
+
+```python
+async def bulk_create_subdomains(subdomains: List[Dict[str, Any]], chunk_size: int = 1000):
+    """Bulk insert in chunks for very large batches"""
+    for i in range(0, len(subdomains), chunk_size):
+        chunk = subdomains[i:i + chunk_size]
+        async with get_batch_db_session() as db:
+            db.bulk_insert_mappings(Subdomain, chunk)
+            db.commit()
+```
+
+### Bulk Update
+
+```python
+async def bulk_update_subdomains(updates: List[Dict[str, Any]]):
+    """Bulk update subdomains - each dict must include 'id'"""
+    async with get_batch_db_session() as db:
+        db.bulk_update_mappings(Subdomain, updates)
+        db.commit()
+```
+
+## Transaction Management
+
+### Explicit Transactions
+
+```python
+async with get_db_session() as db:
+    try:
+        # Multiple operations
+        subdomain1 = Subdomain(name="example1.com", program_id=program_id)
+        db.add(subdomain1)
+        
+        subdomain2 = Subdomain(name="example2.com", program_id=program_id)
+        db.add(subdomain2)
+        
+        # Commit all or none
+        db.commit()
+    
+    except Exception as e:
+        db.rollback()
+        raise
+```
+
+### Flush for Generated IDs
+
+```python
+async with get_db_session() as db:
+    # Create program and get ID before commit
+    program = Program(name="example")
+    db.add(program)
+    db.flush()  # Get program.id without committing
+    
+    # Use the ID for related records
+    subdomain = Subdomain(name="sub.example.com", program_id=program.id)
+    db.add(subdomain)
+    
+    # Commit everything
+    db.commit()
+```
+
+## Query Optimization
+
+### Indexes
+
+Add indexes on frequently queried columns:
+
+```python
+class Subdomain(Base):
+    name = Column(String(255), nullable=False, index=True)
+    program_id = Column(UUID(as_uuid=True), ForeignKey("programs.id"), index=True)
+    is_wildcard = Column(Boolean, default=False, index=True)
+    
+    # Composite index for common query patterns
+    __table_args__ = (
+        Index("idx_subdomain_program_wildcard", "program_id", "is_wildcard"),
+    )
+```
+
+### Eager Loading
+
+Avoid N+1 queries with eager loading:
+
+```python
+from sqlalchemy.orm import joinedload
+
+# Bad: N+1 queries
+subdomains = db.query(Subdomain).all()
+for subdomain in subdomains:
+    print(subdomain.program.name)  # Query for each program
+
+# Good: Single query with join
+subdomains = db.query(Subdomain).options(
+    joinedload(Subdomain.program)
+).all()
+for subdomain in subdomains:
+    print(subdomain.program.name)  # No additional queries
+```
+
+## Domain Utilities
+
+### Extract Apex Domain
+
+```python
+from utils.domain_utils import extract_apex_domain
+
+# Get apex domain from hostname
+apex = extract_apex_domain("sub.example.com")  # Returns "example.com"
+apex = extract_apex_domain("deep.sub.example.co.uk")  # Returns "example.co.uk"
+```
+
+## JSONB Usage
+
+### Storing Flexible Data
+
+```python
+class Program(Base):
+    notification_settings = Column(JSONB, default=dict)
+
+# Store JSON data
+program.notification_settings = {
+    "discord_webhook": "https://...",
+    "slack_channel": "#alerts",
+    "enabled": True
+}
+
+# Query JSONB
+from sqlalchemy.dialects.postgresql import JSONB
+
+# Check if key exists
+db.query(Program).filter(
+    Program.notification_settings.has_key("discord_webhook")
+).all()
+
+# Query nested values
+db.query(Program).filter(
+    Program.notification_settings["enabled"].astext == "true"
+).all()
+```
+
+## Database Initialization
+
+### Table Creation
+
+```python
+from db import init_database
+from models.postgres import Base
+
+def init_database():
+    """Initialize database tables"""
+    Base.metadata.create_all(bind=engine)
+    _initialize_default_data()
+```
+
+### Default Data
+
+```python
+def _initialize_default_recon_task_parameters():
+    """Initialize default recon task parameters"""
+    db = SessionLocal()
+    
+    default_parameters = {
+        "resolve_domain": {"last_execution_threshold": 24, "timeout": 120},
+        "port_scan": {"last_execution_threshold": 24, "timeout": 900},
+        # ...
+    }
+    
+    for task_name, parameters in default_parameters.items():
+        existing = db.query(ReconTaskParameters).filter(
+            ReconTaskParameters.recon_task == task_name
+        ).first()
+        
+        if not existing:
+            task_params = ReconTaskParameters(
+                recon_task=task_name,
+                parameters=parameters
+            )
+            db.add(task_params)
+    
+    db.commit()
+    db.close()
+```
+
+## Best Practices
+
+### DO:
+- ✅ Use UUIDs for primary keys
+- ✅ Use INET type for IP addresses
+- ✅ Add indexes on frequently queried columns
+- ✅ Use eager loading to avoid N+1 queries
+- ✅ Use batch sessions for bulk operations
+- ✅ Always include timestamps (created_at, updated_at)
+- ✅ Use JSONB for flexible data
+- ✅ Use ARRAY for lists (regex patterns, etc.)
+- ✅ Define bidirectional relationships with `back_populates`
+- ✅ Use transactions for multi-step operations
+- ✅ Use `func.host()` when querying INET columns as strings
+
+### DON'T:
+- ❌ Query without indexes on large tables
+- ❌ Use N+1 queries (use eager loading)
+- ❌ Skip transaction management
+- ❌ Store large text in JSONB (use Text column)
+- ❌ Create circular relationships
+- ❌ Skip error handling in transactions
+- ❌ Compare INET directly with strings (use func.host())
+
+## References
+
+- Database models: `src/api/app/models/postgres.py`
+- Database connection: `src/api/app/db.py`
+- Domain utilities: `src/api/app/utils/domain_utils.py`
+- Repository examples: `src/api/app/repository/*.py`
+
+# API Repository Patterns
+
+## Repository Structure
+
+Repositories are the data access layer, abstracting database operations from business logic.
+
+### Base Pattern
+
+```python
+from typing import Dict, Any, Optional, List, Union
+from db import get_db_session
+from utils.query_filters import ProgramAccessMixin
+from models.postgres import Program, Subdomain
+import logging
+
+logger = logging.getLogger(__name__)
+
+class SubdomainAssetsRepository(ProgramAccessMixin):
+    """PostgreSQL repository for subdomain assets"""
+    
+    @staticmethod
+    async def get_subdomain(subdomain_id: str) -> Optional[Dict[str, Any]]:
+        """Get a single subdomain by ID"""
+        async with get_db_session() as db:
+            subdomain = db.query(Subdomain).filter(Subdomain.id == subdomain_id).first()
+            if not subdomain:
+                return None
+            return _subdomain_to_dict(subdomain)
+    
+    @staticmethod
+    async def create_or_update_subdomain(subdomain_data: Dict[str, Any]) -> tuple[str, str, Optional[Dict[str, Any]]]:
+        """Create or update a subdomain.
+        Returns (subdomain_id, action, event_data) where action is 'created', 'updated', 'skipped', or 'out_of_scope'
+        """
+        async with get_db_session() as db:
+            # Implementation...
+            pass
+```
+
+## Key Principles
+
+1. **Static Methods**: Repositories use static methods for stateless operations
+2. **ProgramAccessMixin**: Inherit from `ProgramAccessMixin` for program-scoped data
+3. **Session Management**: Use `get_db_session()` or `get_batch_db_session()` for database access
+4. **Error Handling**: Let exceptions propagate (handled at route level)
+5. **Return Types**: Return dictionaries or Pydantic models, not SQLAlchemy objects
+6. **Create/Update Pattern**: Return `(id, action, event_data)` tuple for unified processing
+
+## Program Access Control
+
+### ProgramAccessMixin
+
+All program-scoped repositories should inherit from `ProgramAccessMixin`:
+
+```python
+from utils.query_filters import ProgramAccessMixin, QueryFilterUtils
+
+class SubdomainAssetsRepository(ProgramAccessMixin):
+    """Repository with program access control"""
+    
+    @staticmethod
+    async def get_subdomains(query_filter: Dict[str, Any]) -> List[Dict[str, Any]]:
+        async with get_db_session() as db:
+            # Start with base query
+            base_query = db.query(Subdomain)
+            
+            # Apply program access filtering
+            filtered_query = SubdomainAssetsRepository.apply_program_access_filter(
+                base_query, query_filter, Program
+            )
+            
+            results = filtered_query.all()
+            return [_subdomain_to_dict(r) for r in results]
+```
+
+**How It Works**:
+- `filter_by_user_programs()` in route adds `program_name: {"$in": [...]}` to filter
+- `apply_program_access_filter()` converts this to SQLAlchemy query
+- Empty `$in` list returns no results (no access)
+
+## Query Filtering
+
+### MongoDB-Style Filters
+
+The API supports MongoDB-style query filters for consistency:
+
+```python
+# Simple equality
+filter = {"program_name": "example"}
+
+# $in operator
+filter = {"program_name": {"$in": ["program1", "program2"]}}
+
+# $regex operator (case-insensitive)
+filter = {"name": {"$regex": "example", "$options": "i"}}
+
+# $and operator
+filter = {
+    "$and": [
+        {"program_name": "example"},
+        {"resolved": True}
+    ]
+}
+
+# $or operator
+filter = {
+    "$or": [
+        {"status": "active"},
+        {"status": "pending"}
+    ]
+}
+```
+
+### Applying Filters
+
+```python
+from utils.query_filters import QueryFilterUtils
+
+@staticmethod
+async def get_subdomains(query_filter: Dict[str, Any]) -> List[Dict[str, Any]]:
+    async with get_db_session() as db:
+        base_query = db.query(Subdomain)
+        conditions = []
+        
+        # Apply program filter
+        base_query, program_conditions = QueryFilterUtils.apply_program_filter(
+            base_query, query_filter, Program
+        )
+        conditions.extend(program_conditions)
+        
+        # Apply regex filters
+        if "name" in query_filter:
+            conditions.append(
+                QueryFilterUtils.apply_regex_filter(Subdomain.name, query_filter["name"])
+            )
+        
+        # Apply boolean filters
+        if "resolved" in query_filter:
+            conditions.append(Subdomain.resolved == query_filter["resolved"])
+        
+        # Apply all conditions
+        if conditions:
+            base_query = base_query.filter(and_(*conditions))
+        
+        results = base_query.all()
+        return [_subdomain_to_dict(r) for r in results]
+```
+
+## Typed Search Pattern
+
+### search_*_typed Methods
+
+For typed search endpoints, use keyword-only arguments:
+
+```python
+@staticmethod
+async def search_subdomains_typed(
+    *,  # Force keyword arguments
+    search: Optional[str] = None,
+    exact_match: Optional[str] = None,
+    apex_domain: Optional[Union[str, List[str]]] = None,
+    wildcard: Optional[bool] = None,
+    has_ips: Optional[bool] = None,
+    ip: Optional[Union[str, List[str]]] = None,
+    has_cname: Optional[bool] = None,
+    cname_contains: Optional[str] = None,
+    programs: Optional[List[str]] = None,
+    sort_by: str = "updated_at",
+    sort_dir: str = "desc",
+    limit: int = 25,
+    skip: int = 0,
+) -> Dict[str, Any]:
+    """
+    Execute a strongly-typed subdomain search optimized for PostgreSQL.
+    
+    Returns a dict with keys: items (list[dict]), total_count (int)
+    """
+    async with get_db_session() as db:
+        # Build aggregation columns for IP data
+        count_ip_col = func.count(func.distinct(IP.id))
+        ip_array_col = func.array_remove(
+            func.array_agg(func.distinct(func.host(IP.ip_address))),
+            None,
+        )
+        
+        # Build base query with joins
+        base_query = (
+            db.query(
+                Subdomain.id.label("id"),
+                Subdomain.name.label("name"),
+                Program.name.label("program_name"),
+                ApexDomain.name.label("apex_domain"),
+                Subdomain.is_wildcard.label("is_wildcard"),
+                Subdomain.cname_record.label("cname_record"),
+                Subdomain.created_at.label("created_at"),
+                Subdomain.updated_at.label("updated_at"),
+                ip_array_col.label("ip"),
+                count_ip_col.label("ip_count"),
+            )
+            .select_from(Subdomain)
+            .join(Program, Program.id == Subdomain.program_id)
+            .join(ApexDomain, ApexDomain.id == Subdomain.apex_domain_id)
+            .outerjoin(SubdomainIP, Subdomain.id == SubdomainIP.subdomain_id)
+            .outerjoin(IP, IP.id == SubdomainIP.ip_id)
+        )
+        
+        # Apply filters
+        if programs is not None and len(programs) > 0:
+            base_query = base_query.filter(Program.name.in_(programs))
+        
+        if search:
+            base_query = base_query.filter(Subdomain.name.ilike(f"%{search}%"))
+        
+        if exact_match:
+            base_query = base_query.filter(Subdomain.name == exact_match)
+        
+        if apex_domain:
+            if isinstance(apex_domain, list):
+                base_query = base_query.filter(ApexDomain.name.in_(apex_domain))
+            else:
+                base_query = base_query.filter(ApexDomain.name == apex_domain)
+        
+        if wildcard is not None:
+            base_query = base_query.filter(Subdomain.is_wildcard == bool(wildcard))
+        
+        if has_cname is not None:
+            if has_cname:
+                base_query = base_query.filter(Subdomain.cname_record.isnot(None))
+            else:
+                base_query = base_query.filter(Subdomain.cname_record.is_(None))
+        
+        if cname_contains:
+            base_query = base_query.filter(Subdomain.cname_record.ilike(f"%{cname_contains}%"))
+        
+        if ip is not None:
+            if isinstance(ip, list):
+                if len(ip) > 0:
+                    base_query = base_query.filter(func.host(IP.ip_address).in_(ip))
+            elif isinstance(ip, str) and ip.strip():
+                base_query = base_query.filter(func.host(IP.ip_address) == ip.strip())
+        
+        # HAVING clause for has_ips filter
+        _apply_has_ips_having = None
+        if has_ips is not None:
+            if has_ips:
+                _apply_has_ips_having = func.count(func.distinct(IP.id)) > 0
+            else:
+                _apply_has_ips_having = func.count(func.distinct(IP.id)) == 0
+        
+        # Grouping for aggregation
+        base_query = base_query.group_by(
+            Subdomain.id, Subdomain.name, Program.name, ApexDomain.name,
+            Subdomain.is_wildcard, Subdomain.cname_record,
+            Subdomain.created_at, Subdomain.updated_at,
+        )
+        
+        if _apply_has_ips_having is not None:
+            base_query = base_query.having(_apply_has_ips_having)
+        
+        # Sorting
+        direction_func = asc if sort_dir == "asc" else desc
+        sort_column = getattr(Subdomain, sort_by, Subdomain.updated_at)
+        base_query = base_query.order_by(direction_func(sort_column))
+        
+        # Pagination
+        base_query = base_query.offset(skip).limit(limit)
+        
+        # Execute
+        rows = base_query.all()
+        
+        items = []
+        for r in rows:
+            items.append({
+                "id": str(r.id),
+                "name": r.name,
+                "program_name": r.program_name,
+                "apex_domain": r.apex_domain,
+                "is_wildcard": r.is_wildcard,
+                "cname_record": r.cname_record,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+                "updated_at": r.updated_at.isoformat() if r.updated_at else None,
+                "ip": list(r.ip) if r.ip else [],
+                "ip_count": int(r.ip_count or 0),
+            })
+        
+        # Count query (separate for performance)
+        # ... similar filter logic for count query
+        total_count = db.query(func.count()).select_from(count_subquery).scalar() or 0
+        
+        return {"items": items, "total_count": int(total_count)}
+```
+
+## Database Session Management
+
+### Standard Session
+
+For normal operations:
+```python
+from db import get_db_session
+
+async with get_db_session() as db:
+    result = db.query(Model).filter(...).first()
+    db.add(new_record)
+    db.commit()
+```
+
+### Batch Session
+
+For bulk operations:
+```python
+from db import get_batch_db_session
+
+async with get_batch_db_session() as db:
+    # Optimized for batch operations (expire_on_commit=False)
+    db.bulk_insert_mappings(Model, records)
+    db.commit()
+```
+
+## Create or Update Pattern
+
+### Standard Implementation
+
+```python
+@staticmethod
+async def create_or_update_subdomain(subdomain_data: Dict[str, Any]) -> tuple[str, str, Optional[Dict[str, Any]]]:
+    """Create or update subdomain.
+    Returns (subdomain_id, action, event_data) where:
+    - action is 'created', 'updated', 'skipped', or 'out_of_scope'
+    - event_data contains rich payload for unified processor
+    """
+    async with get_db_session() as db:
+        try:
+            # Find program
+            program = db.query(Program).filter(
+                Program.name == subdomain_data.get('program_name')
+            ).first()
+            if not program:
+                raise ValueError(f"Program '{subdomain_data.get('program_name')}' not found")
+            
+            # Scope check
+            hostname = subdomain_data.get('name')
+            if not await ProgramRepository.is_domain_in_scope(hostname, program.name):
+                return "", "out_of_scope", None
+            
+            # Check if exists
+            existing = db.query(Subdomain).filter(
+                and_(
+                    Subdomain.name == subdomain_data.get('name'),
+                    Subdomain.program_id == program.id
+                )
+            ).first()
+            
+            if existing:
+                # Track meaningful changes
+                meaningful_changes = []
+                
+                if 'is_wildcard' in subdomain_data and subdomain_data.get('is_wildcard') != existing.is_wildcard:
+                    existing.is_wildcard = subdomain_data.get('is_wildcard')
+                    meaningful_changes.append('is_wildcard')
+                
+                if 'cname_record' in subdomain_data and subdomain_data.get('cname_record') != existing.cname_record:
+                    existing.cname_record = subdomain_data.get('cname_record')
+                    meaningful_changes.append('cname_record')
+                
+                # Handle IP relationships
+                if 'ip' in subdomain_data and isinstance(subdomain_data['ip'], list):
+                    for ip_address in subdomain_data['ip']:
+                        # Find or create IP, create relationship
+                        # ...
+                        meaningful_changes.append('ip_relationship')
+                
+                if meaningful_changes:
+                    existing.updated_at = datetime.now(timezone.utc)
+                    db.commit()
+                    
+                    event_data = {
+                        "event": "asset.updated",
+                        "asset_type": "subdomain",
+                        "record_id": str(existing.id),
+                        "name": subdomain_data.get('name'),
+                        "program_name": subdomain_data.get('program_name'),
+                        # ... additional event data
+                    }
+                    return str(existing.id), "updated", event_data
+                else:
+                    return str(existing.id), "skipped", None
+            
+            else:
+                # Create new
+                subdomain = Subdomain(
+                    name=subdomain_data.get('name'),
+                    apex_domain_id=apex_domain.id,
+                    is_wildcard=subdomain_data.get('is_wildcard', False),
+                    program_id=program.id,
+                    cname_record=subdomain_data.get('cname_record'),
+                )
+                db.add(subdomain)
+                db.commit()
+                db.refresh(subdomain)
+                
+                # Handle IP relationships
+                # ...
+                
+                event_data = {
+                    "event": "asset.created",
+                    "asset_type": "subdomain",
+                    "record_id": str(subdomain.id),
+                    "name": subdomain_data.get('name'),
+                    "program_name": subdomain_data.get('program_name'),
+                    # ... additional event data
+                }
+                return str(subdomain.id), "created", event_data
+            
+        except Exception as e:
+            db.rollback()
+            logger.error(f"Error creating/updating subdomain: {str(e)}")
+            raise
+```
+
+## Batch Operations
+
+### Batch Delete
+
+```python
+@staticmethod
+async def delete_subdomains_batch(subdomain_ids: List[str]) -> Dict[str, Any]:
+    """Delete multiple subdomains by their IDs"""
+    async with get_db_session() as db:
+        try:
+            deleted_count = 0
+            not_found_count = 0
+            error_count = 0
+            errors = []
+            
+            for subdomain_id in subdomain_ids:
+                try:
+                    # Validate ID
+                    if subdomain_id is None or subdomain_id == "":
+                        error_count += 1
+                        errors.append(f"Invalid subdomain ID: {subdomain_id}")
+                        continue
+                    
+                    # Convert to UUID
+                    try:
+                        subdomain_uuid = UUID(subdomain_id)
+                    except ValueError as e:
+                        error_count += 1
+                        errors.append(f"Invalid UUID format: {subdomain_id}")
+                        continue
+                    
+                    # Find and delete
+                    subdomain = db.query(Subdomain).filter(
+                        Subdomain.id == subdomain_uuid
+                    ).first()
+                    
+                    if not subdomain:
+                        not_found_count += 1
+                        continue
+                    
+                    db.delete(subdomain)
+                    deleted_count += 1
+                    
+                except Exception as e:
+                    error_count += 1
+                    errors.append(f"Error deleting {subdomain_id}: {str(e)}")
+            
+            db.commit()
+            
+            return {
+                "deleted_count": deleted_count,
+                "not_found_count": not_found_count,
+                "error_count": error_count,
+                "errors": errors
+            }
+            
+        except Exception as e:
+            db.rollback()
+            logger.error(f"Error in batch delete: {str(e)}")
+            raise
+```
+
+### Chunked Bulk Insert
+
+```python
+@staticmethod
+async def bulk_create_subdomains(subdomains: List[Dict[str, Any]], chunk_size: int = 1000) -> int:
+    """Bulk create subdomains in chunks"""
+    total_created = 0
+    
+    for i in range(0, len(subdomains), chunk_size):
+        chunk = subdomains[i:i + chunk_size]
+        async with get_batch_db_session() as db:
+            db.bulk_insert_mappings(Subdomain, chunk)
+            db.commit()
+            total_created += len(chunk)
+    
+    return total_created
+```
+
+## Distinct Values for Faceted Filtering
+
+```python
+@staticmethod
+async def get_distinct_values(field_name: str, filter_data: Optional[Dict[str, Any]] = None) -> List[str]:
+    """Get distinct values for a specified field"""
+    from sqlalchemy import func
+    
+    async with get_db_session() as db:
+        query = db.query(Subdomain).join(Program, Program.id == Subdomain.program_id)
+        
+        # Apply program filter if provided
+        if filter_data and filter_data.get('program_name'):
+            program_value = filter_data['program_name']
+            if isinstance(program_value, list):
+                if len(program_value) == 0:
+                    return []
+                query = query.filter(Program.name.in_(program_value))
+            else:
+                query = query.filter(Program.name == program_value)
+        
+        # Get distinct values based on field name
+        if field_name == 'name':
+            values = query.with_entities(Subdomain.name).distinct().all()
+        elif field_name == 'apex_domain':
+            values = query.join(ApexDomain).with_entities(ApexDomain.name).distinct().all()
+        elif field_name == 'wildcard_types':
+            # For array fields, unnest the arrays
+            values = query.with_entities(func.unnest(Subdomain.wildcard_types)).distinct().all()
+        else:
+            raise ValueError(f"Unsupported field '{field_name}'")
+        
+        return [str(v[0]) for v in values if v[0] is not None]
+```
+
+## Data Conversion
+
+### SQLAlchemy to Dict
+
+```python
+def _subdomain_to_dict(subdomain: Subdomain, db=None) -> Dict[str, Any]:
+    """Convert SQLAlchemy model to dictionary"""
+    # Get associated IPs if db session provided
+    ip_addresses = []
+    if db:
+        ip_query = db.query(IP.ip_address).join(
+            SubdomainIP, IP.id == SubdomainIP.ip_id
+        ).filter(SubdomainIP.subdomain_id == subdomain.id).all()
+        ip_addresses = [ip[0] for ip in ip_query]
+    
+    return {
+        "id": str(subdomain.id),
+        "name": subdomain.name,
+        "program_name": subdomain.program.name if subdomain.program else None,
+        "apex_domain": subdomain.apex_domain.name if subdomain.apex_domain else None,
+        "is_wildcard": subdomain.is_wildcard,
+        "cname_record": subdomain.cname_record,
+        "ip": ip_addresses,
+        "notes": subdomain.notes,
+        "created_at": subdomain.created_at.isoformat() if subdomain.created_at else None,
+        "updated_at": subdomain.updated_at.isoformat() if subdomain.updated_at else None,
+    }
+```
+
+## Error Handling
+
+### Let Exceptions Propagate
+
+Repositories should let exceptions propagate to route handlers:
+
+```python
+@staticmethod
+async def create_subdomain(subdomain_data: Dict[str, Any]) -> str:
+    """Create subdomain - let exceptions propagate"""
+    async with get_db_session() as db:
+        try:
+            subdomain = Subdomain(**subdomain_data)
+            db.add(subdomain)
+            db.commit()
+            db.refresh(subdomain)
+            return str(subdomain.id)
+        except IntegrityError as e:
+            # Convert to ValueError for route handler
+            raise ValueError(f"Subdomain already exists: {e}")
+```
+
+### Handling Not Found
+
+```python
+@staticmethod
+async def get_subdomain(subdomain_id: str) -> Optional[Dict[str, Any]]:
+    """Return None if not found, let route handle 404"""
+    async with get_db_session() as db:
+        subdomain = db.query(Subdomain).filter(Subdomain.id == subdomain_id).first()
+        if not subdomain:
+            return None  # Route will handle 404
+        return _subdomain_to_dict(subdomain)
+```
+
+## Best Practices
+
+### DO:
+- ✅ Use static methods for stateless operations
+- ✅ Inherit from `ProgramAccessMixin` for program-scoped data
+- ✅ Use `apply_program_access_filter()` for queries
+- ✅ Return dictionaries or Pydantic models, not SQLAlchemy objects
+- ✅ Use `get_batch_db_session()` for bulk operations
+- ✅ Return `(id, action, event_data)` tuple from create_or_update methods
+- ✅ Use keyword-only arguments (`*,`) for typed search methods
+- ✅ Handle relationships with eager loading where appropriate
+- ✅ Let exceptions propagate to route handlers
+
+### DON'T:
+- ❌ Store state in repository classes
+- ❌ Return SQLAlchemy objects directly
+- ❌ Skip program access filtering
+- ❌ Use instance methods unless necessary
+- ❌ Handle HTTP exceptions in repositories
+- ❌ Create multiple database sessions unnecessarily
+- ❌ Use positional arguments for complex search methods
+
+## References
+
+- Query filters: `src/api/app/utils/query_filters.py`
+- Database session: `src/api/app/db.py`
+- Domain utilities: `src/api/app/utils/domain_utils.py`
+- Example repository: `src/api/app/repository/subdomain_assets_repo.py`
+- Program repository: `src/api/app/repository/program_repo.py`
+- Batch repository: `src/api/app/repository/batch_repository.py`

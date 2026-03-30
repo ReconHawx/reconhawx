@@ -1,0 +1,329 @@
+---
+globs: ["src/frontend/src/contexts/**", "src/frontend/src/stores/**"]
+---
+
+# Frontend State Management
+
+## Overview
+
+The application uses two patterns for state management:
+- **React Context** - For global state (auth, theme, program filter)
+- **Zustand** - For complex local state (workflow builder)
+
+## React Contexts
+
+### AuthContext
+
+Manages authentication state, JWT tokens, and user permissions.
+
+#### State Structure
+
+```javascript
+const initialState = {
+  isAuthenticated: false,
+  user: null,           // { username, is_superuser, roles, program_permissions }
+  accessToken: null,
+  refreshToken: null,
+  expiresIn: null,
+  isLoading: true,
+  error: null
+};
+```
+
+#### Using AuthContext
+
+```javascript
+import { useAuth } from '../contexts/AuthContext';
+
+function MyComponent() {
+  const {
+    // State
+    isAuthenticated,
+    user,
+    isLoading,
+    error,
+    
+    // Actions
+    login,               // (username, password) => Promise<{success, error?}>
+    logout,              // () => Promise<void>
+    refreshAccessToken,  // () => Promise<boolean>
+    
+    // Permission helpers
+    isAdmin,             // () => boolean
+    isSuperuser,         // () => boolean
+    hasRole,             // (role) => boolean
+    hasPermission,       // (permission) => boolean
+    hasProgramAccess,    // (programName) => boolean
+    hasProgramPermission,// (programName, requiredLevel) => boolean
+    getProgramPermissionLevel // (programName) => 'analyst' | 'manager' | null
+  } = useAuth();
+  
+  // Check if user is authenticated
+  if (!isAuthenticated) {
+    return <Navigate to="/login" />;
+  }
+  
+  // Check program access
+  if (!hasProgramAccess('my-program')) {
+    return <Alert>Access denied</Alert>;
+  }
+}
+```
+
+#### Token Refresh Logic
+
+The AuthContext automatically handles token refresh:
+- Tokens are stored in `localStorage` (`access_token`, `refresh_token`, `user_data`, `token_expires_at`)
+- Auto-refresh scheduled based on token expiry (1/3 remaining time for short tokens, 5 min before expiry for long tokens)
+- On 401 response, the API interceptor attempts refresh before failing
+
+### ThemeContext
+
+Manages light/dark theme toggle.
+
+#### Using ThemeContext
+
+```javascript
+import { useTheme } from '../contexts/ThemeContext';
+
+function MyComponent() {
+  const {
+    theme,         // 'light' | 'dark'
+    isLight,       // boolean
+    isDark,        // boolean
+    toggleTheme,   // () => void
+    setLightTheme, // () => void
+    setDarkTheme,  // () => void
+    isLoading      // boolean (during initial load)
+  } = useTheme();
+  
+  return (
+    <Button onClick={toggleTheme}>
+      {isDark ? '☀️ Light' : '🌙 Dark'}
+    </Button>
+  );
+}
+```
+
+#### Theme Implementation
+
+Theme is applied via `data-theme` attribute on `<body>`:
+- `localStorage.getItem('recon-theme')` persists selection
+- CSS variables change based on `body[data-theme="dark"]`
+
+### ProgramFilterContext
+
+Manages global program filter across the application.
+
+#### Using ProgramFilterContext
+
+```javascript
+import { useProgramFilter } from '../contexts/ProgramFilterContext';
+
+function MyComponent() {
+  const {
+    selectedProgram,    // string - current filter
+    setSelectedProgram, // (programName) => void
+    programs,           // array - available programs
+    loading,            // boolean
+    clearFilter,        // () => void
+    refreshPrograms     // () => Promise<void>
+  } = useProgramFilter();
+  
+  // Load data filtered by program
+  useEffect(() => {
+    loadData();
+  }, [selectedProgram]);
+  
+  const loadData = async () => {
+    const response = await api.search({ 
+      program: selectedProgram  // Pass filter to API
+    });
+    setData(response.items);
+  };
+}
+```
+
+#### Program Filter Behavior
+
+- Persisted in `localStorage` as `global_program_filter`
+- Programs loaded from API on user authentication
+- Empty string means "all programs" (no filter)
+- Navigation bar shows program dropdown
+
+## Zustand Store
+
+### workflowStore
+
+Complex state management for the visual workflow builder using React Flow.
+
+#### Store Structure
+
+```javascript
+const useWorkflowStore = create((set, get) => ({
+  // React Flow state
+  nodes: [],              // Workflow nodes (tasks, inputs)
+  edges: [],              // Connections between nodes
+  
+  // Workflow metadata
+  workflowName: '',
+  programName: '',
+  workflowDescription: '',
+  
+  // Workflow data
+  variables: {},          // User-defined variables
+  inputs: {},             // Workflow inputs configuration
+  steps: [],              // Visual step definitions
+  
+  // Modal state
+  isTaskModalOpen: false,
+  isInputConfigModalOpen: false,
+  selectedNodeId: null,
+  
+  // Actions...
+}));
+```
+
+#### Using workflowStore
+
+```javascript
+import { useWorkflowStore } from '../stores/workflowStore';
+
+function WorkflowBuilder() {
+  // Subscribe to specific state
+  const nodes = useWorkflowStore(state => state.nodes);
+  const edges = useWorkflowStore(state => state.edges);
+  
+  // Get actions
+  const {
+    onNodesChange,
+    onEdgesChange,
+    onConnect,
+    addNode,
+    deleteNode,
+    updateNodeData,
+    addStep,
+    removeStep,
+    clearWorkflow,
+    convertWorkflowToNodes,
+    getWorkflowPayload
+  } = useWorkflowStore();
+  
+  // Load saved workflow
+  useEffect(() => {
+    if (workflowData) {
+      convertWorkflowToNodes(workflowData);
+    }
+  }, [workflowData]);
+  
+  // Get payload for saving/running
+  const handleSave = async () => {
+    const payload = getWorkflowPayload();
+    await workflowAPI.saveWorkflow(payload);
+  };
+}
+```
+
+#### Key Actions
+
+```javascript
+// Node management
+addNode(newNode)                    // Add task node
+deleteNode(nodeId)                  // Remove node (except source)
+updateNodeData(nodeId, data)        // Update task configuration
+
+// Step management (visual workflow rows)
+addStep()                           // Add new step row
+updateStepName(stepId, newName)     // Rename step
+removeStep(stepId)                  // Remove step and its nodes
+getStepForPosition(y)               // Find step at Y coordinate
+
+// React Flow handlers
+onNodesChange(changes)              // Handle node position changes
+onEdgesChange(changes)              // Handle edge changes
+onConnect(connection)               // Handle new connection
+
+// Modal controls
+openTaskConfigModal(nodeId)         // Open task configuration
+closeTaskConfigModal()
+openInputConfigModal()
+closeInputConfigModal()
+
+// Workflow operations
+clearWorkflow()                     // Reset to initial state
+convertWorkflowToNodes(workflowDef) // Load workflow into visual editor
+getWorkflowPayload()                // Export workflow for API
+setInputs(inputs)                   // Set workflow inputs
+setVariables(variables)             // Set workflow variables
+```
+
+## State Patterns
+
+### Context Provider Pattern
+
+```javascript
+// Creating a context
+const MyContext = createContext();
+
+export function MyProvider({ children }) {
+  const [state, setState] = useState(initialState);
+  
+  const value = useMemo(() => ({
+    ...state,
+    someAction: () => setState(prev => ({ ...prev, ... }))
+  }), [state]);
+  
+  return (
+    <MyContext.Provider value={value}>
+      {children}
+    </MyContext.Provider>
+  );
+}
+
+// Custom hook for consuming
+export function useMyContext() {
+  const context = useContext(MyContext);
+  if (!context) {
+    throw new Error('useMyContext must be used within MyProvider');
+  }
+  return context;
+}
+```
+
+### Zustand Selector Pattern
+
+```javascript
+// Bad: Subscribes to entire store (re-renders on any change)
+const store = useWorkflowStore();
+
+// Good: Subscribe to specific values (re-renders only when these change)
+const nodes = useWorkflowStore(state => state.nodes);
+const workflowName = useWorkflowStore(state => state.workflowName);
+
+// Good: Multiple values with shallow equality
+const { nodes, edges } = useWorkflowStore(
+  state => ({ nodes: state.nodes, edges: state.edges }),
+  shallow
+);
+```
+
+## LocalStorage Keys
+
+| Key | Context | Purpose |
+|-----|---------|---------|
+| `access_token` | AuthContext | JWT access token |
+| `refresh_token` | AuthContext | JWT refresh token |
+| `user_data` | AuthContext | User info (JSON) |
+| `token_expires_at` | AuthContext | Token expiry timestamp |
+| `recon-theme` | ThemeContext | Theme preference (`light`/`dark`) |
+| `global_program_filter` | ProgramFilterContext | Selected program name |
+
+## Best Practices
+
+1. **Use contexts for global state** - Auth, theme, program filter
+2. **Use Zustand for complex local state** - Workflow builder
+3. **Use selectors with Zustand** - Avoid full store subscriptions
+4. **Memoize context values** - Prevent unnecessary re-renders
+5. **Always check context availability** - Throw error if used outside provider
+6. **Persist user preferences** - Use localStorage for theme, program filter
+7. **Handle loading states** - Context loading during auth check

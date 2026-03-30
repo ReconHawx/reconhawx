@@ -1,0 +1,47 @@
+---
+description: AI analysis runner job flow and dedicated Kueue configuration
+globs: ["**/*ai*analysis*", "**/job_submission.py", "**/ollama_client.py"]
+alwaysApply: false
+---
+
+# AI Analysis Runner Job
+
+AI analysis runs in **runner pods** (not the API) for load isolation. Uses a dedicated Kueue queue to limit concurrency and avoid overwhelming Ollama.
+
+## Flow
+
+1. **Trigger**: Manual (`POST /typosquat/ai-analysis/batch`), scheduled job, or event `findings.typosquat_domain.created` → `ai_analysis_batch_trigger`
+2. **API**: Creates job record, calls `JobSubmissionService.create_ai_analysis_batch_job()`
+3. **K8s Job**: Submitted with `kueue.x-k8s.io/queue-name: recon-ai-analysis-queue` (label)
+4. **Kueue**: Jobs are queued in `ai-analysis-cluster-queue`; quota limits concurrency
+5. **Runner**: `AIAnalysisBatchTask` fetches findings via API, calls Ollama, updates via `PATCH /findings/typosquat/{id}/ai-analysis`
+
+## Dedicated Kueue
+
+| Resource | Name | Purpose |
+|----------|------|---------|
+| ClusterQueue | `ai-analysis-cluster-queue` | Quota: 500m CPU, 512Mi → 1 concurrent job |
+| LocalQueue | `recon-ai-analysis-queue` | Namespace-scoped queue |
+
+- **Base**: `kubernetes/base/kueue/ai-analysis-queue.yaml`, `ai-analysis-cluster-queue.yaml`
+- **Overlays**: Patch quota per env in `kubernetes/overlays/{dev,vrev,production}/kueue/patches/ai-analysis-cluster-queue-patch.yaml`
+
+## Job Naming
+
+- **Job name**: `ai-analysis-job-{job_id}` (not `job-{job_id}`)
+- **ConfigMap**: `ai-analysis-job-data-{job_id}`
+- **Job status**: `get_job_status(job_id, job_type="ai_analysis_batch")` uses the correct K8s name
+
+## Quota Sizing
+
+Each job requests 500m CPU, 512Mi. To limit concurrency:
+
+- **1 job**: `nominalQuota: 500m` CPU, `512Mi` memory
+- **2 jobs**: `500m` → `1`, `512Mi` → `1Gi`
+
+## Related Files
+
+- `src/api/app/services/job_submission.py` — `create_ai_analysis_batch_job`, `get_job_status(job_type=)`
+- `src/runner/app/tasks/ai_analysis_batch.py` — AIAnalysisBatchTask
+- `src/api/app/services/ai_analysis_service.py` — prompt/context logic (API-side reference)
+- `src/event-handler/app/event_handlers.py` — `_execute_ai_analysis_batch_action`

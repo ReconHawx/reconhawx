@@ -1,0 +1,484 @@
+---
+globs: ["src/runner/app/tasks/*.py", "src/runner/app/task_executor.py"]
+---
+
+# Runner Task Implementation Patterns
+
+## Task Architecture
+
+Tasks are the core execution units in the workflow runner. Each task:
+1. Generates commands via `generate_commands` (or `get_command` for simple cases)
+2. Parses the command output into structured assets/findings
+3. Optionally returns synthetic assets via `get_synthetic_assets`
+
+All tasks run through the unified executor (`_execute_task_unified`), which handles spawn, wait, parse, and merge. Orchestrators no longer use `execute_task`; they override `generate_commands` instead.
+
+## CommandSpec and generate_commands
+
+### CommandSpec
+
+```python
+@dataclass
+class CommandSpec:
+    task_name: str      # Which worker task runs this (e.g., "resolve_domain", "port_scan")
+    command: str        # Shell command for worker
+    params: Optional[Dict] = None
+    batch_group: Optional[int] = None  # For interleaved spawning (e.g., resolve_ip_cidr)
+```
+
+### generate_commands
+
+Tasks produce a list of `CommandSpec` via `generate_commands`. The executor groups by `task_name`, spawns batches, parses with the corresponding task's `parse_output`, and merges results.
+
+```python
+async def generate_commands(
+    self,
+    input_data: Any,
+    params: Optional[Dict],
+    context: Dict[str, Any],
+) -> List[CommandSpec]:
+    """Produce commands for unified executor. Override for orchestrators."""
+    # Default: chunk input and call get_command per chunk
+    chunk_size = self.get_chunk_size(input_data, params)
+    chunks = self._chunk_input(input_data, chunk_size)
+    return [
+        CommandSpec(
+            task_name=self.name,
+            command=self.get_command(chunk, params),
+            params=params,
+        )
+        for chunk in chunks
+    ]
+```
+
+### get_synthetic_assets
+
+Optional async method for tasks that need to inject assets without running a command (e.g., wildcard parent domains in dns_bruteforce):
+
+```python
+async def get_synthetic_assets(self, context: Dict[str, Any]) -> Optional[Dict[AssetType, List]]:
+    """Return assets to merge without running a command. Default: None."""
+    return None
+```
+
+### Context Passed to generate_commands
+
+```python
+context = {
+    "step_name": str,
+    "program_name": str,
+    "task_def": TaskDef,           # Workflow step definition
+    "job_manager": WorkerJobManager,  # For inline spawns (e.g., subdomain_permutations)
+    "task_queue_client": TaskQueueClient,
+}
+```
+
+## Task Base Class
+
+All tasks inherit from the abstract `Task` class in `tasks/base.py`:
+
+```python
+class Task(ABC):
+    name: str                    # Unique task identifier (e.g., "resolve_domain")
+    description: str             # Human-readable description
+    input_type: Union[AssetType, List[AssetType]]  # Expected input types
+    output_types: List[AssetType]  # Produced output types
+    
+    @abstractmethod
+    def get_command(self, input_data: Any, params: Optional[Dict] = None) -> str:
+        """Generate shell command for worker execution"""
+        pass
+    
+    @abstractmethod
+    def parse_output(self, output, params: Optional[Dict] = None) -> Dict[AssetType, List[Any]]:
+        """Parse command output into typed assets"""
+        pass
+    
+    @abstractmethod
+    def get_timestamp_hash(self, target: Any, params: Optional[Dict] = None) -> str:
+        """Generate unique hash for deduplication tracking"""
+        pass
+```
+
+## Asset and Finding Types
+
+### AssetType Enum
+```python
+class AssetType(Enum):
+    SUBDOMAIN = "subdomain"      # Domain/subdomain names
+    IP = "ip"                    # IP addresses
+    STRING = "string"            # Generic string inputs
+    SERVICE = "service"          # IP:port services
+    URL = "url"                  # Full URLs
+    CERTIFICATE = "certificate"  # TLS certificates
+    SCREENSHOT = "screenshot"    # Website screenshots
+    APEX_DOMAIN = "apex_domain"  # Program apex assets (unified /assets → API)
+```
+
+### Storing new asset types in the workflow asset store
+
+`AssetProcessor.store_assets` in `task_components.py` only persists keys that are **`AssetType` enum instances**. String keys (e.g. `"apex_domain"`) are **skipped**, so step outputs will not appear for downstream `input_mapping` unless you add a matching **`AssetType`** member whose **`.value`** matches the unified API asset key (e.g. `apex_domain`).
+
+### Workflow output handles vs. asset store keys
+
+The builder uses output handle ids such as `domains` or `apex_domains`. `TaskExecutor._resolve_step_output` maps those ids to the string stored in `AssetStore` via **`asset_type_mapping`** (e.g. `apex_domains` → `apex_domain`). When you add a new handle id, extend that mapping and ensure **`_get_unique_key_function`** / merge logic can dedupe your asset shape (dict vs. model).
+
+### New worker Python wrappers
+
+Scripts invoked as `python3 something.py` from the runner command must live under **`src/worker/app/`** and be **`COPY`**’d in **`src/worker/Dockerfile`** (the image build flattens `app/` per `src/worker/build.sh`). Rebuild the worker image after adding a wrapper.
+
+### FindingType Enum
+```python
+class FindingType(Enum):
+    NUCLEI = "nuclei"                      # Nuclei scan findings
+    TYPOSQUAT_DOMAIN = "typosquat_domain"  # Typosquat domain findings
+    TYPOSQUAT_URL = "typosquat_url"        # Typosquat URL findings
+    TYPOSQUAT_SCREENSHOT = "typosquat_screenshot"  # Typosquat screenshots
+    BROKEN_LINK = "broken_link"            # Broken link findings
+    WPSCAN = "wpscan"                      # WordPress scan findings
+```
+
+## Task Registry
+
+Tasks are automatically discovered and registered via `tasks/__init__.py`:
+
+```python
+class TaskRegistry:
+    _tasks: Dict[str, Type[Task]] = {}
+    
+    @classmethod
+    def register(cls, task_class: Type[Task]):
+        """Register a task class by its name"""
+        cls._tasks[task_class.name] = task_class
+    
+    @classmethod
+    def get_task(cls, name: str) -> Optional[Type[Task]]:
+        """Retrieve a task class by name"""
+        return cls._tasks.get(name)
+
+# Tasks are auto-loaded when package is imported
+def load_tasks():
+    for module_name in pkgutil.iter_modules(tasks.__path__):
+        module = importlib.import_module(f"tasks.{module_name}")
+        # Register all Task subclasses found
+```
+
+## Creating a New Task
+
+### Step 1: Create Task File
+Create `tasks/my_new_task.py`:
+
+```python
+from typing import Dict, List, Any, Optional
+from .base import Task, AssetType
+from models.assets import Domain, Ip
+import json
+import logging
+
+logger = logging.getLogger(__name__)
+
+class MyNewTask(Task):
+    name = "my_new_task"
+    description = "Description of what this task does"
+    input_type = AssetType.SUBDOMAIN  # Or List for multiple types
+    output_types = [AssetType.IP, AssetType.SUBDOMAIN]
+```
+
+### Step 2: Implement get_command()
+
+```python
+def get_command(self, input_data: Any, params: Optional[Dict] = None) -> str:
+    """Generate command for worker execution"""
+    # Handle list or single input
+    items = input_data if isinstance(input_data, list) else [input_data]
+    
+    # Filter/validate inputs
+    valid_items = [item for item in items if self._is_valid(item)]
+    
+    if not valid_items:
+        return "echo ''"  # Empty command if no valid inputs
+    
+    # Use heredoc for multiline input (PREFERRED PATTERN)
+    items_text = '\n'.join(valid_items)
+    return f"cat << 'EOF' | python3 my_wrapper.py\n{items_text}\nEOF"
+```
+
+### Step 3: Implement parse_output()
+
+```python
+def parse_output(self, output, params: Optional[Dict] = None) -> Dict[AssetType, List[Any]]:
+    """Parse worker output into assets"""
+    domains = []
+    ips = set()  # Use set for deduplication
+    
+    # Normalize output format (handles string or dict from WorkerJobManager)
+    normalized = self.normalize_output_for_parsing(output)
+    
+    if not normalized:
+        return {AssetType.SUBDOMAIN: [], AssetType.IP: []}
+    
+    # Parse JSON output (common pattern)
+    try:
+        data = json.loads(normalized)
+        for item in data:
+            domain = Domain(name=item['domain'].lower())
+            domains.append(domain)
+            
+            for ip_addr in item.get('ips', []):
+                ips.add(Ip(ip=ip_addr))
+    except json.JSONDecodeError:
+        # Handle line-based output
+        for line in normalized.splitlines():
+            if line.strip():
+                domains.append(Domain(name=line.strip().lower()))
+    
+    return {
+        AssetType.SUBDOMAIN: domains,
+        AssetType.IP: list(ips)
+    }
+```
+
+### Step 4: Implement get_timestamp_hash()
+
+```python
+def get_timestamp_hash(self, target: Any, params: Optional[Dict] = None) -> str:
+    """Generate unique hash for execution tracking"""
+    import base64
+    hash_dict = {
+        "task": self.name,
+        "target": target,
+        # Include params that affect output (e.g., templates, options)
+        "params": params.get("template") if params else None
+    }
+    hash_str = str(hash_dict)
+    return base64.b64encode(hash_str.encode()).decode()
+```
+
+## Command Generation Patterns
+
+### Heredoc Pattern (Preferred)
+Use heredoc for multiline input to avoid shell escaping issues:
+
+```python
+def get_command(self, input_data, params=None):
+    targets = '\n'.join(input_data) if isinstance(input_data, list) else input_data
+    return f"cat << 'EOF' | nuclei -silent -j\n{targets}\nEOF"
+```
+
+### Piped Commands
+For simple single-line processing:
+
+```python
+def get_command(self, input_data, params=None):
+    return f"echo '{input_data}' | subfinder -silent"
+```
+
+### With Parameters
+Pass configuration via command arguments:
+
+```python
+def get_command(self, input_data, params=None):
+    cmd = "nuclei -silent -j"
+    if params and params.get("template"):
+        for t in params["template"].get("official", []):
+            cmd += f" -t {t}"
+    targets = '\n'.join(input_data)
+    return f"cat << 'EOF' | {cmd}\n{targets}\nEOF"
+```
+
+## Output Parsing Patterns
+
+### JSON Lines Output
+Many tools output one JSON object per line:
+
+```python
+def parse_output(self, output, params=None):
+    findings = []
+    normalized = self.normalize_output_for_parsing(output)
+    
+    for line in normalized.splitlines():
+        if not line.strip() or line.startswith('stderr:'):
+            continue
+        try:
+            data = json.loads(line)
+            finding = NucleiFinding(
+                url=data.get('url'),
+                template_id=data.get('template-id'),
+                severity=data.get('info', {}).get('severity', 'info')
+            )
+            findings.append(finding)
+        except json.JSONDecodeError:
+            continue
+    
+    return {FindingType.NUCLEI: findings}
+```
+
+### Plain Text Output
+Line-by-line parsing:
+
+```python
+def parse_output(self, output, params=None):
+    subdomains = []
+    normalized = self.normalize_output_for_parsing(output)
+    
+    for line in normalized.splitlines():
+        domain = line.strip().lower()
+        if domain and is_valid_domain(domain):
+            subdomains.append(Domain(name=domain))
+    
+    return {AssetType.SUBDOMAIN: subdomains}
+```
+
+## Task Parameter Management
+
+### TaskParameterManager
+Parameters are fetched from the API and cached:
+
+```python
+# Global instance in base.py
+parameter_manager = TaskParameterManager()
+
+# In Task class
+def get_timeout(self, input_data, params=None):
+    # Check workflow params first
+    if params and params.get('timeout'):
+        return int(params['timeout'])
+    # Fall back to API/default
+    return parameter_manager.get_timeout(self.name)
+
+def get_chunk_size(self, input_data, params=None):
+    return parameter_manager.get_chunk_size(self.name)
+
+def get_last_execution_threshold(self):
+    return parameter_manager.get_last_execution_threshold(self.name)
+```
+
+### Default Parameters
+Defined in `_get_default_parameters()`:
+
+```python
+defaults = {
+    "resolve_domain": {
+        "last_execution_threshold": 24,  # hours
+        "timeout": 120,                   # seconds
+        "max_retries": 3,
+        "chunk_size": 10
+    },
+    "nuclei_scan": {
+        "last_execution_threshold": 24,
+        "timeout": 900,
+        "max_retries": 3,
+        "chunk_size": 10
+    }
+}
+```
+
+## Proxy Support (Optional)
+
+Proxy-enabled tasks use a separate path (`_execute_task_with_job_manager`) with FireProx creation, `replace_targets_with_proxies`, and `replace_proxies_in_output`. They do not use the unified `generate_commands` flow.
+
+For tasks that benefit from IP rotation via AWS API Gateway:
+
+```python
+class MyTask(Task):
+    def supports_proxy(self) -> bool:
+        """Enable proxy support for this task"""
+        return True
+    
+    def extract_proxy_targets(self, input_data, params=None) -> List[str]:
+        """Return URLs that should be proxied"""
+        return [url for url in input_data if url.startswith('http')]
+    
+    def replace_targets_with_proxies(self, command: str, url_mapping: Dict[str, str]) -> str:
+        """Replace original URLs with proxy URLs in command"""
+        for original, proxy in url_mapping.items():
+            command = command.replace(original, proxy)
+        return command
+    
+    def replace_proxies_in_output(self, output: str, url_mapping: Dict[str, str]) -> str:
+        """Restore original URLs in output"""
+        for original, proxy in url_mapping.items():
+            output = output.replace(proxy, original)
+        return output
+```
+
+## Dual-Mode Tasks (Assets + Findings)
+
+Some tasks can output both assets and findings based on context:
+
+```python
+def transform_to_findings(self, assets: Dict[AssetType, List], context: Dict) -> Dict[FindingType, List]:
+    """Transform parsed assets to findings for security workflows"""
+    urls = assets.get(AssetType.URL, [])
+    findings = []
+    
+    for url in urls:
+        finding = TyposquatURL(
+            url=url.url,
+            typo_domain=context.get('typo_domain'),
+            original_domain=context.get('original_domain')
+        )
+        findings.append(finding)
+    
+    return {FindingType.TYPOSQUAT_URL: findings}
+
+def process_output_for_typosquat_mode(self, output, params=None):
+    """Two-step process: parse to assets, then transform to findings"""
+    assets = self.parse_output(output, params)
+    context = self._extract_transformation_context(params)
+    return self.transform_to_findings(assets, context)
+```
+
+## Orchestrator Tasks
+
+Orchestrators override `generate_commands` to emit `CommandSpec`s for multiple worker tasks. The unified executor spawns, waits, parses, and merges—no `execute_task` or direct job spawning.
+
+### Example: resolve_ip_cidr
+
+Expands CIDRs, emits `resolve_ip` and `port_scan` commands with `batch_group` for interleaved spawning:
+
+```python
+async def generate_commands(self, input_data, params, context):
+    resolve_ip_chunks = [...]  # Chunked IPs from CIDR expansion
+    port_scan_chunks = [...]
+    specs = []
+    for batch_num in range(max(len(resolve_ip_chunks), len(port_scan_chunks))):
+        if batch_num < len(resolve_ip_chunks):
+            specs.append(CommandSpec("resolve_ip", cmd, params, batch_group=batch_num))
+        if batch_num < len(port_scan_chunks):
+            specs.append(CommandSpec("port_scan", cmd, params, batch_group=batch_num))
+    return specs
+```
+
+### Example: dns_bruteforce
+
+Wildcard detection, per-domain commands, synthetic assets for wildcard parents:
+
+```python
+async def generate_commands(self, input_data, params, context):
+    specs = []
+    for domain in input_data:
+        if self._is_wildcard(domain, context):
+            continue  # Skip or handle via get_synthetic_assets
+        specs.append(CommandSpec(self.name, self.get_command(domain, params), params))
+    return specs
+
+async def get_synthetic_assets(self, context):
+    # Return wildcard parent domains as synthetic subdomains
+    return {AssetType.SUBDOMAIN: [Domain(name=p) for p in context.get("wildcard_parents", [])]}
+```
+
+### Example: subdomain_permutations
+
+Uses gotator, filters wildcards, then emits `resolve_domain` commands for unknowns. May use `context["job_manager"]` and `context["task_queue_client"]` for inline resolution of unknown domains.
+
+## Best Practices
+
+1. **Prefer generate_commands over execute_task**: Orchestrators should override `generate_commands` and optionally `get_synthetic_assets`; the unified executor handles spawn/parse/merge.
+2. **Always normalize output**: Use `self.normalize_output_for_parsing(output)`
+3. **Handle empty inputs gracefully**: Return `"echo ''"` or empty `CommandSpec` list
+4. **Use sets for deduplication**: Especially for IPs and domains
+5. **Lowercase domains**: Always `.lower()` domain names
+6. **Log appropriately**: Use `logger.debug()` for details, `logger.info()` for summary
+7. **Validate inputs**: Filter invalid data before processing
+8. **Handle both formats**: Tasks receive string or dict output from different execution paths

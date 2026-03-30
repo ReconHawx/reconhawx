@@ -1,0 +1,496 @@
+---
+globs:
+  - src/api/tests/**
+  - src/api/test_scripts/**
+  - src/api/test_*.py
+  - src/api/app/**/test_*.py
+description: API testing patterns (pytest, FastAPI TestClient)
+---
+
+# API conventions (testing)
+
+Project hub: repository root `AGENTS.md`.
+
+# API Testing Patterns
+
+## Testing Routes
+
+### Testing with Authentication
+
+```python
+import pytest
+from fastapi.testclient import TestClient
+from unittest.mock import Mock, patch, AsyncMock
+from datetime import datetime
+
+@pytest.fixture
+def client():
+    from main import app
+    return TestClient(app)
+
+@pytest.fixture
+def mock_superuser():
+    """Mock superuser with full access"""
+    return UserResponse(
+        id="test-superuser-id",
+        username="superuser",
+        email="super@example.com",
+        is_active=True,
+        is_superuser=True,
+        is_admin=True,
+        program_permissions={},
+        roles=["admin"],
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow()
+    )
+
+@pytest.fixture
+def mock_regular_user():
+    """Mock regular user with limited program access"""
+    return UserResponse(
+        id="test-user-id",
+        username="testuser",
+        email="test@example.com",
+        is_active=True,
+        is_superuser=False,
+        is_admin=False,
+        program_permissions={"program1": "analyst", "program2": "manager"},
+        roles=[],
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow()
+    )
+
+@pytest.fixture
+def mock_user_no_access():
+    """Mock user with no program access"""
+    return UserResponse(
+        id="test-no-access-id",
+        username="noaccess",
+        email="noaccess@example.com",
+        is_active=True,
+        is_superuser=False,
+        is_admin=False,
+        program_permissions={},
+        roles=[],
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow()
+    )
+
+@patch("auth.dependencies.get_current_user_from_middleware")
+def test_create_asset_as_superuser(mock_get_user, client, mock_superuser):
+    """Test superuser can create assets in any program"""
+    mock_get_user.return_value = mock_superuser
+    
+    response = client.post(
+        "/assets/subdomain/import",
+        json={
+            "domains": [{"name": "example.com", "program_name": "any-program"}],
+            "validate_domains": True
+        }
+    )
+    
+    assert response.status_code == 200
+    assert response.json()["status"] == "success"
+```
+
+## Testing Program Access Filtering
+
+### Testing get_user_accessible_programs
+
+```python
+from auth.dependencies import get_user_accessible_programs
+
+def test_superuser_has_no_restrictions(mock_superuser):
+    """Superuser returns empty list (no restrictions)"""
+    accessible = get_user_accessible_programs(mock_superuser)
+    assert accessible == []
+
+def test_regular_user_has_program_list(mock_regular_user):
+    """Regular user returns their program list"""
+    accessible = get_user_accessible_programs(mock_regular_user)
+    assert set(accessible) == {"program1", "program2"}
+
+def test_user_no_access_returns_empty(mock_user_no_access):
+    """User with no permissions returns empty list (no access)"""
+    accessible = get_user_accessible_programs(mock_user_no_access)
+    assert accessible == []
+```
+
+### Testing filter_by_user_programs
+
+```python
+from auth.dependencies import filter_by_user_programs
+
+def test_superuser_filter_unchanged(mock_superuser):
+    """Superuser's filter is not modified"""
+    base_filter = {"name": "example"}
+    result = filter_by_user_programs(base_filter, mock_superuser)
+    assert result == base_filter
+
+def test_regular_user_filter_adds_programs(mock_regular_user):
+    """Regular user gets program filter added"""
+    base_filter = {"name": "example"}
+    result = filter_by_user_programs(base_filter, mock_regular_user)
+    
+    assert "program_name" in result
+    assert "$in" in result["program_name"]
+    assert set(result["program_name"]["$in"]) == {"program1", "program2"}
+
+def test_user_no_access_gets_empty_filter(mock_user_no_access):
+    """User with no access gets empty $in filter (returns no results)"""
+    base_filter = {"name": "example"}
+    result = filter_by_user_programs(base_filter, mock_user_no_access)
+    
+    assert result == {"program_name": {"$in": []}}
+
+def test_filter_intersects_with_requested(mock_regular_user):
+    """Requested programs intersected with accessible"""
+    base_filter = {"program_name": {"$in": ["program1", "program3"]}}
+    result = filter_by_user_programs(base_filter, mock_regular_user)
+    
+    # Only program1 is accessible
+    assert result["program_name"]["$in"] == ["program1"]
+```
+
+### Testing check_program_permission
+
+```python
+from auth.dependencies import check_program_permission
+
+def test_superuser_has_all_permissions(mock_superuser):
+    """Superuser has manager access to all programs"""
+    assert check_program_permission(mock_superuser, "any-program", "analyst") is True
+    assert check_program_permission(mock_superuser, "any-program", "manager") is True
+
+def test_user_analyst_permission(mock_regular_user):
+    """User with analyst permission can read"""
+    assert check_program_permission(mock_regular_user, "program1", "analyst") is True
+    assert check_program_permission(mock_regular_user, "program1", "manager") is False
+
+def test_user_manager_permission(mock_regular_user):
+    """User with manager permission can read and write"""
+    assert check_program_permission(mock_regular_user, "program2", "analyst") is True
+    assert check_program_permission(mock_regular_user, "program2", "manager") is True
+
+def test_user_no_permission(mock_regular_user):
+    """User has no access to non-assigned programs"""
+    assert check_program_permission(mock_regular_user, "program3", "analyst") is False
+    assert check_program_permission(mock_regular_user, "program3", "manager") is False
+```
+
+## Testing Typed Search Endpoints
+
+### Testing Search with Program Filtering
+
+```python
+@pytest.fixture
+def mock_search_result():
+    return {
+        "items": [
+            {"id": "1", "name": "sub1.example.com", "program_name": "program1"},
+            {"id": "2", "name": "sub2.example.com", "program_name": "program1"},
+        ],
+        "total_count": 2
+    }
+
+@patch("repository.SubdomainAssetsRepository.search_subdomains_typed")
+@patch("auth.dependencies.get_current_user_from_middleware")
+def test_search_as_superuser(mock_get_user, mock_search, client, mock_superuser, mock_search_result):
+    """Superuser can search all programs"""
+    mock_get_user.return_value = mock_superuser
+    mock_search.return_value = mock_search_result
+    
+    response = client.post(
+        "/assets/subdomain/search",
+        json={"search": "example", "page": 1, "page_size": 25}
+    )
+    
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "success"
+    assert len(data["items"]) == 2
+    
+    # Verify no program filter was applied (programs=None for superuser)
+    call_args = mock_search.call_args
+    assert call_args.kwargs.get("programs") is None
+
+@patch("repository.SubdomainAssetsRepository.search_subdomains_typed")
+@patch("auth.dependencies.get_current_user_from_middleware")
+def test_search_as_regular_user(mock_get_user, mock_search, client, mock_regular_user, mock_search_result):
+    """Regular user search is filtered to their programs"""
+    mock_get_user.return_value = mock_regular_user
+    mock_search.return_value = mock_search_result
+    
+    response = client.post(
+        "/assets/subdomain/search",
+        json={"search": "example", "page": 1, "page_size": 25}
+    )
+    
+    assert response.status_code == 200
+    
+    # Verify program filter was applied
+    call_args = mock_search.call_args
+    assert set(call_args.kwargs.get("programs")) == {"program1", "program2"}
+
+@patch("auth.dependencies.get_current_user_from_middleware")
+def test_search_user_no_access_returns_empty(mock_get_user, client, mock_user_no_access):
+    """User with no access gets empty results"""
+    mock_get_user.return_value = mock_user_no_access
+    
+    response = client.post(
+        "/assets/subdomain/search",
+        json={"search": "example", "page": 1, "page_size": 25}
+    )
+    
+    assert response.status_code == 200
+    data = response.json()
+    assert data["items"] == []
+    assert data["pagination"]["total_items"] == 0
+```
+
+### Testing Pagination Response
+
+```python
+@patch("repository.SubdomainAssetsRepository.search_subdomains_typed")
+@patch("auth.dependencies.get_current_user_from_middleware")
+def test_search_pagination(mock_get_user, mock_search, client, mock_superuser):
+    """Test pagination response format"""
+    mock_get_user.return_value = mock_superuser
+    mock_search.return_value = {"items": [], "total_count": 100}
+    
+    response = client.post(
+        "/assets/subdomain/search",
+        json={"page": 2, "page_size": 25}
+    )
+    
+    assert response.status_code == 200
+    data = response.json()
+    
+    assert "pagination" in data
+    pagination = data["pagination"]
+    assert pagination["total_items"] == 100
+    assert pagination["total_pages"] == 4
+    assert pagination["current_page"] == 2
+    assert pagination["page_size"] == 25
+    assert pagination["has_next"] is True
+    assert pagination["has_previous"] is True
+```
+
+## Testing Repositories
+
+### Testing with Mocked Database
+
+```python
+import pytest
+from unittest.mock import AsyncMock, MagicMock, patch
+from repository.subdomain_assets_repo import SubdomainAssetsRepository
+
+@pytest.mark.asyncio
+@patch("db.get_db_session")
+async def test_get_domain_by_id(mock_session):
+    """Test getting domain by ID"""
+    # Setup mock
+    mock_db = MagicMock()
+    mock_subdomain = MagicMock()
+    mock_subdomain.id = "test-id"
+    mock_subdomain.name = "test.example.com"
+    mock_subdomain.program.name = "program1"
+    mock_subdomain.apex_domain.name = "example.com"
+    mock_subdomain.created_at = datetime.utcnow()
+    mock_subdomain.updated_at = datetime.utcnow()
+    
+    mock_db.query.return_value.join.return_value.filter.return_value.first.return_value = mock_subdomain
+    mock_session.return_value.__aenter__.return_value = mock_db
+    
+    # Execute
+    result = await SubdomainAssetsRepository.get_domain_by_id("test-id")
+    
+    # Verify
+    assert result is not None
+    assert result["id"] == "test-id"
+    assert result["name"] == "test.example.com"
+    assert result["program_name"] == "program1"
+
+@pytest.mark.asyncio
+@patch("db.get_db_session")
+async def test_get_domain_by_id_not_found(mock_session):
+    """Test getting non-existent domain returns None"""
+    mock_db = MagicMock()
+    mock_db.query.return_value.join.return_value.filter.return_value.first.return_value = None
+    mock_session.return_value.__aenter__.return_value = mock_db
+    
+    result = await SubdomainAssetsRepository.get_domain_by_id("non-existent")
+    
+    assert result is None
+```
+
+### Testing Create/Update Methods
+
+```python
+@pytest.mark.asyncio
+@patch("db.get_db_session")
+@patch("repository.program_repo.ProgramRepository.is_domain_in_scope")
+async def test_create_or_update_creates_new(mock_scope, mock_session):
+    """Test creating new subdomain"""
+    mock_scope.return_value = True
+    
+    mock_db = MagicMock()
+    mock_program = MagicMock(id="program-id")
+    mock_apex = MagicMock(id="apex-id")
+    
+    # Program exists
+    mock_db.query.return_value.filter.return_value.first.side_effect = [
+        mock_program,  # Program query
+        mock_apex,     # ApexDomain query
+        None,          # Existing subdomain (not found = create new)
+    ]
+    
+    mock_session.return_value.__aenter__.return_value = mock_db
+    
+    subdomain_data = {
+        "name": "new.example.com",
+        "program_name": "program1",
+        "is_wildcard": False
+    }
+    
+    result_id, action, event_data = await SubdomainAssetsRepository.create_or_update_subdomain(subdomain_data)
+    
+    assert action == "created"
+    assert event_data is not None
+    assert event_data["event"] == "asset.created"
+
+@pytest.mark.asyncio
+async def test_create_or_update_skips_duplicate():
+    """Test that unchanged data is skipped"""
+    # ... test implementation
+```
+
+## Testing Services
+
+### Mocking External APIs
+
+```python
+import pytest
+from unittest.mock import AsyncMock, patch
+import httpx
+
+@patch("services.hackerone_service.httpx.AsyncClient")
+@pytest.mark.asyncio
+async def test_hackerone_service_fetch_program(mock_client):
+    """Test fetching program from HackerOne API"""
+    # Mock response
+    mock_response = AsyncMock()
+    mock_response.json.return_value = {"data": {"attributes": {"name": "Test Program"}}}
+    mock_response.raise_for_status = AsyncMock()
+    
+    mock_client.return_value.__aenter__.return_value.get.return_value = mock_response
+    
+    service = HackerOneService(api_token="test-token")
+    result = await service.fetch_program_details("test-program")
+    
+    assert result["data"]["attributes"]["name"] == "Test Program"
+
+@patch("services.hackerone_service.httpx.AsyncClient")
+@pytest.mark.asyncio
+async def test_hackerone_service_handles_401(mock_client):
+    """Test handling of 401 Unauthorized"""
+    mock_response = AsyncMock()
+    mock_response.status_code = 401
+    mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
+        "Unauthorized", request=None, response=mock_response
+    )
+    
+    mock_client.return_value.__aenter__.return_value.get.return_value = mock_response
+    
+    service = HackerOneService(api_token="invalid-token")
+    
+    with pytest.raises(ValueError, match="Invalid HackerOne API token"):
+        await service.fetch_program_details("test-program")
+```
+
+### Testing Event Publisher
+
+```python
+from services.event_publisher import RobustEventPublisher, publisher
+
+@pytest.mark.asyncio
+async def test_event_batching():
+    """Test that events are batched"""
+    test_publisher = RobustEventPublisher()
+    
+    # Publish events
+    for i in range(10):
+        await test_publisher.publish(
+            subject="events.test",
+            payload={"index": i}
+        )
+    
+    # Check batch status
+    status = test_publisher.get_batch_status()
+    assert status["events"] == 10
+    assert status["status"] == "active"
+
+@pytest.mark.asyncio
+async def test_event_immediate_publish():
+    """Test immediate publish bypasses batching"""
+    # ... test implementation
+```
+
+## Testing Batch Operations
+
+```python
+@pytest.mark.asyncio
+@patch("db.get_db_session")
+async def test_delete_batch_partial_success(mock_session):
+    """Test batch delete with partial success"""
+    mock_db = MagicMock()
+    
+    # First two exist, third doesn't
+    mock_subdomain1 = MagicMock()
+    mock_subdomain2 = MagicMock()
+    
+    mock_db.query.return_value.filter.return_value.first.side_effect = [
+        mock_subdomain1,
+        mock_subdomain2,
+        None,  # Not found
+    ]
+    
+    mock_session.return_value.__aenter__.return_value = mock_db
+    
+    result = await SubdomainAssetsRepository.delete_subdomains_batch([
+        "valid-id-1",
+        "valid-id-2",
+        "non-existent"
+    ])
+    
+    assert result["deleted_count"] == 2
+    assert result["not_found_count"] == 1
+    assert result["error_count"] == 0
+```
+
+## Best Practices
+
+### DO:
+- ✅ Use pytest for testing
+- ✅ Mock external dependencies (database, APIs)
+- ✅ Test both success and error cases
+- ✅ Use fixtures for common setup (mock users, etc.)
+- ✅ Test authentication and authorization
+- ✅ Test program access filtering thoroughly
+- ✅ Test pagination response format
+- ✅ Use `@pytest.mark.asyncio` for async tests
+- ✅ Test edge cases (empty results, no access, etc.)
+
+### DON'T:
+- ❌ Test implementation details (test behavior)
+- ❌ Skip error case testing
+- ❌ Use real external APIs in unit tests
+- ❌ Test without mocking database
+- ❌ Skip authentication/authorization tests
+- ❌ Forget to test empty/no-access scenarios
+
+## References
+
+- pytest documentation: https://docs.pytest.org/
+- FastAPI testing: https://fastapi.tiangolo.com/tutorial/testing/
+- Example tests: `src/api/tests/`, `src/api/test_scripts/`

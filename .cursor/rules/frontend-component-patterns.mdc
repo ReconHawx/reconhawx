@@ -1,0 +1,360 @@
+---
+globs: ["src/frontend/src/components/**", "src/frontend/src/pages/**"]
+---
+
+# Frontend Component Patterns
+
+## Component Structure
+
+All components use functional components with React hooks:
+
+```jsx
+import React, { useState, useEffect } from 'react';
+import { Container, Card, Badge, Button, Spinner, Alert } from 'react-bootstrap';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { useProgramFilter } from '../contexts/ProgramFilterContext';
+import { useAuth } from '../contexts/AuthContext';
+import { formatDate, formatRelativeTime } from '../utils/dateUtils';
+import { someAPI } from '../services/api';
+
+function MyComponent() {
+  // 1. Context hooks first
+  const { selectedProgram } = useProgramFilter();
+  const { user, hasPermission } = useAuth();
+  
+  // 2. Router hooks
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  
+  // 3. Local state
+  const [data, setData] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  
+  // 4. Effects
+  useEffect(() => {
+    loadData();
+  }, [selectedProgram]);
+  
+  // 5. Handler functions
+  const loadData = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await someAPI.search({ program: selectedProgram });
+      setData(response.items || []);
+    } catch (err) {
+      setError('Failed to load data');
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  // 6. Loading state
+  if (loading) {
+    return (
+      <Container className="text-center p-4">
+        <Spinner animation="border" />
+        <p className="mt-3">Loading...</p>
+      </Container>
+    );
+  }
+  
+  // 7. Render
+  return (
+    <Container fluid className="p-4">
+      {error && <Alert variant="danger">{error}</Alert>}
+      {/* Content */}
+    </Container>
+  );
+}
+
+export default MyComponent;
+```
+
+## Page Component Pattern
+
+Pages follow a consistent structure:
+
+### List Pages (e.g., Subdomains, URLs, Findings)
+
+```jsx
+function AssetListPage() {
+  const { selectedProgram } = useProgramFilter();
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  
+  // Pagination state
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const [totalItems, setTotalItems] = useState(0);
+  
+  // Filter state
+  const [searchTerm, setSearchTerm] = useState('');
+  const [sortField, setSortField] = useState('created_at');
+  const [sortDir, setSortDir] = useState('desc');
+  
+  // Selection state for batch operations
+  const [selectedItems, setSelectedItems] = useState([]);
+  
+  useEffect(() => {
+    loadItems();
+  }, [selectedProgram, page, pageSize, sortField, sortDir]);
+  
+  const loadItems = async () => {
+    setLoading(true);
+    try {
+      const response = await assetAPI.search({
+        program: selectedProgram,
+        search: searchTerm,
+        page,
+        page_size: pageSize,
+        sort_by: sortField,
+        sort_dir: sortDir
+      });
+      setItems(response.items || []);
+      setTotalItems(response.total_items || 0);
+    } catch (err) {
+      setError('Failed to load items');
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  // ... handlers for pagination, sorting, filtering, batch operations
+}
+```
+
+### Detail Pages (e.g., SubdomainDetail, URLDetail)
+
+```jsx
+function AssetDetailPage() {
+  const [searchParams] = useSearchParams();
+  const id = searchParams.get('id');
+  
+  const [asset, setAsset] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  
+  useEffect(() => {
+    if (id) loadAsset();
+  }, [id]);
+  
+  const loadAsset = async () => {
+    setLoading(true);
+    try {
+      const data = await assetAPI.getById(id);
+      setAsset(data);
+    } catch (err) {
+      setError('Asset not found');
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  // ... render with Card layouts showing asset details
+}
+```
+
+## Common UI Patterns
+
+### Loading States
+
+```jsx
+// Full page loading
+if (loading) {
+  return (
+    <Container className="d-flex justify-content-center align-items-center min-vh-100">
+      <Spinner animation="border" role="status">
+        <span className="visually-hidden">Loading...</span>
+      </Spinner>
+    </Container>
+  );
+}
+
+// Inline loading
+<Button disabled={loading}>
+  {loading ? <Spinner size="sm" /> : 'Submit'}
+</Button>
+```
+
+### Error Handling
+
+```jsx
+// Alert-based errors
+{error && (
+  <Alert variant="danger" dismissible onClose={() => setError(null)}>
+    {error}
+  </Alert>
+)}
+
+// Empty state
+{items.length === 0 && !loading && (
+  <Card className="text-center p-4">
+    <Card.Body>
+      <p className="text-muted">No items found</p>
+      <Button variant="primary" onClick={() => navigate('/create')}>
+        Create New Item
+      </Button>
+    </Card.Body>
+  </Card>
+)}
+```
+
+### Severity/Status Badges
+
+```jsx
+const getSeverityBadge = (severity) => {
+  const colors = {
+    critical: 'danger',
+    high: 'primary',
+    medium: 'info',
+    low: 'secondary',
+    info: 'primary'
+  };
+  return <Badge bg={colors[severity] || 'secondary'}>{severity}</Badge>;
+};
+
+const getStatusBadge = (status) => {
+  const colors = {
+    new: 'info',
+    inprogress: 'primary',
+    resolved: 'success',
+    dismissed: 'secondary'
+  };
+  return <Badge bg={colors[status] || 'secondary'}>{status}</Badge>;
+};
+```
+
+### Pagination Component Pattern
+
+```jsx
+// Standard pagination with page size selector
+<div className="d-flex justify-content-between align-items-center mt-3">
+  <div>
+    Showing {((page - 1) * pageSize) + 1} - {Math.min(page * pageSize, totalItems)} of {totalItems}
+  </div>
+  <Pagination>
+    <Pagination.First onClick={() => setPage(1)} disabled={page === 1} />
+    <Pagination.Prev onClick={() => setPage(p => p - 1)} disabled={page === 1} />
+    <Pagination.Item active>{page}</Pagination.Item>
+    <Pagination.Next onClick={() => setPage(p => p + 1)} disabled={page >= Math.ceil(totalItems / pageSize)} />
+    <Pagination.Last onClick={() => setPage(Math.ceil(totalItems / pageSize))} />
+  </Pagination>
+  <Form.Select value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))} style={{ width: 'auto' }}>
+    <option value={25}>25 per page</option>
+    <option value={50}>50 per page</option>
+    <option value={100}>100 per page</option>
+  </Form.Select>
+</div>
+```
+
+### Link Patterns
+
+```jsx
+// Link to detail page with ID
+<Link to={`/assets/subdomains/details?id=${item.id}`}>
+  {item.name}
+</Link>
+
+// Link with program filter preserved
+const programParam = selectedProgram ? `?program=${selectedProgram}` : '';
+<Link to={`/assets/urls${programParam}`}>View URLs</Link>
+
+// External links
+<a href={url} target="_blank" rel="noopener noreferrer">
+  {url} <FaExternalLinkAlt />
+</a>
+```
+
+## Notes Section Component
+
+For editable notes on detail pages, use the `NotesSection` component:
+
+```jsx
+import NotesSection from '../components/NotesSection';
+
+// In detail page
+<NotesSection
+  notes={asset.notes}
+  onSave={async (newNotes) => {
+    await assetAPI.updateNotes(asset.id, newNotes);
+    setAsset(prev => ({ ...prev, notes: newNotes }));
+  }}
+/>
+```
+
+## Screenshots Viewer
+
+For displaying screenshots:
+
+```jsx
+import ScreenshotsViewer from '../components/ScreenshotsViewer';
+
+<ScreenshotsViewer
+  screenshots={screenshots}
+  onScreenshotClick={(screenshot) => {
+    // Handle click
+  }}
+/>
+```
+
+## Protected Route Component
+
+The `ProtectedRoute` component handles authentication and authorization:
+
+```jsx
+// Basic protection (any authenticated user)
+<ProtectedRoute>
+  <MyPage />
+</ProtectedRoute>
+
+// Superuser only
+<ProtectedRoute requireSuperuser={true}>
+  <AdminPage />
+</ProtectedRoute>
+
+// Admin only
+<ProtectedRoute requireAdmin={true}>
+  <AdminPage />
+</ProtectedRoute>
+
+// Specific permission
+<ProtectedRoute requiredPermission="manage_users">
+  <UserManagementPage />
+</ProtectedRoute>
+```
+
+## Date Formatting
+
+Always use utilities from `utils/dateUtils.js`:
+
+```jsx
+import { formatDate, formatRelativeTime, formatDateOnly, isExpired, isExpiringSoon } from '../utils/dateUtils';
+
+// Full datetime
+<td>{formatDate(item.created_at)}</td>  // "Dec 24, 2025 14:30:45"
+
+// Relative time
+<span>{formatRelativeTime(item.updated_at)}</span>  // "2 hours ago"
+
+// Date only
+<span>{formatDateOnly(item.expires_at)}</span>  // "Dec 24, 2025"
+
+// Expiry checking
+{isExpired(cert.expires_at) && <Badge bg="danger">Expired</Badge>}
+{isExpiringSoon(cert.expires_at, 30) && <Badge bg="warning">Expiring Soon</Badge>}
+```
+
+## Best Practices
+
+1. **Always destructure context values** - `const { selectedProgram } = useProgramFilter();`
+2. **Handle loading, error, and empty states** - Every data-fetching component needs all three
+3. **Use consistent Badge colors** - Follow severity/status color conventions
+4. **Preserve program filter in links** - Pass `program` param when navigating
+5. **Use formatDate utilities** - Never use raw `Date` methods or inline formatting
+6. **Show meaningful empty states** - Don't just show empty tables
+7. **Use Bootstrap grid** - `Row`, `Col` for layouts, `Container fluid` for pages
+8. **Debounce search inputs** - Avoid excessive API calls on typing

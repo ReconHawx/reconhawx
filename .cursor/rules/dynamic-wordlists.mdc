@@ -1,0 +1,46 @@
+---
+description: Dynamic wordlists feature - generating wordlists from program assets
+alwaysApply: true
+---
+
+# Dynamic Wordlists
+
+Dynamic wordlists generate content on-the-fly from program assets instead of storing static files.
+
+## Architecture
+
+- **Database**: `wordlists` table with `is_dynamic=true`, `dynamic_type`, and `dynamic_config` JSONB
+- **Repository**: `WordlistsRepository` in `src/api/app/repository/wordlists_repo.py`
+- **Routes**: `/wordlists/dynamic` endpoint in `src/api/app/routes/wordlists.py`
+- **Models**: `DynamicWordlistCreate` in `src/api/app/models/wordlist.py`
+
+## Supported Dynamic Types
+
+| Type | Description | Config |
+|------|-------------|--------|
+| `subdomain_prefixes` | Extract prefixes from subdomains | `{"program_id": "..."}` |
+
+## Adding New Dynamic Types
+
+1. Add type to `DynamicWordlistType` enum in `models/wordlist.py`
+2. Add generation method `_generate_{type}()` in repository
+3. Register in `_generate_dynamic_content_internal()` switch
+
+```python
+# In wordlists_repo.py
+@staticmethod
+async def _generate_dynamic_content_internal(db, dynamic_type: str, program_id: str) -> tuple:
+    if dynamic_type == "subdomain_prefixes":
+        return await WordlistsRepository._generate_subdomain_prefixes(db, program_id)
+    elif dynamic_type == "new_type":  # Add new type here
+        return await WordlistsRepository._generate_new_type(db, program_id)
+    else:
+        return 0, []
+```
+
+## Key Patterns
+
+- Dynamic wordlists have `file_id=NULL` (no stored file)
+- Content generated at download time via `get_wordlist_file()`
+- Word count computed at creation and updated on each download
+- Use `program_id` from `dynamic_config` for asset queries

@@ -1,0 +1,982 @@
+---
+globs: ["src/runner/app/tasks/typosquat_detection.py", "src/runner/app/tasks/typosquat_components.py", "src/worker/app/typosquat_worker.py", "src/api/app/repository/typosquat_findings_repo.py", "src/api/app/services/protected_domain_similarity_service.py"]
+---
+
+# Typosquat Detection System
+
+## Overview
+
+The typosquat detection system identifies domains that mimic legitimate domains for phishing purposes. It uses **dnstwist** for variation generation and performs comprehensive analysis including DNS resolution, WHOIS lookup, HTTP probing, GeoIP, and wildcard detection.
+
+This is a **multi-phase orchestrator task** that produces `FindingType.TYPOSQUAT_DOMAIN` and `FindingType.TYPOSQUAT_URL` findings.
+
+**Post-Detection Analysis (API-Side):**
+- **Protected Domain Similarity**: Calculates similarity between typosquat and protected domains
+- **Risk Score Calculation**: Computes detailed risk analysis with category scores
+- **Parked Domain Detection**: Identifies parking pages via runner-side analysis
+
+**WHOIS persistence (API database):** Runner/worker payloads still send flat `whois_*` fields on typosquat findings. The API stores registration/WHOIS on **`typosquat_apex_domains`** (one row per `(program_id, registrable apex_domain)`), linked via `typosquat_domains.apex_typosquat_domain_id`. Listing and detail responses **merge** apex WHOIS onto each finding so JSON shape stays the same for clients.
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                              RUNNER POD                                              │
+│  ┌────────────────────────────────────────────────────────────────────────────────┐ │
+│  │  typosquat_detection.py (Orchestrator Task)                                     │ │
+│  │  • Generates domain variations via dnstwist                                     │ │
+│  │  • Deduplicates against Redis cache + API tested domains                        │ │
+│  │  • Spawns worker jobs with variations via base64-encoded JSON stdin             │ │
+│  │  • Orchestrates multi-phase workflow (subdomain discovery, fuzzing, screenshots)│ │
+│  │  • Parses JSON output into TYPOSQUAT_DOMAIN and TYPOSQUAT_URL findings          │ │
+│  └────────────────────────────────────────────────────────────────────────────────┘ │
+│                                                                                      │
+│  ┌────────────────────────────────────────────────────────────────────────────────┐ │
+│  │  typosquat_components.py (Component Classes)                                    │ │
+│  │  • VariationGenerator: dnstwist variation generation with offset rotation       │ │
+│  │  • VariationCacheManager: Redis caching of tested variations (30-day TTL)       │ │
+│  │  • ApiClient: API communication for deduplication and config                    │ │
+│  │  • TyposquatAnalyzer: Worker output parsing to findings                         │ │
+│  │  • SubdomainWorkflowOrchestrator: Multi-phase workflow management               │ │
+│  │  • ScreenshotProcessor: Screenshot upload handling                              │ │
+│  └────────────────────────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────────────────────────┘
+                                        │
+                                        │ Spawns worker jobs
+                                        ▼
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                              WORKER POD                                              │
+│  ┌────────────────────────────────────────────────────────────────────────────────┐ │
+│  │  typosquat_worker.py (Domain Analyzer)                                          │ │
+│  │  • Reads base64-decoded JSON variations from stdin                              │ │
+│  │  • Parallel analysis via ThreadPoolExecutor                                     │ │
+│  │  • DNS resolution with wildcard detection (dnsx_wrapper)                        │ │
+│  │  • WHOIS: python-whois, TCP/43, then whoisit (RDAP); per-TLD rate limit, no cache │ │
+│  │  • HTTP probing with httpx (comprehensive port scanning)                        │ │
+│  │  • GeoIP enrichment via ip-api.com                                              │ │
+│  │  • Subdomain discovery via subfinder (inline when include_subdomains=true)     │ │
+│  │  • Outputs JSON lines (one per registered domain)                               │ │
+│  └────────────────────────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+## Multi-Phase Workflow
+
+```
+                 ┌──────────────────────────────────────────────────────────────┐
+                 │         PHASE 1: VARIATION ANALYSIS + SUBDOMAIN DISCOVERY  │
+                 │                                                              │
+                 │  Input: Target domain(s) (e.g., "example.com")               │
+                 │                      ↓                                       │
+                 │  1. Generate variations using dnstwist                       │
+                 │  2. Filter out already-tested (Redis + API dedup)            │
+                 │  3. Analyze each variation in worker pod                     │
+                 │  4. If include_subdomains: run subfinder per registered domain│
+                 │  5. Output: TyposquatDomain findings + subdomains per domain  │
+                 └──────────────────────────────────────────────────────────────┘
+                                        │
+                                        │ if include_subdomains=true and subdomains found
+                                        ▼
+                 ┌──────────────────────────────────────────────────────────────┐
+                 │                    PHASE 2: SUBDOMAIN ANALYSIS               │
+                 │                                                              │
+                 │  Input: Subdomains from Phase 1 (worker output)               │
+                 │                      ↓                                       │
+                 │  1. Start new workflow with analyze_input_as_variations=true  │
+                 │  2. Treat subdomains as typosquat variations                 │
+                 │  3. Analyze each subdomain for legitimacy                    │
+                 │  4. Output: Additional TyposquatDomain findings              │
+                 └──────────────────────────────────────────────────────────────┘
+                                        │
+                                        │ if enable_fuzzing=true
+                                        ▼
+                 ┌──────────────────────────────────────────────────────────────┐
+                 │                    PHASE 4: URL FUZZING (Optional)           │
+                 │                                                              │
+                 │  Input: Registered typosquat domains from Phase 1            │
+                 │                      ↓                                       │
+                 │  1. Spawn fuzz_website jobs for each domain                  │
+                 │  2. Fuzz common paths using ffuf                             │
+                 │  3. Transform URL assets to TyposquatURL findings            │
+                 │  4. Output: TyposquatURL findings                            │
+                 └──────────────────────────────────────────────────────────────┘
+```
+
+## Runner Task: typosquat_detection.py
+
+### Task Definition
+
+```python
+class TyposquatDetection(Task):
+    name = "typosquat_detection"
+    description = "Detect typosquatting domains using dnstwist and risk analysis"
+    input_type = AssetType.SUBDOMAIN
+    output_types = []  # Findings returned directly to API, not as asset types
+    chunk_size = 20
+```
+
+### Operating Modes
+
+#### 1. Standard Mode (Default)
+Generate variations from input domain(s) and analyze them.
+
+```python
+# API Request
+{
+    "task_type": "typosquat_detection",
+    "input": ["example.com"],
+    "params": {
+        "max_variations": 100,
+        "fuzzers": ["insertion", "replacement", "omission"],
+        "exclude_tested": true,
+        "include_subdomains": false
+    }
+}
+```
+
+#### 2. Input Analysis Mode
+Treat input domains directly as typosquat variations (skip generation).
+
+```python
+# API Request - analyze suspicious domains directly
+{
+    "task_type": "typosquat_detection",
+    "input": ["examp1e.com", "exampl3.com", "example-login.com"],
+    "params": {
+        "analyze_input_as_variations": true,
+        "original_domain": "example.com",  # The legitimate domain
+        "include_subdomains": true
+    }
+}
+```
+
+**Use Case:** When you have a list of suspicious domains (e.g., from threat intel) and want to analyze them without generating new variations.
+
+### Variation Generation (VariationGenerator)
+
+Uses dnstwist library with offset-based rotation for large variation spaces:
+
+```python
+# Available fuzzers
+AVAILABLE_FUZZERS = [
+    'insertion',      # Insert characters: exaample.com
+    'replacement',    # Replace characters: exomple.com
+    'omission',       # Remove characters: examle.com
+    'repetition',     # Repeat characters: exammple.com
+    'transposition',  # Swap adjacent: exapmle.com
+    'hyphenation',    # Add hyphens: ex-ample.com
+    'vowel-swap',     # Swap vowels: exumple.com
+    'homoglyph',      # Visual lookalikes: exаmple.com (Cyrillic 'а')
+    'addition',       # Add suffix: examples.com
+    'bitsquatting',   # Bit-flip typos: dxample.com
+    'subdomain',      # Prepend subdomain: example.com.fake.com
+    'plural',         # Add/remove plural: examples.com
+    'various'         # TLD variations: example.net
+]
+```
+
+**Offset Rotation Pattern:**
+```python
+# Redis key: typosquat:variation_offset:{program_name}:{domain}
+# Tracks which variations have been tested to avoid re-testing
+
+offset = self._get_variation_offset(domain, program_name)  # e.g., 0
+all_variations = fuzzer.permutations()  # e.g., 500 total
+selected = all_variations[offset:offset + max_variations]  # e.g., 0-100
+self._update_variation_offset(domain, program_name, new_offset)  # → 100
+# Next run will test variations 100-200
+```
+
+### Deduplication Strategy
+
+**Two-Level Deduplication:**
+
+1. **Redis Cache (Fast, Recent)**
+   - Key: `typosquat:tested:{program_name}:{original_domain}:{variation_domain}`
+   - TTL: 30 days (configurable via `TYPOSQUAT_CACHE_TTL`)
+   - Purpose: Avoid re-testing recently tested variations
+
+2. **API Lookup (Comprehensive, Historical)**
+   - Queries `/findings/typosquat/search` for all tested domains
+   - Purpose: Avoid re-testing variations that exist in database
+
+```python
+def _generate_variations_with_retry(self, domain, max_variations, ...):
+    # Step 1: Generate variations
+    all_domain_variations = self.variation_generator.generate_variations_with_fuzzers(...)
+    
+    # Step 2: Filter with Redis cache (fast)
+    all_domain_variations = self.variation_cache.filter_untested_variations(...)
+    
+    # Step 3: Filter with API data (comprehensive)
+    all_domain_variations = {d: f for d, f in all_domain_variations.items() 
+                            if d not in already_tested}
+    
+    # Step 4: Retry with larger max_variations if all filtered out
+    if len(domain_to_fuzzers) == 0 and attempt < max_attempts:
+        current_max_variations *= 2  # Double and retry
+```
+
+### Command Generation Pattern
+
+Uses base64-encoded JSON via stdin to pass variations safely:
+
+```python
+def _build_worker_command_with_stdin(self, variations, active_checks, geoip_checks, max_workers):
+    # Chunk variations into groups of 50
+    for variations_chunk in variations_chunks:
+        variations_json = json.dumps(variations_chunk)
+        encoded_json = base64.b64encode(variations_json.encode('utf-8')).decode('utf-8')
+        
+        command = f"echo '{encoded_json}' | base64 -d | python3 typosquat_worker.py " \
+                  f"--variations-stdin --workers {max_workers} --output-json --no-store"
+        
+        if active_checks:
+            command += " --active"  # Enable HTTP/SSL checks
+        if geoip_checks:
+            command += " --geoip"   # Enable GeoIP lookups
+        
+        commands.append(command)
+    
+    return commands
+```
+
+**Input Format (JSON stdin):**
+```json
+[
+  {
+    "domain": "examp1e.com",
+    "original_domain": "example.com",
+    "fuzzers": ["homoglyph", "replacement"],
+    "_subdomain_discovery_enabled": true
+  }
+]
+```
+
+### Output Parsing (TyposquatAnalyzer)
+
+When `include_subdomains=true`, each worker result line includes a `subdomains` array (from inline subfinder). The parser aggregates these for Phase 2 workflow triggering.
+
+```python
+def parse_worker_output(self, output, params):
+    findings = []
+    typosquat_urls = []
+    subdomains_for_phase3 = []
+    
+    for line in output.splitlines():
+        result = json.loads(line)
+        if "subdomains" in result:
+            subdomains_for_phase3.extend(result["subdomains"])
+        
+        typosquat_finding = TyposquatDomain(
+            original_domain=result.get("original_domain"),
+            typo_domain=result.get("typo_domain"),
+            fuzzers=result.get("fuzzers", []),
+            domain_registered=result["info"].get("registered"),
+            dns_a_records=result["info"].get("dns_a", []),
+            dns_mx_records=result["info"].get("dns_mx", []),
+            is_wildcard=result["info"].get("is_wildcard"),
+            whois_registrar=result["info"]["whois"].get("registrar"),
+            whois_creation_date=result["info"]["whois"].get("creation_date"),
+            geoip_country=result["info"]["geoip"].get("country"),
+            # ... additional fields
+        )
+        findings.append(typosquat_finding)
+        
+        # Extract URLs from httpx probing
+        for url_data in result.get("typosquat_urls", []):
+            typosquat_urls.append(url_data)
+    
+    return {
+        FindingType.TYPOSQUAT_DOMAIN: findings,
+        FindingType.TYPOSQUAT_URL: typosquat_urls
+    }, subdomain_discovery_enabled, findings, subdomains_for_phase3
+```
+
+## Worker Script: typosquat_worker.py
+
+### Input Modes
+
+```bash
+# Mode 1: JSON from stdin (preferred)
+echo '{"domain":"examp1e.com","original_domain":"example.com","fuzzers":["homoglyph"]}' | \
+  python3 typosquat_worker.py --variations-stdin --active --geoip --output-json
+
+# Mode 2: JSON file
+python3 typosquat_worker.py --variations-file variations.json --active --geoip
+
+# Mode 3: Single domain (legacy)
+python3 typosquat_worker.py --domain examp1e.com --active --geoip
+
+# Mode 4: Subdomain discovery
+python3 typosquat_worker.py --variations-stdin --find-subdomains --active
+```
+
+### BuiltInDomainAnalyzer
+
+```python
+class BuiltInDomainAnalyzer:
+    def analyze_domain(self, domain, active_checks=False, geoip_checks=False):
+        info = {
+            "domain": domain,
+            "registered": False,
+            "dns_a": [],
+            "dns_mx": [],
+            "whois": {},
+            "ssl": {},
+            "http": {},
+            "geoip": {},
+            "is_wildcard": False,
+            "wildcard_types": []
+        }
+        
+        # 1. DNS Resolution with Wildcard Detection
+        dns_results = self._resolve_domain_with_wildcard_detection(domain)
+        if dns_results["has_records"]:
+            info["registered"] = True
+            info["dns_a"] = dns_results["a_records"]
+            info["is_wildcard"] = dns_results["is_wildcard"]
+            
+            # 2. Active HTTP Checks (if enabled)
+            if active_checks:
+                typosquat_urls = self._check_http_with_httpx(domain)
+            
+            # 3. GeoIP Lookup (if enabled)
+            if geoip_checks and info["dns_a"]:
+                info["geoip"] = self._check_geoip(info["dns_a"][0])
+        
+        # 4. WHOIS Lookup (for root domains)
+        if not self._is_subdomain(domain):
+            info["whois"] = self._check_whois(domain)
+            if info["whois"]:
+                info["registered"] = True
+        
+        return info, typosquat_urls
+```
+
+### HTTP Probing with httpx
+
+```python
+def _check_http_with_httpx(self, domain):
+    command = (
+        f"printf '{domain}' | httpx "
+        "-fr "                    # Follow redirects
+        "-maxr 10 "               # Max redirects
+        "-include-chain "         # Include redirect chain
+        "-silent "
+        "-status-code "
+        "-content-length "
+        "-tech-detect "           # Technology detection
+        "-threads 50 "
+        "-json "
+        "-tls-grab "              # TLS certificate info
+        "-pipeline "              # HTTP pipelining
+        "-http2 "
+        "-ip "                    # Resolve IP
+        "-cname "                 # CNAME records
+        "-asn "                   # ASN info
+        "-favicon "               # Favicon hash
+        "-hash sha256 "           # Body hash
+        "-p 80-99,443-449,11443,8443-8449,9000-9003,8080-8089,8801-8810,3000,5000"
+    )
+```
+
+**Output TyposquatURL Structure:**
+```json
+{
+    "url": "https://examp1e.com:443/",
+    "hostname": "examp1e.com",
+    "ips": ["1.2.3.4"],
+    "port": 443,
+    "scheme": "https",
+    "technologies": ["nginx", "PHP"],
+    "http_status_code": 200,
+    "chain_status_codes": [301, 200],
+    "final_url": "https://examp1e.com/login",
+    "response_time": 245,
+    "title": "Secure Login",
+    "favicon_hash": "md5:abc123",
+    "resp_body_hash": "sha256:def456",
+    "tls": { /* certificate info */ }
+}
+```
+
+### Wildcard Detection
+
+Uses `dnsx_wrapper.is_wildcard()` to detect wildcard DNS responses:
+
+```python
+def _resolve_domain_with_wildcard_detection(self, domain):
+    # Basic DNS resolution
+    ip = socket.gethostbyname(domain)
+    
+    # Wildcard detection
+    is_wild, wild_types = await is_wildcard(domain)
+    
+    return {
+        "has_records": True,
+        "a_records": [ip],
+        "is_wildcard": is_wild,        # True if wildcard
+        "wildcard_types": wild_types   # ["A", "AAAA", etc.]
+    }
+```
+
+### Subdomain Discovery
+
+```python
+def _find_subdomains(self, domain):
+    cmd = ['subfinder', '-d', domain, '-silent', '-o', '/dev/stdout']
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+    
+    subdomains = []
+    for line in result.stdout.strip().split('\n'):
+        subdomain = line.strip()
+        if subdomain and subdomain != domain:
+            subdomains.append(subdomain)
+    
+    return subdomains
+```
+
+## Finding Schemas
+
+### TyposquatDomain Finding
+
+```json
+{
+    "original_domain": "example.com",
+    "typo_domain": "examp1e.com",
+    "fuzzers": ["homoglyph"],
+    "timestamp": "2025-01-12T10:30:00Z",
+    "program_name": "my-program",
+    "domain_registered": true,
+    "dns_a_records": ["1.2.3.4"],
+    "dns_mx_records": ["mail.examp1e.com"],
+    "dns_ns_records": ["ns1.registrar.com"],
+    "is_wildcard": false,
+    "wildcard_types": [],
+    "whois_registrar": "NameCheap, Inc.",
+    "whois_creation_date": "2024-06-15T00:00:00Z",
+    "whois_expiration_date": "2025-06-15T00:00:00Z",
+    "whois_registrant_country": "RU",
+    "geoip_country": "Russia",
+    "geoip_organization": "Bulletproof Hosting LLC",
+    
+    "// Protected Domain Similarity (API-side, calculated on insert)": "",
+    "protected_domain_similarities": [
+        {"protected_domain": "example.com", "similarity_percent": 94.44, "calculated_at": "2025-01-12T10:30:00Z"}
+    ],
+    
+    "// Risk Analysis (API-side, version 2.1)": "",
+    "risk_score": 75,
+    "risk_analysis_total_score": 75,
+    "risk_analysis_risk_level": "high",
+    "risk_analysis_version": "2.1",
+    "risk_analysis_timestamp": "2025-01-12T10:30:05Z",
+    "risk_analysis_category_scores": {
+        "similarity_factors": 35,
+        "registration_factors": 20,
+        "age_factors": 12,
+        "hosting_factors": 8
+    },
+    "risk_analysis_risk_factors": { "/* detailed breakdown */" : "..." },
+    
+    "// Parked Domain Detection (Runner-side)": "",
+    "is_parked": false,
+    "parked_confidence": 0,
+    "parked_detection_timestamp": null,
+    "parked_detection_reasons": null
+}
+```
+
+### TyposquatURL Finding
+
+```json
+{
+    "url": "https://examp1e.com/login",
+    "hostname": "examp1e.com",
+    "ips": ["1.2.3.4"],
+    "port": 443,
+    "scheme": "https",
+    "technologies": ["nginx", "PHP", "WordPress"],
+    "http_status_code": 200,
+    "title": "Example Login - Secure Access",
+    "favicon_hash": "md5:abc123def456",
+    "resp_body_hash": "sha256:...",
+    "program_name": "my-program"
+}
+```
+
+## API-Side Analysis (Post-Detection)
+
+### Protected Domain Similarity Calculation
+
+**Location:** `src/api/app/services/protected_domain_similarity_service.py`
+
+Programs can configure **protected domains** - the legitimate domains they own. When a typosquat domain is inserted, similarity scores are calculated against all protected domains.
+
+```python
+# Program configuration
+{
+    "name": "my-program",
+    "protected_domains": ["example.com", "mycompany.com", "brand.org"]
+}
+```
+
+**Scoring (per typo FQDN × protected domain):**
+
+1. **Suffix scan:** Split the typo on `.` into labels. If there are more than 32 labels, only the last 32 are used. For every **suffix** of that list with **at least two labels** (e.g. `dsc-enter.prise.com` inside `user.login.…dsc-enter.prise.com`), form a candidate hostname.
+2. **Per candidate:** `pair_score = max(apex_similarity, collapsed_similarity)` where:
+   - **Apex similarity:** Levenshtein similarity between naive last-two-label apex of the candidate and of the protected domain (legacy behavior on that fragment).
+   - **Collapsed similarity:** Lowercase, strip trailing dot, remove all non-alphanumeric characters from candidate and protected, then Levenshtein similarity on those strings (catches dot/hyphen-split brand strings). If the collapsed strings are **identical** but the literal FQDNs still differ (e.g. `dsc-enter.prise.com` vs `dsc-enterprise.com`), collapsed similarity is **capped at 99%** so `100%` means exact hostname match (case-insensitive, trailing dot ignored), not merely “same after merging labels.”
+3. **Final score for that protected domain:** `max(pair_score)` over all suffix candidates. The full typo is included as the longest suffix (`i = 0`).
+4. Results are stored sorted by `similarity_percent` descending; risk score and AI context use the highest entry.
+
+**Calculation Flow:**
+```
+1. Typosquat domain inserted via API
+2. Fetch program's protected_domains list
+3. For each protected domain, compute best similarity (suffix scan + apex/collapsed views)
+4. Store sorted results in protected_domain_similarities field
+5. Risk score calculation uses the highest similarity
+```
+
+Typosquat insertion **filtering** (`TyposquatFilteringService` check 2) uses the same `best_similarity_typo_to_protected` logic so gates stay consistent with stored scores.
+
+**Similarity Output:**
+```json
+{
+    "protected_domain_similarities": [
+        {"protected_domain": "example.com", "similarity_percent": 94.44, "calculated_at": "2025-01-27T20:18:48Z"},
+        {"protected_domain": "mycompany.com", "similarity_percent": 35.29, "calculated_at": "2025-01-27T20:18:48Z"}
+    ]
+}
+```
+
+**API Endpoints:**
+```python
+# Recalculate similarities for all typosquat domains in a program (path param: program name)
+POST /api/v1/findings/typosquat/recalculate-similarities/{program_name}
+
+# Recalculate similarities for a single finding (uses that finding's program protected_domains)
+POST /api/v1/findings/typosquat/{finding_id}/recalculate-similarities
+```
+
+### Risk Score Calculation (Version 2.1)
+
+**Location:** `src/api/app/repository/typosquat_findings_repo.py` (`_calculate_risk_score`)
+
+Risk scores are calculated **API-side** after domain insertion and when related URLs are added.
+
+**Trigger Points:**
+1. New typosquat domain inserted (via unified_findings_processor or direct API)
+2. Typosquat URL inserted (recalculates parent domain's risk)
+3. Manual recalculation via API endpoint
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                         RISK SCORE CALCULATION FLOW                              │
+│                                                                                  │
+│  Domain Inserted ──► Protected Domain Similarity Calculated ──► Risk Score      │
+│                                                                                  │
+│  URL Inserted ──────────────────────────────────────────────► Risk Recalculated │
+│                                                                                  │
+│  Manual Trigger ────────────────────────────────────────────► Risk Recalculated │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Risk Categories (max 100 points total):**
+
+| Category | Max Points | Factors |
+|----------|------------|---------|
+| **similarity_factors** | ~50 | Protected domain similarity, edit distance, character substitutions, keyboard typos |
+| **registration_factors** | ~25 | Domain registered, unsafe registrar (not in program's safe list) |
+| **age_factors** | ~12 | Recently registered (<30 days = 12pts, <90 days = 8pts) |
+| **ssl_factors** | ~15 | Has SSL certificate, unsafe SSL issuer |
+| **hosting_factors** | ~25 | HTTP 200 response, active hosting, high-risk country |
+| **content_factors** | ~5 | Has HTTP content |
+
+**Risk Levels:**
+```python
+if total_score >= 80: risk_level = 'critical'
+elif total_score >= 60: risk_level = 'high'
+elif total_score >= 40: risk_level = 'medium'
+elif total_score >= 20: risk_level = 'low'
+else: risk_level = 'info'
+```
+
+**Similarity Scoring (uses protected_domain_similarities):**
+```python
+# Get highest similarity from pre-calculated protected domain similarities
+best_match = protected_similarities[0]  # Sorted by similarity_percent desc
+similarity_ratio = best_match['similarity_percent'] / 100.0
+
+# Score based on edit distance
+if edit_distance == 1 and similarity_ratio >= 0.8:
+    similarity_score += 20  # Single character change - high risk
+elif edit_distance == 2 and similarity_ratio >= 0.7:
+    similarity_score += 15  # Two character changes
+elif edit_distance <= 3 and similarity_ratio >= 0.6:
+    similarity_score += 10  # Few character changes
+
+# Score based on similarity percentage
+if similarity_ratio >= 0.95:
+    similarity_score += 15  # Very high similarity
+elif similarity_ratio >= 0.85:
+    similarity_score += 12  # High similarity
+# ... etc
+
+# Additional factors
+if similarity_ratio >= 0.90:
+    similarity_score += 12  # High confusion potential
+```
+
+**Output Schema:**
+```json
+{
+    "risk_score": 75,
+    "risk_analysis_total_score": 75,
+    "risk_analysis_risk_level": "high",
+    "risk_analysis_version": "2.1",
+    "risk_analysis_timestamp": "2025-01-27T20:18:48Z",
+    "risk_analysis_category_scores": {
+        "similarity_factors": 35,
+        "registration_factors": 20,
+        "age_factors": 12,
+        "ssl_factors": 0,
+        "hosting_factors": 8,
+        "content_factors": 0
+    },
+    "risk_analysis_risk_factors": {
+        "similarity_factors": {
+            "score": 35,
+            "indicators": ["single_character_change", "very_high_similarity", "high_confusion_potential"],
+            "details": {
+                "typo_domain": "examp1e.com",
+                "protected_domain": "example.com",
+                "similarity_percent": 94.44,
+                "edit_distance": 1,
+                "all_similarities": [...]
+            }
+        },
+        "registration_factors": {
+            "score": 20,
+            "indicators": ["domain_is_registered", "unsafe_registrar"],
+            "details": {"registrar": "NameCheap, Inc.", "registrar_safe": false}
+        }
+    }
+}
+```
+
+**API Endpoints:**
+```python
+# Calculate risk for single domain
+POST /api/v1/findings/typosquat/{domain_id}/calculate-risk-score
+
+# Batch calculation
+POST /api/v1/findings/typosquat/calculate-risk-scores
+{
+    "program_name": "my-program",  # Optional: filter by program
+    "finding_ids": ["id1", "id2"]  # Optional: specific IDs
+}
+```
+
+### Parked Domain Detection (Runner-Side)
+
+**Location:** `src/runner/app/tasks/typosquat_components.py` (`TyposquatAnalyzer.parse_worker_output`)
+
+Parked domains are identified during worker output parsing based on multiple indicators.
+
+**Parked Domain Indicators:**
+```python
+PARKING_INDICATORS = {
+    'keywords': ['parked', 'for sale', 'buy this domain', 'domain parking', 
+                 'this domain is for sale', 'hugedomains', 'sedo', 'afternic'],
+    'title_patterns': ['domain for sale', 'parked domain', 'coming soon'],
+    'known_parking_ips': ['34.102.136.180', '52.0.0.0/8'],  # Common parking IPs
+    'known_parking_registrars': ['HugeDomains', 'Sedo', 'Afternic']
+}
+```
+
+**Confidence Score Calculation:**
+```python
+def _calculate_parked_confidence(self, result):
+    confidence = 0
+    reasons = []
+    
+    # Check page title for parking keywords
+    title = result.get('title', '').lower()
+    for keyword in PARKING_INDICATORS['keywords']:
+        if keyword in title:
+            confidence += 25
+            reasons.append(f"title_contains_{keyword}")
+    
+    # Check if hosted on known parking IP
+    for ip in result.get('dns_a', []):
+        if ip in PARKING_INDICATORS['known_parking_ips']:
+            confidence += 30
+            reasons.append("known_parking_ip")
+    
+    # Check registrar
+    registrar = result.get('whois', {}).get('registrar', '')
+    if registrar in PARKING_INDICATORS['known_parking_registrars']:
+        confidence += 20
+        reasons.append("parking_registrar")
+    
+    # HTTP redirects to parking service
+    final_url = result.get('final_url', '')
+    if 'sedo.com' in final_url or 'hugedomains' in final_url:
+        confidence += 40
+        reasons.append("redirects_to_parking")
+    
+    return min(confidence, 100), reasons
+```
+
+**Output Fields:**
+```json
+{
+    "is_parked": true,
+    "parked_confidence": 85,
+    "parked_detection_timestamp": "2025-01-27T20:18:48Z",
+    "parked_detection_reasons": {
+        "indicators": ["title_contains_parked", "known_parking_ip"],
+        "title_match": "Domain Parked - Buy Now",
+        "parking_service": "sedo"
+    }
+}
+```
+
+## Component Classes (typosquat_components.py)
+
+### VariationCacheManager
+
+```python
+class VariationCacheManager:
+    """Redis-based caching of tested domain variations"""
+    
+    def __init__(self, redis_url=None, default_ttl=None):
+        self.redis_url = redis_url or os.getenv('REDIS_URL', 'redis://redis:6379/0')
+        self.default_ttl = default_ttl or int(os.getenv('TYPOSQUAT_CACHE_TTL', '2592000'))
+        # 2592000 seconds = 30 days
+    
+    def _get_cache_key(self, variation_domain, original_domain, program_name):
+        return f"typosquat:tested:{program_name}:{original_domain}:{variation_domain}"
+    
+    def mark_variation_as_tested(self, variation_domain, original_domain, program_name):
+        """Mark a variation as tested (cached for TTL)"""
+        cache_value = json.dumps({
+            "tested_at": datetime.utcnow().isoformat(),
+            "original_domain": original_domain,
+            "variation_domain": variation_domain
+        })
+        self.redis_client.setex(cache_key, self.default_ttl, cache_value)
+    
+    def filter_untested_variations(self, variations, original_domain, program_name):
+        """Filter out variations that are already cached"""
+        tested = self.get_tested_variations(original_domain, program_name)
+        return {d: f for d, f in variations.items() if d not in tested}
+```
+
+### ApiClient
+
+```python
+class ApiClient:
+    """API communication for typosquat detection"""
+    
+    def get_already_tested_domains(self, original_domain=None, program_name=""):
+        """Get domains that already exist in the API (historical deduplication)"""
+        response = requests.post(
+            f"{self.data_api_url}/findings/typosquat/search",
+            json={
+                "program": program_name,
+                "original_domain": original_domain,
+                "page_size": 100
+            },
+            headers=self.headers
+        )
+        
+        tested_domains = set()
+        for item in response.json().get("items", []):
+            tested_domains.add(item.get("typo_domain"))
+        return tested_domains
+```
+
+## Environment Variables
+
+| Variable | Purpose | Default |
+|----------|---------|---------|
+| `DATA_API_URL` | API base URL | `http://api:8000` |
+| `INTERNAL_SERVICE_API_KEY` | Auth token for API requests | `""` |
+| `PROGRAM_NAME` | Program context for findings | `""` |
+| `REDIS_URL` | Redis connection URL | `redis://redis:6379/0` |
+| `TYPOSQUAT_CACHE_TTL` | Cache TTL in seconds | `2592000` (30 days) |
+| `TYPOSQUAT_USE_CACHE` | Enable Redis caching | `true` |
+| `TYPO_WORKER_LOG` | Worker log level | `INFO` |
+
+## Best Practices
+
+### When Modifying Variation Generation
+
+1. **Respect offset rotation** - Don't reset offsets unless intentionally reprocessing
+2. **Log generation statistics** - Track fuzzer effectiveness for debugging
+3. **Handle domain exhaustion** - Some short domains have limited variations
+4. **Use deduplication** - Both Redis (fast) and API (comprehensive)
+
+### When Modifying Worker Analysis
+
+1. **Handle subdomains specially** - WHOIS comes from root domain, not subdomain
+2. **Use appropriate timeouts** - DNS, HTTP, WHOIS have different timeout needs
+3. **Detect wildcards** - Wildcard domains need special handling
+4. **Preserve registered=False domains** - Only output findings for registered domains
+
+### When Adding New Analysis Features
+
+1. **Add to BuiltInDomainAnalyzer** - Keep analysis logic in worker
+2. **Pass via command flags** - Don't hardcode analysis options
+3. **Update finding schema** - Add new fields to TyposquatDomain model
+4. **Consider performance** - HTTP probing is expensive, be selective
+
+### When Modifying Risk Score Calculation
+
+1. **Use protected_domain_similarities** - Never use `original_domain` for similarity (it's the dnstwist input, not the protected domain)
+2. **Update version number** - Increment `risk_analysis_version` when changing scoring logic
+3. **Populate all fields** - Both `risk_score` and all `risk_analysis_*` fields must be set
+4. **Trigger on URL insert** - Risk recalculation needed when related URLs are added (affects SSL, hosting, content factors)
+5. **Use program config** - Check `safe_registrar` and `safe_ssl_issuer` from program settings
+
+### When Modifying Parked Domain Detection
+
+1. **Keep in runner** - Parked detection happens during output parsing, not API-side
+2. **Don't affect similarity** - Parked status is separate from protected domain similarity
+3. **Update confidence calculation** - Add new indicators to `_calculate_parked_confidence`
+4. **Log detection reasons** - Store in `parked_detection_reasons` for debugging
+
+### When Modifying Protected Domain Similarity
+
+1. **Calculate on insert** - Similarity calculated when domain is inserted via API
+2. **Recalculate on config change** - Provide endpoint to recalculate when protected_domains list changes
+3. **Sort by similarity** - Results stored descending by `similarity_percent`
+4. **Use apex domains** - Compare apex domains (strip subdomains) for accurate similarity
+
+### Testing Changes
+
+```bash
+# Test variation generation (runner side)
+python -c "
+from tasks.typosquat_components import VariationGenerator
+gen = VariationGenerator()
+vars = gen.generate_variations_with_fuzzers('example.com', max_variations=10)
+print(vars)
+"
+
+# Test worker locally
+echo '[{"domain":"examp1e.com","original_domain":"example.com","fuzzers":["homoglyph"]}]' | \
+  python3 typosquat_worker.py --variations-stdin --active --geoip --output-json
+
+# Test subdomain discovery mode
+echo '[{"domain":"example.com","_is_subdomain_discovery":true}]' | \
+  python3 typosquat_worker.py --variations-stdin --find-subdomains --active
+```
+
+## Spawned Job Integration
+
+The task can spawn additional jobs during execution:
+
+```python
+# Spawn screenshot jobs
+task_id = await self.spawn_screenshot_job(urls_for_screenshots, program_name)
+
+# Spawn fuzzing jobs
+task_id = await self.spawn_worker_job(
+    task_name="fuzz_website",
+    command=command,
+    program_name=program_name,
+    timeout=1200
+)
+```
+
+**Output Handler Registration:**
+```python
+def _register_output_handlers_for_spawned_tasks(self, task_ids):
+    for task_id in task_ids:
+        def make_output_handler(tid):
+            def output_handler(output):
+                self.spawned_task_outputs[tid] = output
+            return output_handler
+        self.task_queue_client.output_handlers[task_id] = make_output_handler(task_id)
+```
+
+## Dual-Mode Task Pattern (FuzzWebsite Integration)
+
+When typosquat detection spawns fuzzing jobs, FuzzWebsite operates in "typosquat findings mode":
+
+```python
+# 1. FuzzWebsite.parse_output() returns URL assets (normal)
+parsed_assets = fuzz_task.parse_output(output)
+
+# 2. Transform assets to TyposquatURL findings using context
+context = {
+    'original_domain': 'example.com',
+    'typo_domain': 'examp1e.com',
+    'risk_factors': {...}
+}
+findings = fuzz_task.transform_to_findings(parsed_assets, context)
+# Returns: {FindingType.TYPOSQUAT_URL: [...]}
+```
+
+## Common Issues & Solutions
+
+### Issue: "All variations already tested"
+**Cause:** Redis cache or API contains all generated variations
+**Solution:** 
+- Wait for cache TTL (30 days) to expire
+- Use larger `max_variations` parameter
+- Reset cache with `redis-cli DEL typosquat:tested:{program}:{domain}:*`
+
+### Issue: "Domain exhausted"
+**Cause:** Short domains have limited variation space
+**Solution:**
+- Use more fuzzers (especially `various` for TLD variations)
+- Accept that some domains have naturally limited variations
+- Add dictionary-based variations
+
+### Issue: "High false positive rate"
+**Cause:** Registered but legitimate domains flagged
+**Solution:**
+- Enable wildcard detection to filter parking pages
+- Check WHOIS creation date (recently registered = more suspicious)
+- Use GeoIP to identify suspicious hosting locations
+
+### Issue: "Worker timeout"
+**Cause:** Too many domains per chunk or slow network
+**Solution:**
+- Reduce chunk size (default 50 per command)
+- Increase timeout parameter
+- Reduce `--workers` count to avoid overwhelming DNS/HTTP
+
+### Issue: "Risk score is 0 or missing detailed analysis"
+**Cause:** Risk calculation not triggered or `protected_domain_similarities` is empty
+**Solution:**
+- Ensure program has `protected_domains` configured
+- Trigger similarity recalculation: program-wide `POST .../recalculate-similarities/{program_name}` or per-finding `POST .../typosquat/{finding_id}/recalculate-similarities`
+- Trigger risk recalculation: `POST /api/v1/findings/typosquat/calculate-risk-scores`
+- Check that `risk_analysis_version` is "2.1" or later
+
+### Issue: "risk_analysis fields are null but risk_score has value"
+**Cause:** Old risk calculation or batch calculation bug (pre-2.1)
+**Solution:**
+- Recalculate using batch endpoint with the domain IDs
+- Check `calculate_typosquat_risk_scores` sets all detailed fields (not just `risk_score`)
+
+### Issue: "Similarity calculated against wrong domain"
+**Cause:** Using `original_domain` instead of `protected_domain_similarities`
+**Solution:**
+- `original_domain` is the dnstwist input (e.g., "examp1e.com" generated from "example.com")
+- `protected_domain_similarities` contains actual protected domains from program config
+- Risk calculation should use highest similarity from `protected_domain_similarities`
+
+### Issue: "Parked domain not detected"
+**Cause:** Missing parking indicators in detection logic
+**Solution:**
+- Add new parking keywords to `PARKING_INDICATORS['keywords']`
+- Add known parking IPs to detection
+- Check page title and final redirect URL for parking services

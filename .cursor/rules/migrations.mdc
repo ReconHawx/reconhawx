@@ -1,0 +1,175 @@
+---
+globs: ["src/migrations/**", "src/api/app/models/**"]
+---
+
+# Database Migrations
+
+## When to Create Migrations
+
+**Always create a migration when:**
+- Adding, modifying, or removing database tables
+- Adding, modifying, or removing columns
+- Adding, modifying, or removing indexes
+- Adding, modifying, or removing constraints (foreign keys, unique, check)
+- Changing column types or default values
+- Any schema change that affects the database structure
+
+**Never modify the database schema without a migration.** All schema changes must be versioned and tracked.
+
+## Migration File Format
+
+Migration files follow the naming convention: `V{major}.{minor}.{patch}__{description}.sql`
+
+Examples:
+- `V2.33.0__Add_new_table.sql`
+- `V2.33.1__Add_column_to_existing_table.sql`
+
+### File Structure
+
+```sql
+-- Migration: Description of what this migration does
+-- Version: X.Y.Z
+-- Created: YYYY-MM-DDTHH:MM:SS
+
+-- UP MIGRATION
+-- SQL statements to apply the migration
+CREATE TABLE example_table (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- DOWN MIGRATION (optional but recommended)
+-- SQL statements to rollback the migration
+DROP TABLE example_table;
+```
+
+## Version Numbering
+
+- Use semantic versioning: `major.minor.patch`
+- Increment **minor** version for new features (new tables, significant changes)
+- Increment **patch** version for small additions (new columns, indexes)
+- Check existing migrations in `src/migrations/` to determine the next version number
+
+## Creating Migrations
+
+### Using the CLI
+
+```bash
+# Create a new migration file with a template
+python src/migrations/migrate.py create "Add user preferences table"
+
+# Or use the wrapper script
+./scripts/migrate.sh create "Add user preferences table"
+```
+
+### Manual Creation
+
+1. Check the latest version in `src/migrations/`
+2. Create a new file with the next version number
+3. Follow the file structure above
+
+## Running Migrations
+
+```bash
+# Check migration status
+./scripts/migrate.sh status
+
+# Preview migrations (dry run)
+./scripts/migrate.sh run --dry-run
+
+# Apply pending migrations
+./scripts/migrate.sh run
+
+# Run with custom port
+./scripts/migrate.sh --port 5433 run
+
+# Validate migrations
+./scripts/migrate.sh validate
+```
+
+## Best Practices
+
+### DO:
+- ✅ Create a migration for every schema change
+- ✅ Use descriptive names that explain the change
+- ✅ Include DOWN migration when possible for rollback capability
+- ✅ Test migrations on a copy of production data first
+- ✅ Keep migrations idempotent when possible (use `IF NOT EXISTS`, `IF EXISTS`)
+- ✅ Add indexes on frequently queried columns
+- ✅ Use UUID for primary keys (consistent with existing models)
+- ✅ Include `created_at` and `updated_at` timestamps on new tables
+- ✅ Use PostgreSQL-specific types: `UUID`, `INET`, `JSONB`, `ARRAY`
+
+### DON'T:
+- ❌ Modify existing migration files after they've been applied
+- ❌ Skip version numbers
+- ❌ Make schema changes directly in the database
+- ❌ Create migrations that depend on application code
+- ❌ Include data migrations mixed with schema migrations (separate them)
+
+## Migration Tracking
+
+The system tracks migrations in a `schema_migrations` table:
+- `version`: Migration version
+- `applied_at`: When applied
+- `checksum`: Hash for validation
+- `execution_time_ms`: Duration
+- `success`: Whether it succeeded
+- `error_message`: Error details if failed
+
+## Syncing Models with Migrations
+
+When creating a migration:
+1. Update the SQLAlchemy models in `src/api/app/models/postgres.py`
+2. Create the corresponding migration SQL
+3. Ensure the migration SQL matches the model changes exactly
+
+## Common Migration Patterns
+
+### Adding a New Table
+
+```sql
+CREATE TABLE new_table (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name VARCHAR(255) NOT NULL,
+    program_id UUID NOT NULL REFERENCES programs(id) ON DELETE CASCADE,
+    data JSONB DEFAULT '{}',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX ix_new_table_program_id ON new_table(program_id);
+CREATE INDEX ix_new_table_name ON new_table(name);
+```
+
+### Adding a Column
+
+```sql
+ALTER TABLE existing_table ADD COLUMN new_column VARCHAR(255);
+ALTER TABLE existing_table ADD COLUMN new_column_with_default BOOLEAN DEFAULT false;
+```
+
+### Adding an Index
+
+```sql
+CREATE INDEX ix_table_column ON table_name(column_name);
+CREATE INDEX ix_table_composite ON table_name(column1, column2);
+```
+
+### Adding a Foreign Key
+
+```sql
+ALTER TABLE child_table 
+ADD CONSTRAINT fk_child_parent 
+FOREIGN KEY (parent_id) REFERENCES parent_table(id) ON DELETE CASCADE;
+```
+
+## References
+
+- Migration files: `src/migrations/V*.sql`
+- Migration CLI: `src/migrations/cli.py`
+- Migration runner: `src/migrations/migration_runner.py`
+- Shell wrapper: `scripts/migrate.sh`
+- SQLAlchemy models: `src/api/app/models/postgres.py`
+- Quick index (agents / contributors): `AGENTS.md` (repository root)
