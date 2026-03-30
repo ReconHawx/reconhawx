@@ -130,7 +130,11 @@ function TyposquatFindings() {
     apex_only: searchParams.get('apex_only') === 'true',
     similarity_protected_domain: searchParams.get('similarity_protected_domain') || '',
     min_similarity_percent: searchParams.get('min_similarity_percent') || '',
-    auto_resolve: searchParams.get('auto_resolve') || ''
+    auto_resolve: searchParams.get('auto_resolve') || '',
+    created_at_from: searchParams.get('created_at_from') || '',
+    created_at_to: searchParams.get('created_at_to') || '',
+    updated_at_from: searchParams.get('updated_at_from') || '',
+    updated_at_to: searchParams.get('updated_at_to') || ''
   });
   
   // Sort state
@@ -324,6 +328,8 @@ function TyposquatFindings() {
 
   // Build API filter object
   const buildTypedParams = useCallback(() => {
+    const dayStartUtc = (ymd) => (ymd ? `${ymd}T00:00:00.000Z` : undefined);
+    const dayEndUtc = (ymd) => (ymd ? `${ymd}T23:59:59.999Z` : undefined);
     const params = {
       search: filters.typo_domain || undefined,
       status: (filters.status && filters.status.length > 0) ? filters.status : undefined,
@@ -344,6 +350,10 @@ function TyposquatFindings() {
       similarity_protected_domain: filters.similarity_protected_domain || undefined,
       min_similarity_percent: filters.min_similarity_percent ? parseFloat(filters.min_similarity_percent) : undefined,
       auto_resolve: filters.auto_resolve ? (filters.auto_resolve === 'true') : undefined,
+      created_at_from: dayStartUtc(filters.created_at_from),
+      created_at_to: dayEndUtc(filters.created_at_to),
+      updated_at_from: dayStartUtc(filters.updated_at_from),
+      updated_at_to: dayEndUtc(filters.updated_at_to),
       program: selectedProgram || undefined,
       sort_by: sortField,
       sort_dir: sortDirection,
@@ -1544,6 +1554,50 @@ function TyposquatFindings() {
                   </Col>
                 </Row>
 
+                {/* Date ranges: created_at / updated_at */}
+                <Row>
+                  <Col md={6}>
+                    <Form.Group className="mb-3">
+                      <Form.Label>Created at</Form.Label>
+                      <div className="d-flex flex-wrap align-items-center gap-2">
+                        <Form.Control
+                          type="date"
+                          value={filters.created_at_from}
+                          onChange={(e) => handleFilterChange('created_at_from', e.target.value)}
+                          aria-label="Created from"
+                        />
+                        <span className="text-muted small">to</span>
+                        <Form.Control
+                          type="date"
+                          value={filters.created_at_to}
+                          onChange={(e) => handleFilterChange('created_at_to', e.target.value)}
+                          aria-label="Created to"
+                        />
+                      </div>
+                    </Form.Group>
+                  </Col>
+                  <Col md={6}>
+                    <Form.Group className="mb-3">
+                      <Form.Label>Updated at</Form.Label>
+                      <div className="d-flex flex-wrap align-items-center gap-2">
+                        <Form.Control
+                          type="date"
+                          value={filters.updated_at_from}
+                          onChange={(e) => handleFilterChange('updated_at_from', e.target.value)}
+                          aria-label="Updated from"
+                        />
+                        <span className="text-muted small">to</span>
+                        <Form.Control
+                          type="date"
+                          value={filters.updated_at_to}
+                          onChange={(e) => handleFilterChange('updated_at_to', e.target.value)}
+                          aria-label="Updated to"
+                        />
+                      </div>
+                    </Form.Group>
+                  </Col>
+                </Row>
+
                 {/* Row 2: [ip address text box] [source dropdown] */}
                 <Row>
                   <Col md={6}>
@@ -1775,7 +1829,11 @@ function TyposquatFindings() {
                         apex_only: false,
                         similarity_protected_domain: '',
                         min_similarity_percent: '',
-                        auto_resolve: ''
+                        auto_resolve: '',
+                        created_at_from: '',
+                        created_at_to: '',
+                        updated_at_from: '',
+                        updated_at_to: ''
                       });
                     }}>
                       Clear
@@ -1818,7 +1876,11 @@ function TyposquatFindings() {
                 apex_only: false,
                 similarity_protected_domain: '',
                 min_similarity_percent: '',
-                auto_resolve: ''
+                auto_resolve: '',
+                created_at_from: '',
+                created_at_to: '',
+                updated_at_from: '',
+                updated_at_to: ''
               });
               setCurrentPage(1);
             }}>Reset filters</Button>
