@@ -29,7 +29,7 @@ AI analysis runs in **runner pods** (not the API) for load isolation. Uses a ded
 ## Job Naming
 
 - **Job name**: `ai-analysis-job-{job_id}` (not `job-{job_id}`)
-- **ConfigMap**: `ai-analysis-job-data-{job_id}`
+- **ConfigMap**: `ai-analysis-job-data-{job_id}` — patched with `ownerReferences` to the Batch Job after creation so it is garbage-collected when the Job is removed (same pattern as workflow `workflow-data-*` + `ttlSecondsAfterFinished`).
 - **Job status**: `get_job_status(job_id, job_type="ai_analysis_batch")` uses the correct K8s name
 
 ## Quota Sizing
