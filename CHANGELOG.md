@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.1](https://github.com/ReconHawx/reconhawx/compare/v0.4.0...v0.4.1) (2026-03-31)
+
+
+### Bug Fixes
+
+* restore APP_VERSION environment variable in Dockerfile for consi… ([cf72ef8](https://github.com/ReconHawx/reconhawx/commit/cf72ef8d509d5bc99f3b78e4e27cc1b729bb4188))
+* restore APP_VERSION environment variable in Dockerfile for consistency ([9fc7052](https://github.com/ReconHawx/reconhawx/commit/9fc705204a87d5163924f8fba2078b25ff6be298))
+
 ## [0.4.0](https://github.com/ReconHawx/reconhawx/compare/v0.3.2...v0.4.0) (2026-03-31)
 
 
