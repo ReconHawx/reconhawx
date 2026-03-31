@@ -385,8 +385,12 @@ export function AuthProvider({ children }) {
       refreshThreshold = 300000; // 5 minutes for longer tokens
     }
 
-    const refreshTime = timeUntilExpiry - refreshThreshold;
-
+    const msUntilRefresh = timeUntilExpiry - refreshThreshold;
+    return {
+      timeUntilExpiry,
+      refreshThreshold,
+      msUntilRefresh,
+    };
   };
 
   const value = {
