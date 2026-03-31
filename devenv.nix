@@ -33,6 +33,7 @@
     trufflehog
     secretspec
     grype
+    gh
   ];
   env = {};
   processes = {};
