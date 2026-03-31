@@ -7,7 +7,7 @@
     "@testing-library/react": "^13.3.0",
     "@testing-library/user-event": "^13.5.0",
     "ace-builds": "^1.43.0",
-    "axios": "^1.4.0",
+    "axios": "1.14.0",
     "bootstrap": "^5.3.0",
     "date-fns": "^4.1.0",
     "react": "^18.2.0",
@@ -19,6 +19,9 @@
     "reactflow": "^11.10.1",
     "web-vitals": "^2.1.4",
     "zustand": "^4.4.7"
+  },
+  "overrides": {
+    "axios": "1.10.0"
   },
   "scripts": {
     "start": "NODE_OPTIONS='--no-warnings --max-old-space-size=4096' react-scripts start",
@@ -43,5 +46,13 @@
       "last 1 firefox version",
       "last 1 safari version"
     ]
+  },
+  "overrides": {
+    "@tootallnate/once": "3.0.1",
+    "nth-check": "2.1.1",
+    "postcss": "8.4.49",
+    "serialize-javascript": "7.0.5",
+    "underscore": "1.13.8",
+    "webpack-dev-server": "5.2.2"
   }
 }
