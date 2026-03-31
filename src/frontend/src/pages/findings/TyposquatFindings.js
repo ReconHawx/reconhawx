@@ -16,12 +16,15 @@ import {
   OverlayTrigger,
   Popover
 } from 'react-bootstrap';
-import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
+import { useNavigate, useSearchParams, useLocation, Link } from 'react-router-dom';
 import { useProgramFilter } from '../../contexts/ProgramFilterContext';
 import { useAuth } from '../../contexts/AuthContext';
 import api, { jobAPI, userManagementAPI } from '../../services/api';
 import { formatDate } from '../../utils/dateUtils';
 import { initializeUserCache } from '../../utils/userUtils';
+
+/** Keep in sync with API `AI_ANALYSIS_BATCH_MAX_FINDINGS` in typosquat_findings.py (temporary cap). */
+const AI_ANALYSIS_BATCH_MAX_FINDINGS = 10;
 
 function TyposquatFindings() {
   const navigate = useNavigate();
@@ -98,7 +101,7 @@ function TyposquatFindings() {
   React.useEffect(() => {
     initializeUserCache(user);
   }, [user]);
-  
+
   // Debug: Log programs from context
   // State management
   const [findings, setFindings] = useState([]);
@@ -209,6 +212,16 @@ function TyposquatFindings() {
   const [batchProgramName, setBatchProgramName] = useState('');
   const [batchOriginalDomain, setBatchOriginalDomain] = useState('');
   const [uploadedFile, setUploadedFile] = useState(null);
+
+  // Batch AI analysis (selected rows → K8s job)
+  const [showAiAnalysisBatchModal, setShowAiAnalysisBatchModal] = useState(false);
+  const [aiBatchLoading, setAiBatchLoading] = useState(false);
+  const [batchAiForce, setBatchAiForce] = useState(false);
+  const [batchAiModel, setBatchAiModel] = useState('');
+  const [aiModels, setAiModels] = useState([]);
+  const [aiDefaultModel, setAiDefaultModel] = useState('');
+  const [aiModelsLoading, setAiModelsLoading] = useState(false);
+  const [aiAnalysisBatchMessage, setAiAnalysisBatchMessage] = useState({ text: '', type: '' });
   
   // Fallback programs state if context doesn't have them
   const [localPrograms, setLocalPrograms] = useState([]);
@@ -1225,7 +1238,119 @@ function TyposquatFindings() {
     }, 5000); // Poll every 5 seconds
   };
 
+  const pollAiAnalysisBatchJobStatus = (jobId) => {
+    const pollInterval = setInterval(async () => {
+      try {
+        const response = await jobAPI.getStatus(jobId);
+        const statusResponse = response.job;
 
+        if (statusResponse.status === 'completed') {
+          clearInterval(pollInterval);
+          let results = statusResponse.results;
+          if (typeof results === 'string') {
+            try {
+              results = JSON.parse(results);
+            } catch (e) {
+              console.error('Error parsing AI batch job results:', e);
+              results = {};
+            }
+          }
+          setAiAnalysisBatchMessage({
+            text: `AI analysis batch completed: ${results?.success_count ?? 0} successful, ${results?.error_count ?? 0} errors`,
+            type: 'success',
+          });
+          fetchFindings();
+          setTimeout(() => setAiAnalysisBatchMessage({ text: '', type: '' }), 10000);
+        } else if (statusResponse.status === 'failed') {
+          clearInterval(pollInterval);
+          setAiAnalysisBatchMessage({
+            text: `AI analysis batch failed: ${statusResponse.message}`,
+            type: 'danger',
+          });
+        } else {
+          setAiAnalysisBatchMessage({
+            text: `AI analysis batch running... ${statusResponse.progress}% complete`,
+            type: 'info',
+          });
+        }
+      } catch (err) {
+        console.error('Error polling AI batch job status:', err);
+        clearInterval(pollInterval);
+        setAiAnalysisBatchMessage({
+          text: 'Error checking AI batch job status',
+          type: 'danger',
+        });
+      }
+    }, 5000);
+  };
+
+  const fetchAiModelsForBatch = useCallback(async () => {
+    setAiModelsLoading(true);
+    try {
+      const data = await api.ai.getModels();
+      const models = data.models || [];
+      setAiModels(models);
+      const rawDef = data.default_model;
+      const def =
+        rawDef != null && String(rawDef).trim() !== '' ? String(rawDef).trim() : '';
+      setAiDefaultModel(def);
+      const names = new Set(models.map((m) => m.name).filter(Boolean));
+      setBatchAiModel(def && names.has(def) ? def : '');
+    } catch (err) {
+      setAiModels([]);
+      setAiDefaultModel('');
+      setBatchAiModel('');
+    } finally {
+      setAiModelsLoading(false);
+    }
+  }, []);
+
+  const handleOpenAiAnalysisBatchModal = () => {
+    if (!isAdmin() || selectedItems.size === 0) return;
+    setBatchAiForce(false);
+    setShowAiAnalysisBatchModal(true);
+    fetchAiModelsForBatch();
+  };
+
+  const handleExecuteAiAnalysisBatch = async () => {
+    if (!isAdmin() || selectedItems.size === 0) return;
+    if (selectedItems.size > AI_ANALYSIS_BATCH_MAX_FINDINGS) return;
+    setAiBatchLoading(true);
+    setAiAnalysisBatchMessage({ text: '', type: '' });
+    try {
+      const findingIds = Array.from(selectedItems);
+      const modelParam = batchAiModel || null;
+      const result = await api.findings.typosquat.aiAnalysisBatchForFindingIds({
+        finding_ids: findingIds,
+        force: batchAiForce,
+        model: modelParam,
+      });
+      const jobId = result?.job_id;
+      const n = result?.finding_ids?.length ?? findingIds.length;
+      setShowAiAnalysisBatchModal(false);
+      setBatchAiForce(false);
+      setBatchAiModel('');
+      setAiAnalysisBatchMessage({
+        text: (
+          <span>
+            AI analysis batch started for {n} finding(s). Job ID: {jobId}.{' '}
+            <Link to="/admin/jobs">View jobs</Link>
+          </span>
+        ),
+        type: 'info',
+      });
+      if (jobId) {
+        pollAiAnalysisBatchJobStatus(jobId);
+      }
+    } catch (err) {
+      setAiAnalysisBatchMessage({
+        text: err.response?.data?.detail || err.message || 'Failed to start AI analysis batch',
+        type: 'danger',
+      });
+    } finally {
+      setAiBatchLoading(false);
+    }
+  };
 
   const handleExport = () => {
     setShowExportModal(true);
@@ -1495,6 +1620,23 @@ function TyposquatFindings() {
               )}
             </Button>
           )}
+          {selectedItems.size > 0 && isAdmin() && (
+            <Button
+              variant="outline-primary"
+              size="sm"
+              onClick={handleOpenAiAnalysisBatchModal}
+              disabled={aiBatchLoading}
+              className="me-2"
+              title={
+                selectedItems.size > AI_ANALYSIS_BATCH_MAX_FINDINGS
+                  ? `Select at most ${AI_ANALYSIS_BATCH_MAX_FINDINGS} findings for one batch`
+                  : undefined
+              }
+            >
+              <i className="bi bi-robot" aria-hidden /> AI analysis ({selectedItems.size}
+              {selectedItems.size > AI_ANALYSIS_BATCH_MAX_FINDINGS ? ` — max ${AI_ANALYSIS_BATCH_MAX_FINDINGS}` : ''})
+            </Button>
+          )}
           {selectedItems.size > 0 && (
             <Button
               variant="outline-warning"
@@ -1556,6 +1698,12 @@ function TyposquatFindings() {
       {typosquatBatchMessage.text && (
         <Alert variant={typosquatBatchMessage.type} className="mb-4">
           {typosquatBatchMessage.text}
+        </Alert>
+      )}
+
+      {aiAnalysisBatchMessage.text && (
+        <Alert variant={aiAnalysisBatchMessage.type} className="mb-4">
+          {aiAnalysisBatchMessage.text}
         </Alert>
       )}
 
@@ -2972,6 +3120,84 @@ function TyposquatFindings() {
             </Alert>
           )}
         </Modal.Body>
+      </Modal>
+
+      {/* Batch AI analysis (selected findings) */}
+      <Modal
+        show={showAiAnalysisBatchModal && isAdmin()}
+        onHide={() => {
+          if (!aiBatchLoading) setShowAiAnalysisBatchModal(false);
+        }}
+      >
+        <Modal.Header closeButton>
+          <Modal.Title>AI analysis ({selectedItems.size} selected)</Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          <p className="text-muted small mb-3">
+            Runs a background job (same path as single-finding analysis). Unreachable or unauthorized IDs are skipped on the server; only findings you can access are analyzed.
+          </p>
+          {selectedItems.size > AI_ANALYSIS_BATCH_MAX_FINDINGS && (
+            <Alert variant="warning" className="mb-3 py-2">
+              At most {AI_ANALYSIS_BATCH_MAX_FINDINGS} findings per batch for now. You have {selectedItems.size} selected—deselect some or split into multiple jobs.
+            </Alert>
+          )}
+          <Form.Check
+            type="checkbox"
+            id="batch-ai-force"
+            label="Force re-analyze (even if already analyzed)"
+            checked={batchAiForce}
+            onChange={(e) => setBatchAiForce(e.target.checked)}
+            disabled={aiBatchLoading}
+            className="mb-3"
+          />
+          <Form.Group className="mb-3">
+            <Form.Label>Ollama model</Form.Label>
+            {aiModelsLoading ? (
+              <div className="text-muted small">
+                <Spinner animation="border" size="sm" className="me-2" />
+                Loading models…
+              </div>
+            ) : aiModels.length > 0 ? (
+              <Form.Select
+                size="sm"
+                style={{ width: 'auto', minWidth: '160px' }}
+                value={batchAiModel}
+                onChange={(e) => setBatchAiModel(e.target.value)}
+                disabled={aiBatchLoading}
+              >
+                {!aiDefaultModel && <option value="" />}
+                {aiModels.map((m) => (
+                  <option key={m.name} value={m.name}>
+                    {m.name}{m.parameter_size ? ` (${m.parameter_size})` : ''}
+                  </option>
+                ))}
+              </Form.Select>
+            ) : (
+              <p className="text-muted small mb-0">
+                Could not load models from Ollama. The server default model will be used.
+              </p>
+            )}
+          </Form.Group>
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="secondary" onClick={() => setShowAiAnalysisBatchModal(false)} disabled={aiBatchLoading}>
+            Cancel
+          </Button>
+          <Button
+            variant="primary"
+            onClick={handleExecuteAiAnalysisBatch}
+            disabled={aiBatchLoading || selectedItems.size > AI_ANALYSIS_BATCH_MAX_FINDINGS}
+          >
+            {aiBatchLoading ? (
+              <>
+                <Spinner animation="border" size="sm" className="me-2" />
+                Starting…
+              </>
+            ) : (
+              <>Start AI analysis</>
+            )}
+          </Button>
+        </Modal.Footer>
       </Modal>
 
       {/* PhishLabs Action Modal */}

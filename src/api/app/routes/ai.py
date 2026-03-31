@@ -6,22 +6,31 @@ that are shared across all AI-powered features in the application.
 """
 
 import logging
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional, Set
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from auth.dependencies import get_current_user_from_middleware
+from auth.dependencies import get_current_user_from_middleware, require_superuser_or_admin
 from models.user_postgres import UserResponse
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def _ollama_tag_names(raw_models: List[Dict[str, Any]]) -> Set[str]:
+    names: Set[str] = set()
+    for m in raw_models:
+        n = (m.get("name") or m.get("model") or "").strip()
+        if n:
+            names.add(n)
+    return names
+
+
 @router.get("/models", response_model=Dict[str, Any])
 async def list_models(
-    current_user: UserResponse = Depends(get_current_user_from_middleware),
+    current_user: UserResponse = Depends(require_superuser_or_admin),
 ):
-    """List available Ollama models and the configured default."""
+    """List available Ollama models and the configured default if that model is installed."""
     from services.ollama_client import ollama_client
     try:
         raw_models = await ollama_client.list_models()
@@ -34,9 +43,12 @@ async def list_models(
             }
             for m in raw_models
         ]
+        available = _ollama_tag_names(raw_models)
+        configured = (ollama_client.model or "").strip()
+        default_model: Optional[str] = configured if configured in available else None
         return {
             "status": "success",
-            "default_model": ollama_client.model,
+            "default_model": default_model,
             "models": models,
         }
     except Exception as exc:

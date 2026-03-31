@@ -607,6 +607,17 @@ export const typosquatAPI = {
     return response.data;
   },
 
+  /** Background job for explicitly selected finding IDs (not program-queue ai-analyze-batch). */
+  aiAnalysisBatchForFindingIds: async ({ finding_ids, model = null, force = false }) => {
+    const body = {
+      finding_ids,
+      force: !!force,
+    };
+    if (model) body.model = model;
+    const response = await api.post('/findings/typosquat/ai-analysis/batch', body);
+    return response.data;
+  },
+
   aiAnalyzeBatch: async (programName, { batchSize, model, reanalyzeAfterDays, applyAutoActions } = {}) => {
     const body = {
       program_name: programName,

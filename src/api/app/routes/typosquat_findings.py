@@ -15,7 +15,7 @@ from services.typosquat_filtering_service import TyposquatFilteringService
 import logging
 from pydantic import Field
 from sqlalchemy import and_
-from auth.dependencies import filter_by_user_programs, require_admin_or_manager, get_current_user_from_middleware, get_user_accessible_programs, require_internal_service_or_authentication
+from auth.dependencies import filter_by_user_programs, require_admin_or_manager, get_current_user_from_middleware, get_user_accessible_programs, require_internal_service_or_authentication, require_superuser_or_admin
 from models.user_postgres import UserResponse
 from utils.domain_utils import extract_apex_domain
 from models.job import (
@@ -4202,6 +4202,10 @@ async def process_queued_apex_domains(current_user: UserResponse = Depends(get_c
 
 # ===== AI ANALYSIS ENDPOINTS =====
 
+# Temporary per-job cap on findings processed in one ai_analysis_batch job (remove when scaling).
+AI_ANALYSIS_BATCH_MAX_FINDINGS = 10
+
+
 class AIAnalyzeBatchRequest(BaseModel):
     program_name: str = Field(..., description="Program to analyze findings for")
     batch_size: int = Field(50, ge=1, le=500, description="Max findings to analyze")
@@ -4211,15 +4215,13 @@ class AIAnalyzeBatchRequest(BaseModel):
     apply_auto_actions: bool = Field(False, description="Apply auto-actions after analysis based on program settings")
 
 
-@router.post("/typosquat/ai-analysis/batch", response_model=Dict[str, Any])
-async def create_ai_analysis_batch_job(
+async def _create_ai_analysis_batch_job_impl(
     request: AIAnalysisBatchRequest,
-    current_user: UserResponse = Depends(get_current_user_from_middleware),
-):
-    """Create a background job to run AI analysis on typosquat findings.
-
-    Submits to K8s runner for load isolation. Check job status via /jobs/{job_id}/status.
-    """
+    current_user: UserResponse,
+    *,
+    enforce_max_findings: bool,
+) -> Dict[str, Any]:
+    """Resolve finding IDs, optional explicit-batch size cap, submit K8s runner job."""
     if not request.finding_ids:
         raise HTTPException(status_code=400, detail="No finding IDs provided")
 
@@ -4239,11 +4241,22 @@ async def create_ai_analysis_batch_job(
     if not findings:
         raise HTTPException(status_code=404, detail="No valid typosquat findings found")
 
+    authorized_finding_ids = [str(f["id"]) for f in findings]
+    if enforce_max_findings and len(authorized_finding_ids) > AI_ANALYSIS_BATCH_MAX_FINDINGS:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"AI analysis batch is limited to {AI_ANALYSIS_BATCH_MAX_FINDINGS} findings per job "
+                f"({len(authorized_finding_ids)} eligible after access checks). "
+                "Select fewer findings or run multiple jobs."
+            ),
+        )
+
     job_id = str(uuid.uuid4())
     job_payload = {
         "job_id": job_id,
         "job_type": "ai_analysis_batch",
-        "finding_ids": request.finding_ids,
+        "finding_ids": authorized_finding_ids,
         "user_id": getattr(current_user, "id", "unknown"),
         "model": request.model,
         "force": request.force,
@@ -4265,10 +4278,25 @@ async def create_ai_analysis_batch_job(
 
     return {
         "status": "processing",
-        "message": f"AI analysis batch job started for {len(request.finding_ids)} findings",
+        "message": f"AI analysis batch job started for {len(authorized_finding_ids)} findings",
         "job_id": job_id,
-        "finding_ids": request.finding_ids,
+        "finding_ids": authorized_finding_ids,
     }
+
+
+@router.post("/typosquat/ai-analysis/batch", response_model=Dict[str, Any])
+async def create_ai_analysis_batch_job(
+    request: AIAnalysisBatchRequest,
+    current_user: UserResponse = Depends(require_superuser_or_admin),
+):
+    """Create a background job to run AI analysis on typosquat findings.
+
+    Submits to K8s runner for load isolation. Check job status via /jobs/{job_id}/status.
+    Explicit multi-finding requests are temporarily capped (see AI_ANALYSIS_BATCH_MAX_FINDINGS).
+    """
+    return await _create_ai_analysis_batch_job_impl(
+        request, current_user, enforce_max_findings=True
+    )
 
 
 @router.post("/typosquat/ai-analyze/{finding_id}", response_model=Dict[str, Any])
@@ -4276,7 +4304,7 @@ async def ai_analyze_finding(
     finding_id: str,
     force: bool = Query(False, description="Re-analyze even if already analyzed"),
     model: Optional[str] = Query(None, description="Override Ollama model"),
-    current_user: UserResponse = Depends(get_current_user_from_middleware),
+    current_user: UserResponse = Depends(require_superuser_or_admin),
 ):
     """Trigger AI analysis for a single typosquat finding.
 
@@ -4300,7 +4328,9 @@ async def ai_analyze_finding(
         model=model,
         force=force,
     )
-    result = await create_ai_analysis_batch_job(request, current_user)
+    result = await _create_ai_analysis_batch_job_impl(
+        request, current_user, enforce_max_findings=True
+    )
     result["finding_id"] = finding_id
     return result
 
@@ -4308,7 +4338,7 @@ async def ai_analyze_finding(
 @router.post("/typosquat/ai-analyze-batch", response_model=Dict[str, Any])
 async def ai_analyze_batch(
     request: AIAnalyzeBatchRequest,
-    current_user: UserResponse = Depends(get_current_user_from_middleware),
+    current_user: UserResponse = Depends(require_superuser_or_admin),
 ):
     """Trigger batch AI analysis for unanalyzed findings in a program.
 
@@ -4344,7 +4374,9 @@ async def ai_analyze_batch(
         model=request.model,
         force=bool(request.reanalyze_after_days),
     )
-    result = await create_ai_analysis_batch_job(batch_request, current_user)
+    result = await _create_ai_analysis_batch_job_impl(
+        batch_request, current_user, enforce_max_findings=False
+    )
     result["program_name"] = request.program_name
     result["batch_size"] = request.batch_size
     if request.apply_auto_actions:
