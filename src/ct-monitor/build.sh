@@ -40,7 +40,8 @@ else
 fi
 
 pushd $temp_dir
-docker buildx build --platform "${arch}" --builder "${BUILDX_BUILDER:-multiarch-builder}" -f ./Dockerfile "${docker_tags[@]}" . ${image_dest}
+docker buildx build --platform "${arch}" --builder "${BUILDX_BUILDER:-multiarch-builder}" \
+  --build-arg APP_VERSION="${APP_VERSION:-dev}" -f ./Dockerfile "${docker_tags[@]}" . ${image_dest}
 popd
 
 rm -rf $temp_dir

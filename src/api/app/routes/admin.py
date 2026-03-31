@@ -1024,6 +1024,25 @@ async def stop_ct_monitor(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/system-status")
+async def get_system_status(
+    current_user: UserResponse = Depends(require_superuser)
+):
+    """Return platform version and live Deployment status from the Kubernetes cluster."""
+    try:
+        from services.kubernetes import KubernetesService
+        k8s = KubernetesService()
+        services = k8s.list_deployments()
+    except Exception as e:
+        logger.error(f"Error querying Kubernetes deployments: {e}")
+        services = []
+
+    return {
+        "app_version": os.getenv("APP_VERSION", "dev"),
+        "services": services,
+    }
+
+
 class CtMonitorRuntimeUpdateRequest(BaseModel):
     """Partial update for global CT monitor runtime (stored in system_settings)."""
 

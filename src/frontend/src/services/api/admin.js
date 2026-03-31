@@ -294,6 +294,12 @@ export const adminAPI = {
   updateAiSettings: async (payload) => {
     const response = await api.put('/admin/ai-settings', payload);
     return response.data;
+  },
+
+  // System Status
+  getSystemStatus: async () => {
+    const response = await api.get('/admin/system-status');
+    return response.data;
   }
 };
 

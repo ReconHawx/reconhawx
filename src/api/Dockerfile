@@ -22,7 +22,9 @@ RUN chmod +x setup_nuclei_templates.sh update_nuclei_templates.py generate_nucle
 RUN ./setup_nuclei_templates.sh
 
 # Expose port
+ARG APP_VERSION=dev
+ENV APP_VERSION=${APP_VERSION}
+
 EXPOSE 8000
 
-# Run the application
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"] 
