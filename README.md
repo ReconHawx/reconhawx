@@ -53,6 +53,5 @@ ReconHawx builds on many open-source projects. Thanks to their authors and maint
 - [Subfinder](https://github.com/projectdiscovery/subfinder)
 - [tldextract](https://github.com/john-kurkowski/tldextract)
 - [unfurl](https://github.com/tomnomnom/unfurl)
-- [urllib3](https://urllib3.readthedocs.io/)
 - [urless](https://github.com/xnl-h4ck3r/urless)
 - [WPScan](https://wpscan.com/)
