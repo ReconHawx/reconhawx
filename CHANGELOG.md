@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.4.0](https://github.com/ReconHawx/reconhawx/compare/v0.3.2...v0.4.0) (2026-03-31)
+
+
+### Features
+
+* add admin system status page with per-service version tracking ([4c1b34d](https://github.com/ReconHawx/reconhawx/commit/4c1b34de1065121b6e8e6ce44443b2270448fdf2))
+* add admin system status page with per-service version tracking ([d9eb8e4](https://github.com/ReconHawx/reconhawx/commit/d9eb8e43ee0d3c9c3685a050b08e8470c873f9be))
+* add AI analysis batch processing for selected findings with superuser/admin requirement ([4d0e8db](https://github.com/ReconHawx/reconhawx/commit/4d0e8dbff90a0e86465fba60627be719d4c838ef))
+
 ## [0.3.2](https://github.com/ReconHawx/reconhawx/compare/v0.3.1...v0.3.2) (2026-03-31)
 
 
