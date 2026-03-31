@@ -74,6 +74,7 @@ jobs:
         env:
           BUILDX_BUILDER: ${{ steps.buildx.outputs.name }}
           META_TAGS: ${{ steps.meta.outputs.tags }}
+          APP_VERSION: ${{ inputs.version || 'dev' }}
         run: |
           set -euo pipefail
           chmod +x src/api/build.sh
@@ -125,6 +126,7 @@ jobs:
         env:
           BUILDX_BUILDER: ${{ steps.buildx.outputs.name }}
           META_TAGS: ${{ steps.meta.outputs.tags }}
+          APP_VERSION: ${{ inputs.version || 'dev' }}
         run: |
           set -euo pipefail
           chmod +x src/frontend/build.sh
@@ -176,6 +178,7 @@ jobs:
         env:
           BUILDX_BUILDER: ${{ steps.buildx.outputs.name }}
           META_TAGS: ${{ steps.meta.outputs.tags }}
+          APP_VERSION: ${{ inputs.version || 'dev' }}
         run: |
           set -euo pipefail
           chmod +x src/runner/build.sh
@@ -227,6 +230,7 @@ jobs:
         env:
           BUILDX_BUILDER: ${{ steps.buildx.outputs.name }}
           META_TAGS: ${{ steps.meta.outputs.tags }}
+          APP_VERSION: ${{ inputs.version || 'dev' }}
         run: |
           set -euo pipefail
           chmod +x src/ct-monitor/build.sh
@@ -278,6 +282,7 @@ jobs:
         env:
           BUILDX_BUILDER: ${{ steps.buildx.outputs.name }}
           META_TAGS: ${{ steps.meta.outputs.tags }}
+          APP_VERSION: ${{ inputs.version || 'dev' }}
         run: |
           set -euo pipefail
           chmod +x src/event-handler/build.sh
@@ -329,6 +334,7 @@ jobs:
         env:
           BUILDX_BUILDER: ${{ steps.buildx.outputs.name }}
           META_TAGS: ${{ steps.meta.outputs.tags }}
+          APP_VERSION: ${{ inputs.version || 'dev' }}
         run: |
           set -euo pipefail
           chmod +x src/worker/build.sh

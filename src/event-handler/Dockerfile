@@ -17,6 +17,8 @@ COPY ./ /app
 # Create symlink for config directory
 RUN ln -s /app/config /config
 
+ARG APP_VERSION=dev
+ENV APP_VERSION=${APP_VERSION}
 ENV PYTHONUNBUFFERED=1
 
 CMD ["python", "-m", "app.main"]

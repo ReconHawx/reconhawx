@@ -21,10 +21,14 @@ RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
 
 COPY --from=gotator-builder /go/bin/gotator /usr/local/bin/gotator
 
-COPY ./ .
+COPY ./app/ .
+COPY ./files/ ./files/
 
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
+
+ARG APP_VERSION=dev
+ENV APP_VERSION=${APP_VERSION}
 
 ENV PYTHONUNBUFFERED=1
 

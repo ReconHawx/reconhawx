@@ -19,6 +19,9 @@ FROM nginx:stable-alpine-slim
 
 RUN apk update && apk upgrade --no-cache
 
+ARG APP_VERSION=dev
+ENV APP_VERSION=${APP_VERSION}
+
 COPY --from=build /app/build /usr/share/nginx/html
 
 EXPOSE 80

@@ -3,3 +3,4 @@
 venv
 build.sh
 Dockerfile
+entrypoint.sh

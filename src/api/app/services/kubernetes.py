@@ -1,5 +1,6 @@
 from kubernetes import client, config
 from kubernetes.client.rest import ApiException
+from kubernetes.stream import stream
 import os
 import logging
 import json
@@ -37,6 +38,7 @@ class KubernetesService:
                 logger.warning("Could not load Kubernetes configuration")
 
         self.v1 = client.CoreV1Api()
+        self.apps_v1 = client.AppsV1Api()
         self.batch_v1 = client.BatchV1Api()
         self.custom_objects_v1 = client.CustomObjectsApi()
 
@@ -1249,4 +1251,87 @@ class KubernetesService:
             
         except Exception as e:
             logger.error(f"Error stopping workflow {workflow_id}: {str(e)}")
-            raise 
+            raise
+
+    def list_deployments(self, namespace: Optional[str] = None) -> List[Dict[str, Any]]:
+        """List all Deployments in the namespace with image, replica, and status info."""
+        namespace = namespace or os.getenv("KUBERNETES_NAMESPACE", "reconhawx")
+        try:
+            deployments = self.apps_v1.list_namespaced_deployment(namespace=namespace)
+        except ApiException as e:
+            logger.error(f"Failed to list deployments in {namespace}: {e}")
+            return []
+
+        results: List[Dict[str, Any]] = []
+        for dep in deployments.items:
+            containers = dep.spec.template.spec.containers or []
+            container = containers[0] if containers else None
+            image = container.image if container else "unknown"
+
+            app_version = self._read_pod_env(
+                dep.spec.selector.match_labels,
+                container.name if container else None,
+                namespace,
+            )
+
+            desired = dep.spec.replicas or 0
+            ready = dep.status.ready_replicas or 0
+
+            status = "available"
+            for cond in (dep.status.conditions or []):
+                if cond.type == "Available" and cond.status != "True":
+                    status = "degraded"
+                    break
+                if cond.type == "Progressing" and cond.reason == "ReplicaSetUpdated":
+                    status = "progressing"
+
+            results.append({
+                "name": dep.metadata.name,
+                "image": image,
+                "app_version": app_version,
+                "ready_replicas": ready,
+                "desired_replicas": desired,
+                "status": status,
+            })
+        return results
+
+    def _read_pod_env(
+        self,
+        match_labels: Dict[str, str],
+        container_name: Optional[str],
+        namespace: str,
+    ) -> Optional[str]:
+        """Exec into a running pod to read the APP_VERSION env var baked into its image."""
+        label_selector = ",".join(f"{k}={v}" for k, v in (match_labels or {}).items())
+        try:
+            pods = self.v1.list_namespaced_pod(
+                namespace=namespace,
+                label_selector=label_selector,
+                field_selector="status.phase=Running",
+                limit=1,
+            )
+            if not pods.items:
+                return None
+
+            pod_name = pods.items[0].metadata.name
+            kwargs: Dict[str, Any] = {
+                "command": ["sh", "-c", "echo $APP_VERSION"],
+                "stderr": False,
+                "stdin": False,
+                "stdout": True,
+                "tty": False,
+            }
+            if container_name:
+                kwargs["container"] = container_name
+
+            resp = stream(
+                self.v1.connect_get_namespaced_pod_exec,
+                pod_name,
+                namespace,
+                **kwargs,
+            )
+            value = resp.strip() if resp else None
+            return value or None
+        except Exception as e:
+            logger.debug(f"Could not read APP_VERSION from pod ({label_selector}): {e}")
+            return None
