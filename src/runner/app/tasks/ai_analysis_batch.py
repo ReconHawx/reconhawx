@@ -327,21 +327,19 @@ class AIAnalysisBatchTask:
                 )
                 return
 
-            # Build prompt
-            system_prompt = DEFAULT_TYPOSQUAT_PROMPT + RULES_AND_MAPPING_INSTRUCTIONS
-            settings = _get_default_ai_settings()
-            user_content_prefix = settings["user_content_prefix"].replace(
-                "{RESPONSE_FORMAT_SUFFIX}", settings["response_format_suffix"]
+            # Build prompt (API merges system + program AI settings; fallback if old API)
+            system_prompt = ctx.get("system_prompt") or (
+                DEFAULT_TYPOSQUAT_PROMPT + RULES_AND_MAPPING_INSTRUCTIONS
             )
+            user_content_prefix = ctx.get("user_content_prefix")
+            if not user_content_prefix:
+                fb = _get_default_ai_settings()
+                user_content_prefix = fb["user_content_prefix"].replace(
+                    "{RESPONSE_FORMAT_SUFFIX}", fb["response_format_suffix"]
+                )
             context = _build_finding_context(finding, urls, screenshot_texts)
             user_content = user_content_prefix.rstrip() + "\n\n" + context
 
-            # Call Ollama
-            raw_prompt = (
-                f"<|im_start|>system\n{system_prompt}<|im_end|>\n"
-                f"<|im_start|>user\n{user_content}<|im_end|>\n"
-                f"<|im_start|>assistant\n"
-            )
             response_format = {
                 "type": "object",
                 "properties": {
@@ -357,6 +355,20 @@ class AIAnalysisBatchTask:
                 },
                 "required": ["threat_level", "confidence", "summary", "recommended_action", "reasoning", "indicators"],
             }
+
+            raw_prompt = (
+                f"<|im_start|>system\n{system_prompt}<|im_end|>\n"
+                f"<|im_start|>user\n{user_content}<|im_end|>\n"
+                f"<|im_start|>assistant\n"
+            )
+            
+            logger.debug(
+                "Ollama generate: model=%s timeout=%s retries_cap=%s url=%s",
+                self.model,
+                self.ollama_timeout,
+                self.ollama_max_retries,
+                self.ollama_url,
+            )
             payload = {
                 "model": self.model,
                 "prompt": raw_prompt,
