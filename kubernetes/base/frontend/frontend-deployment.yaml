@@ -42,6 +42,7 @@ spec:
       containers:
       - name: frontend
         image: ghcr.io/reconhawx/reconhawx/frontend:latest
+        imagePullPolicy: Always
         ports:
         - containerPort: 80
 
