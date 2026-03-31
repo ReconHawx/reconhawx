@@ -48,7 +48,8 @@ if [ "$registry" != "minikube" ]; then
   build_attest_flags=( --provenance=false )
 fi
 docker buildx build --platform "${arch}" --builder "${BUILDX_BUILDER:-multiarch-builder}" \
-  "${build_attest_flags[@]}" -f ./Dockerfile "${docker_tags[@]}" . ${image_dest}
+  "${build_attest_flags[@]}" --build-arg APP_VERSION="${APP_VERSION:-dev}" \
+  -f ./Dockerfile "${docker_tags[@]}" . ${image_dest}
 popd
 
 rm -rf $temp_dir
