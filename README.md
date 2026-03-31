@@ -29,5 +29,5 @@ Supporting pieces include **PostgreSQL** for persistence, **NATS** (with JetStre
 
 ## Documentation and Setup
 
-- **[`docs/installation-on-minikube.md`](docs/installation-on-minikube.md)** — Follow this procedure to install ReconHawx on Minikube
+- **[`docs/install-on-minikube.md`](docs/install-on-minikube.md)** — Follow this procedure to install ReconHawx on Minikube
 - More documentation to come
