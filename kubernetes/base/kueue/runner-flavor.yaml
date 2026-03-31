@@ -4,4 +4,4 @@ metadata:
   name: "runner-flavor"
 spec:
   nodeLabels:
-    type: runner
+    reconhawx.runner: "true"

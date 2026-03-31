@@ -5,6 +5,7 @@ from fastapi.responses import JSONResponse
 from routes import assets, programs, findings, workflows, auth, nuclei_templates, jobs, admin, wordlists, scheduled_jobs, subdomain_assets, ip_assets, url_assets, service_assets, apexdomain_assets, certificate_assets, screenshot_assets, typosquat_findings, nuclei_findings, wpscan_findings, common_assets, common_findings, action_logs, broken_links, social_media_credentials, ai, event_handler_configs, ct_monitor_internal
 from middleware.auth import AuthMiddleware
 from config.settings import settings
+import asyncio
 import logging
 import os
 
@@ -111,10 +112,29 @@ async def startup_event():
             logger.error(f"Error ensuring internal service tokens table: {e}")
             # Don't raise this error as it's not critical for basic functionality
         
-        # Initialize internal service token
+        # Initialize internal service token (retry while Postgres / K8s API may be warming up)
         logger.info("Starting internal service token initialization...")
-        await initialize_internal_service_token()
-        logger.info("Internal service token initialization completed")
+        max_attempts = int(os.getenv("INTERNAL_SERVICE_TOKEN_INIT_ATTEMPTS", "5"))
+        delay_sec = float(os.getenv("INTERNAL_SERVICE_TOKEN_INIT_DELAY_SEC", "2"))
+        for attempt in range(1, max_attempts + 1):
+            await initialize_internal_service_token()
+            if os.getenv("INTERNAL_SERVICE_API_KEY"):
+                logger.info("Internal service token initialization completed")
+                break
+            if attempt < max_attempts:
+                logger.warning(
+                    "INTERNAL_SERVICE_API_KEY unset after token init (attempt %s/%s); retrying in %ss",
+                    attempt,
+                    max_attempts,
+                    delay_sec,
+                )
+                await asyncio.sleep(delay_sec)
+        else:
+            logger.error(
+                "INTERNAL_SERVICE_API_KEY still unset after %s attempts; "
+                "API internal auth may fail until the key is available (runner jobs use the cluster Secret)",
+                max_attempts,
+            )
         
         # Initialize asset processor
         try:
