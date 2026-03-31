@@ -31,3 +31,28 @@ Supporting pieces include **PostgreSQL** for persistence, **NATS** (with JetStre
 
 - **[`docs/install-on-minikube.md`](docs/install-on-minikube.md)** — Follow this procedure to install ReconHawx on Minikube
 - More documentation to come
+
+## Credits
+
+ReconHawx builds on many open-source projects. Thanks to their authors and maintainers.
+
+- [Amass](https://github.com/owasp-amass/amass)
+- [assetfinder](https://github.com/tomnomnom/assetfinder)
+- [dnsx](https://github.com/projectdiscovery/dnsx)
+- [ffuf](https://github.com/ffuf/ffuf)
+- [gau](https://github.com/lc/gau)
+- [Gotator](https://github.com/Josue87/gotator)
+- [gowitness](https://github.com/sensepost/gowitness)
+- [httpx](https://github.com/projectdiscovery/httpx)
+- [Katana](https://github.com/projectdiscovery/katana)
+- [massdns](https://github.com/blechschmidt/massdns)
+- [nerva](https://github.com/praetorian-inc/nerva)
+- [Nmap](https://nmap.org/)
+- [Nuclei](https://github.com/projectdiscovery/nuclei)
+- [puredns](https://github.com/d3mondev/puredns)
+- [Subfinder](https://github.com/projectdiscovery/subfinder)
+- [tldextract](https://github.com/john-kurkowski/tldextract)
+- [unfurl](https://github.com/tomnomnom/unfurl)
+- [urllib3](https://urllib3.readthedocs.io/)
+- [urless](https://github.com/xnl-h4ck3r/urless)
+- [WPScan](https://wpscan.com/)
