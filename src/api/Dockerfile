@@ -12,14 +12,11 @@ COPY requirements.txt .
 RUN pip install --upgrade pip setuptools wheel && \
     pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
-COPY . ./
-
-# Make scripts executable
+COPY setup_nuclei_templates.sh update_nuclei_templates.py generate_nuclei_tree.py ./
 RUN chmod +x setup_nuclei_templates.sh update_nuclei_templates.py generate_nuclei_tree.py
-
-# Run setup script
 RUN ./setup_nuclei_templates.sh
+
+COPY ./app/ ./
 
 # Expose port
 EXPOSE 8000

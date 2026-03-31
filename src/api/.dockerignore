@@ -4,3 +4,8 @@ venv
 build.sh
 Dockerfile
 ruff.toml
+__pycache__
+__init__.py
+tests
+test_scripts
+test_monitor.py

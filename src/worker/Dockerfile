@@ -114,31 +114,31 @@ RUN pipx install urless
 RUN gem install wpscan
 
 # Copy the command wrapper script and entrypoint
-COPY ./command_wrapper.py /usr/local/bin/
+COPY ./app/command_wrapper.py /usr/local/bin/
 
-COPY ./utils/ /workspace/utils/
+COPY ./app/utils/ /workspace/utils/
 
-COPY ./dnsx_wrapper.py .
+COPY ./app/dnsx_wrapper.py .
 
-COPY ./whois_domain_wrapper.py .
+COPY ./app/whois_domain_wrapper.py .
 
-COPY ./crawl_website.py .
+COPY ./app/crawl_website.py .
 
-COPY ./screenshotter.sh .
+COPY ./app/screenshotter.sh .
 
-COPY ./typosquat_worker.py .
+COPY ./app/typosquat_worker.py .
 
-COPY ./ffuf_wrapper.py .
+COPY ./app/ffuf_wrapper.py .
 
-COPY ./run-batch-job.py .
+COPY ./app/run-batch-job.py .
 
-COPY ./check_broken_links.py .
+COPY ./app/check_broken_links.py .
 
-COPY ./puredns_wrapper.py .
+COPY ./app/puredns_wrapper.py .
 
-COPY ./port_scan_wrapper.py .
+COPY ./app/port_scan_wrapper.py .
 
-COPY files/ /workspace/files/
+COPY ./files/ /workspace/files/
 
 COPY --from=builder /usr/local/go/bin/* /usr/local/bin/
 
