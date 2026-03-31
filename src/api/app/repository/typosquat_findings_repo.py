@@ -35,6 +35,7 @@ from services.recordedfuture_api_client import change_playbook_alert_status
 from services.protected_domain_similarity_service import ProtectedDomainSimilarityService
 from services.typosquat_auto_resolve_service import TyposquatAutoResolveService, _compute_auto_resolve
 from services.typosquat_filtering_service import TyposquatFilteringService
+from services.ai_analysis_service import resolve_typosquat_prompts
 
 logger = logging.getLogger(__name__)
 
@@ -1031,10 +1032,21 @@ class TyposquatFindingsRepository(ProgramAccessMixin):
                             if len(screenshot_texts) >= 2:
                                 break
 
+                program = (
+                    db.query(Program)
+                    .filter(Program.id == domain.program_id)
+                    .first()
+                )
+                system_prompt, user_content_prefix = await resolve_typosquat_prompts(
+                    program.ai_analysis_settings if program else None
+                )
+
                 return {
                     "finding": finding,
                     "urls": urls,
                     "screenshot_texts": screenshot_texts,
+                    "system_prompt": system_prompt,
+                    "user_content_prefix": user_content_prefix,
                 }
             except Exception as e:
                 logger.error(f"Error getting AI analysis context for {domain_id}: {str(e)}")

@@ -149,6 +149,26 @@ async def build_system_prompt(custom_instructions: Optional[str] = None, feature
     return instructions.strip() + rules
 
 
+async def resolve_typosquat_prompts(
+    program_ai_analysis_settings: Optional[Dict[str, Any]] = None,
+) -> tuple[str, str]:
+    """Merge system AI settings with program prompts; used by API and runner context."""
+    p = program_ai_analysis_settings or {}
+    custom_prompt = (p.get("prompts") or {}).get("typosquat")
+    system_prompt = await build_system_prompt(custom_prompt, feature="typosquat")
+    typosquat_settings = await get_ai_settings("typosquat")
+    response_format_suffix = typosquat_settings.get(
+        "response_format_suffix", RESPONSE_FORMAT_SUFFIX
+    )
+    prefix_template = typosquat_settings.get(
+        "user_content_prefix", DEFAULT_USER_CONTENT_PREFIX
+    )
+    user_content_prefix = prefix_template.replace(
+        "{RESPONSE_FORMAT_SUFFIX}", response_format_suffix
+    )
+    return system_prompt, user_content_prefix
+
+
 def _build_finding_context(
     finding: Dict[str, Any],
     urls: List[Dict[str, Any]],
@@ -379,8 +399,6 @@ class AIAnalysisService:
             program = db.query(Program).filter(
                 Program.id == domain.program_id
             ).first()
-            ai_settings = (program.ai_analysis_settings or {}) if program else {}
-            custom_prompt = (ai_settings.get("prompts") or {}).get("typosquat")
 
             urls_raw = db.query(TyposquatURL).filter(
                 TyposquatURL.typosquat_domain_id == typosquat_id
@@ -416,20 +434,13 @@ class AIAnalysisService:
                             if len(screenshot_base64_list) >= MAX_SCREENSHOTS_FOR_ANALYSIS:
                                 break
 
-        system_prompt = await build_system_prompt(custom_prompt, feature="typosquat")
+        system_prompt, user_content_prefix = await resolve_typosquat_prompts(
+            program.ai_analysis_settings if program else None
+        )
         context = _build_finding_context(
             finding, urls, screenshot_count=len(screenshot_base64_list), screenshots=screenshots
         )
-        typosquat_settings = await get_ai_settings("typosquat")
-        response_format_suffix = typosquat_settings.get(
-            "response_format_suffix", RESPONSE_FORMAT_SUFFIX
-        )
-        user_content_prefix = typosquat_settings.get(
-            "user_content_prefix", DEFAULT_USER_CONTENT_PREFIX
-        )
-        user_content = user_content_prefix.replace(
-            "{RESPONSE_FORMAT_SUFFIX}", response_format_suffix
-        ).rstrip() + "\n\n" + context
+        user_content = user_content_prefix.rstrip() + "\n\n" + context
         user_message: Dict[str, Any] = {"role": "user", "content": user_content}
 
         messages = [
