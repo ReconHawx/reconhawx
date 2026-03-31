@@ -7,6 +7,20 @@ from typing import Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
 
+
+def _internal_service_api_key_env_var() -> client.V1EnvVar:
+    """Env var resolved from the same Secret the API bootstraps (see main.initialize_internal_service_token)."""
+    return client.V1EnvVar(
+        name="INTERNAL_SERVICE_API_KEY",
+        value_from=client.V1EnvVarSource(
+            secret_key_ref=client.V1SecretKeySelector(
+                name=os.getenv("INTERNAL_SERVICE_SECRET_NAME", "internal-service-secret"),
+                key="token",
+            )
+        ),
+    )
+
+
 class JobSubmissionService:
     def __init__(self):
         try:
@@ -92,7 +106,7 @@ class JobSubmissionService:
                     client.V1EnvVar(name="DATABASE_NAME", value=os.getenv('DATABASE_NAME', 'recon_db')),
                     client.V1EnvVar(name="POSTGRES_USER", value=os.getenv('POSTGRES_USER', 'admin')),
                     client.V1EnvVar(name="POSTGRES_PASSWORD", value=os.getenv('POSTGRES_PASSWORD', 'password')),
-                    client.V1EnvVar(name="INTERNAL_SERVICE_API_KEY", value=os.getenv('INTERNAL_SERVICE_API_KEY', 'none')),
+                    _internal_service_api_key_env_var(),
 
                     # Logging
                     client.V1EnvVar(name="LOG_LEVEL", value=os.getenv('LOG_LEVEL', 'INFO')),
@@ -232,7 +246,7 @@ class JobSubmissionService:
                     client.V1EnvVar(name="DATABASE_NAME", value=os.getenv('DATABASE_NAME', 'recon_db')),
                     client.V1EnvVar(name="POSTGRES_USER", value=os.getenv('POSTGRES_USER', 'admin')),
                     client.V1EnvVar(name="POSTGRES_PASSWORD", value=os.getenv('POSTGRES_PASSWORD', 'password')),
-                    client.V1EnvVar(name="INTERNAL_SERVICE_API_KEY", value=os.getenv('INTERNAL_SERVICE_API_KEY', 'none')),
+                    _internal_service_api_key_env_var(),
                     client.V1EnvVar(name="API_BASE_URL", value=os.getenv('API_BASE_URL', 'http://api:8000')),
                     client.V1EnvVar(name="OLLAMA_URL", value=os.getenv('OLLAMA_URL', 'http://ollama:11434')),
                     client.V1EnvVar(name="OLLAMA_MODEL", value=os.getenv('OLLAMA_MODEL', 'llama3:latest')),
@@ -517,7 +531,7 @@ class JobSubmissionService:
                     client.V1EnvVar(name="DATABASE_NAME", value=os.getenv('DATABASE_NAME', 'recon_db')),
                     client.V1EnvVar(name="POSTGRES_USER", value=os.getenv('POSTGRES_USER', 'admin')),
                     client.V1EnvVar(name="POSTGRES_PASSWORD", value=os.getenv('POSTGRES_PASSWORD', 'password')),
-                    client.V1EnvVar(name="INTERNAL_SERVICE_API_KEY", value=os.getenv('INTERNAL_SERVICE_API_KEY', 'none')),
+                    _internal_service_api_key_env_var(),
 
                     # Logging
                     client.V1EnvVar(name="LOG_LEVEL", value=os.getenv('LOG_LEVEL', 'INFO')),
@@ -670,7 +684,7 @@ class JobSubmissionService:
 
                     # API configuration
                     client.V1EnvVar(name="API_BASE_URL", value=os.getenv('API_BASE_URL', 'http://api:8000')),
-                    client.V1EnvVar(name="INTERNAL_SERVICE_API_KEY", value=os.getenv('INTERNAL_SERVICE_API_KEY', '')),
+                    _internal_service_api_key_env_var(),
 
                     # Logging
                     client.V1EnvVar(name="LOG_LEVEL", value=os.getenv('LOG_LEVEL', 'INFO')),
@@ -823,7 +837,7 @@ class JobSubmissionService:
 
                     # API configuration
                     client.V1EnvVar(name="API_BASE_URL", value=os.getenv('API_BASE_URL', 'http://api:8000')),
-                    client.V1EnvVar(name="INTERNAL_SERVICE_API_KEY", value=os.getenv('INTERNAL_SERVICE_API_KEY', '')),
+                    _internal_service_api_key_env_var(),
 
                     # Logging
                     client.V1EnvVar(name="LOG_LEVEL", value=os.getenv('LOG_LEVEL', 'INFO')),

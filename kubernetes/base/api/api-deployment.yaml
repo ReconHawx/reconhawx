@@ -151,7 +151,16 @@ spec:
         # Logging
         - name: LOG_LEVEL
           value: "INFO"
-        
+
+        readinessProbe:
+          httpGet:
+            path: /status
+            port: 8000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 6
+
         resources:
           requests:
             memory: "256Mi"

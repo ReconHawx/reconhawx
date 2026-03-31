@@ -320,8 +320,16 @@ class KubernetesService:
             {"name": "API_URL", "value": os.getenv('API_URL')},
             {"name": "REDIS_URL", "value": os.getenv('REDIS_URL')},
 
-            # Internal API authentication
-            {"name": "INTERNAL_SERVICE_API_KEY", "value": os.getenv('INTERNAL_SERVICE_API_KEY')},
+            # Internal API authentication (kubelet resolves from Secret; matches API bootstrap)
+            {
+                "name": "INTERNAL_SERVICE_API_KEY",
+                "valueFrom": {
+                    "secretKeyRef": {
+                        "name": os.getenv("INTERNAL_SERVICE_SECRET_NAME", "internal-service-secret"),
+                        "key": "token",
+                    }
+                },
+            },
 
             # Kubernetes configuration
             {"name": "KUBERNETES_NAMESPACE", "value": namespace},
@@ -889,8 +897,16 @@ class KubernetesService:
                 client.V1EnvVar(name="API_URL", value=os.getenv('API_URL')),
                 client.V1EnvVar(name="REDIS_URL", value=os.getenv('REDIS_URL')),
 
-                # Internal API authentication
-                client.V1EnvVar(name="INTERNAL_SERVICE_API_KEY", value=os.getenv('INTERNAL_SERVICE_API_KEY')),
+                # Internal API authentication (kubelet resolves from Secret; matches API bootstrap)
+                client.V1EnvVar(
+                    name="INTERNAL_SERVICE_API_KEY",
+                    value_from=client.V1EnvVarSource(
+                        secret_key_ref=client.V1SecretKeySelector(
+                            name=os.getenv("INTERNAL_SERVICE_SECRET_NAME", "internal-service-secret"),
+                            key="token",
+                        )
+                    ),
+                ),
 
                 # Kubernetes configuration
                 client.V1EnvVar(name="KUBERNETES_NAMESPACE", value=namespace),
