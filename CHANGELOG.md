@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.1](https://github.com/ReconHawx/reconhawx/compare/v0.3.0...v0.3.1) (2026-03-31)
+
+
+### Bug Fixes
+
+* **api:** Fixed node selector for workflow jobs ([0a55c43](https://github.com/ReconHawx/reconhawx/commit/0a55c43ff7a8dbacc99309a61e6c93b2825eb66c))
+* Fixed node selectors in kueue flavor ([90cb08f](https://github.com/ReconHawx/reconhawx/commit/90cb08f194ddc16b48aee8e0e79fd19d0d79d270))
+
 ## [0.3.0](https://github.com/ReconHawx/reconhawx/compare/v0.2.0...v0.3.0) (2026-03-30)
 
 
