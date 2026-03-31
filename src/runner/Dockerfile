@@ -27,6 +27,9 @@ COPY ./files/ ./files/
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
+ARG APP_VERSION=dev
+ENV APP_VERSION=${APP_VERSION}
+
 ENV PYTHONUNBUFFERED=1
 
 ENV LOG_LEVEL=DEBUG

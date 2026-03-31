@@ -75,6 +75,7 @@ const SocialMediaCredentials = lazy(() => import('./pages/admin/SocialMediaCrede
 const CTMonitor = lazy(() => import('./pages/admin/CTMonitor'));
 const EventStats = lazy(() => import('./pages/admin/EventStats'));
 const EventHandlerConfig = lazy(() => import('./pages/admin/EventHandlerConfig'));
+const SystemStatus = lazy(() => import('./pages/admin/SystemStatus'));
 
 function AppContent() {
   return (
@@ -359,6 +360,11 @@ function AppContent() {
                 <Route path="/admin/events" element={
                   <ProtectedRoute requireAdmin={true}>
                     <EventStats />
+                  </ProtectedRoute>
+                } />
+                <Route path="/admin/system-status" element={
+                  <ProtectedRoute requireSuperuser={true}>
+                    <SystemStatus />
                   </ProtectedRoute>
                 } />
                 {/* Catch-all route - redirect unknown paths to dashboard */}

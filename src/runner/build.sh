@@ -23,4 +23,5 @@ fi
 
 docker buildx build --platform "${arch}" \
   --builder "${BUILDX_BUILDER:-multiarch-builder}" \
+  --build-arg APP_VERSION="${APP_VERSION:-dev}" \
   -f ./Dockerfile "${docker_tags[@]}" . ${image_dest}

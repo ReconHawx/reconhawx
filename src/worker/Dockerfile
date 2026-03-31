@@ -152,3 +152,6 @@ RUN chmod +x /usr/local/bin/command_wrapper.py
 # Nuclei configuration
 RUN mkdir -p /root/.config/nuclei && \
     cp /workspace/files/nuclei.yaml /root/.config/nuclei/config.yaml
+
+ARG APP_VERSION=dev
+ENV APP_VERSION=${APP_VERSION}

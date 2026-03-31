@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 app = FastAPI(
     title="Recon API",
     description="API for Recon",
-    version="1.0.0",
+    version=os.getenv("APP_VERSION", "dev"),
     openapi_url=f"{settings.API_V1_STR}/openapi.json",
     docs_url=f"{settings.API_V1_STR}/docs",
     redoc_url=f"{settings.API_V1_STR}/redoc",
@@ -306,6 +306,6 @@ async def status():
     return {
         "status": "operational",
         "service": "unified-api",
-        "version": "1.0.0",
+        "version": os.getenv("APP_VERSION", "dev"),
         "features": ["data-management", "workflow-execution"]
     } 
