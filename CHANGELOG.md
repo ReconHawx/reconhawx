@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.2](https://github.com/ReconHawx/reconhawx/compare/v0.3.1...v0.3.2) (2026-03-31)
+
+
+### Bug Fixes
+
+* fixed npm audit findings ([366b735](https://github.com/ReconHawx/reconhawx/commit/366b735a7e4fd508032f2d28fe2094c068c779c5))
+* fixed npm audit findings ([14c7de2](https://github.com/ReconHawx/reconhawx/commit/14c7de2342b68d591b240ab186870aeb80304a97))
+
 ## [0.3.1](https://github.com/ReconHawx/reconhawx/compare/v0.3.0...v0.3.1) (2026-03-31)
 
 
