@@ -398,7 +398,7 @@ class KubernetesService:
                 "serviceAccountName": service_account,
                 "restartPolicy": "Never",
                 "nodeSelector": {
-                    "type": "runner"
+                    "reconhawx.runner": "true"
                 },
                 "volumes": [
                     {
