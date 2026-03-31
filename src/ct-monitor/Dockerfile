@@ -4,9 +4,7 @@
 FROM python:3.14-slim
 
 # Set environment variables
-ARG APP_VERSION=dev
-ENV APP_VERSION=${APP_VERSION} \
-    PYTHONDONTWRITEBYTECODE=1 \
+ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app
 
@@ -37,5 +35,7 @@ USER ctmonitor
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD python -c "from main import CTMonitorService; print('OK')" || exit 1
 
-# Default command
+ARG APP_VERSION=dev
+ENV APP_VERSION=${APP_VERSION}
+
 CMD ["python", "main.py"]
