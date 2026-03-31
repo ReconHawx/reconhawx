@@ -410,8 +410,14 @@ function TyposquatFindingDetail() {
     const fetchModels = async () => {
       try {
         const data = await api.ai.getModels();
-        setAiModels(data.models || []);
-        setAiDefaultModel(data.default_model || '');
+        const models = data.models || [];
+        setAiModels(models);
+        const rawDef = data.default_model;
+        const def =
+          rawDef != null && String(rawDef).trim() !== '' ? String(rawDef).trim() : '';
+        setAiDefaultModel(def);
+        const names = new Set(models.map((m) => m.name).filter(Boolean));
+        setAiSelectedModel(def && names.has(def) ? def : '');
       } catch (err) {
         // Ollama may be unreachable; not critical
       }
@@ -2252,14 +2258,12 @@ function TyposquatFindingDetail() {
                   onChange={(e) => setAiSelectedModel(e.target.value)}
                   disabled={aiAnalyzing}
                 >
-                  <option value="">{aiDefaultModel} (default)</option>
-                  {aiModels
-                    .filter(m => m.name !== aiDefaultModel)
-                    .map(m => (
-                      <option key={m.name} value={m.name}>
-                        {m.name}{m.parameter_size ? ` (${m.parameter_size})` : ''}
-                      </option>
-                    ))}
+                  {!aiDefaultModel && <option value="" />}
+                  {aiModels.map((m) => (
+                    <option key={m.name} value={m.name}>
+                      {m.name}{m.parameter_size ? ` (${m.parameter_size})` : ''}
+                    </option>
+                  ))}
                 </Form.Select>
               )}
               <Button

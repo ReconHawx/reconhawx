@@ -512,6 +512,18 @@ def get_current_user_from_middleware(request: Request) -> UserResponse:
     return current_user
 
 
+def require_superuser_or_admin(
+    current_user: UserResponse = Depends(get_current_user_from_middleware),
+) -> UserResponse:
+    """Superuser or role 'admin' — matches frontend isAdmin() for AI analysis and related tools."""
+    if current_user.is_superuser or "admin" in (current_user.roles or []):
+        return current_user
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="AI analysis requires administrator or superuser privileges",
+    )
+
+
 def require_internal_service_identity(
     current_user: UserResponse = Depends(get_current_user_from_middleware),
 ) -> UserResponse:
