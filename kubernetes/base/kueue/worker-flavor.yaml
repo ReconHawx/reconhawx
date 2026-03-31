@@ -4,4 +4,4 @@ metadata:
   name: "worker-flavor"
 spec:
   nodeLabels:
-    type: worker
+    reconhawx.worker: "true"
