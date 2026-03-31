@@ -1,11 +1,21 @@
-# Tag push v* (from release-please) / workflow_dispatch: build all images.
+# Called by release-please after a release, or triggered manually.
 name: Docker — build and push to GHCR
 
 on:
-  push:
-    tags:
-      - "v*"
+  workflow_call:
+    inputs:
+      version:
+        description: "Release version without v prefix (e.g. 0.1.0)"
+        required: false
+        type: string
+        default: ""
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version without v prefix (e.g. 0.1.0). Leave empty for sha+latest only."
+        required: false
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -58,8 +68,8 @@ jobs:
           images: ${{ steps.reg.outputs.prefix }}/api
           tags: |
             type=sha,prefix=,format=short
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=semver,pattern={{version}}
+            type=raw,value=latest
+            type=raw,value=${{ inputs.version }},enable=${{ inputs.version != '' }}
       - name: Build and push
         env:
           BUILDX_BUILDER: ${{ steps.buildx.outputs.name }}
@@ -109,8 +119,8 @@ jobs:
           images: ${{ steps.reg.outputs.prefix }}/frontend
           tags: |
             type=sha,prefix=,format=short
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=semver,pattern={{version}}
+            type=raw,value=latest
+            type=raw,value=${{ inputs.version }},enable=${{ inputs.version != '' }}
       - name: Build and push
         env:
           BUILDX_BUILDER: ${{ steps.buildx.outputs.name }}
@@ -160,8 +170,8 @@ jobs:
           images: ${{ steps.reg.outputs.prefix }}/runner
           tags: |
             type=sha,prefix=,format=short
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=semver,pattern={{version}}
+            type=raw,value=latest
+            type=raw,value=${{ inputs.version }},enable=${{ inputs.version != '' }}
       - name: Build and push
         env:
           BUILDX_BUILDER: ${{ steps.buildx.outputs.name }}
@@ -211,8 +221,8 @@ jobs:
           images: ${{ steps.reg.outputs.prefix }}/ct-monitor
           tags: |
             type=sha,prefix=,format=short
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=semver,pattern={{version}}
+            type=raw,value=latest
+            type=raw,value=${{ inputs.version }},enable=${{ inputs.version != '' }}
       - name: Build and push
         env:
           BUILDX_BUILDER: ${{ steps.buildx.outputs.name }}
@@ -262,8 +272,8 @@ jobs:
           images: ${{ steps.reg.outputs.prefix }}/event-handler
           tags: |
             type=sha,prefix=,format=short
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=semver,pattern={{version}}
+            type=raw,value=latest
+            type=raw,value=${{ inputs.version }},enable=${{ inputs.version != '' }}
       - name: Build and push
         env:
           BUILDX_BUILDER: ${{ steps.buildx.outputs.name }}
@@ -313,8 +323,8 @@ jobs:
           images: ${{ steps.reg.outputs.prefix }}/worker
           tags: |
             type=sha,prefix=,format=short
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=semver,pattern={{version}}
+            type=raw,value=latest
+            type=raw,value=${{ inputs.version }},enable=${{ inputs.version != '' }}
       - name: Build and push
         env:
           BUILDX_BUILDER: ${{ steps.buildx.outputs.name }}
