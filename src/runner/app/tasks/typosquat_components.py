@@ -1010,10 +1010,17 @@ class ScreenshotProcessor:
                             jsonl_path = os.path.join(os.path.dirname(png_file), filename[:-4] + '.jsonl')
                             extracted_text = None
                             if os.path.exists(jsonl_path):
+                                logger.debug(f"Extracting text from {jsonl_path} for {url}")
                                 extracted_text = extract_text_from_gowitness_jsonl(jsonl_path, url)
                             # OCR fallback when HTML yields no text
                             if not extracted_text or not extracted_text.strip():
+                                logger.debug(f"No text found in {jsonl_path}, extracting from image {png_file}")
                                 extracted_text = extract_text_from_image_ocr(png_file)
+                            
+                            if extracted_text:
+                                logger.debug(f"Extracted text: {extracted_text}")
+                            else:
+                                logger.debug(f"No text extracted for {url}")
 
                             await self.upload_screenshot(session, png_file, url, headers, api_url, extracted_text=extracted_text)
                             uploaded_count += 1

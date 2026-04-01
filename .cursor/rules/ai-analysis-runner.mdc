@@ -14,7 +14,7 @@ AI analysis runs in **runner pods** (not the API) for load isolation. Uses a ded
 2. **API**: Creates job record, calls `JobSubmissionService.create_ai_analysis_batch_job()`
 3. **K8s Job**: Submitted with `kueue.x-k8s.io/queue-name: recon-ai-analysis-queue` (label)
 4. **Kueue**: Jobs are queued in `ai-analysis-cluster-queue`; quota limits concurrency
-5. **Runner**: `AIAnalysisBatchTask` fetches findings via API, calls Ollama, updates via `PATCH /findings/typosquat/{id}/ai-analysis`
+5. **Runner**: `AIAnalysisBatchTask` fetches context via `GET /findings/typosquat/{id}/ai-analysis-context` (includes merged `system_prompt` and `user_content_prefix` from system + program AI settings), calls Ollama, updates via `PATCH /findings/typosquat/{id}/ai-analysis`
 
 ## Dedicated Kueue
 
@@ -29,7 +29,7 @@ AI analysis runs in **runner pods** (not the API) for load isolation. Uses a ded
 ## Job Naming
 
 - **Job name**: `ai-analysis-job-{job_id}` (not `job-{job_id}`)
-- **ConfigMap**: `ai-analysis-job-data-{job_id}`
+- **ConfigMap**: `ai-analysis-job-data-{job_id}` — patched with `ownerReferences` to the Batch Job after creation so it is garbage-collected when the Job is removed (same pattern as workflow `workflow-data-*` + `ttlSecondsAfterFinished`).
 - **Job status**: `get_job_status(job_id, job_type="ai_analysis_batch")` uses the correct K8s name
 
 ## Quota Sizing

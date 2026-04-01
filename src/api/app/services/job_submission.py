@@ -37,6 +37,51 @@ class JobSubmissionService:
         
         self.v1 = client.CoreV1Api()
         self.batch_v1 = client.BatchV1Api()
+
+    def _patch_configmap_owner_to_batch_job(
+        self,
+        namespace: str,
+        configmap_name: str,
+        job_name: str,
+        job_uid: Optional[str],
+    ) -> None:
+        """Link ConfigMap lifecycle to the Batch Job so GC deletes it with the Job (e.g. ttlSecondsAfterFinished)."""
+        if not job_uid:
+            logger.error(
+                "Cannot set ConfigMap owner: Job %s has no uid; %s may be orphaned",
+                job_name,
+                configmap_name,
+            )
+            return
+        owner_ref = client.V1OwnerReference(
+            api_version="batch/v1",
+            kind="Job",
+            name=job_name,
+            uid=job_uid,
+            controller=True,
+        )
+        patch_body = client.V1ConfigMap(
+            metadata=client.V1ObjectMeta(owner_references=[owner_ref]),
+        )
+        try:
+            self.v1.patch_namespaced_config_map(
+                name=configmap_name,
+                namespace=namespace,
+                body=patch_body,
+            )
+            logger.debug(
+                "Set ownerReferences on ConfigMap %s -> Job %s (%s)",
+                configmap_name,
+                job_name,
+                job_uid,
+            )
+        except ApiException as e:
+            logger.error(
+                "Failed to patch ConfigMap %s with Job ownerReference: %s",
+                configmap_name,
+                e,
+            )
+            raise
         
     def create_phishlabs_batch_job(self, job_id: str, job_data: Dict[str, Any]):
         """Create a Kubernetes job for PhishLabs batch processing"""
@@ -181,8 +226,12 @@ class JobSubmissionService:
                 body=job
             )
             
-            job_name = getattr(getattr(created_job, 'metadata', None), 'name', 'unknown')
+            job_name = getattr(getattr(created_job, 'metadata', None), 'name', None) or f"job-{job_id}"
+            job_uid = getattr(getattr(created_job, 'metadata', None), 'uid', None)
             logger.debug(f"Created Kubernetes job: {job_name}")
+            self._patch_configmap_owner_to_batch_job(
+                namespace, configmap_name, job_name, job_uid
+            )
             return created_job
             
         except Exception as e:
@@ -301,8 +350,12 @@ class JobSubmissionService:
             )
 
             created_job = self.batch_v1.create_namespaced_job(namespace=namespace, body=job)
-            job_name = getattr(getattr(created_job, 'metadata', None), 'name', 'unknown')
+            job_name = getattr(getattr(created_job, 'metadata', None), 'name', None) or f"ai-analysis-job-{job_id}"
+            job_uid = getattr(getattr(created_job, 'metadata', None), 'uid', None)
             logger.debug(f"Created Kubernetes job: {job_name}")
+            self._patch_configmap_owner_to_batch_job(
+                namespace, configmap_name, job_name, job_uid
+            )
             return created_job
 
         except Exception as e:
@@ -455,8 +508,12 @@ class JobSubmissionService:
                 body=job
             )
             
-            job_name = getattr(getattr(created_job, 'metadata', None), 'name', 'unknown')
+            job_name = getattr(getattr(created_job, 'metadata', None), 'name', None) or f"job-{job_id}"
+            job_uid = getattr(getattr(created_job, 'metadata', None), 'uid', None)
             logger.debug(f"Created Kubernetes job: {job_name}")
+            self._patch_configmap_owner_to_batch_job(
+                namespace, configmap_name, job_name, job_uid
+            )
             return created_job
             
         except Exception as e:
@@ -606,8 +663,12 @@ class JobSubmissionService:
                 body=job
             )
 
-            job_name = getattr(getattr(created_job, 'metadata', None), 'name', 'unknown')
+            job_name = getattr(getattr(created_job, 'metadata', None), 'name', None) or f"job-{job_id}"
+            job_uid = getattr(getattr(created_job, 'metadata', None), 'uid', None)
             logger.debug(f"Created Kubernetes job: {job_name}")
+            self._patch_configmap_owner_to_batch_job(
+                namespace, configmap_name, job_name, job_uid
+            )
             return created_job
 
         except Exception as e:
@@ -759,8 +820,12 @@ class JobSubmissionService:
                 body=job
             )
 
-            job_name = getattr(getattr(created_job, 'metadata', None), 'name', 'unknown')
+            job_name = getattr(getattr(created_job, 'metadata', None), 'name', None) or f"job-{job_id}"
+            job_uid = getattr(getattr(created_job, 'metadata', None), 'uid', None)
             logger.debug(f"Created Kubernetes job: {job_name}")
+            self._patch_configmap_owner_to_batch_job(
+                namespace, configmap_name, job_name, job_uid
+            )
             return created_job
 
         except Exception as e:
@@ -912,8 +977,12 @@ class JobSubmissionService:
                 body=job
             )
 
-            job_name = getattr(getattr(created_job, 'metadata', None), 'name', 'unknown')
+            job_name = getattr(getattr(created_job, 'metadata', None), 'name', None) or f"job-{job_id}"
+            job_uid = getattr(getattr(created_job, 'metadata', None), 'uid', None)
             logger.debug(f"Created Kubernetes job: {job_name}")
+            self._patch_configmap_owner_to_batch_job(
+                namespace, configmap_name, job_name, job_uid
+            )
             return created_job
 
         except Exception as e:

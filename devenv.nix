@@ -34,6 +34,7 @@
     secretspec
     grype
     gh
+    tesseract
   ];
   env = {};
   processes = {};

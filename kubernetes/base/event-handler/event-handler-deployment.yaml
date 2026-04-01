@@ -19,6 +19,7 @@ spec:
       containers:
       - name: event-handler
         image: ghcr.io/reconhawx/reconhawx/event-handler:latest
+        imagePullPolicy: Always
         env:
         - name: NATS_URL
           valueFrom:
