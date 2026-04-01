@@ -9,7 +9,7 @@ if [ "$USER_COUNT" -eq "0" ]; then
 
     psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-EOSQL
         CREATE EXTENSION IF NOT EXISTS pgcrypto;
-        INSERT INTO users (id, username, password_hash, is_active, is_superuser, roles, created_at, updated_at)
+        INSERT INTO users (id, username, password_hash, is_active, is_superuser, roles, created_at, updated_at, must_change_password)
         VALUES (
             gen_random_uuid(),
             'admin',
@@ -18,7 +18,8 @@ if [ "$USER_COUNT" -eq "0" ]; then
             true,
             ARRAY['admin'],
             NOW(),
-            NOW()
+            NOW(),
+            true
         );
 EOSQL
 

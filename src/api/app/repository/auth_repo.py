@@ -178,6 +178,7 @@ class AuthRepository:
                 
                 # Handle program permissions separately
                 program_permissions = user_data.pop("program_permissions", {})
+                force_password_change = user_data.pop("force_password_change", True)
                 
                 # Create user
                 new_user = User(
@@ -192,7 +193,8 @@ class AuthRepository:
                     rf_uhash=user_data.get("rf_uhash"),
                     hackerone_api_token=user_data.get("hackerone_api_token"),
                     hackerone_api_user=user_data.get("hackerone_api_user"),
-                    intigriti_api_token=user_data.get("intigriti_api_token")
+                    intigriti_api_token=user_data.get("intigriti_api_token"),
+                    must_change_password=bool(force_password_change),
                 )
                 
                 db.add(new_user)
@@ -348,6 +350,7 @@ class AuthRepository:
                 
                 # Hash new password
                 user.password_hash = hash_password(new_password)
+                user.must_change_password = False
                 db.commit()
                 
                 return True
@@ -357,6 +360,31 @@ class AuthRepository:
             raise
         except Exception as e:
             logger.error(f"Error changing password for user {user_id}: {str(e)}")
+            raise
+    
+    async def change_own_password(
+        self, user_id: str, current_password: str, new_password: str
+    ) -> Dict[str, Any]:
+        """
+        Change password for the authenticated user. Verifies current password.
+        
+        Raises:
+            ValueError: user not found or current password incorrect
+        """
+        try:
+            async with get_db_session() as db:
+                user = db.query(User).filter(User.id == user_id).first()
+                if not user:
+                    raise ValueError("User not found")
+                if not verify_password(current_password, user.password_hash):
+                    raise ValueError("Invalid current password")
+                user.password_hash = hash_password(new_password)
+                user.must_change_password = False
+                db.commit()
+                db.refresh(user)
+                return user.to_dict()
+        except SQLAlchemyError as e:
+            logger.error(f"Database error changing own password for user {user_id}: {str(e)}")
             raise
     
     async def create_api_token(self, user_id: str, token_data: Dict[str, Any]) -> Dict[str, Any]:

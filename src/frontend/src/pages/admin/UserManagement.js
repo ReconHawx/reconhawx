@@ -47,7 +47,8 @@ function UserManagement() {
     roles: ['user'],
     program_permissions: {},
     is_superuser: false,
-    is_active: true
+    is_active: true,
+    force_password_change: true,
   });
   
   const [editForm, setEditForm] = useState({
@@ -130,7 +131,8 @@ function UserManagement() {
         program_permissions: {},
         is_superuser: false,
         is_active: true,
-        rf_uhash: ''
+        rf_uhash: '',
+        force_password_change: true,
       });
       loadUsers();
     } catch (err) {
@@ -595,6 +597,17 @@ function UserManagement() {
                 value={createForm.password}
                 onChange={(e) => setCreateForm({...createForm, password: e.target.value})}
                 required
+              />
+            </Form.Group>
+            <Form.Group className="mb-3">
+              <Form.Check
+                type="checkbox"
+                id="create-force-password-change"
+                label="Force password change on first login"
+                checked={createForm.force_password_change}
+                onChange={(e) =>
+                  setCreateForm({ ...createForm, force_password_change: e.target.checked })
+                }
               />
             </Form.Group>
             

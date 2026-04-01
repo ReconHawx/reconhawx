@@ -1530,7 +1530,8 @@ CREATE TABLE public.users (
     rf_uhash character varying(255),
     hackerone_api_token character varying(255),
     hackerone_api_user character varying(255),
-    intigriti_api_token character varying(255)
+    intigriti_api_token character varying(255),
+    must_change_password boolean DEFAULT false NOT NULL
 );
 
 

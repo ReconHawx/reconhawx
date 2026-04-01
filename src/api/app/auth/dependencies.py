@@ -38,10 +38,10 @@ async def get_current_user(credentials: Optional[HTTPAuthorizationCredentials] =
                         email="internal-service@recon.local",
                         is_active=True,
                         is_superuser=True,  # Give full permissions to internal services
-                        is_admin=True,
                         created_at=datetime.utcnow(),
                         updated_at=datetime.utcnow(),
-                        program_permissions=[]
+                        program_permissions=[],
+                        must_change_password=False,
                     )
                     return internal_user
                 else:
@@ -93,6 +93,13 @@ async def get_current_user(credentials: Optional[HTTPAuthorizationCredentials] =
             # Check if user is active
             if not user_doc.get("is_active", True):
                 logger.warning(f"API token used by inactive user: {user_doc.get('username')}")
+                return None
+
+            if user_doc.get("must_change_password"):
+                logger.warning(
+                    "API token rejected: user %s must change password first",
+                    user_doc.get("username"),
+                )
                 return None
             
             # Create UserResponse (without password)
@@ -464,10 +471,10 @@ async def get_internal_service_user() -> Optional[UserResponse]:
         email="internal-service@recon.local",
         is_active=True,
         is_superuser=True,  # Give full permissions to internal services
-        is_admin=True,
         created_at=datetime.utcnow(),
         updated_at=datetime.utcnow(),
-        program_permissions=[]
+        program_permissions=[],
+        must_change_password=False,
     )
     
     logger.info(f"Internal service authenticated with token: {token_data['name']}")

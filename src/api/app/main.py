@@ -70,8 +70,9 @@ app.include_router(action_logs.router, prefix="/action-logs")
 app.include_router(ai.router, prefix="/ai")
 
 # Configure CORS
-# Add authentication middleware (enabled by default - can be disabled via env var)
-app.add_middleware(AuthMiddleware)
+# Add authentication middleware (enabled by default - disable for local tests via DISABLE_AUTH_MIDDLEWARE=true)
+if os.getenv("DISABLE_AUTH_MIDDLEWARE", "false").lower() != "true":
+    app.add_middleware(AuthMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
