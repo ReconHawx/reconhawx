@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.4.2](https://github.com/ReconHawx/reconhawx/compare/v0.4.1...v0.4.2) (2026-04-01)
+
+
+### Bug Fixes
+
+* fixed AI analysis context handling to merge system and program AI settings for improved prompt generation ([1a8235d](https://github.com/ReconHawx/reconhawx/commit/1a8235dadf359c3551aaddd3557a95645e4d3ff0))
+* fixed typosquat screenshot text extraction by adding missing dep… ([6a927f2](https://github.com/ReconHawx/reconhawx/commit/6a927f24384d17a9241e1d53e6d1431715b79348))
+* fixed typosquat screenshot text extraction by adding missing dependencies ([3fb9956](https://github.com/ReconHawx/reconhawx/commit/3fb99569d75fd1d9fcb74b96e8f23ca41eac9f4b))
+* implement ConfigMap owner reference patching to ensure proper garbage collection with Batch Jobs ([a8d26cf](https://github.com/ReconHawx/reconhawx/commit/a8d26cfa74aa2ff0d45f3f98343e9e850070a247))
+
 ## [0.4.1](https://github.com/ReconHawx/reconhawx/compare/v0.4.0...v0.4.1) (2026-03-31)
 
 
