@@ -1,10 +1,30 @@
 # Installation on minikube
 
-## 1. Install and start minikube
+There are **two ways** to install ReconHawx on Minikube:
+
+1. **Installer script** — run [`scripts/install-minikube.sh`](../scripts/install-minikube.sh) from the repository. It copies manifests, generates secrets, drives Minikube, applies the stack, and updates `/etc/hosts` with fewer manual steps.
+2. **Manual installation** — run the commands yourself in order, starting at [Manual Installation](#manual-installation). You typically edit and apply `kubernetes/base` in your checkout (as in the snippets below).
+
+## Installer script
+
+From the repo root:
 
 ```shell
-minikube -p reconhawx start
+./scripts/install-minikube.sh
+```
 
+You are prompted for an **install root directory** (default `~/reconhawx`). That directory is only the destination for a copy of `kubernetes/base` from the repository; manifests and generated secrets are written there so your git tree under version control stays unchanged. The script uses `minikube … kubectl` only (no separate `kubectl` binary required).
+
+## Manual Installation
+
+The sections below describe the **manual** procedure for reference or troubleshooting.
+
+### Install and start minikube
+
+```shell
+minikube -p reconhawx start --driver=docker --ports=80:80 --ports=443:443
+```
+```shell
 😄  [reconhawx] minikube v1.38.1 on Nixos 26.05
     ▪ MINIKUBE_WANTUPDATENOTIFICATION=false
 ✨  Automatically selected the docker driver. Other choices: kvm2, ssh
@@ -21,34 +41,42 @@ minikube -p reconhawx start
 🏄  Done! kubectl is now configured to use "reconhawx" cluster and "default" namespace by default
 ```
 
-## 2. Set label on the minikube node
+### Set label on the minikube node
 
 ```shell
-kubectl label node reconhawx reconhawx.runner=true
-kubectl label node reconhawx reconhawx.worker=true
+minikube -p reconhawx kubectl -- label node reconhawx reconhawx.runner=true
+minikube -p reconhawx kubectl -- label node reconhawx reconhawx.worker=true
 ```
 
-## 3. Install kueue on the minikube cluster
+### Create a namespace for the reconhawx application
 
 ```shell
-kubectl apply --server-side -f https://github.com/kubernetes-sigs/kueue/releases/download/v0.11.1/manifests.yaml
-kubectl apply --server-side -f https://github.com/kubernetes-sigs/kueue/releases/download/v0.11.1/visibility-apf.yaml
-kubectl wait deploy/kueue-controller-manager -nkueue-system --for=condition=available --timeout=5m
+minikube -p reconhawx kubectl -- create namespace reconhawx
 ```
 
-## 4. Install nginx ingress controller on the minikube cluster
+### Install kueue on the minikube cluster
 
 ```shell
-kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.14.2/deploy/static/provider/cloud/deploy.yaml
+minikube -p reconhawx kubectl -- apply --server-side -f https://github.com/kubernetes-sigs/kueue/releases/download/v0.11.1/manifests.yaml
+minikube -p reconhawx kubectl -- apply --server-side -f https://github.com/kubernetes-sigs/kueue/releases/download/v0.11.1/visibility-apf.yaml
+minikube -p reconhawx kubectl -- wait deploy/kueue-controller-manager -nkueue-system --for=condition=available --timeout=5m
 ```
 
-## 5. Create a namespace for the reconhawx application
+### Install nginx ingress controller on the minikube cluster
 
 ```shell
-kubectl create namespace reconhawx
+minikube -p reconhawx addons enable ingress
+minikube -p reconhawx kubectl -- wait deploy/ingress-nginx-controller -n ingress-nginx --for=condition=available --timeout=5m
+minikube -p reconhawx kubectl -- rollout status deployment/ingress-nginx-controller -n ingress-nginx --timeout=5m
 ```
 
-## 6. Create Secrets Manifests
+Before applying manifests that include an `Ingress`, ensure the validating webhook can be reached (`validate.nginx.ingress.kubernetes.io`). If `kubectl apply` fails with `connection refused` to `ingress-nginx-controller-admission`, wait until that Service has endpoints, then retry after a short pause (or run [`scripts/install-minikube.sh`](../scripts/install-minikube.sh), which waits and retries):
+
+```shell
+minikube -p reconhawx kubectl -- get endpoints ingress-nginx-controller-admission -n ingress-nginx
+```
+
+### Create Secrets Manifests
 
 ```shell
 # Copy example files
@@ -59,36 +87,37 @@ cp kubernetes/base/secrets/postgres-secret.yaml.example kubernetes/base/secrets/
 sed -i "s/JWT_SECRET_PLACEHOLDER/`echo -n \"$(openssl rand -hex 32)\" | base64 -w0`/" kubernetes/base/secrets/jwt-secret.yaml
 sed -i "s/REFRESH_SECRET_KEY_PLACEHOLDER/`echo -n \"$(openssl rand -hex 32)\" | base64 -w0`/" kubernetes/base/secrets/jwt-secret.yaml
 sed -i "s/POSTGRES_PASSWORD_PLACEHOLDER/`echo -n \"$(openssl rand -hex 32)\" | base64 -w0`/" kubernetes/base/secrets/postgres-secret.yaml
+
+# Set Postgres Username (Using default "reconhawx")
+sed -i "s/POSTGRES_USERNAME_PLACEHOLDER/cmVjb25oYXd4/" kubernetes/base/secrets/postgres-secret.yaml
 ```
 
-## 7. Install the reconhawx application on the minikube cluster
+### Install the reconhawx application on the minikube cluster
 
 ```shell
-kubectl apply -k kubernetes/base/
+minikube -p reconhawx kubectl -- apply -k kubernetes/base/
 ```
 
-## 8. Wait for the postgresql pod to be ready and get admin password from the postgresql pod
+### Wait for the postgresql pod to be ready and get admin password from the postgresql pod
 
 ```shell
-kubectl wait deploy/postgresql -n reconhawx --for=condition=available --timeout=5m
-kubectl logs deploy/postgresql -n reconhawx | grep -A4 "ADMIN USER CREATED"
+minikube -p reconhawx kubectl -- wait deploy/postgresql -n reconhawx --for=condition=available --timeout=5m
+minikube -p reconhawx kubectl -- logs deploy/postgresql -n reconhawx | grep -A2 "ADMIN USER CREATED"
 ```
 
-## 9. Start Minikube tunnel (in a separate terminal)
+### Get Ingress IP and set hosts file
 
 ```shell
-minikube -p reconhawx tunnel
+echo "$(minikube -p reconhawx ip) reconhawx.local" | sudo tee -a /etc/hosts
 ```
 
-## 10. Get Ingress IP and set hosts file
+### Wait for API and Frontend healty status
 
 ```shell
-kubectl get ingress -n reconhawx
-
-NAME               CLASS   HOSTS             ADDRESS          PORTS   AGE
-frontend-ingress   nginx   reconhawx.local   10.106.114.192   80      30m
-
-echo "10.106.114.192 reconhawx.local" | sudo tee -a /etc/hosts
+minikube -p reconhawx kubectl -- wait deploy/frontend deploy/api -n reconhawx --for=condition=available --timeout=5
 ```
 
-## 11. Browse http://reconhawx.local
+### Test
+
+- Browse http://reconhawx.local
+- Login with "admin" using the password retrieved from the Postgres logs
