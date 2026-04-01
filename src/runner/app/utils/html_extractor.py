@@ -158,6 +158,12 @@ def extract_text_from_image_ocr(image_path_or_bytes) -> Optional[str]:
         if not normalized:
             return None
         return _truncate_text(normalized)
+    except ModuleNotFoundError as e:
+        logger.warning("OCR skipped (missing Python dependency): %s", e)
+        return None
     except Exception as e:
-        logger.debug(f"OCR failed: {e}")
+        if type(e).__name__ == "TesseractNotFoundError":
+            logger.warning("OCR skipped (Tesseract binary not found on PATH): %s", e)
+        else:
+            logger.debug("OCR failed: %s", e)
         return None
