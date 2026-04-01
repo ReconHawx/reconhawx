@@ -4,7 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { Spinner, Container } from 'react-bootstrap';
 
 function ProtectedRoute({ children, requireSuperuser = false, requireAdmin = false, requiredPermission = null }) {
-  const { isAuthenticated, isLoading, isSuperuser, isAdmin, hasPermission } = useAuth();
+  const { isAuthenticated, isLoading, isSuperuser, isAdmin, hasPermission, user } = useAuth();
   const location = useLocation();
 
   if (isLoading) {
@@ -19,6 +19,10 @@ function ProtectedRoute({ children, requireSuperuser = false, requireAdmin = fal
 
   if (!isAuthenticated) {
     return <Navigate to="/login" state={{ from: location }} replace />;
+  }
+
+  if (user?.must_change_password && location.pathname !== '/change-password') {
+    return <Navigate to="/change-password" replace />;
   }
 
   if (requireSuperuser && !isSuperuser()) {

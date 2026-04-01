@@ -881,6 +881,7 @@ class User(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     last_login = Column(DateTime, nullable=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    must_change_password = Column(Boolean, default=False, nullable=False)
     
     # Relationships
     api_tokens = relationship("APIToken", back_populates="user", cascade="all, delete-orphan")
@@ -910,7 +911,8 @@ class User(Base):
             'intigriti_api_token': self.intigriti_api_token,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'last_login': self.last_login.isoformat() if self.last_login else None,
-            'updated_at': self.updated_at.isoformat() if self.updated_at else None
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+            'must_change_password': bool(self.must_change_password),
         }
 
 class UserProgramPermission(Base):

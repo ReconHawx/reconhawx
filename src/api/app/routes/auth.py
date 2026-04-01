@@ -2,7 +2,8 @@ from fastapi import APIRouter, HTTPException, status, Depends, Request
 from datetime import timedelta, timezone
 from typing import Optional, List
 from models.user_postgres import (
-    LoginRequest, LoginResponse, UserResponse, UserCreateRequest, UserUpdateRequest, PasswordChangeRequest, UserListResponse,
+    LoginRequest, LoginResponse, UserResponse, UserCreateRequest, UserUpdateRequest,
+    PasswordChangeRequest, OwnPasswordChangeRequest, UserListResponse,
     APITokenCreateRequest, APITokenResponse, APITokenCreateResponse, APITokenListResponse,
     RefreshTokenRequest, RefreshTokenResponse, LogoutRequest, UserAssignmentResponse
 )
@@ -118,6 +119,42 @@ async def get_current_user_info(current_user: UserResponse = Depends(require_aut
     Get current user information
     """
     return current_user
+
+
+@router.post("/me/password", response_model=UserResponse)
+async def change_own_password(
+    body: OwnPasswordChangeRequest,
+    current_user: UserResponse = Depends(require_authentication),
+):
+    """Change password for the authenticated user (validates current password)."""
+    try:
+        auth_repo = AuthRepository()
+        updated = await auth_repo.change_own_password(
+            current_user.id,
+            body.current_password,
+            body.new_password,
+        )
+        return UserResponse(**updated)
+    except ValueError as e:
+        msg = str(e)
+        if msg == "Invalid current password":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=msg,
+            )
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=msg,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error changing own password for {current_user.username}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error while changing password",
+        )
+
 
 @router.post("/refresh", response_model=RefreshTokenResponse)
 async def refresh_token(refresh_data: RefreshTokenRequest):
@@ -380,6 +417,8 @@ async def update_user(
             update_data["hackerone_api_user"] = user_data.hackerone_api_user
         if user_data.intigriti_api_token is not None:
             update_data["intigriti_api_token"] = user_data.intigriti_api_token
+        if user_data.must_change_password is not None:
+            update_data["must_change_password"] = user_data.must_change_password
         
         if not update_data:
             raise HTTPException(

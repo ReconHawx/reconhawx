@@ -54,6 +54,11 @@ const authReducer = (state, action) => {
         ...state,
         isLoading: action.payload
       };
+    case 'UPDATE_USER':
+      return {
+        ...state,
+        user: action.payload,
+      };
     default:
       return state;
   }
@@ -357,6 +362,11 @@ export function AuthProvider({ children }) {
     };
   };
 
+  const updateUser = useCallback((user) => {
+    localStorage.setItem('user_data', JSON.stringify(user));
+    dispatch({ type: 'UPDATE_USER', payload: user });
+  }, []);
+
   const checkTokenStatus = () => {
     const tokenInfo = getTokenInfo();
     if (!tokenInfo) {
@@ -398,6 +408,7 @@ export function AuthProvider({ children }) {
     login,
     logout,
     refreshAccessToken,
+    updateUser,
     getTokenInfo,
     checkTokenStatus,
     showRefreshSchedule,

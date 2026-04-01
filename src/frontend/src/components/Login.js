@@ -11,7 +11,7 @@ function Login() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [validated, setValidated] = useState(false);
-  const { login, isAuthenticated, isLoading, error } = useAuth();
+  const { login, isAuthenticated, isLoading, error, user } = useAuth();
   const location = useLocation();
   const { isLight } = useTheme();
   const bannerUrl = isLight ? BANNER_LIGHT : BANNER_DARK;
@@ -25,6 +25,9 @@ function Login() {
   }, [isAuthenticated]);
 
   if (isAuthenticated) {
+    if (user?.must_change_password) {
+      return <Navigate to="/change-password" replace />;
+    }
     return <Navigate to={from} replace />;
   }
 

@@ -11,6 +11,7 @@ import LoadingFallback from './components/LoadingFallback';
 
 // Lazy load all page components for better code splitting
 const Dashboard = lazy(() => import('./pages/Dashboard'));
+const ChangePassword = lazy(() => import('./pages/ChangePassword'));
 
 // Assets
 const Subdomains = lazy(() => import('./pages/assets/Subdomains'));
@@ -87,6 +88,11 @@ function AppContent() {
             <Suspense fallback={<LoadingFallback />}>
               <Routes>
                 <Route path="/login" element={<Login />} />
+                <Route path="/change-password" element={
+                  <ProtectedRoute>
+                    <ChangePassword />
+                  </ProtectedRoute>
+                } />
                 <Route path="/" element={
                   <ProtectedRoute>
                     <Dashboard />
