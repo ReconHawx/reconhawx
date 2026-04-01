@@ -1,5 +1,5 @@
 -- Migration: Add must_change_password to users for forced password change on first login
--- Version: 0.6.0
+-- Version: 0.0.1
 
 -- UP MIGRATION
 ALTER TABLE users
