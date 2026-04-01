@@ -63,6 +63,16 @@ api.interceptors.response.use(
             }
         }
 
+        const code = error.response?.data?.code;
+        if (
+            error.response?.status === 403 &&
+            code === 'password_change_required' &&
+            typeof window !== 'undefined' &&
+            !window.location.pathname.startsWith('/change-password')
+        ) {
+            window.location.assign('/change-password');
+        }
+
         return Promise.reject(error);
     }
 );

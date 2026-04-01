@@ -20,6 +20,7 @@ class UserResponse(BaseModel):
     created_at: Optional[datetime] = None
     last_login: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+    must_change_password: bool = False
 
 class LoginRequest(BaseModel):
     """Login request model"""
@@ -112,6 +113,10 @@ class UserCreateRequest(BaseModel):
     hackerone_api_token: Optional[str] = None
     hackerone_api_user: Optional[str] = None
     intigriti_api_token: Optional[str] = None
+    force_password_change: bool = Field(
+        default=True,
+        description="When true, user must change password after first login",
+    )
 
 class UserUpdateRequest(BaseModel):
     """User update request model"""
@@ -126,9 +131,15 @@ class UserUpdateRequest(BaseModel):
     hackerone_api_token: Optional[str] = None
     hackerone_api_user: Optional[str] = None
     intigriti_api_token: Optional[str] = None
-    
+    must_change_password: Optional[bool] = None
+
 class PasswordChangeRequest(BaseModel):
     """Password change request model"""
+    new_password: str = Field(..., min_length=4)
+
+class OwnPasswordChangeRequest(BaseModel):
+    """Authenticated user changes their own password"""
+    current_password: str = Field(..., min_length=1)
     new_password: str = Field(..., min_length=4)
 
 class UserListResponse(BaseModel):

@@ -29,7 +29,15 @@ export const authAPI = {
   },
 
   getCurrentUser: async () => {
-    const response = await api.get('/auth/me');
+    const response = await api.get('/auth/user');
+    return response.data;
+  },
+
+  changeOwnPassword: async (currentPassword, newPassword) => {
+    const response = await api.post('/auth/me/password', {
+      current_password: currentPassword,
+      new_password: newPassword,
+    });
     return response.data;
   },
 

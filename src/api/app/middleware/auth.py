@@ -81,6 +81,22 @@ class AuthMiddleware(BaseHTTPMiddleware):
             
             # Add user to request state for use in endpoints
             request.state.current_user = current_user
+
+            if getattr(current_user, "must_change_password", False):
+                allowed = {
+                    ("GET", "/auth/user"),
+                    ("POST", "/auth/me/password"),
+                    ("POST", "/auth/logout"),
+                }
+                if (request.method.upper(), path) not in allowed:
+                    return JSONResponse(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        content={
+                            "detail": "Password change required",
+                            "code": "password_change_required",
+                            "status": "error",
+                        },
+                    )
             
         except Exception as e:
             logger.error(f"Authentication error: {str(e)}")
