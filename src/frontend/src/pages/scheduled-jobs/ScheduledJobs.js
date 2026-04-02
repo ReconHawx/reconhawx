@@ -4,8 +4,10 @@ import { Link, useNavigate } from 'react-router-dom';
 import { scheduledJobsAPI } from '../../services/api';
 import { formatDate, formatRelativeTime } from '../../utils/dateUtils';
 import { useAuth } from '../../contexts/AuthContext';
+import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
 
 const ScheduledJobs = () => {
+  usePageTitle(formatPageTitle('Scheduled Jobs'));
   const [jobs, setJobs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);

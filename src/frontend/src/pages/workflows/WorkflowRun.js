@@ -6,6 +6,7 @@ import JsonEditor from '../../components/JsonEditor';
 import VariableInput from '../../components/VariableInput';
 import VisualWorkflowBuilder from '../../components/VisualWorkflowBuilder';
 import { validateVariables, processTemplate } from '../../utils/workflowTemplates';
+import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
 
 function WorkflowRun() {
   const { workflowId } = useParams();
@@ -32,6 +33,8 @@ function WorkflowRun() {
   const [visualVariables, setVisualVariables] = useState({});
   const [visualInputs, setVisualInputs] = useState({});
   const [visualWorkflowJson, setVisualWorkflowJson] = useState('');
+
+  usePageTitle(formatPageTitle(workflowDetails?.name, 'Run Workflow'));
 
   // Default template for custom workflows
   const defaultWorkflowTemplate = JSON.stringify({

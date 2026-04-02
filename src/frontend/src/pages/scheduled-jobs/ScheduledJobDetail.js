@@ -4,6 +4,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { scheduledJobsAPI, workflowAPI } from '../../services/api';
 import { formatDate, formatRelativeTime } from '../../utils/dateUtils';
 import VariableInput from '../../components/VariableInput';
+import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
 
 const ScheduledJobDetail = () => {
   const { jobId } = useParams();
@@ -27,6 +28,8 @@ const ScheduledJobDetail = () => {
   const [workflowVariables, setWorkflowVariables] = useState({});
   const [variableValues, setVariableValues] = useState({});
   const [variableErrors, setVariableErrors] = useState({});
+
+  usePageTitle(formatPageTitle(job?.name, 'Scheduled Job'));
 
   const loadJobDetails = useCallback(async () => {
     try {

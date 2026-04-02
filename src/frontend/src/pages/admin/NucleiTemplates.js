@@ -17,8 +17,10 @@ import {
   Tab
 } from 'react-bootstrap';
 import { nucleiTemplatesAPI } from '../../services/api';
+import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
 
 function NucleiTemplates() {
+  usePageTitle(formatPageTitle('Nuclei Templates'));
   const [templates, setTemplates] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);

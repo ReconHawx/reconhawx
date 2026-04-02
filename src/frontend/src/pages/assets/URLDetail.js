@@ -5,6 +5,7 @@ import { urlAPI, screenshotAPI, serviceAPI, certificateAPI, domainAPI, API_BASE_
 import NotesSection from '../../components/NotesSection';
 import SitemapTree from '../../components/SitemapTree';
 import { formatDate } from '../../utils/dateUtils';
+import { usePageTitle, formatPageTitle, truncateTitle } from '../../hooks/usePageTitle';
 
 function URLDetail() {
   const { encodedUrl } = useParams();
@@ -28,6 +29,8 @@ function URLDetail() {
   const [relatedServices, setRelatedServices] = useState([]);
   const [relatedSubdomain, setRelatedSubdomain] = useState(null);
   const [relatedAssetsLoading, setRelatedAssetsLoading] = useState(false);
+
+  usePageTitle(formatPageTitle(url?.url ? truncateTitle(url.url) : null, 'URL'));
 
   // Function to fetch related assets (certificate, services, subdomain)
   const fetchRelatedAssets = async (urlData) => {

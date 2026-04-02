@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import api from '../../services/api';
 import { useProgramFilter } from '../../contexts/ProgramFilterContext';
 import { formatDate } from '../../utils/dateUtils';
+import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
 
 // Enhanced parsing functions for SSL/TLS extracted results (outside component to prevent re-creation)
 const parseExtractedResults = (extracted) => {
@@ -157,6 +158,7 @@ const parseCertificateIssuer = (extractedResults) => {
 };
 
 const SSLCertificateDashboard = () => {
+  usePageTitle(formatPageTitle('SSL Certificate Dashboard'));
   const { selectedProgram } = useProgramFilter();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);

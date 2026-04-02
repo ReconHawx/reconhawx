@@ -16,8 +16,10 @@ import {
   Modal
 } from 'react-bootstrap';
 import { adminAPI } from '../../services/api';
+import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
 
 function EventStats() {
+  usePageTitle(formatPageTitle('Event Stats'));
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');

@@ -20,6 +20,7 @@ import { programAPI, aiAPI } from '../../services/api';
 import EventHandlerForm from '../../components/EventHandlerForm';
 import { useAuth } from '../../contexts/AuthContext';
 import { formatDate } from '../../utils/dateUtils';
+import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
 
 const DEFAULT_NOTIFICATION_SETTINGS = {
   enabled: false,
@@ -181,6 +182,8 @@ function ProgramDetail() {
   const [eventHandlerEditingHandler, setEventHandlerEditingHandler] = useState(null);
 
   const [notificationSettings, setNotificationSettings] = useState(DEFAULT_NOTIFICATION_SETTINGS);
+
+  usePageTitle(formatPageTitle(program?.name || programName, 'Program'));
 
   const loadProgram = useCallback(async () => {
     try {

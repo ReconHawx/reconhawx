@@ -12,6 +12,7 @@ import {
 } from 'react-bootstrap';
 import { useProgramFilter } from '../../contexts/ProgramFilterContext';
 import api from '../../services/api';
+import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
 
 // Simple chart components (you can replace these with a charting library like Chart.js or Recharts)
 const SimpleBarChart = ({ data, title }) => {
@@ -469,6 +470,7 @@ function getDefaultCustomRange() {
 }
 
 function TyposquatDashboard() {
+  usePageTitle(formatPageTitle('Typosquat Dashboard'));
   const { selectedProgram, programs } = useProgramFilter();
 
   const initialCustom = getDefaultCustomRange();

@@ -4,8 +4,10 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { apexDomainAPI, programAPI } from '../../services/api';
 import { useProgramFilter } from '../../contexts/ProgramFilterContext';
 import { formatDate } from '../../utils/dateUtils';
+import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
 
 function ApexDomains() {
+  usePageTitle(formatPageTitle('Apex Domains'));
   const navigate = useNavigate();
   const location = useLocation();
   const { selectedProgram, setSelectedProgram } = useProgramFilter();

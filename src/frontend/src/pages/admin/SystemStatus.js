@@ -11,6 +11,7 @@ import {
   Button
 } from 'react-bootstrap';
 import { adminAPI } from '../../services/api';
+import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
 
 const STATUS_VARIANT = {
   available: 'success',
@@ -19,6 +20,7 @@ const STATUS_VARIANT = {
 };
 
 function SystemStatus() {
+  usePageTitle(formatPageTitle('System Status'));
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');

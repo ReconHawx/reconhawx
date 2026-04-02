@@ -3,8 +3,10 @@ import { Container, Row, Col, Card, Badge, Pagination, Form, Button, Spinner, Al
 import { useNavigate } from 'react-router-dom';
 import { urlAPI } from '../../services/api';
 import { useProgramFilter } from '../../contexts/ProgramFilterContext';
+import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
 
 function Technologies() {
+  usePageTitle(formatPageTitle('Technologies'));
   const navigate = useNavigate();
   const { selectedProgram } = useProgramFilter();
   const [technologies, setTechnologies] = useState({});

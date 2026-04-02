@@ -3,8 +3,10 @@ import { Container, Row, Col, Card, Form, Button, Alert } from 'react-bootstrap'
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import apiObject from '../services/api';
+import { usePageTitle, formatPageTitle } from '../hooks/usePageTitle';
 
 function ChangePassword() {
+  usePageTitle(formatPageTitle('Change Password'));
   const { user, updateUser } = useAuth();
   const navigate = useNavigate();
   const [currentPassword, setCurrentPassword] = useState('');

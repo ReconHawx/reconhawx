@@ -20,6 +20,7 @@ import RelatedScreenshotsViewer from '../../components/RelatedScreenshotsViewer'
 import { formatDate, formatLocalDate } from '../../utils/dateUtils';
 import { useAuth } from '../../contexts/AuthContext';
 import { formatAssignedTo, initializeUserCache, preloadUsers } from '../../utils/userUtils';
+import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
 
 const WHOIS_FLAT_KEYS = [
   'whois_registrar',
@@ -154,6 +155,8 @@ function TyposquatFindingDetail() {
   // Action logs state
   const [actionLogs, setActionLogs] = useState([]);
   const [actionLogsLoading, setActionLogsLoading] = useState(false);
+
+  usePageTitle(formatPageTitle(finding?.typo_domain, 'Typosquat'));
 
   // Fetch finding details
   useEffect(() => {

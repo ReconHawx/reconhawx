@@ -4,6 +4,7 @@ import { Container, Row, Col, Card, Badge, Button, Spinner, Alert, Table, Collap
 import { certificateAPI } from '../../services/api';
 import NotesSection from '../../components/NotesSection';
 import { formatDate, isExpired, isExpiringSoon } from '../../utils/dateUtils';
+import { usePageTitle, formatPageTitle, truncateTitle } from '../../hooks/usePageTitle';
 
 function CertificateDetail() {
   const { encodedSubjectDN } = useParams();
@@ -17,6 +18,13 @@ function CertificateDetail() {
   });
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleting, setDeleting] = useState(false);
+
+  usePageTitle(
+    formatPageTitle(
+      certificate?.subject_dn ? truncateTitle(certificate.subject_dn) : null,
+      'Certificate'
+    )
+  );
 
   useEffect(() => {
     const fetchCertificate = async () => {
