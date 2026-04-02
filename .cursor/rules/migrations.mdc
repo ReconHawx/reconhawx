@@ -170,6 +170,7 @@ FOREIGN KEY (parent_id) REFERENCES parent_table(id) ON DELETE CASCADE;
 - Migration files: `src/migrations/V*.sql`
 - Migration CLI: `src/migrations/cli.py`
 - Migration runner: `src/migrations/migration_runner.py`
+- Kubernetes API init container: `src/migrations/k8s_entrypoint.py`, image `src/migrations/Dockerfile`, wired in `kubernetes/base/api/api-deployment.yaml` (optional `MIGRATIONS_BASELINE_AUTOMARK=1` only for dump-only bookkeeping; default runs all pending SQL)
 - Shell wrapper: `scripts/migrate.sh`
 - SQLAlchemy models: `src/api/app/models/postgres.py`
 - Quick index (agents / contributors): `AGENTS.md` (repository root)

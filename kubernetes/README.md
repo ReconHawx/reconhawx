@@ -50,7 +50,7 @@ Change this password after your first login.
 | **NATS** | Message broker with JetStream (streams created on startup) |
 | **Redis** | Cache / pub-sub |
 | **Kueue** | Job queue CRDs, cluster queues, and resource flavors |
-| **API** | FastAPI backend |
+| **API** | FastAPI backend (init container runs DB migrations before the app starts) |
 | **Frontend** | React UI behind nginx |
 | **Event Handler** | NATS event consumer |
 | **CT Monitor** | Certificate Transparency log watcher |

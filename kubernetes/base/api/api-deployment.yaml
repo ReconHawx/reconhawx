@@ -17,6 +17,41 @@ spec:
       nodeSelector:
         reconhawx.runner: "true"
       serviceAccountName: api-sa
+      initContainers:
+      - name: run-migrations
+        image: ghcr.io/reconhawx/reconhawx/migrations:latest
+        imagePullPolicy: Always
+        env:
+        - name: POSTGRES_HOST
+          value: "postgresql"
+        - name: DATABASE_NAME
+          valueFrom:
+            configMapKeyRef:
+              name: service-config
+              key: database.name
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: postgres-root-username
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: postgres-root-password
+        - name: MIGRATIONS_DIR
+          value: "/app/src/migrations"
+        - name: MIGRATIONS_VERBOSE
+          value: "0"
+        - name: MIGRATIONS_BASELINE_AUTOMARK
+          value: "0"
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "50m"
+          limits:
+            memory: "256Mi"
+            cpu: "500m"
       containers:
       - name: api
         image: ghcr.io/reconhawx/reconhawx/api:latest
