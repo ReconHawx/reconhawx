@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/ReconHawx/reconhawx/compare/v0.6.0...v0.7.0) (2026-04-02)
+
+
+### Features
+
+* **kubernetes:** add wait-for-postgresql init container to ensure DB readiness before migrations ([29bc1ea](https://github.com/ReconHawx/reconhawx/commit/29bc1ea7782a6ff9cc1adcaa9d3ef19dbec6e485))
+
 ## [0.6.0](https://github.com/ReconHawx/reconhawx/compare/v0.5.0...v0.6.0) (2026-04-02)
 
 
