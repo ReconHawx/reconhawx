@@ -21,6 +21,16 @@ api.interceptors.request.use(
         if (token) {
             config.headers.Authorization = `Bearer ${token}`;
         }
+        // Default Content-Type is application/json; FormData must use multipart with a boundary.
+        if (typeof FormData !== 'undefined' && config.data instanceof FormData) {
+            const h = config.headers;
+            if (h && typeof h.delete === 'function') {
+                h.delete('Content-Type');
+            } else if (h) {
+                delete h['Content-Type'];
+                delete h['content-type'];
+            }
+        }
         return config;
     },
     (error) => {

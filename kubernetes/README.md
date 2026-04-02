@@ -46,6 +46,31 @@ kubectl logs deploy/postgresql -n reconhawx | grep -A4 "ADMIN USER CREATED"
 
 Change this password after your first login.
 
+## Database backup and restore (superuser)
+
+The API exposes `/admin/database/status`, `/admin/database/backup`, and **`/admin/database/maintenance/*`** (maintenance, Kueue drain, Job restore). In the UI: **Administration → System maintenance** (`/admin/system-maintenance`; `/admin/database-backup` redirects).
+
+**Who talks to Postgres (steady state):** primarily the **API** (SQLAlchemy). Runner workflow jobs usually call the API over HTTP; the **`dummy_batch`** task is an exception (direct `asyncpg`)—avoid it in production workflows you care about. Workers, event-handler, and ct-monitor should not open the app database directly.
+
+### Maintenance mode (UI + optional env)
+
+- **Normal:** Superusers toggle maintenance in the UI (stored in **`system_settings.maintenance_mode`**). When effective, the API returns **503** for most routes; **`/status`**, **`/admin/database/*`**, and the internal restore pull path stay available.
+- **Break-glass:** Set **`MAINTENANCE_MODE`** (and optionally **`MAINTENANCE_MESSAGE`**) on the API Deployment if you must force a gate when the DB setting is unavailable.
+
+### Kueue drain before restore
+
+Patch all four **ClusterQueue** resources to **`spec.stopPolicy: Hold`** (via admin API or `kubectl`) so **new** workloads are not admitted while **admitted** jobs **run to completion**. Use **`Hold`**, not **`HoldAndDrain`**: in Kueue, **HoldAndDrain evicts** admitted workloads (they tend to restart when you clear the policy). Reserving workloads cancel reservation under either policy. Clear `stopPolicy` when done. The API **`api-sa`** needs **ClusterRole** permission to **patch** `clusterqueues` (see `kubernetes/base/kueue/api-kueue-clusterqueue-rbac.yaml`).
+
+### Job-based restore (recommended in cluster)
+
+Restore by **staging** a dump on the API pod (**`POST /admin/database/maintenance/restore/stage`**), then **`POST .../restore/job`** which creates a **Batch Job**: initContainer **curl** fetches the dump from the API using **`internal-service-secret`**, then **`pg_restore`** runs in a **`postgres:15`** container. The Job removes the dump file on exit (`trap`); the API clears staging metadata when the Job reaches a terminal phase. **`DATABASE_RESTORE_MAX_BYTES`** caps uploads (default 5 GiB). Use **Secrets** only for tiny metadata—**not** multi‑GiB dumps (~1 MiB object limit).
+
+### Redis and NATS after restore
+
+The database may be **older or newer** than **Redis** caches and **NATS JetStream** streams. After a restore, you may see **stuck workflows**, duplicate processing, or stale UI until you **restart runner** (and optionally **flush Redis** or adjust streams). This is **not** solved by queuing maintenance alone—document your post-restore checklist.
+
+The API image ships **PostgreSQL 15 client tools** (`postgresql-client-15`). The **frontend nginx** ConfigMap and **Ingress** allow request bodies up to **6g** so large stages/restores are not rejected with **413**.
+
 ## What Gets Deployed
 
 | Component | Description |
@@ -99,7 +124,8 @@ The base manifests create the following Kueue resources in the `recon` namespace
 | LocalQueue | `recon-runner-queue` | Namespace queue bound to `runner-cluster-queue` |
 | LocalQueue | `recon-worker-queue` | Namespace queue bound to `worker-cluster-queue` |
 | LocalQueue | `recon-ai-analysis-queue` | Namespace queue bound to `ai-analysis-cluster-queue` |
-| Role/RoleBinding | `kueue-workload-manager` | Grants the API service account permission to manage Kueue workloads |
+| Role/RoleBinding | `kueue-workload-manager` | Grants the API service account permission to manage namespaced Kueue workloads |
+| ClusterRole/ClusterRoleBinding | `reconhawx-api-kueue-clusterqueues` | **`clusterqueues`** get/list/patch/update for maintenance **stopPolicy** |
 
 These are all applied automatically as part of `kubectl apply -k kubernetes/base/`.
 

@@ -31,7 +31,7 @@ spec:
       resources:
       - name: "nvidia.com/gpu"
         nominalQuota: 2
-  stopPolicy: HoldAndDrain
+  # stopPolicy: omit in normal operation. Use Hold (not HoldAndDrain) for maintenance—see kubernetes/README.md.
   preemption:
     reclaimWithinCohort: Never
     withinClusterQueue: LowerPriority

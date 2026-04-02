@@ -9,6 +9,9 @@ warnings.filterwarnings("ignore")
 # Disable auth middleware so unit tests can override dependencies
 os.environ["DISABLE_AUTH_MIDDLEWARE"] = "true"
 
+# Maintenance middleware would block most routes if enabled from DB/env in tests
+os.environ.setdefault("DISABLE_MAINTENANCE_MIDDLEWARE", "true")
+
 # Add src/api and src/api/app so both "app" and "routes" (used in app.main) resolve
 _api_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 _app_dir = os.path.join(_api_root, "app")

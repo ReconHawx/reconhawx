@@ -9,6 +9,7 @@ resources:
   - runner-cluster-queue.yaml
   - worker-cluster-queue.yaml
   - ai-analysis-cluster-queue.yaml
+  - api-kueue-clusterqueue-rbac.yaml
   - api-rbac.yaml
   - runner-queue.yaml
   - worker-queue.yaml

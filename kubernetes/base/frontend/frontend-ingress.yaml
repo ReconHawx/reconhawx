@@ -6,6 +6,7 @@ metadata:
     app: frontend
   annotations:
     nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/proxy-body-size: "6g"
 spec:
   ingressClassName: nginx
   rules:
