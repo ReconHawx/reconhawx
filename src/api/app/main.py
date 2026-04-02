@@ -2,8 +2,9 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from routes import assets, programs, findings, workflows, auth, nuclei_templates, jobs, admin, wordlists, scheduled_jobs, subdomain_assets, ip_assets, url_assets, service_assets, apexdomain_assets, certificate_assets, screenshot_assets, typosquat_findings, nuclei_findings, wpscan_findings, common_assets, common_findings, action_logs, broken_links, social_media_credentials, ai, event_handler_configs, ct_monitor_internal
+from routes import assets, programs, findings, workflows, auth, nuclei_templates, jobs, admin, admin_database, admin_database_maintenance, wordlists, scheduled_jobs, subdomain_assets, ip_assets, url_assets, service_assets, apexdomain_assets, certificate_assets, screenshot_assets, typosquat_findings, nuclei_findings, wpscan_findings, common_assets, common_findings, action_logs, broken_links, social_media_credentials, ai, event_handler_configs, ct_monitor_internal, internal_database_restore
 from middleware.auth import AuthMiddleware
+from middleware.maintenance import MaintenanceMiddleware
 from config.settings import settings
 import asyncio
 import logging
@@ -62,8 +63,11 @@ app.include_router(wordlists.router, prefix="/wordlists")
 app.include_router(jobs.router, prefix="/jobs")
 app.include_router(scheduled_jobs.router, prefix="/scheduled-jobs")
 app.include_router(admin.router, prefix="/admin")
+app.include_router(admin_database.router, prefix="/admin")
+app.include_router(admin_database_maintenance.router, prefix="/admin")
 app.include_router(event_handler_configs.admin_router, prefix="/admin")
 app.include_router(event_handler_configs.internal_router, prefix="/internal")
+app.include_router(internal_database_restore.internal_router, prefix="/internal")
 app.include_router(ct_monitor_internal.internal_ct_monitor_router, prefix="/internal")
 app.include_router(workflows.router, prefix="/workflows")
 app.include_router(action_logs.router, prefix="/action-logs")
@@ -90,6 +94,9 @@ app.add_middleware(
     expose_headers=["*"],
     max_age=3600,
 )
+
+# Outermost: maintenance gate before auth/CORS inner layers
+app.add_middleware(MaintenanceMiddleware)
 
 @app.on_event("startup")
 async def startup_event():

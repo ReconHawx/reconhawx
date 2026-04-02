@@ -9,6 +9,9 @@ data:
         listen 80;
         server_name localhost;
 
+        # Large multipart uploads (e.g. admin database restore); align above API DATABASE_RESTORE_MAX_BYTES (default 5 GiB)
+        client_max_body_size 6g;
+
         # Use Kubernetes DNS resolver (dynamically determined)
         resolver DNS_SERVER_PLACEHOLDER valid=30s;
         resolver_timeout 5s;

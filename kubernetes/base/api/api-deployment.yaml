@@ -216,6 +216,12 @@ spec:
               name: service-config
               key: api.url
 
+        - name: API_INTERNAL_URL
+          valueFrom:
+            configMapKeyRef:
+              name: service-config
+              key: api.url
+
         # Typosquat detection configuration
         - name: TYPOSQUAT_CACHE_TTL
           valueFrom:

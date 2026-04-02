@@ -308,6 +308,73 @@ export const adminAPI = {
   getSystemStatus: async () => {
     const response = await api.get('/admin/system-status');
     return response.data;
+  },
+
+  // Database backup / restore (superuser)
+  getDatabaseBackupStatus: async () => {
+    const response = await api.get('/admin/database/status');
+    return response.data;
+  },
+
+  downloadDatabaseBackup: async (format = 'custom') => {
+    const response = await api.get('/admin/database/backup', {
+      params: { format },
+      responseType: 'blob'
+    });
+    let filename = format === 'plain' ? 'reconhawx-backup.sql' : 'reconhawx-backup.dump';
+    const cd = response.headers['content-disposition'];
+    if (cd) {
+      const m = /filename="([^"]+)"/.exec(cd);
+      if (m) filename = m[1];
+    }
+    return { blob: response.data, filename };
+  },
+
+  getMaintenanceSettings: async () => {
+    const response = await api.get('/admin/database/maintenance/settings');
+    return response.data;
+  },
+
+  putMaintenanceSettings: async (payload) => {
+    const response = await api.put('/admin/database/maintenance/settings', payload);
+    return response.data;
+  },
+
+  kueueHoldClusterQueues: async () => {
+    const response = await api.post('/admin/database/maintenance/kueue/hold');
+    return response.data;
+  },
+
+  kueueClearStopPolicy: async () => {
+    const response = await api.post('/admin/database/maintenance/kueue/clear-stop-policy');
+    return response.data;
+  },
+
+  kueueDrainStatus: async () => {
+    const response = await api.get('/admin/database/maintenance/kueue/drain-status');
+    return response.data;
+  },
+
+  stageDatabaseRestore: async (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await api.post('/admin/database/maintenance/restore/stage', formData);
+    return response.data;
+  },
+
+  createDatabaseRestoreJob: async (stagingId, confirm = 'RESTORE_DATABASE') => {
+    const response = await api.post('/admin/database/maintenance/restore/job', {
+      staging_id: stagingId,
+      confirm
+    });
+    return response.data;
+  },
+
+  getDatabaseRestoreJobStatus: async (jobName) => {
+    const response = await api.get(
+      `/admin/database/maintenance/restore/job/${encodeURIComponent(jobName)}`
+    );
+    return response.data;
   }
 };
 

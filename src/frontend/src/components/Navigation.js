@@ -217,6 +217,9 @@ function Navigation() {
                       <Dropdown.Item as={Link} to="/admin/event-handler-config">
                         ⚡ Event Handlers
                       </Dropdown.Item>
+                      <Dropdown.Item as={Link} to="/admin/system-maintenance">
+                        🔧 System maintenance
+                      </Dropdown.Item>
                       <Dropdown.Divider />
                       <Dropdown.Item as={Link} to="/admin/system-status">
                         🖥️ System Status

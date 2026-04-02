@@ -1,5 +1,5 @@
 import React, { lazy, Suspense } from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { Container } from 'react-bootstrap';
 import { AuthProvider } from './contexts/AuthContext';
 import { ProgramFilterProvider } from './contexts/ProgramFilterContext';
@@ -77,6 +77,7 @@ const CTMonitor = lazy(() => import('./pages/admin/CTMonitor'));
 const EventStats = lazy(() => import('./pages/admin/EventStats'));
 const EventHandlerConfig = lazy(() => import('./pages/admin/EventHandlerConfig'));
 const SystemStatus = lazy(() => import('./pages/admin/SystemStatus'));
+const SystemMaintenance = lazy(() => import('./pages/admin/SystemMaintenance'));
 
 function AppContent() {
   return (
@@ -371,6 +372,16 @@ function AppContent() {
                 <Route path="/admin/system-status" element={
                   <ProtectedRoute requireSuperuser={true}>
                     <SystemStatus />
+                  </ProtectedRoute>
+                } />
+                <Route path="/admin/database-backup" element={
+                  <ProtectedRoute requireSuperuser={true}>
+                    <Navigate to="/admin/system-maintenance" replace />
+                  </ProtectedRoute>
+                } />
+                <Route path="/admin/system-maintenance" element={
+                  <ProtectedRoute requireSuperuser={true}>
+                    <SystemMaintenance />
                   </ProtectedRoute>
                 } />
                 {/* Catch-all route - redirect unknown paths to dashboard */}

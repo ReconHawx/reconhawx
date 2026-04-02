@@ -1335,3 +1335,303 @@ class KubernetesService:
         except Exception as e:
             logger.debug(f"Could not read APP_VERSION from pod ({label_selector}): {e}")
             return None
+
+    # --- Kueue maintenance (ClusterQueue stopPolicy) & database restore Job ---
+
+    KUEUE_CLUSTER_QUEUE_NAMES = (
+        "cluster-queue",
+        "runner-cluster-queue",
+        "worker-cluster-queue",
+        "ai-analysis-cluster-queue",
+    )
+
+    _TERMINAL_WORKLOAD_CONDITIONS = frozenset({"Finished", "Failed", "Rejected"})
+
+    def patch_cluster_queue_stop_policy(self, name: str, stop_policy: Optional[str]) -> None:
+        """Patch a ClusterQueue spec.stopPolicy (Hold, HoldAndDrain, or clear with None)."""
+        body: Dict[str, Any] = {"spec": {"stopPolicy": stop_policy}}
+        try:
+            # Merge-patch is the client default; _content_type is not supported (kubernetes client v35+).
+            self.custom_objects_v1.patch_cluster_custom_object(
+                group="kueue.x-k8s.io",
+                version="v1beta1",
+                plural="clusterqueues",
+                name=name,
+                body=body,
+            )
+            logger.info("patched ClusterQueue %s stopPolicy=%s", name, stop_policy)
+        except ApiException as e:
+            logger.error("patch ClusterQueue %s failed: %s", name, e)
+            raise
+
+    def set_all_cluster_queues_hold(self) -> List[str]:
+        """Set stopPolicy Hold on all ClusterQueues (no new admissions; admitted workloads run to completion).
+
+        Prefer this for DB maintenance. HoldAndDrain evicts admitted workloads and causes restarts when
+        the policy is cleared — see Kueue ClusterQueue stopPolicy docs.
+        """
+        updated: List[str] = []
+        for name in self.KUEUE_CLUSTER_QUEUE_NAMES:
+            self.patch_cluster_queue_stop_policy(name, "Hold")
+            updated.append(name)
+        return updated
+
+    def clear_all_cluster_queues_stop_policy(self) -> List[str]:
+        cleared: List[str] = []
+        for name in self.KUEUE_CLUSTER_QUEUE_NAMES:
+            self.patch_cluster_queue_stop_policy(name, None)
+            cleared.append(name)
+        return cleared
+
+    def get_cluster_queue_stop_policies(self) -> Dict[str, Optional[str]]:
+        policies: Dict[str, Optional[str]] = {}
+        for name in self.KUEUE_CLUSTER_QUEUE_NAMES:
+            try:
+                obj = self.custom_objects_v1.get_cluster_custom_object(
+                    group="kueue.x-k8s.io",
+                    version="v1beta1",
+                    plural="clusterqueues",
+                    name=name,
+                )
+                policies[name] = (obj.get("spec") or {}).get("stopPolicy")
+            except ApiException as e:
+                logger.warning("get ClusterQueue %s: %s", name, e)
+                policies[name] = None
+        return policies
+
+    def count_active_kueue_workloads(self) -> tuple[int, List[str]]:
+        """Workloads whose last condition type is not terminal (Finished/Failed/Rejected)."""
+        namespace = os.getenv("KUBERNETES_NAMESPACE", "reconhawx")
+        try:
+            workloads = self.custom_objects_v1.list_namespaced_custom_object(
+                group="kueue.x-k8s.io",
+                version="v1beta1",
+                namespace=namespace,
+                plural="workloads",
+            )
+        except ApiException as e:
+            logger.error("list workloads: %s", e)
+            raise
+
+        active_names: List[str] = []
+        for item in workloads.get("items", []):
+            meta = item.get("metadata") or {}
+            name = str(meta.get("name", ""))
+            conditions = (item.get("status") or {}).get("conditions") or []
+            if not conditions:
+                active_names.append(name)
+                continue
+            last_type = str((conditions[-1] or {}).get("type", ""))
+            if last_type not in self._TERMINAL_WORKLOAD_CONDITIONS:
+                active_names.append(name)
+        return len(active_names), active_names
+
+    def count_running_batch_jobs_exclude_restore(self, name_prefix_exclude: str = "db-restore-") -> tuple[int, List[str]]:
+        """Batch Jobs with status.active > 0, excluding database restore Jobs by name prefix."""
+        namespace = os.getenv("KUBERNETES_NAMESPACE", "reconhawx")
+        running: List[str] = []
+        try:
+            jobs = self.batch_v1.list_namespaced_job(namespace=namespace)
+        except ApiException as e:
+            logger.error("list jobs: %s", e)
+            raise
+        for job in jobs.items or []:
+            jn = job.metadata.name or ""
+            if jn.startswith(name_prefix_exclude):
+                continue
+            active = (job.status.active or 0) if job.status else 0
+            if active > 0:
+                running.append(jn)
+        return len(running), running
+
+    def create_database_restore_job(
+        self,
+        job_name: str,
+        pull_token: str,
+        staging_id: str,
+        *,
+        api_internal_base: str,
+        curl_image: str = "curlimages/curl:8.6.0",
+        postgres_image: str = "postgres:15",
+    ) -> client.V1Job:
+        """
+        Job with curl initContainer to pull the dump from the API, then pg_restore in postgres image.
+        """
+        namespace = os.getenv("KUBERNETES_NAMESPACE", "reconhawx")
+        pull_url = f"{api_internal_base.rstrip('/')}/internal/database-restore/pull"
+
+        work_vol = client.V1Volume(name="dump-work", empty_dir=client.V1EmptyDirVolumeSource())
+
+        init_env = [
+            client.V1EnvVar(name="PULL_TOKEN", value=pull_token),
+            client.V1EnvVar(name="API_PULL_URL", value=pull_url),
+            client.V1EnvVar(
+                name="INTERNAL_SERVICE_API_KEY",
+                value_from=client.V1EnvVarSource(
+                    secret_key_ref=client.V1SecretKeySelector(
+                        name="internal-service-secret",
+                        key="token",
+                        optional=True,
+                    )
+                ),
+            ),
+        ]
+        init_container = client.V1Container(
+            name="fetch-dump",
+            image=curl_image,
+            command=[
+                "sh",
+                "-c",
+                'exec curl -fsS -G -H "Authorization: Bearer ${INTERNAL_SERVICE_API_KEY}" '
+                '--data-urlencode "token=${PULL_TOKEN}" "${API_PULL_URL}" -o /work/dump',
+            ],
+            env=init_env,
+            volume_mounts=[client.V1VolumeMount(name="dump-work", mount_path="/work")],
+        )
+
+        main_env = [
+            client.V1EnvVar(name="POSTGRES_HOST", value="postgresql"),
+            client.V1EnvVar(
+                name="DATABASE_NAME",
+                value_from=client.V1EnvVarSource(
+                    config_map_key_ref=client.V1ConfigMapKeySelector(
+                        name="service-config",
+                        key="database.name",
+                    )
+                ),
+            ),
+            client.V1EnvVar(
+                name="POSTGRES_USER",
+                value_from=client.V1EnvVarSource(
+                    secret_key_ref=client.V1SecretKeySelector(
+                        name="postgres-secret",
+                        key="postgres-root-username",
+                    )
+                ),
+            ),
+            client.V1EnvVar(
+                name="POSTGRES_PASSWORD",
+                value_from=client.V1EnvVarSource(
+                    secret_key_ref=client.V1SecretKeySelector(
+                        name="postgres-secret",
+                        key="postgres-root-password",
+                    )
+                ),
+            ),
+            client.V1EnvVar(
+                name="PGPASSWORD",
+                value_from=client.V1EnvVarSource(
+                    secret_key_ref=client.V1SecretKeySelector(
+                        name="postgres-secret",
+                        key="postgres-root-password",
+                    )
+                ),
+            ),
+        ]
+        restore_cmd = (
+            "set -euo pipefail; "
+            "trap 'rm -f /work/dump' EXIT; "
+            "pg_restore -h \"${POSTGRES_HOST}\" -p 5432 "
+            "-U \"${POSTGRES_USER}\" -d \"${DATABASE_NAME}\" "
+            "--no-owner --no-acl --clean --if-exists --exit-on-error /work/dump"
+        )
+        main_container = client.V1Container(
+            name="pg-restore",
+            image=postgres_image,
+            command=["bash", "-lc", restore_cmd],
+            env=main_env,
+            volume_mounts=[client.V1VolumeMount(name="dump-work", mount_path="/work")],
+            resources=client.V1ResourceRequirements(
+                requests={"cpu": "100m", "memory": "256Mi"},
+                limits={"cpu": "2", "memory": "2Gi"},
+            ),
+        )
+
+        ttl = int(os.getenv("DATABASE_RESTORE_JOB_TTL_SECONDS", "3600"))
+        deadline = int(os.getenv("DATABASE_RESTORE_JOB_ACTIVE_DEADLINE_SEC", "86400"))
+
+        pod_spec = client.V1PodSpec(
+            restart_policy="Never",
+            volumes=[work_vol],
+            init_containers=[init_container],
+            containers=[main_container],
+        )
+        template = client.V1PodTemplateSpec(
+            metadata=client.V1ObjectMeta(
+                labels={"app": "database-restore"},
+                annotations={"reconhawx.io/db-restore-staging-id": staging_id},
+            ),
+            spec=pod_spec,
+        )
+
+        job_spec = client.V1JobSpec(
+            template=template,
+            backoff_limit=0,
+            ttl_seconds_after_finished=ttl,
+            active_deadline_seconds=deadline,
+        )
+
+        job = client.V1Job(
+            api_version="batch/v1",
+            kind="Job",
+            metadata=client.V1ObjectMeta(
+                name=job_name,
+                labels={"app": "database-restore"},
+                annotations={"reconhawx.io/db-restore-staging-id": staging_id},
+            ),
+            spec=job_spec,
+        )
+
+        try:
+            created = self.batch_v1.create_namespaced_job(namespace=namespace, body=job)
+            logger.warning(
+                "created database restore Job %s namespace=%s staging_id=%s",
+                job_name,
+                namespace,
+                staging_id,
+            )
+            return created
+        except ApiException as e:
+            logger.error("create restore Job failed: %s", e)
+            raise
+
+    def read_namespaced_job_status(self, job_name: str) -> Dict[str, Any]:
+        namespace = os.getenv("KUBERNETES_NAMESPACE", "reconhawx")
+        try:
+            job = self.batch_v1.read_namespaced_job_status(name=job_name, namespace=namespace)
+        except ApiException as e:
+            if e.status == 404:
+                return {"found": False}
+            raise
+        status_obj = job.status
+        st: Dict[str, Any] = {
+            "found": True,
+            "active": status_obj.active if status_obj else 0,
+            "succeeded": status_obj.succeeded if status_obj else 0,
+            "failed": status_obj.failed if status_obj else 0,
+            "start_time": status_obj.start_time.isoformat() if status_obj and status_obj.start_time else None,
+            "completion_time": status_obj.completion_time.isoformat()
+            if status_obj and status_obj.completion_time
+            else None,
+            "conditions": [],
+        }
+        if status_obj and status_obj.conditions:
+            for c in status_obj.conditions:
+                st["conditions"].append(
+                    {
+                        "type": c.type,
+                        "status": c.status,
+                        "reason": c.reason,
+                        "message": c.message,
+                    }
+                )
+        # terminal heuristic for callers
+        if st.get("succeeded"):
+            st["phase"] = "succeeded"
+        elif st.get("failed"):
+            st["phase"] = "failed"
+        elif (st.get("active") or 0) > 0:
+            st["phase"] = "active"
+        else:
+            st["phase"] = "unknown"
+        return st

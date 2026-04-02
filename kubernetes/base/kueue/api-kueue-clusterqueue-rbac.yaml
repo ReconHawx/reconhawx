@@ -1,0 +1,22 @@
+# ClusterQueue is cluster-scoped; namespaced Role cannot grant it. API patches stopPolicy during maintenance.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: reconhawx-api-kueue-clusterqueues
+rules:
+- apiGroups: ["kueue.x-k8s.io"]
+  resources: ["clusterqueues"]
+  verbs: ["get", "list", "patch", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: reconhawx-api-kueue-clusterqueues
+subjects:
+- kind: ServiceAccount
+  name: api-sa
+  namespace: reconhawx
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: reconhawx-api-kueue-clusterqueues
