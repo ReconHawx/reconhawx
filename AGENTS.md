@@ -45,7 +45,7 @@ Equivalent CLI: `python src/migrations/migrate.py ...` (see [`src/migrations/mig
 
 **Conventions** (versioning, UP/DOWN SQL, model alignment): [`.cursor/rules/migrations.mdc`](.cursor/rules/migrations.mdc).
 
-**Kubernetes:** the API `Deployment` runs an init container (`run-migrations`) that applies pending SQL migrations against the in-cluster Postgres service before `uvicorn` starts. Image: `migrations.image` in [`kubernetes/base/config/service-config.yaml`](kubernetes/base/config/service-config.yaml) (keep in sync with `initContainers` in [`kubernetes/base/api/api-deployment.yaml`](kubernetes/base/api/api-deployment.yaml)). Logs: `kubectl logs -n reconhawx deploy/api -c run-migrations`. Entrypoint: [`src/migrations/k8s_entrypoint.py`](src/migrations/k8s_entrypoint.py). Optional env **`MIGRATIONS_BASELINE_AUTOMARK=1`** skips executing pending SQL when treating files as dump-only bookkeeping (default **`0`**: always run pending migrations).
+**Kubernetes:** the API `Deployment` runs init containers before `uvicorn`: **`wait-for-postgresql`** (`postgres:15`, `pg_isready` against the `postgresql` Service and app database) then **`run-migrations`** (pending SQL). Image: `migrations.image` in [`kubernetes/base/config/service-config.yaml`](kubernetes/base/config/service-config.yaml) (keep in sync with `initContainers` in [`kubernetes/base/api/api-deployment.yaml`](kubernetes/base/api/api-deployment.yaml)). Logs: `kubectl logs -n reconhawx deploy/api -c run-migrations`. Entrypoint: [`src/migrations/k8s_entrypoint.py`](src/migrations/k8s_entrypoint.py). Optional env **`MIGRATIONS_BASELINE_AUTOMARK=1`** skips executing pending SQL when treating files as dump-only bookkeeping (default **`0`**: always run pending migrations).
 
 ### Kubernetes deploy
 

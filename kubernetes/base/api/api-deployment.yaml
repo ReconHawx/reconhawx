@@ -18,6 +18,52 @@ spec:
         reconhawx.runner: "true"
       serviceAccountName: api-sa
       initContainers:
+      # Waits until Postgres accepts connections to the app DB (initdb + schema load finished on first boot).
+      - name: wait-for-postgresql
+        image: postgres:15
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: postgres-root-username
+        - name: PGPASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: postgres-root-password
+        - name: DATABASE_NAME
+          valueFrom:
+            configMapKeyRef:
+              name: service-config
+              key: database.name
+        command:
+        - sh
+        - -c
+        - |
+          set -eu
+          echo "Waiting for PostgreSQL postgresql:5432 (database ${DATABASE_NAME})..."
+          i=0
+          max=150
+          while [ "$i" -lt "$max" ]; do
+            if pg_isready -h postgresql -p 5432 -U "${POSTGRES_USER}" -d "${DATABASE_NAME}" -t 5; then
+              echo "PostgreSQL is ready."
+              exit 0
+            fi
+            i=$((i + 1))
+            echo "PostgreSQL not ready yet ($i/$max), sleeping 2s..."
+            sleep 2
+          done
+          echo "Timed out waiting for PostgreSQL after $((max * 2))s"
+          exit 1
+        resources:
+          requests:
+            memory: "32Mi"
+            cpu: "25m"
+          limits:
+            memory: "128Mi"
+            cpu: "200m"
       - name: run-migrations
         image: ghcr.io/reconhawx/reconhawx/migrations:latest
         imagePullPolicy: Always
