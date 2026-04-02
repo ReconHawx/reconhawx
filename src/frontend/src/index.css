@@ -16,6 +16,8 @@
   /* Light theme — off-white layers (less glare than pure #fff, still clearly light) */
   --bs-body-bg: #e8ecf4;
   --bs-body-color: #0a0f1c;
+  /* Headings use var(--bs-heading-color) in Bootstrap — keep them in sync with body */
+  --bs-heading-color: var(--bs-body-color);
   --bs-border-color: #cdd6e4;
   --bs-card-bg: #f7f9fc;
   --bs-card-border-color: #cfd8e6;
@@ -52,9 +54,11 @@
 
   --bs-body-bg: #0a0f1c;
   --bs-body-color: #f0fbff;
-  --bs-border-color: rgba(0, 242, 255, 0.14);
+  --bs-heading-color: var(--bs-body-color);
+  /* Match table / list dividers to IPs (and other data tables): light theme uses solid #cdd6e4 — keep cyan-tinted but readable */
+  --bs-border-color: rgba(0, 242, 255, 0.34);
   --bs-card-bg: #121c2f;
-  --bs-card-border-color: rgba(0, 242, 255, 0.16);
+  --bs-card-border-color: rgba(0, 242, 255, 0.4);
   --bs-table-bg: #121c2f;
   --bs-table-hover-bg: rgba(0, 242, 255, 0.08);
   --bs-input-bg: #151d30;
@@ -116,6 +120,21 @@
   --bs-btn-color: var(--rh-cyan-muted);
   --bs-btn-border-color: rgba(0, 242, 255, 0.55);
   --bs-btn-disabled-color: rgba(92, 239, 255, 0.35);
+}
+
+[data-theme="dark"] .btn-outline-success {
+  --bs-btn-border-color: rgba(var(--bs-success-rgb), 0.58);
+  --bs-btn-hover-border-color: rgba(var(--bs-success-rgb), 0.85);
+}
+
+[data-theme="dark"] .btn-outline-danger {
+  --bs-btn-border-color: rgba(var(--bs-danger-rgb), 0.58);
+  --bs-btn-hover-border-color: rgba(var(--bs-danger-rgb), 0.85);
+}
+
+[data-theme="dark"] .btn-outline-warning {
+  --bs-btn-border-color: rgba(var(--bs-warning-rgb), 0.72);
+  --bs-btn-hover-border-color: rgba(var(--bs-warning-rgb), 0.92);
 }
 
 .bg-primary,
@@ -234,6 +253,29 @@ code {
 .card-header {
   background-color: var(--bs-card-bg) !important;
   border-bottom-color: var(--bs-card-border-color) !important;
+}
+
+/*
+ * .card forces a single border-color — wash out semantic border-* on cards in dark mode.
+ * Restore accented, visible rims (Dashboard, etc.); table rows still use --bs-border-color above.
+ */
+[data-theme="dark"] .card.border-primary {
+  border-color: rgba(var(--bs-primary-rgb), 0.58) !important;
+}
+[data-theme="dark"] .card.border-secondary {
+  border-color: rgba(var(--bs-secondary-rgb), 0.58) !important;
+}
+[data-theme="dark"] .card.border-success {
+  border-color: rgba(var(--bs-success-rgb), 0.58) !important;
+}
+[data-theme="dark"] .card.border-danger {
+  border-color: rgba(var(--bs-danger-rgb), 0.58) !important;
+}
+[data-theme="dark"] .card.border-warning {
+  border-color: rgba(var(--bs-warning-rgb), 0.72) !important;
+}
+[data-theme="dark"] .card.border-info {
+  border-color: rgba(var(--bs-info-rgb), 0.58) !important;
 }
 
 /* Table theming */
