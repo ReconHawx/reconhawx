@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.8.0](https://github.com/ReconHawx/reconhawx/compare/v0.7.0...v0.8.0) (2026-04-02)
+
+
+### Features
+
+* **admin:** add system maintenance with Kueue hold and Job-based restore ([6bd3c50](https://github.com/ReconHawx/reconhawx/commit/6bd3c50b05f03453ba10fab6a69bb6b654f09bab))
+* **k8s:** pin images to release semver and add in-cluster upgrade path ([e816070](https://github.com/ReconHawx/reconhawx/commit/e8160700a17c3238054b4c1d3504bb93b61e636e))
+* persist closure history and last-closure discovery ([4a93e90](https://github.com/ReconHawx/reconhawx/commit/4a93e90ceab1727f8133b288285d8fbbab4ad5ae))
+
 ## [0.7.0](https://github.com/ReconHawx/reconhawx/compare/v0.6.0...v0.7.0) (2026-04-02)
 
 
