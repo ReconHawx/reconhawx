@@ -66,7 +66,7 @@ spec:
             cpu: "200m"
       - name: run-migrations
         image: ghcr.io/reconhawx/reconhawx/migrations:latest
-        imagePullPolicy: Always
+        imagePullPolicy: IfNotPresent
         env:
         - name: POSTGRES_HOST
           value: "postgresql"
@@ -101,7 +101,7 @@ spec:
       containers:
       - name: api
         image: ghcr.io/reconhawx/reconhawx/api:latest
-        imagePullPolicy: Always
+        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8000
           protocol: TCP

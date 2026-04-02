@@ -1,0 +1,10 @@
+# Bumped with version.txt by release-please (extra-files). Cluster-visible deploy version.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: reconhawx-version
+  labels:
+    app: reconhawx
+    component: version
+data:
+  APP_VERSION: "0.7.0" # x-release-please-version

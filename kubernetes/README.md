@@ -32,6 +32,10 @@ cd ../../..
 kubectl apply -k kubernetes/base/
 ```
 
+## Upgrading an existing install
+
+Use repo root **`update-kubernetes.sh`** or **`update-minikube.sh`**, or manually `kubectl apply -k kubernetes/base-update/` then restart app Deployments. See **[`docs/update-reconhawx.md`](../docs/update-reconhawx.md)** for prerequisites, versioning (`reconhawx-version` / `APP_VERSION`), why **`base-update`** avoids re-applying Secrets from git, and troubleshooting.
+
 ## Default Admin User
 
 On first deploy (fresh PVC), PostgreSQL automatically creates an `admin` superuser with a random password. Retrieve the credentials from the pod logs:
@@ -138,22 +142,19 @@ Or edit the files under `base/kueue/` directly if you are not using overlays.
 
 ### Images
 
-Base manifests use `ghcr.io/reconhawx/reconhawx/<service>:latest`. To use a different registry or tag, create a kustomize overlay:
+Base manifests pin internal images to the **release semver** (same tag GHCR gets from release-please, e.g. `0.7.0`). Source files still use a `:latest` suffix for readability; Kustomize (**[`base/components/pinned-releases`](base/components/pinned-releases/kustomization.yaml)**) rewrites those images (and **`runner.image`** / **`worker.image`** in **`service-config`**) from **`reconhawx-version`** ConfigMap **`data.APP_VERSION`**, defined in **`base/config/reconhawx-version.yaml`** (bumped with **`version.txt`**).
 
-```yaml
-# my-overlay/kustomization.yaml
-apiVersion: kustomize.config.k8s.io/v1beta1
-kind: Kustomization
-resources:
-  - ../kubernetes/base
-images:
-  - name: ghcr.io/reconhawx/reconhawx/api
-    newTag: v1.0.0
-  - name: ghcr.io/reconhawx/reconhawx/frontend
-    newTag: v1.0.0
+Check what version the cluster is tracking:
+
+```bash
+kubectl get configmap reconhawx-version -n reconhawx -o jsonpath='{.data.APP_VERSION}{"\n"}'
 ```
 
-Runner and worker job images are configured via the `recon-config` ConfigMap keys `runner.image` and `worker.image`. Patch them in your overlay if needed.
+**Upgrades** without re-applying secrets from git: `kubectl apply -k kubernetes/base-update/` (see **[`base-update/kustomization.yaml`](base-update/kustomization.yaml)** and repo root **`update-kubernetes.sh`**).
+
+To use a **custom registry or tag**, create a kustomize overlay on top of `base` (or `base-update`) and patch images / ConfigMap data as needed—for example, extend **`images:`** if you replace `components/pinned-releases` in your overlay.
+
+Runner and worker job images are set via **`service-config`** keys **`runner.image`** and **`worker.image`** (rewritten by the pinned-releases component to match **`APP_VERSION`**).
 
 ### Ingress
 

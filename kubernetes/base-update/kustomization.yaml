@@ -1,0 +1,24 @@
+# Apply upgrades without re-applying jwt/postgres Secrets from the repo (avoids clobbering cluster credentials).
+# Use: kubectl apply -k kubernetes/base-update/
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: reconhawx
+
+sortOptions:
+  order: fifo
+
+resources:
+  - ../base/config
+  - ../base/postgresql
+  - ../base/nats
+  - ../base/redis
+  - ../base/kueue
+  - ../base/api
+  - ../base/frontend
+  - ../base/event-handler
+  - ../base/ct-monitor
+  - ../base/runner
+
+components:
+  - ../base/components/pinned-releases

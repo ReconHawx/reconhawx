@@ -1,0 +1,59 @@
+# Shared image tag pinning from ConfigMap reconhawx-version (data.APP_VERSION).
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+replacements:
+  - source:
+      kind: ConfigMap
+      name: reconhawx-version
+      fieldPath: data.APP_VERSION
+    targets:
+      - select:
+          kind: Deployment
+          name: api
+        fieldPaths:
+          - spec.template.spec.initContainers.[name=run-migrations].image
+        options:
+          delimiter: ":"
+          index: 1
+      - select:
+          kind: Deployment
+          name: api
+        fieldPaths:
+          - spec.template.spec.containers.[name=api].image
+        options:
+          delimiter: ":"
+          index: 1
+      - select:
+          kind: Deployment
+          name: frontend
+        fieldPaths:
+          - spec.template.spec.containers.[name=frontend].image
+        options:
+          delimiter: ":"
+          index: 1
+      - select:
+          kind: Deployment
+          name: event-handler
+        fieldPaths:
+          - spec.template.spec.containers.[name=event-handler].image
+        options:
+          delimiter: ":"
+          index: 1
+      - select:
+          kind: Deployment
+          name: ct-monitor
+        fieldPaths:
+          - spec.template.spec.containers.[name=ct-monitor].image
+        options:
+          delimiter: ":"
+          index: 1
+      - select:
+          kind: ConfigMap
+          name: service-config
+        fieldPaths:
+          - data.[runner.image]
+          - data.[worker.image]
+        options:
+          delimiter: ":"
+          index: 1

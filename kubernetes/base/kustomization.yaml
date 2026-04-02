@@ -20,3 +20,6 @@ resources:
   - event-handler
   - ct-monitor
   - runner
+
+components:
+  - components/pinned-releases

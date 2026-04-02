@@ -23,7 +23,7 @@ data:
   runner.serviceaccount: "runner-service-account"
   runner.image: "ghcr.io/reconhawx/reconhawx/runner:latest"
   worker.image: "ghcr.io/reconhawx/reconhawx/worker:latest"
-  image.pull.policy: "Always"
+  image.pull.policy: "IfNotPresent"
 
   # Runner configuration
   ## Typosquat caching configuration

@@ -5,7 +5,8 @@
       "release-type": "simple",
       "bump-minor-pre-major": true,
       "extra-files": [
-        "src/frontend/package.json"
+        "src/frontend/package.json",
+        "kubernetes/base/config/reconhawx-version.yaml"
       ],
       "changelog-sections": [
         { "type": "feat", "section": "Features" },

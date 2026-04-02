@@ -13,7 +13,7 @@ Use this file as a **first stop** for how the repo is laid out and how to run co
 | CT-Monitor | Certificate transparency log monitoring | [`src/ct-monitor/`](src/ct-monitor/) |
 | Event handler | Event consumers / handlers | [`src/event-handler/`](src/event-handler/) |
 | Migrations | PostgreSQL schema migrations (SQL + CLI) | [`src/migrations/`](src/migrations/) |
-| Kubernetes | Base manifests and Kueue (deploy with `kubectl apply -k kubernetes/base/`) | [`kubernetes/`](kubernetes/) |
+| Kubernetes | Base manifests and Kueue (deploy with `kubectl apply -k kubernetes/base/`); upgrades: [`docs/update-reconhawx.md`](docs/update-reconhawx.md), `update-kubernetes.sh` / `update-minikube.sh` | [`kubernetes/`](kubernetes/) |
 
 ## Shell and devenv
 
@@ -45,7 +45,7 @@ Equivalent CLI: `python src/migrations/migrate.py ...` (see [`src/migrations/mig
 
 **Conventions** (versioning, UP/DOWN SQL, model alignment): [`.cursor/rules/migrations.mdc`](.cursor/rules/migrations.mdc).
 
-**Kubernetes:** the API `Deployment` runs init containers before `uvicorn`: **`wait-for-postgresql`** (`postgres:15`, `pg_isready` against the `postgresql` Service and app database) then **`run-migrations`** (pending SQL). Image: `migrations.image` in [`kubernetes/base/config/service-config.yaml`](kubernetes/base/config/service-config.yaml) (keep in sync with `initContainers` in [`kubernetes/base/api/api-deployment.yaml`](kubernetes/base/api/api-deployment.yaml)). Logs: `kubectl logs -n reconhawx deploy/api -c run-migrations`. Entrypoint: [`src/migrations/k8s_entrypoint.py`](src/migrations/k8s_entrypoint.py). Optional env **`MIGRATIONS_BASELINE_AUTOMARK=1`** skips executing pending SQL when treating files as dump-only bookkeeping (default **`0`**: always run pending migrations).
+**Kubernetes:** the API `Deployment` runs init containers before `uvicorn`: **`wait-for-postgresql`** (`postgres:15`, `pg_isready` against the `postgresql` Service and app database) then **`run-migrations`** (pending SQL). Image: **`run-migrations`** init container in [`kubernetes/base/api/api-deployment.yaml`](kubernetes/base/api/api-deployment.yaml) (semver tag aligned with [`kubernetes/base/config/reconhawx-version.yaml`](kubernetes/base/config/reconhawx-version.yaml) via [`kubernetes/base/components/pinned-releases`](kubernetes/base/components/pinned-releases/kustomization.yaml)). Logs: `kubectl logs -n reconhawx deploy/api -c run-migrations`. Entrypoint: [`src/migrations/k8s_entrypoint.py`](src/migrations/k8s_entrypoint.py). Optional env **`MIGRATIONS_BASELINE_AUTOMARK=1`** skips executing pending SQL when treating files as dump-only bookkeeping (default **`0`**: always run pending migrations). **In-cluster upgrades:** [`update-kubernetes.sh`](update-kubernetes.sh) / [`update-minikube.sh`](update-minikube.sh) apply [`kubernetes/base-update/`](kubernetes/base-update/kustomization.yaml) (no secret re-apply from git) and restart app deployments.
 
 ### Kubernetes deploy
 
@@ -100,7 +100,7 @@ Browse [`.cursor/rules/`](.cursor/rules/). Entry points by component (globs in e
 | Worker | [`src/worker/`](src/worker/) | [`worker-architecture.mdc`](.cursor/rules/worker-architecture.mdc) |
 | CT-Monitor | [`src/ct-monitor/`](src/ct-monitor/) | [`ct-monitor.mdc`](.cursor/rules/ct-monitor.mdc) |
 | Event handler | [`src/event-handler/`](src/event-handler/) | [`event-handler-architecture.mdc`](.cursor/rules/event-handler-architecture.mdc), [`event-handler-integration.mdc`](.cursor/rules/event-handler-integration.mdc), [`event-handler-patterns.mdc`](.cursor/rules/event-handler-patterns.mdc) |
-| Kubernetes | [`kubernetes/`](kubernetes/) | [`k8s-architecture.mdc`](.cursor/rules/kubernetes-architecture.mdc), [`k8s-deployment-operations.mdc`](.cursor/rules/kubernetes-deployment-operations.mdc), [`k8s-kustomize-patterns.mdc`](.cursor/rules/kubernetes-kustomize-patterns.mdc), [`k8s-nats-messaging.mdc`](.cursor/rules/kubernetes-nats-messaging.mdc) |
+| Kubernetes | [`kubernetes/`](kubernetes/) | [`k8s-architecture.mdc`](.cursor/rules/k8s-architecture.mdc), [`k8s-deployment-operations.mdc`](.cursor/rules/k8s-deployment-operations.mdc), [`k8s-kustomize-patterns.mdc`](.cursor/rules/k8s-kustomize-patterns.mdc), [`k8s-nats-messaging.mdc`](.cursor/rules/k8s-nats-messaging.mdc) |
 | Migrations | [`src/migrations/`](src/migrations/) | [`migrations.mdc`](.cursor/rules/migrations.mdc) |
 | Always-on | — | [`project-hub.mdc`](.cursor/rules/project-hub.mdc), [`devenv-shell.mdc`](.cursor/rules/devenv-shell.mdc), [`dynamic-wordlists.mdc`](.cursor/rules/dynamic-wordlists.mdc) (`alwaysApply`) |
 
