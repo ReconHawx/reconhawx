@@ -106,6 +106,17 @@ Browse [`.cursor/rules/`](.cursor/rules/). Entry points by component (globs in e
 
 **Feature / domain rules** (narrow globs): [`typosquat-detection.mdc`](.cursor/rules/typosquat-detection.mdc), [`gather-typosquat-vendor-api.mdc`](.cursor/rules/gather-typosquat-vendor-api.mdc), [`broken-links-detection.mdc`](.cursor/rules/broken-links-detection.mdc), [`ai-analysis-runner.mdc`](.cursor/rules/ai-analysis-runner.mdc)
 
+## Cursor skills (project)
+
+Agent skills are markdown guides under [`.cursor/skills/`](.cursor/skills/). Cursor loads them when the task matches the skill `description`.
+
+| Skill | Path | When to use |
+|-------|------|-------------|
+| Conventional commit | [`.cursor/skills/conventional-commit/SKILL.md`](.cursor/skills/conventional-commit/SKILL.md) | Preparing `feat`/`fix`/… commit messages (release-please), transcript-assisted intent, **approval before commit** |
+| Database migrations | [`.cursor/skills/db-migrations/SKILL.md`](.cursor/skills/db-migrations/SKILL.md) | `migrate.sh` / schema migrations |
+| Kubernetes deploy | [`.cursor/skills/kubernetes-deploy/SKILL.md`](.cursor/skills/kubernetes-deploy/SKILL.md) | `scripts/deploy.py`, cluster deploy |
+| Runner workflow task | [`.cursor/skills/runner-workflow-task/SKILL.md`](.cursor/skills/runner-workflow-task/SKILL.md) | Runner tasks, worker dispatch |
+
 ## Agent workflow (minimal)
 
 1. **Schema changes**: Add a new migration under `src/migrations/`; do not rewrite applied migration files. Keep SQLAlchemy models in sync (see migrations rule). Verify with `status` / `run --dry-run` before applying.
@@ -126,6 +137,7 @@ When a change updates **how a component works**, **how to run or operate it**, o
 | [`scripts/`](scripts/) (deploy, migrate, init DB, admin user, …) | [`scripts/README.md`](scripts/README.md) and this file if behavior or flags change |
 | CI: Docker builds to GHCR | This file (**GitHub Container Registry**), [`.github/workflows/docker-ghcr.yml`](.github/workflows/docker-ghcr.yml) |
 | Versioning / release-please config | This file (**Versioning and releases**), [`release-please-config.json`](release-please-config.json), [`.release-please-manifest.json`](.release-please-manifest.json) |
+| Agent skills (commit workflow, etc.) | [`.cursor/skills/`](.cursor/skills/) and **Cursor skills** table above |
 | Domain features (e.g. typosquat, broken links, vendor API gather) | Respective feature `.mdc` under `.cursor/rules/` |
 
 **Always-on or cross-cutting rules** ([`project-hub.mdc`](.cursor/rules/project-hub.mdc), [`devenv-shell.mdc`](.cursor/rules/devenv-shell.mdc), [`dynamic-wordlists.mdc`](.cursor/rules/dynamic-wordlists.mdc)): change when the hub instructions, devenv CLI conventions, or dynamic-wordlist behavior warrant it.
