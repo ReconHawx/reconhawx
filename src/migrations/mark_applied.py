@@ -71,7 +71,7 @@ def mark_migration_applied(version: str, description: str = None):
     
     return True
 
-def mark_all_pending_applied():
+def mark_all_pending_applied(yes: bool = False):
     """Mark all pending migrations as applied."""
     manager = MigrationManager(get_migrations_dir(), get_db_url())
     
@@ -85,10 +85,11 @@ def mark_all_pending_applied():
     for migration in pending_migrations:
         print(f"  - {migration.version}: {migration.description}")
     
-    response = input("\nMark all these migrations as applied? (y/N): ")
-    if response.lower() != 'y':
-        print("Cancelled")
-        return
+    if not yes:
+        response = input("\nMark all these migrations as applied? (y/N): ")
+        if response.lower() != 'y':
+            print("Cancelled")
+            return
     
     for migration in pending_migrations:
         mark_migration_applied(migration.version)
@@ -101,13 +102,15 @@ def main():
         print("Usage:")
         print("  python mark_applied.py <version>     # Mark specific migration as applied")
         print("  python mark_applied.py --all         # Mark all pending migrations as applied")
+        print("  python mark_applied.py --all --yes   # Same, non-interactive (CI / scripts)")
         print("  python mark_applied.py --list        # List all migrations and their status")
         return
     
     command = sys.argv[1]
     
     if command == "--all":
-        mark_all_pending_applied()
+        non_interactive = len(sys.argv) > 2 and sys.argv[2] == "--yes"
+        mark_all_pending_applied(yes=non_interactive)
     elif command == "--list":
         manager = MigrationManager(get_migrations_dir(), get_db_url())
         all_migrations = manager.discover_migrations()

@@ -45,6 +45,8 @@ Equivalent CLI: `python src/migrations/migrate.py ...` (see [`src/migrations/mig
 
 **Conventions** (versioning, UP/DOWN SQL, model alignment): [`.cursor/rules/migrations.mdc`](.cursor/rules/migrations.mdc).
 
+**Kubernetes:** the API `Deployment` runs an init container (`run-migrations`) that applies pending SQL migrations against the in-cluster Postgres service before `uvicorn` starts. Image: `migrations.image` in [`kubernetes/base/config/service-config.yaml`](kubernetes/base/config/service-config.yaml) (keep in sync with `initContainers` in [`kubernetes/base/api/api-deployment.yaml`](kubernetes/base/api/api-deployment.yaml)). Logs: `kubectl logs -n reconhawx deploy/api -c run-migrations`. Entrypoint: [`src/migrations/k8s_entrypoint.py`](src/migrations/k8s_entrypoint.py). Optional env **`MIGRATIONS_BASELINE_AUTOMARK=1`** skips executing pending SQL when treating files as dump-only bookkeeping (default **`0`**: always run pending migrations).
+
 ### Kubernetes deploy
 
 Preferred entrypoint is [`scripts/deploy.py`](scripts/deploy.py) (requires `rich`, `pyyaml`; Docker + `kubectl` for real deploys).
@@ -62,7 +64,7 @@ python scripts/deploy.py -e production d all
 
 ### GitHub Container Registry (CI)
 
-Workflow [`.github/workflows/docker-ghcr.yml`](.github/workflows/docker-ghcr.yml) pushes to `ghcr.io/<lowercase_github_owner>/reconhawx/<service>`. Images are built via **`workflow_call`** (chained from release-please after a release) or **`workflow_dispatch`** (manual). Both accept an optional `version` input for semver tagging. All 6 service images are built on every run. Worker image is built for **linux/amd64** only (single job, same tagging pattern as other services).
+Workflow [`.github/workflows/docker-ghcr.yml`](.github/workflows/docker-ghcr.yml) pushes to `ghcr.io/<lowercase_github_owner>/reconhawx/<service>`. Images are built via **`workflow_call`** (chained from release-please after a release) or **`workflow_dispatch`** (manual). Both accept an optional `version` input for semver tagging. All **7** application images are built on every run (`api`, `frontend`, `migrations`, `runner`, `worker`, `event-handler`, `ct-monitor`). Worker image is built for **linux/amd64** only (single job, same tagging pattern as other services).
 
 ### Versioning and releases
 
@@ -78,7 +80,7 @@ The project uses a **single semver** for all services, managed by [release-pleas
 2. Merge `develop` into `main` via PR when ready to release.
 3. release-please auto-creates a Release PR on `main` with a `CHANGELOG.md` update and version bump.
 4. Merge the Release PR to publish: release-please tags `v<version>` and creates a GitHub Release.
-5. The `v*` tag triggers `docker-ghcr.yml`, which builds all 6 service images tagged with the semver.
+5. The `v*` tag triggers `docker-ghcr.yml`, which builds all application images (including `migrations`) tagged with the semver.
 
 **Conventional commits:** Commit messages on `main` must follow the [Conventional Commits](https://www.conventionalcommits.org/) format so release-please can determine the version bump. Key prefixes: `feat:` (minor bump), `fix:` (patch bump), `feat!:` / `BREAKING CHANGE:` footer (minor pre-1.0, major post-1.0). Prefixes like `chore:`, `docs:`, `ci:`, `refactor:` do not trigger a version bump. Scopes are optional (e.g. `feat(api): ...`). Feature-branch commits can be freeform if you squash-merge into `main`.
 
