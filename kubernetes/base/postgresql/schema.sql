@@ -1105,6 +1105,8 @@ CREATE TABLE public.typosquat_domains (
     auto_resolve boolean DEFAULT false,
     ai_analysis jsonb,
     ai_analyzed_at timestamp without time zone,
+    closure_events jsonb DEFAULT '[]'::jsonb NOT NULL,
+    last_closure_at timestamp without time zone,
     apex_typosquat_domain_id uuid NOT NULL
 );
 
@@ -1205,6 +1207,20 @@ COMMENT ON COLUMN public.typosquat_domains.ai_analysis IS 'Structured AI analysi
 --
 
 COMMENT ON COLUMN public.typosquat_domains.ai_analyzed_at IS 'Timestamp of last AI analysis run';
+
+
+--
+-- Name: COLUMN typosquat_domains.closure_events; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.typosquat_domains.closure_events IS 'Append-only array of {to_status, closed_at, closed_by_user_id, source_action_log_id?} for resolved/dismissed transitions';
+
+
+--
+-- Name: COLUMN typosquat_domains.last_closure_at; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.typosquat_domains.last_closure_at IS 'UTC time of the most recent resolved/dismissed closure';
 
 
 --
@@ -3197,6 +3213,13 @@ CREATE INDEX ix_typosquat_domains_domain_registered ON public.typosquat_domains 
 --
 
 CREATE INDEX ix_typosquat_domains_fixed_at ON public.typosquat_domains USING btree (fixed_at);
+
+
+--
+-- Name: ix_typosquat_domains_last_closure_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_typosquat_domains_last_closure_at ON public.typosquat_domains USING btree (last_closure_at);
 
 
 --
