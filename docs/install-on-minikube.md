@@ -2,7 +2,7 @@
 
 There are **two ways** to install ReconHawx on Minikube:
 
-1. **Installer script** — run [`scripts/install-minikube.sh`](../scripts/install-minikube.sh) from the repository. It copies manifests, generates secrets, drives Minikube, applies the stack, and updates `/etc/hosts` with fewer manual steps.
+1. **Installer script** — run [`install-minikube.sh`](../install-minikube.sh) from the repo root. With a **local** `kubernetes/base`, it copies that tree to **`/tmp/reconhawx`** (configurable **`INSTALL_STAGING_DIR`**), then removes it after a successful install. **Without** a local tree, it downloads the **latest GitHub release** tarball and uses that **full source tree** in place (same idea as cluster [`install-kubernetes.sh`](../install-on-kubernetes.md)). It generates secrets, starts or uses Minikube, applies the stack, and updates **`/etc/hosts`**. **It does not run SQL migrations**—the API Deployment’s **`run-migrations`** init container applies schema after Postgres is up (see [Database migrations (automated)](install-on-kubernetes.md#database-migrations-automated)). Piped installs (`curl … | bash`) read prompts from **`/dev/tty`**. Options: **`--from-release`**, **`--help`**, env **`RECONHAWX_FROM_RELEASE`**, **`RECONHAWX_GITHUB_REPO`**.
 2. **Manual installation** — run the commands yourself in order, starting at [Manual Installation](#manual-installation). You typically edit and apply `kubernetes/base` in your checkout (as in the snippets below).
 
 ## Installer script
@@ -10,10 +10,12 @@ There are **two ways** to install ReconHawx on Minikube:
 From the repo root:
 
 ```shell
-./scripts/install-minikube.sh
+./install-minikube.sh
 ```
 
-You are prompted for an **install root directory** (default `~/reconhawx`). That directory is only the destination for a copy of `kubernetes/base` from the repository; manifests and generated secrets are written there so your git tree under version control stays unchanged. The script uses `minikube … kubectl` only (no separate `kubectl` binary required).
+You are prompted for a **Minikube profile** name and secrets (JWT/refresh/Postgres). There is **no** longer a separate “install root” prompt: **release** installs use the extracted tree under `/tmp/reconhawx-release.*`; **local** installs stage under **`/tmp/reconhawx`** if that path exists, you confirm before it is replaced.
+
+The script uses **`minikube … kubectl` only** (no separate `kubectl` binary required). For troubleshooting migrations, use [`docs/install-on-kubernetes.md`](install-on-kubernetes.md#database-migrations-automated) or run [`scripts/migrate.sh`](../scripts/migrate.sh) locally with `DATABASE_URL` if you need to apply SQL outside the cluster.
 
 ## Manual Installation
 
@@ -70,7 +72,7 @@ minikube -p reconhawx kubectl -- wait deploy/ingress-nginx-controller -n ingress
 minikube -p reconhawx kubectl -- rollout status deployment/ingress-nginx-controller -n ingress-nginx --timeout=5m
 ```
 
-Before applying manifests that include an `Ingress`, ensure the validating webhook can be reached (`validate.nginx.ingress.kubernetes.io`). If `kubectl apply` fails with `connection refused` to `ingress-nginx-controller-admission`, wait until that Service has endpoints, then retry after a short pause (or run [`scripts/install-minikube.sh`](../scripts/install-minikube.sh), which waits and retries):
+Before applying manifests that include an `Ingress`, ensure the validating webhook can be reached (`validate.nginx.ingress.kubernetes.io`). If `kubectl apply` fails with `connection refused` to `ingress-nginx-controller-admission`, wait until that Service has endpoints, then retry after a short pause (or run [`install-minikube.sh`](../install-minikube.sh), which waits and retries):
 
 ```shell
 minikube -p reconhawx kubectl -- get endpoints ingress-nginx-controller-admission -n ingress-nginx
