@@ -8,7 +8,7 @@ You can install with the **[`install-kubernetes.sh`](../install-kubernetes.sh)**
 
 Schema changes are applied **inside the cluster** before the API pod serves traffic:
 
-1. The **`api` Deployment** defines an init container named **`run-migrations`**.
+1. The **`api` Deployment** defines init containers in order: **`wait-for-postgresql`** (retries until `pg_isready` succeeds for the app database — so first-boot `schema.sql` load finishes before migrations), then **`run-migrations`**.
 2. That container runs the **`migrations`** image (`ghcr.io/<owner>/reconhawx/migrations`), built from [`src/migrations/`](../src/migrations/).
 3. It connects to the **`postgresql`** Service using the same credentials as the API (`postgres-secret` + `database.name` from `service-config`).
 4. **By default**, every pending `V*__*.sql` file is **executed** against Postgres. This is required when migrations contain real DDL.
