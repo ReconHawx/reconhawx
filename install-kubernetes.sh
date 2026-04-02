@@ -1,20 +1,38 @@
 #!/usr/bin/env bash
 #
-# Install ReconHawx on Minikube (see docs/install-on-minikube.md).
-# Uses `minikube … kubectl` (standalone kubectl not required).
-# Manifests: local kubernetes/base when present, otherwise latest GitHub release tarball
-# (full tree in place under the extract). Local clones copy kubernetes/base to INSTALL_STAGING_DIR
-# (default /tmp/reconhawx). Schema migrations run in-cluster via the API init container (run-migrations).
+# Install ReconHawx on a Kubernetes cluster (see docs/install-on-kubernetes.md).
+# Requires kubectl and a working kubeconfig (e.g. KUBECONFIG or ~/.kube/config).
+#
+# Manifests: uses kubernetes/base next to this script when present, otherwise
+# downloads the latest GitHub release source tarball (see --from-release / RECONHAWX_FROM_RELEASE).
+# Release install uses the extracted tree in place (full kubernetes/base from the tarball).
+# Local-repo install copies only kubernetes/base to INSTALL_STAGING_DIR (default /tmp/reconhawx).
+# Schema migrations run in-cluster via the API Deployment init container (run-migrations), not here.
 #
 # Set RECONHAWX_NO_COLOR=1 to disable ANSI styling.
-# Long tool logs: show RUN_TOOL_LONG_HEAD_LINES (default 10) on success; on failure, error-like lines plus a tail.
 #
 # -u deferred: piped installs (curl … | bash) may not set BASH_SOURCE[0], which would trip nounset.
 set -eo pipefail
 
 RUN_TOOL_LONG_HEAD_LINES="${RUN_TOOL_LONG_HEAD_LINES:-10}"
 RUN_TOOL_LONG_FAIL_TAIL_LINES="${RUN_TOOL_LONG_FAIL_TAIL_LINES:-25}"
+KUEUE_VERSION="${KUEUE_VERSION:-v0.11.1}"
+INGRESS_NGINX_DEPLOY_URL="${INGRESS_NGINX_DEPLOY_URL:-https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.14.2/deploy/static/provider/cloud/deploy.yaml}"
+METALLB_MANIFEST_URL="${METALLB_MANIFEST_URL:-https://raw.githubusercontent.com/metallb/metallb/v0.15.3/config/manifests/metallb-native.yaml}"
+INGRESS_HOST="${INGRESS_HOST:-reconhawx.local}"
+# RECONHAWX_FROM_RELEASE: unset = auto (local kubernetes/base if present, else tarball); 0 = local only; 1 = tarball only.
+RECONHAWX_GITHUB_REPO="${RECONHAWX_GITHUB_REPO:-ReconHawx/reconhawx}"
+RECONHAWX_RELEASE_TMPDIR=""
 
+# 1 = release tarball path (full tree in RECONHAWX_SOURCE_TREE_ROOT); 0 = local repo (staging copy).
+RECONHAWX_INSTALL_FROM_RELEASE=0
+# Repository root: extracted release dir, or REPO_ROOT when installing from a clone.
+RECONHAWX_SOURCE_TREE_ROOT=""
+
+# Local clones only: copy kubernetes/base here (deleted after a successful install).
+INSTALL_STAGING_DIR="${INSTALL_STAGING_DIR:-/tmp/reconhawx}"
+
+# Stdin / pipe: BASH_SOURCE[0] may be unset or empty — fall back to $PWD (release tarball mode will apply).
 _install_script_path="${BASH_SOURCE[0]-}"
 if [[ -n "$_install_script_path" ]]; then
   SCRIPT_DIR="$(cd "$(dirname -- "${_install_script_path}")" && pwd)"
@@ -27,14 +45,6 @@ else
   REPO_ROOT="$SCRIPT_DIR"
 fi
 BASE_SRC="$REPO_ROOT/kubernetes/base"
-KUEUE_VERSION="${KUEUE_VERSION:-v0.11.1}"
-INGRESS_HOST="${INGRESS_HOST:-reconhawx.local}"
-# RECONHAWX_FROM_RELEASE: unset = auto (local kubernetes/base if present, else tarball); 0 = local only; 1 = tarball only.
-RECONHAWX_GITHUB_REPO="${RECONHAWX_GITHUB_REPO:-ReconHawx/reconhawx}"
-RECONHAWX_RELEASE_TMPDIR=""
-RECONHAWX_INSTALL_FROM_RELEASE=0
-RECONHAWX_SOURCE_TREE_ROOT=""
-INSTALL_STAGING_DIR="${INSTALL_STAGING_DIR:-/tmp/reconhawx}"
 
 set -u
 
@@ -56,7 +66,6 @@ die() {
   exit 1
 }
 
-# Inner width between corners (must match "%-60s" plus the four surrounding spaces: 60+4=64).
 _UI_BOX_INNER=64
 
 _ui_box_top() {
@@ -73,14 +82,13 @@ _ui_box_bot() {
   printf '┘%s\n' "$z"
 }
 
-# One content line: │ + two spaces + 60-char field + two spaces + │ (ASCII in the field avoids column drift).
 _ui_box_mid() {
   printf '%s│%s  %-*s  %s│%s\n' "$1" "$2" 60 "$3" "$1" "$4"
 }
 
 ui_banner() {
   _ui_box_top "$_C" "$_Z"
-  _ui_box_mid "$_C" "$_B" "ReconHawx - Minikube installation" "$_Z"
+  _ui_box_mid "$_C" "$_B" "ReconHawx - Kubernetes cluster installation" "$_Z"
   _ui_box_bot "$_C" "$_Z"
   printf '\n'
 }
@@ -97,8 +105,7 @@ ui_note() {
   printf '%s  %s%s\n' "$_D" "$*" "$_Z"
 }
 
-# Stream minikube/kubectl (and similar) output: prefixed gutter so it reads separately from installer text.
-# With pipefail, PIPESTATUS[0] is the exit status of the command on the left of the pipe.
+# Run the given command (e.g. kubectl …) with optional log gutter on TTY. Pass the full argv (do not wrap kubectl twice).
 tool_stream() {
   if [[ -t 1 ]]; then
     "$@" 2>&1 | while IFS= read -r line || [[ -n "${line:-}" ]]; do
@@ -116,7 +123,6 @@ _format_tool_log_lines() {
   done
 }
 
-# Run a command with full output captured; print a short preview so the install flow is not blocked by pagers.
 run_tool_long() {
   local title=$1
   shift
@@ -169,14 +175,14 @@ require_cmd() {
   command -v "$1" &>/dev/null || die "missing required command: $1"
 }
 
-# curl … | bash: stdin is the script; prompts read from /dev/tty.
+# curl … | bash feeds the script on stdin, so prompts must not read from stdin (EOF).
 read_installer() {
   if [[ -t 0 ]]; then
     read "$@" || die "Unexpected end of input"
   elif [[ -r /dev/tty ]]; then
-    read "$@" </dev/tty || die "Cannot read prompts (try: bash <(curl -fsSL URL) or save this script and run bash install-minikube.sh)"
+    read "$@" </dev/tty || die "Cannot read installer prompts (try: bash <(curl -fsSL URL) or curl … -o install.sh && bash install.sh)"
   else
-    die "No TTY for prompts. Save the script and run: bash install-minikube.sh"
+    die "No TTY for prompts (e.g. CI). Save the script and run: bash install-kubernetes.sh"
   fi
 }
 
@@ -206,22 +212,31 @@ install_staging_cleanup_on_success() {
   fi
 }
 
-usage_install_minikube() {
+usage_install_kubernetes() {
   cat <<'EOF'
-Usage: install-minikube.sh [options]
+Usage: install-kubernetes.sh [options]
 
-  --from-release    Use the latest GitHub release source tarball (also the default when
-                    kubernetes/base is not next to this script).
+  --from-release    Use the latest GitHub release source tarball for kubernetes/base
+                    instead of a local copy (also the default when this script is not
+                    run from a full repository tree).
 
   -h, --help        Show this help.
 
 Environment:
-  RECONHAWX_FROM_RELEASE   unset = auto; 0 = local kubernetes/base only; 1 = release tarball only.
+  RECONHAWX_FROM_RELEASE   unset = auto; 0 = require local kubernetes/base; 1 = require release tarball.
   RECONHAWX_GITHUB_REPO    owner/repo (default: ReconHawx/reconhawx).
-  INSTALL_STAGING_DIR      Local-repo installs: staging copy (default: /tmp/reconhawx); deleted after success.
+  INSTALL_STAGING_DIR      Local-repo installs only: staging copy (default: /tmp/reconhawx); deleted after success.
+
+Examples (no git clone):
+
+  curl -fsSL https://raw.githubusercontent.com/ReconHawx/reconhawx/main/install-kubernetes.sh | bash
+
+  # Equivalent; avoids stdin issues in minimal environments:
+  bash <(curl -fsSL https://raw.githubusercontent.com/ReconHawx/reconhawx/main/install-kubernetes.sh)
 EOF
 }
 
+# Parse {"tarball_url": "https://..."}; needs jq or python3.
 _json_tarball_url_from_api() {
   local json="$1" url
   if command -v jq &>/dev/null; then
@@ -240,15 +255,15 @@ _json_tarball_url_from_api() {
 download_release_kubernetes_base_set_BASE_SRC() {
   require_cmd curl
   require_cmd tar
-  local repo api json url tarpath root base
+  local repo api json url tmp tarpath root base
   repo="${RECONHAWX_GITHUB_REPO:-ReconHawx/reconhawx}"
   api="https://api.github.com/repos/${repo}/releases/latest"
 
-  ui_step "Fetching source from latest GitHub release (${repo})"
+  ui_step "Fetching kubernetes/base from latest GitHub release (${repo})"
   json="$(
     curl -sSf \
       -H 'Accept: application/vnd.github+json' \
-      -H 'User-Agent: reconhawx-install-minikube' \
+      -H 'User-Agent: reconhawx-install-kubernetes' \
       "$api"
   )" || die "curl failed: ${api}"
 
@@ -280,6 +295,7 @@ download_release_kubernetes_base_set_BASE_SRC() {
   ui_ok "Release extracted at ${root} (apply uses ${BASE_SRC})."
 }
 
+# Uses global BASE_SRC (repo-relative), RECONHAWX_FROM_RELEASE; optional global FORCE_FROM_RELEASE_ARG.
 resolve_kubernetes_base_src() {
   local want_release=0 auto_note=0
   if [[ "${FORCE_FROM_RELEASE_ARG:-0}" -eq 1 ]]; then
@@ -307,16 +323,19 @@ resolve_kubernetes_base_src() {
   fi
 }
 
-# deploy Available can be true before validate.nginx.ingress.kubernetes.io accepts traffic (connection refused).
+kubectl_cluster_ok() {
+  kubectl cluster-info &>/dev/null || die "kubectl cannot reach the cluster (check KUBECONFIG and context)"
+  kubectl get nodes &>/dev/null || die "kubectl get nodes failed"
+}
+
 wait_ingress_nginx_admission_endpoints() {
-  local profile="$1"
   local ns=ingress-nginx
   local svc=ingress-nginx-controller-admission
   local deadline=$((SECONDS + 300))
   ui_note "Waiting for ${svc} endpoints (ingress validating webhook) …"
   while ((SECONDS < deadline)); do
     local ips
-    ips="$(minikube -p "$profile" kubectl -- get endpoints "$svc" -n "$ns" -o jsonpath='{.subsets[0].addresses[*].ip}' 2>/dev/null || true)"
+    ips="$(kubectl get endpoints "$svc" -n "$ns" -o jsonpath='{.subsets[0].addresses[*].ip}' 2>/dev/null || true)"
     if [[ -n "${ips// /}" ]]; then
       ui_note "Admission endpoints are up; short pause for the webhook to listen …"
       sleep 12
@@ -324,7 +343,7 @@ wait_ingress_nginx_admission_endpoints() {
     fi
     sleep 2
   done
-  die "Timed out waiting for ${svc} endpoints. Check: minikube -p ${profile} kubectl -- get ep,po -n ${ns}"
+  die "Timed out waiting for ${svc} endpoints. Check: kubectl get ep,po -n ${ns}"
 }
 
 ensure_install_prefix() {
@@ -342,7 +361,6 @@ ensure_install_prefix() {
   sudo chown -R "$(id -u):$(id -g)" "$root"
 }
 
-# Escape dots so host labels match literally in grep ERE / sed BRE.
 _dots_escape_host() {
   printf '%s' "$1" | sed 's/\./\\./g'
 }
@@ -405,8 +423,6 @@ hosts_lines_matching_reconhawx_local() {
   grep -nE '(^|[[:space:]])'"${pat}"'([[:space:]]|$)' /etc/hosts 2>/dev/null || true
 }
 
-# Classify /etc/hosts mapping for INGRESS_HOST vs Minikube IP (word-boundary match on hostname).
-# Prints one of: missing | ok | wrong
 _hosts_ingress_mapping_state() {
   local want_ip="$1"
   local line pat seen_ok=0 seen_bad=0 re
@@ -481,6 +497,98 @@ update_hosts_file() {
   esac
 }
 
+list_cluster_nodes() {
+  mapfile -t CLUSTER_NODES < <(kubectl get nodes -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}')
+  ((${#CLUSTER_NODES[@]} > 0)) || die "No nodes returned by kubectl get nodes"
+}
+
+print_node_menu() {
+  local i
+  ui_step "Cluster nodes (runner hosts API stack; workers run workflow tasks; a node may be both)"
+  tool_stream kubectl get nodes -o wide
+  printf '\n'
+  for i in "${!CLUSTER_NODES[@]}"; do
+    printf '%s  %2d) %s%s\n' "$_D" "$((i + 1))" "${CLUSTER_NODES[$i]}" "$_Z"
+  done
+  printf '\n'
+}
+
+# Resolve comma-separated names or 1-based indices into node names. Prints unique names, one per line.
+resolve_node_tokens() {
+  local input="$1"
+  local part idx name found
+  local -A seen=()
+  IFS=',' read -ra parts <<<"$input"
+  for part in "${parts[@]}"; do
+    part="${part// /}"
+    [[ -z "$part" ]] && continue
+    if [[ "$part" =~ ^[0-9]+$ ]]; then
+      idx="$part"
+      ((idx >= 1 && idx <= ${#CLUSTER_NODES[@]})) || die "Invalid node index: $part (use 1–${#CLUSTER_NODES[@]})"
+      name="${CLUSTER_NODES[$((idx - 1))]}"
+    else
+      found=0
+      for n in "${CLUSTER_NODES[@]}"; do
+        if [[ "$n" == "$part" ]]; then
+          name="$n"
+          found=1
+          break
+        fi
+      done
+      ((found)) || die "Unknown node name: $part"
+    fi
+    if [[ -z "${seen[$name]+x}" ]]; then
+      seen[$name]=1
+      printf '%s\n' "$name"
+    fi
+  done
+}
+
+prompt_node_roles() {
+  local r_line w_line
+  read_installer -r -p "$(printf '%sinstaller · %s' "$_B" "Runner node(s) — comma-separated names or numbers from the list: ")" r_line
+  read_installer -r -p "$(printf '%sinstaller · %s' "$_B" "Worker node(s) — comma-separated names or numbers from the list: ")" w_line
+  [[ -n "${r_line// /}" ]] || die "Select at least one runner node."
+  [[ -n "${w_line// /}" ]] || die "Select at least one worker node."
+
+  mapfile -t RUNNER_NODES < <(resolve_node_tokens "$r_line")
+  mapfile -t WORKER_NODES < <(resolve_node_tokens "$w_line")
+  ((${#RUNNER_NODES[@]} > 0)) || die "No runner nodes resolved."
+  ((${#WORKER_NODES[@]} > 0)) || die "No worker nodes resolved."
+}
+
+apply_node_labels() {
+  local n
+  for n in "${RUNNER_NODES[@]}"; do
+    ui_note "Label runner: $n"
+    tool_stream kubectl label node "$n" reconhawx.runner=true --overwrite
+  done
+  for n in "${WORKER_NODES[@]}"; do
+    ui_note "Label worker: $n"
+    tool_stream kubectl label node "$n" reconhawx.worker=true --overwrite
+  done
+  ui_ok "Node labels applied"
+}
+
+discover_or_prompt_ingress_ip() {
+  local ip lb
+  lb="$(kubectl get svc -n ingress-nginx ingress-nginx-controller -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)"
+  if [[ -z "$lb" ]]; then
+    lb="$(kubectl get svc -n ingress-nginx ingress-nginx-controller -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)"
+  fi
+  if [[ -n "$lb" ]]; then
+    ui_note "Ingress Service reports: ${lb}"
+    if [[ ! "$lb" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+      ui_note "(Hostname is not an /etc/hosts IP; enter a node IP or MetalLB address below.)"
+      lb=""
+    fi
+  fi
+  read_installer -r -p "$(printf '%sinstaller · %s' "$_B" "IP for ${INGRESS_HOST} in /etc/hosts [${lb:-required}]: ")" ip
+  ip="${ip:-$lb}"
+  [[ -n "$ip" ]] || die "An IP address is required for /etc/hosts (set a node IP where ingress is reachable, or install MetalLB)."
+  printf '%s' "$ip"
+}
+
 # PostgreSQL init prints Username:/Password:; log collectors often prefix lines (^ no longer matches).
 _fetch_pg_logs() {
   local cur prev
@@ -536,12 +644,17 @@ _pg_admin_pass_from_logs() {
 }
 
 main() {
-  require_cmd minikube
+  require_cmd kubectl
   require_cmd openssl
 
   ui_banner
 
   resolve_kubernetes_base_src
+
+  kubectl_cluster_ok
+  if [[ -n "${KUBECONFIG:-}" ]]; then
+    ui_note "Using KUBECONFIG=${KUBECONFIG}"
+  fi
 
   ui_step "Configuration (installer prompts)"
 
@@ -560,12 +673,7 @@ main() {
     ensure_install_prefix "$INSTALL_ROOT"
     mkdir -p "$INSTALL_ROOT/kubernetes"
     sync_kubernetes_base "$BASE_SRC" "$BASE_DST"
-    ui_ok "Manifest tree ready"
   fi
-
-  local default_profile=reconhawx
-  read_installer -r -p "$(printf '%sinstaller · %s' "$_B" "Minikube profile (cluster name) [${default_profile}]: ")" MINIKUBE_PROFILE
-  MINIKUBE_PROFILE="${MINIKUBE_PROFILE:-$default_profile}"
 
   local jwt_plain refresh_plain pg_user pg_pass
   ui_note "JWT / refresh: leave empty for random hex keys (base64-encoded in manifests, per docs)."
@@ -590,86 +698,91 @@ main() {
 
   write_secrets_from_examples "$BASE_DST" "$jwt_plain" "$refresh_plain" "$pg_user" "$pg_pass"
 
-  mk() {
-    minikube -p "$MINIKUBE_PROFILE" kubectl -- "$@"
-  }
-
-  # Verbose cluster steps: capture full log; print a short preview (see run_tool_long).
-  run_tool_long "Minikube: starting cluster (profile ${MINIKUBE_PROFILE}, docker, ports 80/443)" \
-    minikube -p "$MINIKUBE_PROFILE" start --driver=docker --ports=80:80 --ports=443:443
-
-  local node
-  node="$(mk get nodes -o jsonpath='{.items[0].metadata.name}')"
-  [[ -n "$node" ]] || die "could not resolve cluster node name"
-
-  ui_step "Kubernetes: labeling node $node"
-  tool_stream mk label node "$node" reconhawx.runner=true --overwrite
-  tool_stream mk label node "$node" reconhawx.worker=true --overwrite
-  ui_ok "Node labels applied"
+  list_cluster_nodes
+  print_node_menu
+  prompt_node_roles
+  apply_node_labels
 
   ui_step "Kubernetes: ensuring namespace reconhawx"
-  tool_stream bash -c 'set -euo pipefail
-    minikube -p "$1" kubectl -- create namespace reconhawx --dry-run=client -o yaml |
-      minikube -p "$1" kubectl -- apply -f -
-  ' bash "$MINIKUBE_PROFILE"
+  kubectl create namespace reconhawx --dry-run=client -o yaml | kubectl apply -f -
   ui_ok "Namespace ready"
 
   run_tool_long "Kubernetes: installing Kueue ${KUEUE_VERSION} (server-side apply)" \
     bash -c 'set -euo pipefail
-      minikube -p "$1" kubectl -- apply --server-side -f "https://github.com/kubernetes-sigs/kueue/releases/download/$2/manifests.yaml"
-      minikube -p "$1" kubectl -- apply --server-side -f "https://github.com/kubernetes-sigs/kueue/releases/download/$2/visibility-apf.yaml"
-    ' bash "$MINIKUBE_PROFILE" "$KUEUE_VERSION"
+      kubectl apply --server-side -f "https://github.com/kubernetes-sigs/kueue/releases/download/$1/manifests.yaml"
+      kubectl apply --server-side -f "https://github.com/kubernetes-sigs/kueue/releases/download/$1/visibility-apf.yaml"
+    ' bash "$KUEUE_VERSION"
 
   ui_step "Kubernetes: waiting for Kueue controller"
-  tool_stream mk wait deploy/kueue-controller-manager -nkueue-system --for=condition=available --timeout=5m
+  tool_stream kubectl wait deploy/kueue-controller-manager -nkueue-system --for=condition=available --timeout=5m
   ui_ok "Kueue controller available"
 
-  run_tool_long "Minikube: enabling ingress addon" \
-    minikube -p "$MINIKUBE_PROFILE" addons enable ingress
+  run_tool_long "Kubernetes: installing ingress-nginx (cloud manifest)" \
+    kubectl apply -f "$INGRESS_NGINX_DEPLOY_URL"
 
   ui_step "Kubernetes: waiting for ingress-nginx controller"
-  tool_stream mk wait deploy/ingress-nginx-controller -n ingress-nginx --for=condition=available --timeout=5m
+  tool_stream kubectl wait deploy/ingress-nginx-controller -n ingress-nginx --for=condition=available --timeout=5m
   ui_ok "Ingress controller deployment available"
 
   ui_step "Kubernetes: finishing ingress-nginx rollout"
-  tool_stream mk rollout status deployment/ingress-nginx-controller -n ingress-nginx --timeout=5m
+  tool_stream kubectl rollout status deployment/ingress-nginx-controller -n ingress-nginx --timeout=5m
   ui_ok "Ingress controller rolled out"
 
-  wait_ingress_nginx_admission_endpoints "$MINIKUBE_PROFILE"
+  wait_ingress_nginx_admission_endpoints
   ui_ok "Ingress admission webhook should be reachable"
 
+  local hosts_ip="" ml_ans pool_ip
+  read_installer -r -p "$(printf '%sinstaller · %s' "$_B" "Install MetalLB (optional, for LoadBalancer IPs)? [y/N] ")" ml_ans
+  case "$ml_ans" in
+  y | Y | yes | YES | Yes)
+    run_tool_long "Kubernetes: installing MetalLB" \
+      kubectl apply -f "$METALLB_MANIFEST_URL"
+    ui_note "Waiting for MetalLB pods …"
+    tool_stream kubectl wait -n metallb-system --for=condition=ready pod --all --timeout=5m || sleep 15
+    read_installer -r -p "$(printf '%sinstaller · %s' "$_B" "MetalLB pool IP (e.g. 192.168.0.66; used in IPAddressPool): ")" pool_ip
+    [[ -n "${pool_ip// /}" ]] || die "MetalLB pool IP required"
+    local ml_ex="$BASE_DST/metal-lb/metal-lb.yaml.example"
+    local ml_out="$BASE_DST/metal-lb/metal-lb.yaml"
+    [[ -f "$ml_ex" ]] || die "missing $ml_ex"
+    sed "s#LB_IP_PLACEHOLDER#${pool_ip}#g" "$ml_ex" >"$ml_out"
+    tool_stream kubectl apply -f "$ml_out"
+    hosts_ip="$pool_ip"
+    ui_ok "MetalLB configured; using ${pool_ip} for /etc/hosts."
+    ;;
+  *)
+    hosts_ip="$(discover_or_prompt_ingress_ip)"
+    ;;
+  esac
+
   ui_step "Kubernetes: applying ReconHawx manifests (kustomize)"
-  local _attempt _max
-  _max=6
+  local _attempt _max=6
   for _attempt in $(seq 1 "$_max"); do
-    if tool_stream mk apply -k "$BASE_DST"; then
+    if tool_stream kubectl apply -k "$BASE_DST"; then
       ui_ok "Manifests applied"
       break
     fi
     if [[ "$_attempt" -eq "$_max" ]]; then
-      die "kubectl apply -k failed after ${_max} attempts (last error often ingress webhook; see messages above)"
+      die "kubectl apply -k failed after ${_max} attempts"
     fi
-    ui_note "Apply failed (attempt ${_attempt}/${_max}); waiting 15s and retrying (ingress admission may still be starting) …"
+    ui_note "Apply failed (attempt ${_attempt}/${_max}); waiting 15s and retrying …"
     sleep 15
   done
 
   ui_step "Kubernetes: waiting for PostgreSQL"
-  tool_stream mk wait deploy/postgresql -n reconhawx --for=condition=available --timeout=5m
+  tool_stream kubectl wait deploy/postgresql -n reconhawx --for=condition=available --timeout=5m
   ui_ok "PostgreSQL available"
 
-  ui_note "Database schema: pending migrations run in the API pod init container (run-migrations). Check: minikube -p ${MINIKUBE_PROFILE} kubectl -- logs -n reconhawx deploy/api -c run-migrations"
+  ui_note "Database schema: pending migrations run in the API pod init container (run-migrations). Check: kubectl logs -n reconhawx deploy/api -c run-migrations"
 
-  local ip
-  ip="$(minikube -p "$MINIKUBE_PROFILE" ip)"
-  update_hosts_file "$ip"
+  update_hosts_file "$hosts_ip"
 
   ui_step "Kubernetes: waiting for API and frontend"
-  tool_stream mk wait deploy/frontend deploy/api -n reconhawx --for=condition=available --timeout=5m
+  tool_stream kubectl wait deploy/frontend deploy/api -n reconhawx --for=condition=available --timeout=5m
   ui_ok "API and frontend available"
 
   local pg_logs admin_user admin_pass
   ui_step "Reading PostgreSQL logs for default admin credentials"
-  pg_logs="$(_fetch_pg_logs_with_retry minikube -p "$MINIKUBE_PROFILE" kubectl --)"
+  pg_logs="$(_fetch_pg_logs_with_retry kubectl)"
   admin_user="$(_pg_admin_user_from_logs "$pg_logs")"
   admin_pass="$(_pg_admin_pass_from_logs "$pg_logs")"
 
@@ -686,7 +799,7 @@ main() {
   elif printf '%s' "$pg_logs" | grep -qF 'skipping admin user creation'; then
     ui_note "No new admin user (database already had users). Use your existing admin credentials or reset via the API/DB."
   else
-    ui_note "Could not read admin credentials from logs yet. Try: minikube -p ${MINIKUBE_PROFILE} kubectl -- logs deploy/postgresql -n reconhawx | grep -A3 ADMIN"
+    ui_note "Could not read admin credentials from logs yet. Try: kubectl logs deploy/postgresql -n reconhawx | grep -A3 ADMIN"
   fi
 
   if [[ "${RECONHAWX_INSTALL_FROM_RELEASE}" -eq 0 ]]; then
@@ -704,7 +817,7 @@ while [[ $# -gt 0 ]]; do
       shift
       ;;
     -h | --help)
-      usage_install_minikube
+      usage_install_kubernetes
       exit 0
       ;;
     *)
