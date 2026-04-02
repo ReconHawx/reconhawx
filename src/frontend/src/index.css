@@ -236,12 +236,6 @@ code {
   border-bottom-color: var(--bs-card-border-color) !important;
 }
 
-/* Colored headers: global .card-header bg would override utility (white-on-white with text-white) */
-.card-header.bg-danger {
-  background-color: var(--bs-danger) !important;
-  color: #fff !important;
-}
-
 /* Table theming */
 .table {
   --bs-table-bg: var(--bs-table-bg);
