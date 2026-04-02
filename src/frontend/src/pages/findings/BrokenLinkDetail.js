@@ -4,6 +4,7 @@ import { Container, Card, Badge, Row, Col, Button, Alert, Spinner, Table, Modal 
 import { brokenLinksAPI } from '../../services/api';
 import NotesSection from '../../components/NotesSection';
 import { formatDate } from '../../utils/dateUtils';
+import { usePageTitle, formatPageTitle, truncateTitle } from '../../hooks/usePageTitle';
 
 function BrokenLinkDetail() {
   const [searchParams] = useSearchParams();
@@ -17,6 +18,12 @@ function BrokenLinkDetail() {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [updateSuccess, setUpdateSuccess] = useState(false);
+
+  const brokenLinkLabel =
+    finding?.url || finding?.domain
+      ? truncateTitle(finding.url || finding.domain)
+      : null;
+  usePageTitle(formatPageTitle(brokenLinkLabel, 'Broken Link'));
 
   const fetchFinding = useCallback(async () => {
     setLoading(true);

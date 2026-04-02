@@ -4,6 +4,7 @@ import { Container, Row, Col, Card, Badge, Button, Spinner, Alert, Table, Collap
 import { domainAPI } from '../../services/api';
 import NotesSection from '../../components/NotesSection';
 import { formatDate } from '../../utils/dateUtils';
+import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
 
 function SubdomainDetail() {
   const { domainName } = useParams();
@@ -17,6 +18,8 @@ function SubdomainDetail() {
   });
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleting, setDeleting] = useState(false);
+
+  usePageTitle(formatPageTitle(domain?.name, 'Subdomain'));
 
   useEffect(() => {
     const fetchDomain = async () => {

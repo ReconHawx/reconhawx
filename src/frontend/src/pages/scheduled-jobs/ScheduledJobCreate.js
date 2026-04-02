@@ -5,6 +5,7 @@ import { scheduledJobsAPI, workflowAPI, programAPI } from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
 import { formatLocalDateTime } from '../../utils/dateUtils';
 import VariableInput from '../../components/VariableInput';
+import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
 
 // Helper function to get user-friendly timezone name
 const getUserFriendlyTimezone = () => {
@@ -30,6 +31,7 @@ const getUserFriendlyTimezone = () => {
 };
 
 const ScheduledJobCreate = () => {
+  usePageTitle(formatPageTitle('Create Scheduled Job'));
   // Debug timezone detection
   const initialTimezone = getUserFriendlyTimezone();
 

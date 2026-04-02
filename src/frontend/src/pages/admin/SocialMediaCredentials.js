@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Container, Card, Table, Button, Modal, Form, Alert, Spinner, Badge, Row, Col } from 'react-bootstrap';
 import { socialMediaCredentialsAPI } from '../../services/api';
+import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
 
 function SocialMediaCredentials() {
+  usePageTitle(formatPageTitle('Social Media Credentials'));
   const [credentials, setCredentials] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);

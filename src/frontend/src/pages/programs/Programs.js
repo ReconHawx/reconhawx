@@ -18,8 +18,10 @@ import {
 import { programAPI } from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
 import { formatDate } from '../../utils/dateUtils';
+import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
 
 function Programs() {
+  usePageTitle(formatPageTitle('Programs'));
   const navigate = useNavigate();
   const location = useLocation();
   const { hasProgramPermission, isSuperuser } = useAuth();

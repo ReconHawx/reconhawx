@@ -4,8 +4,10 @@ import { Container, Card, Table, Badge, Form, Row, Col, Button, Pagination, Aler
 import { brokenLinksAPI } from '../../services/api';
 import { useProgramFilter } from '../../contexts/ProgramFilterContext';
 import { formatDate } from '../../utils/dateUtils';
+import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
 
 function BrokenLinks() {
+  usePageTitle(formatPageTitle('Broken Links'));
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { selectedProgram } = useProgramFilter();

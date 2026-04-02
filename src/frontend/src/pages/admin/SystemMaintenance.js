@@ -13,6 +13,7 @@ import {
   Modal
 } from 'react-bootstrap';
 import { adminAPI } from '../../services/api';
+import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
 
 import './SystemMaintenance.css';
 
@@ -218,6 +219,8 @@ function SystemMaintenance() {
       /* non-fatal */
     }
   }, []);
+
+  usePageTitle(formatPageTitle('System Maintenance'));
 
   useEffect(() => {
     loadStatus();

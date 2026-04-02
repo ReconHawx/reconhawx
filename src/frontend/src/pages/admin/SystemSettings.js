@@ -16,6 +16,7 @@ import {
 } from 'react-bootstrap';
 import { adminAPI } from '../../services/api';
 import { formatDate } from '../../utils/dateUtils';
+import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
 
 // Add Font Awesome CSS if not already loaded
 const loadFontAwesome = () => {
@@ -28,6 +29,7 @@ const loadFontAwesome = () => {
 };
 
 function SystemSettings() {
+  usePageTitle(formatPageTitle('System Settings'));
   const [reconTasks, setReconTasks] = useState([]);
   const [awsCredentials, setAwsCredentials] = useState([]);
   const [loading, setLoading] = useState(true);

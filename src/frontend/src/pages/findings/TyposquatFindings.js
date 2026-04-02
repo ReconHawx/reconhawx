@@ -22,11 +22,13 @@ import { useAuth } from '../../contexts/AuthContext';
 import api, { jobAPI, userManagementAPI } from '../../services/api';
 import { formatDate } from '../../utils/dateUtils';
 import { initializeUserCache } from '../../utils/userUtils';
+import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
 
 /** Keep in sync with API `AI_ANALYSIS_BATCH_MAX_FINDINGS` in typosquat_findings.py (temporary cap). */
 const AI_ANALYSIS_BATCH_MAX_FINDINGS = 10;
 
 function TyposquatFindings() {
+  usePageTitle(formatPageTitle('Typosquat Findings'));
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();

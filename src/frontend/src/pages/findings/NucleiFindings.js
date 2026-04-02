@@ -4,8 +4,10 @@ import { Row, Col, Form, Button, Modal, Spinner, Pagination, Badge, OverlayTrigg
 import api from '../../services/api';
 import { useProgramFilter } from '../../contexts/ProgramFilterContext';
 import { formatDate } from '../../utils/dateUtils';
+import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
 
 const NucleiFindings = () => {
+  usePageTitle(formatPageTitle('Nuclei Findings'));
   const location = useLocation();
   const navigate = useNavigate();
   const [findings, setFindings] = useState([]);

@@ -5,6 +5,7 @@ import { typosquatAPI } from '../../services/api';
 import NotesSection from '../../components/NotesSection';
 import { formatDate } from '../../utils/dateUtils';
 import ScreenshotsViewer from '../../components/ScreenshotsViewer';
+import { usePageTitle, formatPageTitle, truncateTitle } from '../../hooks/usePageTitle';
 
 function TyposquatUrlDetails() {
   const { id } = useParams();
@@ -24,6 +25,13 @@ function TyposquatUrlDetails() {
   // Certificate state
   const [certificate, setCertificate] = useState(null);
   const [certificateLoading, setCertificateLoading] = useState(false);
+
+  const domainParam = new URLSearchParams(location.search).get('domain');
+  usePageTitle(
+    viewMode === 'list' && domainParam
+      ? formatPageTitle(`URLs · ${domainParam}`, 'Typosquat')
+      : formatPageTitle(url?.url ? truncateTitle(url.url) : null, 'Typosquat URL')
+  );
 
   useEffect(() => {
     const fetchData = async () => {

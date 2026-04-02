@@ -2,7 +2,10 @@ import React from 'react';
 import { Container, Row, Col } from 'react-bootstrap';
 import ApiTokenManagement from '../../components/ApiTokenManagement';
 import ApiDocumentation from '../../components/ApiDocumentation';
+import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
+
 function ApiTokens() {
+  usePageTitle(formatPageTitle('API Tokens'));
   return (
     <Container fluid className="mt-4">
       <Row>

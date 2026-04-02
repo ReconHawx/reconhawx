@@ -16,8 +16,10 @@ import {
 } from 'react-bootstrap';
 import { jobAPI } from '../../services/api';
 import { formatDate } from '../../utils/dateUtils';
+import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
 
 function JobManagement() {
+  usePageTitle(formatPageTitle('Job Management'));
   const [jobs, setJobs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');

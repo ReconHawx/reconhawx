@@ -4,6 +4,7 @@ import { Button, Badge } from 'react-bootstrap';
 import api from '../../services/api';
 import NotesSection from '../../components/NotesSection';
 import { formatDate } from '../../utils/dateUtils';
+import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
 
 const WPScanFindingDetail = () => {
   const navigate = useNavigate();
@@ -13,6 +14,8 @@ const WPScanFindingDetail = () => {
   const [error, setError] = useState(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleting, setDeleting] = useState(false);
+
+  usePageTitle(formatPageTitle(finding?.title || finding?.item_name, 'WPScan'));
 
   const severityColors = {
     critical: 'danger',

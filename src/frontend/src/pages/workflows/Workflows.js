@@ -3,8 +3,10 @@ import { Container, Row, Col, Card, Button, Badge, Alert, Spinner } from 'react-
 import { Link, useSearchParams } from 'react-router-dom';
 import { workflowAPI } from '../../services/api';
 import SingleTaskModal from '../../components/workflow/SingleTaskModal';
+import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
 
 function Workflows() {
+  usePageTitle(formatPageTitle('Workflows'));
   const [searchParams, setSearchParams] = useSearchParams();
   const [recentExecutions, setRecentExecutions] = useState([]);
   const [savedWorkflows, setSavedWorkflows] = useState([]);

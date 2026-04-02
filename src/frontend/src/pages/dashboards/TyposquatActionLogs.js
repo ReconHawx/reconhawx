@@ -14,6 +14,7 @@ import {
 import { useProgramFilter } from '../../contexts/ProgramFilterContext';
 import api from '../../services/api';
 import { formatDate } from '../../utils/dateUtils';
+import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
 
 const LogLevelBadge = ({ level }) => {
   const variants = {
@@ -257,6 +258,7 @@ const ConsoleControls = ({
 };
 
 function TyposquatActionLogs() {
+  usePageTitle(formatPageTitle('Typosquat Action Logs'));
   const { selectedProgram } = useProgramFilter();
 
   // State

@@ -5,6 +5,7 @@ import AceEditor from 'react-ace';
 import api from '../../services/api';
 import NotesSection from '../../components/NotesSection';
 import { formatDate } from '../../utils/dateUtils';
+import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
 
 // Import Ace editor modes and themes
 import 'ace-builds/src-noconflict/mode-yaml';
@@ -136,6 +137,8 @@ const NucleiFindingDetail = () => {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [templateContentExpanded, setTemplateContentExpanded] = useState(false);
+
+  usePageTitle(formatPageTitle(finding?.name || finding?.template_id, 'Nuclei'));
 
   const severityColors = {
     critical: 'danger',

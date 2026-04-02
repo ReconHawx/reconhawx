@@ -11,8 +11,10 @@ import {
 } from 'react-bootstrap';
 import { adminAPI } from '../../services/api';
 import EventHandlerForm from '../../components/EventHandlerForm';
+import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
 
 function EventHandlerConfig() {
+  usePageTitle(formatPageTitle('Event Handler Config'));
   const [handlers, setHandlers] = useState([]);
   const [systemHandlers, setSystemHandlers] = useState([]);
   const [loading, setLoading] = useState(true);

@@ -15,8 +15,10 @@ import {
 } from 'react-bootstrap';
 import { userManagementAPI, programAPI } from '../../services/api';
 import ApiTokenManagement from '../../components/ApiTokenManagement';
+import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
 
 function UserManagement() {
+  usePageTitle(formatPageTitle('User Management'));
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');

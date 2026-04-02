@@ -3,8 +3,10 @@ import { Container, Row, Col, Card, Table, Button, Badge, Alert, Spinner, Modal,
 import { Link } from 'react-router-dom';
 import { workflowAPI } from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
+import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
 
 function WorkflowList() {
+  usePageTitle(formatPageTitle('Workflow List'));
   // Use auth context to check superuser status
   const { isSuperuser } = useAuth();
   

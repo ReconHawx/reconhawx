@@ -3,11 +3,13 @@ import { Container, Row, Col, Card, Form, Button, Alert, Spinner } from 'react-b
 import { useAuth } from '../contexts/AuthContext';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useTheme } from '../contexts/ThemeContext';
+import { usePageTitle, formatPageTitle } from '../hooks/usePageTitle';
 
 const BANNER_DARK = `${process.env.PUBLIC_URL}/banner_dark_transparent.png`;
 const BANNER_LIGHT = `${process.env.PUBLIC_URL}/banner_light_transparent.png`;
 
 function Login() {
+  usePageTitle(formatPageTitle('Sign In'));
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [validated, setValidated] = useState(false);

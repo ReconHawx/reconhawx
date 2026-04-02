@@ -18,8 +18,10 @@ import {
 import { wordlistsAPI } from '../../services/api';
 import { formatDate } from '../../utils/dateUtils';
 import { useProgramFilter } from '../../contexts/ProgramFilterContext';
+import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
 
 function Wordlists() {
+  usePageTitle(formatPageTitle('Wordlists'));
   const { programs, selectedProgram } = useProgramFilter();
   const [wordlists, setWordlists] = useState([]);
   const [loading, setLoading] = useState(true);

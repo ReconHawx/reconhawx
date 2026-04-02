@@ -2,6 +2,7 @@ import React, { useState, useEffect, useContext, useCallback } from 'react';
 import { Container, Card, Form, Col, Button, Table, Collapse, Row, Modal, Spinner, Pagination, OverlayTrigger, Popover } from 'react-bootstrap';
 import { ProgramFilterContext } from '../../contexts/ProgramFilterContext';
 import api from '../../services/api';
+import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
 
 // Add Font Awesome CSS if not already loaded
 const loadFontAwesome = () => {
@@ -14,6 +15,7 @@ const loadFontAwesome = () => {
 };
 
 function ExternalLinks() {
+  usePageTitle(formatPageTitle('External Links'));
   const [externalLinksData, setExternalLinksData] = useState({});
   const [rootSitesList, setRootSitesList] = useState([]);
   const [loading, setLoading] = useState(true);

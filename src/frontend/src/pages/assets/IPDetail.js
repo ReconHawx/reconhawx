@@ -4,6 +4,7 @@ import { Container, Row, Col, Card, Badge, Button, Spinner, Alert, Table, Collap
 import { ipAPI, domainAPI } from '../../services/api';
 import NotesSection from '../../components/NotesSection';
 import { formatDate } from '../../utils/dateUtils';
+import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
 
 function IPDetail() {
   const { ipAddress } = useParams();
@@ -20,6 +21,8 @@ function IPDetail() {
   const [relatedSubdomains, setRelatedSubdomains] = useState([]);
   const [subdomainsLoading, setSubdomainsLoading] = useState(false);
   const [subdomainsError, setSubdomainsError] = useState(null);
+
+  usePageTitle(formatPageTitle(ip?.ip, 'IP'));
 
   useEffect(() => {
     const fetchIp = async () => {

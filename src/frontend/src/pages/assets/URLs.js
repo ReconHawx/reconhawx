@@ -4,6 +4,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { urlAPI, programAPI } from '../../services/api';
 import { useProgramFilter } from '../../contexts/ProgramFilterContext';
 import { formatDate } from '../../utils/dateUtils';
+import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
 
 // Add Font Awesome CSS if not already loaded
 const loadFontAwesome = () => {
@@ -16,6 +17,7 @@ const loadFontAwesome = () => {
 };
 
 function URLs() {
+  usePageTitle(formatPageTitle('URLs'));
   const navigate = useNavigate();
   const location = useLocation();
   const { selectedProgram, setSelectedProgram } = useProgramFilter();

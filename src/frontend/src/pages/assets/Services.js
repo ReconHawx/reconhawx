@@ -4,8 +4,10 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { serviceAPI, programAPI } from '../../services/api';
 import { useProgramFilter } from '../../contexts/ProgramFilterContext';
 import { formatDate } from '../../utils/dateUtils';
+import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
 
 function Services() {
+  usePageTitle(formatPageTitle('Services'));
   const navigate = useNavigate();
   const location = useLocation();
   const { selectedProgram, setSelectedProgram } = useProgramFilter();

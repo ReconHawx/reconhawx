@@ -4,6 +4,7 @@ import { Container, Row, Col, Card, Badge, Button, Spinner, Alert, Table, Collap
 import { serviceAPI } from '../../services/api';
 import NotesSection from '../../components/NotesSection';
 import { formatDate } from '../../utils/dateUtils';
+import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
 
 function ServiceDetail() {
   const { ip, port } = useParams();
@@ -17,6 +18,13 @@ function ServiceDetail() {
   });
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleting, setDeleting] = useState(false);
+
+  usePageTitle(
+    formatPageTitle(
+      service?.ip != null && service?.port != null ? `${service.ip}:${service.port}` : null,
+      'Service'
+    )
+  );
 
   useEffect(() => {
     const fetchService = async () => {

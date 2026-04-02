@@ -3,6 +3,7 @@ import { Container, Row, Col, Card, Table, Badge, Button, Spinner, Alert, Pagina
 import { Link } from 'react-router-dom';
 import { workflowAPI } from '../../services/api';
 import { formatDate, calculateDuration } from '../../utils/dateUtils';
+import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
 
 // Add some custom styles for sortable headers
 const sortableHeaderStyle = {
@@ -11,6 +12,7 @@ const sortableHeaderStyle = {
 };
 
 function WorkflowStatus() {
+  usePageTitle(formatPageTitle('Workflow Status'));
   const [executions, setExecutions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);

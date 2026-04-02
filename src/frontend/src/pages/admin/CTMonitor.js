@@ -14,8 +14,10 @@ import {
 } from 'react-bootstrap';
 import { Link } from 'react-router-dom';
 import { ctMonitorAPI } from '../../services/api';
+import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
 
 function CTMonitor() {
+  usePageTitle(formatPageTitle('CT Monitor'));
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');

@@ -4,6 +4,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useProgramFilter } from '../../contexts/ProgramFilterContext';
 import { screenshotAPI, API_BASE_URL } from '../../services/api';
 import { formatDate } from '../../utils/dateUtils';
+import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
 
 // Add Font Awesome CSS if not already loaded
 const loadFontAwesome = () => {
@@ -114,6 +115,7 @@ const LazyImage = ({ src, alt, style, onClick, onError, placeholder }) => {
 };
 
 function Screenshots() {
+  usePageTitle(formatPageTitle('Screenshots'));
   const navigate = useNavigate();
   const location = useLocation();
   const { selectedProgram, setSelectedProgram } = useProgramFilter();

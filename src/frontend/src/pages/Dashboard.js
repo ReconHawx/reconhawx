@@ -3,6 +3,7 @@ import { Container, Row, Col, Card, Alert, Spinner, Badge, Button } from 'react-
 import { Link } from 'react-router-dom';
 import { useProgramFilter } from '../contexts/ProgramFilterContext';
 import { workflowAPI, commonStatsAPI } from '../services/api';
+import { usePageTitle, formatPageTitle } from '../hooks/usePageTitle';
 // Utility function to calculate age from created_at timestamp
 const getAgeFromDate = (createdAt) => {
   if (!createdAt) return 'N/A';
@@ -43,6 +44,7 @@ styleSheet.innerText = styles;
 document.head.appendChild(styleSheet);
 
 function Dashboard() {
+  usePageTitle(formatPageTitle('Dashboard'));
   const { selectedProgram } = useProgramFilter();
   const [stats, setStats] = useState({
     subdomains: 0, apexDomains: 0, ips: 0, services: 0, urls: 0, certificates: 0,

@@ -4,6 +4,7 @@ import { Container, Row, Col, Card, Badge, Button, Spinner, Alert, Modal, Button
 import { workflowAPI } from '../../services/api';
 import { formatDate, calculateDuration } from '../../utils/dateUtils';
 import './WorkflowStatusDetail.css';
+import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
 
 function WorkflowStatusDetail() {
   const { workflowId } = useParams();
@@ -21,6 +22,8 @@ function WorkflowStatusDetail() {
   const [podOutputSearch, setPodOutputSearch] = useState('');
   const [podOutputMatchIndex, setPodOutputMatchIndex] = useState(0);
   const podOutputContainerRef = useRef(null);
+
+  usePageTitle(formatPageTitle(logs?.workflow_name || workflowId, 'Workflow Run'));
 
   const loadWorkflowDetails = useCallback(async () => {
     try {

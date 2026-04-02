@@ -9,8 +9,7 @@ import { useProgramFilter } from '../../contexts/ProgramFilterContext';
 import { useAuth } from '../../contexts/AuthContext';
 import VisualWorkflowBuilder from '../../components/VisualWorkflowBuilder';
 import { useWorkflowStore } from '../../stores/workflowStore';
-
-
+import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
 
 function WorkflowCreate() {
   const { workflowId } = useParams();
@@ -41,6 +40,10 @@ function WorkflowCreate() {
     clearWorkflow,
     getWorkflowPayload,
   } = useWorkflowStore();
+
+  usePageTitle(
+    isEdit ? formatPageTitle(workflowName || undefined, 'Edit Workflow') : formatPageTitle('Create Workflow')
+  );
 
   useEffect(() => {
     if (isEdit) {
