@@ -2,7 +2,7 @@
 
 There are **two ways** to install ReconHawx on Minikube:
 
-1. **Installer script** — run [`install-minikube.sh`](../install-minikube.sh) from the repo root. With a **local** `kubernetes/base`, it copies that tree to **`/tmp/reconhawx`** (configurable **`INSTALL_STAGING_DIR`**), then removes it after a successful install. **Without** a local tree, it downloads the **latest GitHub release** tarball and uses that **full source tree** in place (same idea as cluster [`install-kubernetes.sh`](../install-on-kubernetes.md)). It generates secrets, starts or uses Minikube, applies the stack, and updates **`/etc/hosts`**. **It does not run SQL migrations**—the API Deployment’s **`run-migrations`** init container applies schema after Postgres is up (see [Database migrations (automated)](install-on-kubernetes.md#database-migrations-automated)). Piped installs (`curl … | bash`) read prompts from **`/dev/tty`**. Options: **`--from-release`**, **`--help`**, env **`RECONHAWX_FROM_RELEASE`**, **`RECONHAWX_GITHUB_REPO`**.
+1. **Installer script** — run [`install-minikube.sh`](../install-minikube.sh) from the repo root. With **`kubernetes/base` and a `.git` directory** (git clone), it copies that tree to **`/tmp/reconhawx`** (**`INSTALL_STAGING_DIR`**) and removes it after a successful install. With **`kubernetes/base` but no `.git`** (typical unpacked release archive) or **without** a local tree, it uses manifests **in place** (your unpack dir or a downloaded extract under `/tmp/reconhawx-release.*`) — same rules as cluster [`install-kubernetes.sh`](../install-on-kubernetes.md). It generates secrets, starts or uses Minikube, applies the stack, and updates **`/etc/hosts`**. **It does not run SQL migrations**—the API Deployment’s **`run-migrations`** init container applies schema after Postgres is up (see [Database migrations (automated)](install-on-kubernetes.md#database-migrations-automated)). Piped installs (`curl … | bash`) read prompts from **`/dev/tty`**. Options: **`--from-release`**, **`--help`**, env **`RECONHAWX_FROM_RELEASE`**, **`RECONHAWX_GITHUB_REPO`**.
 2. **Manual installation** — run the commands yourself in order, starting at [Manual Installation](#manual-installation). You typically edit and apply `kubernetes/base` in your checkout (as in the snippets below).
 
 ## Installer script
@@ -13,9 +13,15 @@ From the repo root:
 ./install-minikube.sh
 ```
 
-You are prompted for a **Minikube profile** name and secrets (JWT/refresh/Postgres). There is **no** longer a separate “install root” prompt: **release** installs use the extracted tree under `/tmp/reconhawx-release.*`; **local** installs stage under **`/tmp/reconhawx`** if that path exists, you confirm before it is replaced.
+You are prompted for a **Minikube profile** name and secrets (JWT/refresh/Postgres). There is **no** separate “install root” prompt: **in-place** installs use the unpacked tree or `/tmp/reconhawx-release.*`; **git clone** installs stage under **`/tmp/reconhawx`** if needed, and you confirm before an existing staging path is replaced.
 
 The script uses **`minikube … kubectl` only** (no separate `kubectl` binary required). For troubleshooting migrations, use [`docs/install-on-kubernetes.md`](install-on-kubernetes.md#database-migrations-automated) or run [`scripts/migrate.sh`](../scripts/migrate.sh) locally with `DATABASE_URL` if you need to apply SQL outside the cluster.
+
+## Upgrade
+
+See **[`docs/update-reconhawx.md`](update-reconhawx.md)** for the full procedure (versions, `base-update`, flags, troubleshooting).
+
+Quick path from the repo root: [`update-minikube.sh`](../update-minikube.sh) — applies **`kubernetes/base-update/`**, restarts app deployments, **`MINIKUBE_PROFILE`** default **`reconhawx`**. Options match [`update-kubernetes.sh`](../update-kubernetes.sh) / install (**`--from-release`**, **`RECONHAWX_FROM_RELEASE`**, etc.); overview: [Upgrade (existing cluster)](install-on-kubernetes.md#upgrade-existing-cluster).
 
 ## Manual Installation
 

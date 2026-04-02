@@ -35,7 +35,7 @@ If the init container fails, the API container does not start until the migratio
 
 There are **two ways** to install ReconHawx on a generic Kubernetes cluster:
 
-1. **Installer script** — run [`install-kubernetes.sh`](../install-kubernetes.sh). It uses `kubectl` (and your current kubeconfig context). **Release path** (no local `kubernetes/base`): downloads the **latest GitHub release source tarball**, uses that tree **in place** for `kubernetes/base`, applies the stack, and **leaves the extract** under `/tmp` for reuse. **Local clone path**: copies only `kubernetes/base` into **`/tmp/reconhawx`** (configurable), and deletes that staging dir after success. In both paths it labels nodes, installs Kueue and ingress-nginx, optionally MetalLB, and can update `/etc/hosts`. Release download needs **`curl`**, **`tar`**, and **`jq`** or **`python3`** for the GitHub API.
+1. **Installer script** — run [`install-kubernetes.sh`](../install-kubernetes.sh). It uses `kubectl` (and your current kubeconfig context). **Release / unpacked tarball** (no local `kubernetes/base`, or a tree **without** `.git` — e.g. manual GitHub source archive): uses `kubernetes/base` **in place** (downloaded extract under `/tmp/reconhawx-release.*`, or your unpack directory). **Git clone** (directory has `.git`): copies only `kubernetes/base` into **`/tmp/reconhawx`** (**`INSTALL_STAGING_DIR`**), writes secrets there, and deletes that staging dir after success. In all paths it labels nodes, installs Kueue and ingress-nginx, optionally MetalLB, and can update `/etc/hosts`. Tarball **download** needs **`curl`**, **`tar`**, and **`jq`** or **`python3`** for the GitHub API.
 2. **Manual installation** — follow the commands below from [Set label on the nodes](#set-label-on-the-nodes) through [Test](#test).
 
 ## Installer script
@@ -54,9 +54,9 @@ curl -fsSL https://raw.githubusercontent.com/ReconHawx/reconhawx/main/install-ku
 
 Piping into `bash` uses stdin for the script, so prompts are read from your **terminal** (`/dev/tty`). In headless environments, use `bash <(curl -fsSL …/install-kubernetes.sh)` or save the script and run `bash install-kubernetes.sh`.
 
-**Release install** uses the extracted repository (under a `reconhawx-release.*` temp directory): secrets are written into **`kubernetes/base` there**, and the directory is **not** deleted at the end.
+**In-place install** (release download **or** unpacked source tree with **no** `.git`): secrets and generated files are written under **`kubernetes/base` in that tree**; that directory is **not** deleted at the end.
 
-**Local clone install** copies `kubernetes/base` to **`/tmp/reconhawx`** (override **`INSTALL_STAGING_DIR`**). If that staging path already exists, you confirm removal first; after a **successful** install it is **deleted** (failed runs leave it for inspection).
+**Git clone install** copies `kubernetes/base` to **`/tmp/reconhawx`** (override **`INSTALL_STAGING_DIR`**). If that staging path already exists, you confirm removal first; after a **successful** install it is **deleted** (failed runs leave it for inspection).
 
 The script lists cluster nodes and asks you to choose **runner** and **worker** nodes (by name or by number from the list); a node may be both.
 
@@ -65,7 +65,29 @@ Options / environment:
 - **`--from-release`** — always use the latest published release tarball for manifests, even when run from a git tree.
 - **`RECONHAWX_FROM_RELEASE`** — `1` forces tarball, `0` forces local `kubernetes/base`, unset selects local when it exists and tarball otherwise.
 - **`RECONHAWX_GITHUB_REPO`** — `owner/repo` (default `ReconHawx/reconhawx`) for the releases API and tarball URL.
-- **`INSTALL_STAGING_DIR`** — **local installs only**: staging copy (default `/tmp/reconhawx`).
+- **`INSTALL_STAGING_DIR`** — **git clone installs only**: staging copy (default `/tmp/reconhawx`).
+
+## Upgrade (existing cluster)
+
+Full upgrade procedure, troubleshooting, and manual steps: **[`docs/update-reconhawx.md`](update-reconhawx.md)**.
+
+From a **git clone** or **extracted release tree** (not `curl | bash` alone), run:
+
+```shell
+./update-kubernetes.sh
+```
+
+Options match install semantics: **`--from-release`**, **`RECONHAWX_FROM_RELEASE`**, **`RECONHAWX_GITHUB_REPO`**.
+
+The script applies **[`kubernetes/base-update/`](../kubernetes/base-update/kustomization.yaml)** so **`jwt-secret`** and **`postgres-secret`** from the repo are **not** reapplied—avoiding accidental overwrite when upgrading from a fresh clone. It restarts **api**, **frontend**, **event-handler**, and **ct-monitor** so new container images roll out (API init runs **migrations** again).
+
+**Deployed manifest / app version** (semver aligned with release images):
+
+```shell
+kubectl get configmap reconhawx-version -n reconhawx -o jsonpath='{.data.APP_VERSION}{"\n"}'
+```
+
+That value is maintained in **[`kubernetes/base/config/reconhawx-version.yaml`](../kubernetes/base/config/reconhawx-version.yaml)** and bumped by release-please with **`version.txt`**.
 
 ## Uninstall
 

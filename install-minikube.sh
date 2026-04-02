@@ -3,8 +3,8 @@
 # Install ReconHawx on Minikube (see docs/install-on-minikube.md).
 # Uses `minikube … kubectl` (standalone kubectl not required).
 # Manifests: local kubernetes/base when present, otherwise latest GitHub release tarball
-# (full tree in place under the extract). Local clones copy kubernetes/base to INSTALL_STAGING_DIR
-# (default /tmp/reconhawx).
+# (full tree in place under the extract). Unpacked release (no .git): kubernetes/base in place.
+# Git clone: copy kubernetes/base to INSTALL_STAGING_DIR (default /tmp/reconhawx).
 #
 # Set RECONHAWX_NO_COLOR=1 to disable ANSI styling.
 # Long tool logs: show RUN_TOOL_LONG_HEAD_LINES (default 10) on success; on failure, error-like lines plus a tail.
@@ -32,8 +32,10 @@ INGRESS_HOST="${INGRESS_HOST:-reconhawx.local}"
 # RECONHAWX_FROM_RELEASE: unset = auto (local kubernetes/base if present, else tarball); 0 = local only; 1 = tarball only.
 RECONHAWX_GITHUB_REPO="${RECONHAWX_GITHUB_REPO:-ReconHawx/reconhawx}"
 RECONHAWX_RELEASE_TMPDIR=""
+# 1 = in-place kubernetes/base; 0 = stage under INSTALL_STAGING_DIR (git clone only).
 RECONHAWX_INSTALL_FROM_RELEASE=0
 RECONHAWX_SOURCE_TREE_ROOT=""
+# Git clones only: staging copy (removed after a successful install).
 INSTALL_STAGING_DIR="${INSTALL_STAGING_DIR:-/tmp/reconhawx}"
 
 set -u
@@ -218,7 +220,7 @@ Usage: install-minikube.sh [options]
 Environment:
   RECONHAWX_FROM_RELEASE   unset = auto; 0 = local kubernetes/base only; 1 = release tarball only.
   RECONHAWX_GITHUB_REPO    owner/repo (default: ReconHawx/reconhawx).
-  INSTALL_STAGING_DIR      Local-repo installs: staging copy (default: /tmp/reconhawx); deleted after success.
+  INSTALL_STAGING_DIR      Git-clone installs: staging copy (default: /tmp/reconhawx); deleted after success.
 EOF
 }
 
@@ -302,8 +304,12 @@ resolve_kubernetes_base_src() {
     download_release_kubernetes_base_set_BASE_SRC
   else
     [[ -d "$BASE_SRC" ]] || die "kubernetes/base not found at $BASE_SRC (use --from-release or RECONHAWX_FROM_RELEASE=1)"
-    RECONHAWX_INSTALL_FROM_RELEASE=0
     RECONHAWX_SOURCE_TREE_ROOT="$REPO_ROOT"
+    if [[ -e "$REPO_ROOT/.git" ]]; then
+      RECONHAWX_INSTALL_FROM_RELEASE=0
+    else
+      RECONHAWX_INSTALL_FROM_RELEASE=1
+    fi
   fi
 }
 
@@ -550,12 +556,12 @@ main() {
     INSTALL_ROOT="$RECONHAWX_SOURCE_TREE_ROOT"
     BASE_DST="$INSTALL_ROOT/kubernetes/base"
     [[ -d "$BASE_DST" ]] || die "missing kubernetes/base under ${INSTALL_ROOT}"
-    ui_note "Using release tree in place: ${INSTALL_ROOT}."
+    ui_note "Using kubernetes/base in place: ${INSTALL_ROOT}."
   else
     install_staging_prepare
     INSTALL_ROOT="$INSTALL_STAGING_DIR"
     BASE_DST="$INSTALL_ROOT/kubernetes/base"
-    ui_note "Copying kubernetes/base from your clone to ${INSTALL_STAGING_DIR} (removed after a successful install)."
+    ui_note "Copying kubernetes/base from your git clone to ${INSTALL_STAGING_DIR} (removed after a successful install)."
     ui_step "Syncing manifests to $BASE_DST"
     ensure_install_prefix "$INSTALL_ROOT"
     mkdir -p "$INSTALL_ROOT/kubernetes"
@@ -690,7 +696,7 @@ main() {
   if [[ "${RECONHAWX_INSTALL_FROM_RELEASE}" -eq 0 ]]; then
     install_staging_cleanup_on_success
   else
-    ui_note "Release source tree left at ${RECONHAWX_SOURCE_TREE_ROOT} (reuse for ops, debugging, etc.)."
+    ui_note "Manifest source tree left at ${RECONHAWX_SOURCE_TREE_ROOT} (reuse for ops, debugging, etc.)."
   fi
 }
 
