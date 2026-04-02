@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, ForeignKey, ARRAY, BigInteger, SmallInteger, UniqueConstraint, LargeBinary, func
+from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, ForeignKey, ARRAY, BigInteger, SmallInteger, UniqueConstraint, LargeBinary, func, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID, INET, JSONB
@@ -591,6 +591,11 @@ class TyposquatDomain(Base):
     # AI analysis
     ai_analysis = Column(JSONB, nullable=True)
     ai_analyzed_at = Column(DateTime, nullable=True)
+
+    # Append-only closure history: {to_status, closed_at, closed_by_user_id, source_action_log_id?}[]
+    closure_events = Column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))
+    # Denormalized: same instant as last closure_events[].closed_at (UTC naive)
+    last_closure_at = Column(DateTime, nullable=True, index=True)
 
     # Relationships
     program = relationship("Program", back_populates="typosquat_findings")

@@ -137,7 +137,9 @@ function TyposquatFindings() {
     created_at_from: searchParams.get('created_at_from') || '',
     created_at_to: searchParams.get('created_at_to') || '',
     updated_at_from: searchParams.get('updated_at_from') || '',
-    updated_at_to: searchParams.get('updated_at_to') || ''
+    updated_at_to: searchParams.get('updated_at_to') || '',
+    last_closure_at_from: searchParams.get('last_closure_at_from') || '',
+    last_closure_at_to: searchParams.get('last_closure_at_to') || ''
   });
   
   // Sort state
@@ -367,6 +369,8 @@ function TyposquatFindings() {
       created_at_to: dayEndUtc(filters.created_at_to),
       updated_at_from: dayStartUtc(filters.updated_at_from),
       updated_at_to: dayEndUtc(filters.updated_at_to),
+      last_closure_at_from: dayStartUtc(filters.last_closure_at_from),
+      last_closure_at_to: dayEndUtc(filters.last_closure_at_to),
       program: selectedProgram || undefined,
       sort_by: sortField,
       sort_dir: sortDirection,
@@ -1773,7 +1777,7 @@ function TyposquatFindings() {
                 <hr className="my-3" />
                 <h6 className="text-secondary text-uppercase small fw-semibold mb-0">Date range</h6>
                 <Row className="g-3 mt-2">
-                  <Col md={6}>
+                  <Col md={4}>
                     <Form.Group className="mb-0">
                       <Form.Label>Created at</Form.Label>
                       <div className="d-flex flex-wrap align-items-center gap-2">
@@ -1793,7 +1797,7 @@ function TyposquatFindings() {
                       </div>
                     </Form.Group>
                   </Col>
-                  <Col md={6}>
+                  <Col md={4}>
                     <Form.Group className="mb-0">
                       <Form.Label>Updated at</Form.Label>
                       <div className="d-flex flex-wrap align-items-center gap-2">
@@ -1811,6 +1815,27 @@ function TyposquatFindings() {
                           aria-label="Updated to"
                         />
                       </div>
+                    </Form.Group>
+                  </Col>
+                  <Col md={4}>
+                    <Form.Group className="mb-0">
+                      <Form.Label>Last closure (resolved / dismissed)</Form.Label>
+                      <div className="d-flex flex-wrap align-items-center gap-2">
+                        <Form.Control
+                          type="date"
+                          value={filters.last_closure_at_from}
+                          onChange={(e) => handleFilterChange('last_closure_at_from', e.target.value)}
+                          aria-label="Last closure from"
+                        />
+                        <span className="text-muted small">to</span>
+                        <Form.Control
+                          type="date"
+                          value={filters.last_closure_at_to}
+                          onChange={(e) => handleFilterChange('last_closure_at_to', e.target.value)}
+                          aria-label="Last closure to"
+                        />
+                      </div>
+                      <Form.Text className="text-muted">UTC day range on last resolve/dismiss time.</Form.Text>
                     </Form.Group>
                   </Col>
                 </Row>
@@ -2023,7 +2048,9 @@ function TyposquatFindings() {
                         created_at_from: '',
                         created_at_to: '',
                         updated_at_from: '',
-                        updated_at_to: ''
+                        updated_at_to: '',
+                        last_closure_at_from: '',
+                        last_closure_at_to: ''
                       });
                     }}>
                       Clear
@@ -2070,7 +2097,9 @@ function TyposquatFindings() {
                 created_at_from: '',
                 created_at_to: '',
                 updated_at_from: '',
-                updated_at_to: ''
+                updated_at_to: '',
+                last_closure_at_from: '',
+                last_closure_at_to: ''
               });
               setCurrentPage(1);
             }}>Reset filters</Button>
@@ -2206,6 +2235,9 @@ function TyposquatFindings() {
                       >
                         Last Updated {getSortIcon('updated_at')}
                       </th>
+                    <th style={{ cursor: 'pointer' }} onClick={() => handleSort('last_closure_at')}>
+                      Last closure {getSortIcon('last_closure_at')}
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -2419,6 +2451,11 @@ function TyposquatFindings() {
                         </td>
                         <td className="text-muted">
                           {formatDate(finding.updated_at, 'MMM dd, yyyy HH:mm:ss')}
+                        </td>
+                        <td className="text-muted">
+                          {finding.last_closure_at
+                            ? formatDate(finding.last_closure_at, 'MMM dd, yyyy HH:mm:ss')
+                            : '—'}
                         </td>
                         {/* <td>
                           <div className="d-flex gap-1">

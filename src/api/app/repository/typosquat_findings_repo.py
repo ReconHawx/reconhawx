@@ -48,6 +48,63 @@ _WHOIS_PAYLOAD_KEYS = (
     "whois_admin_email",
 )
 
+_TERMINAL_CLOSURE_STATUSES = frozenset(("resolved", "dismissed"))
+
+
+def _last_closure_summary(
+    closure_events: Any,
+    last_closure_at_column: Any = None,
+) -> Dict[str, Any]:
+    """Derive list-friendly fields; prefer persisted last_closure_at for the date."""
+    out: Dict[str, Any] = {
+        "last_closure_at": None,
+        "last_closure_to_status": None,
+        "last_closed_by_user_id": None,
+    }
+    if last_closure_at_column is not None:
+        if isinstance(last_closure_at_column, datetime):
+            out["last_closure_at"] = last_closure_at_column.isoformat() + "Z"
+        else:
+            out["last_closure_at"] = str(last_closure_at_column)
+    if not closure_events or not isinstance(closure_events, list):
+        return out
+    last = closure_events[-1]
+    if not isinstance(last, dict):
+        return out
+    if out["last_closure_at"] is None:
+        out["last_closure_at"] = last.get("closed_at")
+    out["last_closure_to_status"] = last.get("to_status")
+    out["last_closed_by_user_id"] = last.get("closed_by_user_id")
+    return out
+
+
+def _closure_events_for_api(db, events: Any) -> List[Dict[str, Any]]:
+    """Copy closure event dicts and attach closed_by_username when user exists."""
+    if not events or not isinstance(events, list):
+        return []
+    user_ids_set = set()
+    for e in events:
+        if isinstance(e, dict) and e.get("closed_by_user_id"):
+            user_ids_set.add(str(e["closed_by_user_id"]))
+    id_to_name: Dict[str, Optional[str]] = {}
+    if user_ids_set:
+        try:
+            uid_cast = [uuid.UUID(u) for u in user_ids_set]
+        except ValueError:
+            uid_cast = []
+        if uid_cast:
+            for row in db.query(User.id, User.username).filter(User.id.in_(uid_cast)).all():
+                id_to_name[str(row.id)] = row.username
+    out: List[Dict[str, Any]] = []
+    for e in events:
+        if not isinstance(e, dict):
+            continue
+        row = dict(e)
+        cid = row.get("closed_by_user_id")
+        row["closed_by_username"] = id_to_name.get(str(cid)) if cid else None
+        out.append(row)
+    return out
+
 
 class TyposquatFindingsRepository(ProgramAccessMixin):
     """PostgreSQL repository for findings operations"""
@@ -970,6 +1027,9 @@ class TyposquatFindingsRepository(ProgramAccessMixin):
                     # AI analysis
                     'ai_analysis': typosquat.ai_analysis,
                     'ai_analyzed_at': typosquat.ai_analyzed_at.isoformat() if typosquat.ai_analyzed_at else None,
+                    # Closure history (resolved / dismissed), with usernames
+                    'closure_events': _closure_events_for_api(db, typosquat.closure_events),
+                    **_last_closure_summary(typosquat.closure_events, typosquat.last_closure_at),
                 }
                 
             except Exception as e:
@@ -1174,6 +1234,7 @@ class TyposquatFindingsRepository(ProgramAccessMixin):
                         'parked_detection_reasons': typosquat.parked_detection_reasons,
                         'ai_analysis': typosquat.ai_analysis,
                         'ai_analyzed_at': typosquat.ai_analyzed_at.isoformat() if typosquat.ai_analyzed_at else None,
+                        **_last_closure_summary(typosquat.closure_events, typosquat.last_closure_at),
                     })
                 
                 return result
@@ -1240,6 +1301,8 @@ class TyposquatFindingsRepository(ProgramAccessMixin):
         created_at_to: Optional[datetime] = None,
         updated_at_from: Optional[datetime] = None,
         updated_at_to: Optional[datetime] = None,
+        last_closure_at_from: Optional[datetime] = None,
+        last_closure_at_to: Optional[datetime] = None,
         programs: Optional[List[str]] = None,
         sort_by: str = "updated_at",
         sort_dir: str = "desc",
@@ -1284,6 +1347,8 @@ class TyposquatFindingsRepository(ProgramAccessMixin):
                         TyposquatDomain.auto_resolve.label("auto_resolve"),
                         TyposquatDomain.ai_analysis.label("ai_analysis"),
                         TyposquatDomain.ai_analyzed_at.label("ai_analyzed_at"),
+                        TyposquatDomain.closure_events.label("closure_events"),
+                        TyposquatDomain.last_closure_at.label("last_closure_at"),
                     )
                     .select_from(TyposquatDomain)
                     .join(
@@ -1489,6 +1554,10 @@ class TyposquatFindingsRepository(ProgramAccessMixin):
                     base_query = base_query.filter(TyposquatDomain.updated_at >= updated_at_from)
                 if updated_at_to is not None:
                     base_query = base_query.filter(TyposquatDomain.updated_at <= updated_at_to)
+                if last_closure_at_from is not None:
+                    base_query = base_query.filter(TyposquatDomain.last_closure_at >= last_closure_at_from)
+                if last_closure_at_to is not None:
+                    base_query = base_query.filter(TyposquatDomain.last_closure_at <= last_closure_at_to)
 
                 # Protected domain similarity filter
                 # Filter by similarity to a specific protected domain with optional minimum percentage
@@ -1726,6 +1795,10 @@ class TyposquatFindingsRepository(ProgramAccessMixin):
                     count_query = count_query.filter(TyposquatDomain.updated_at >= updated_at_from)
                 if updated_at_to is not None:
                     count_query = count_query.filter(TyposquatDomain.updated_at <= updated_at_to)
+                if last_closure_at_from is not None:
+                    count_query = count_query.filter(TyposquatDomain.last_closure_at >= last_closure_at_from)
+                if last_closure_at_to is not None:
+                    count_query = count_query.filter(TyposquatDomain.last_closure_at <= last_closure_at_to)
 
                 # Protected domain similarity filter for count query
                 if similarity_protected_domain or min_similarity_percent is not None:
@@ -1795,6 +1868,12 @@ class TyposquatFindingsRepository(ProgramAccessMixin):
                         else_=5
                     )
                     base_query = base_query.order_by(sort_dir_func(severity))
+                elif sort_by == "last_closure_at":
+                    lc = TyposquatDomain.last_closure_at
+                    if sort_dir == "asc":
+                        base_query = base_query.order_by(asc(lc).nullsfirst())
+                    else:
+                        base_query = base_query.order_by(desc(lc).nullslast())
                 else:
                     sort_col = sort_map.get(sort_by, TyposquatDomain.updated_at)
                     base_query = base_query.order_by(sort_dir_func(sort_col))
@@ -1831,6 +1910,10 @@ class TyposquatFindingsRepository(ProgramAccessMixin):
                         "auto_resolve": getattr(row, 'auto_resolve', False),
                         "ai_analysis": getattr(row, 'ai_analysis', None),
                         "ai_analyzed_at": row.ai_analyzed_at.isoformat() if getattr(row, 'ai_analyzed_at', None) else None,
+                        **_last_closure_summary(
+                            getattr(row, "closure_events", None),
+                            getattr(row, "last_closure_at", None),
+                        ),
                     })
 
                 return {"items": items, "total_count": total_count}
@@ -2287,11 +2370,16 @@ class TyposquatFindingsRepository(ProgramAccessMixin):
                     # Force the object to match the database state
                     typosquat.action_taken = fresh_query
 
+                prev_status = typosquat.status or "new"
+
                 whois_payload = TyposquatFindingsRepository._whois_subset_from_typosquat_data(
                     update_data
                 )
                 for k in list(whois_payload.keys()):
                     update_data.pop(k, None)
+                # Client must not overwrite append-only closure history
+                update_data.pop("closure_events", None)
+                update_data.pop("last_closure_at", None)
                 if whois_payload:
                     apex_name = extract_apex_domain(typosquat.typo_domain)
                     apex = TyposquatFindingsRepository.find_or_create_typosquat_apex_in_session(
@@ -2427,6 +2515,28 @@ class TyposquatFindingsRepository(ProgramAccessMixin):
                     old_actions = list(typosquat.action_taken or [])  # Create a copy to avoid reference issues
                     typosquat.action_taken = action_taken_for_database
                     logger.info(f"Updated action_taken for domain {domain_id}: {old_actions} -> {action_taken_for_database}")
+
+                # Append-only closure history; sync fixed_at for legacy views (e.g. security_summary)
+                if status_updated and new_status:
+                    ns = new_status
+                    ps = prev_status or "new"
+                    if ns in _TERMINAL_CLOSURE_STATUSES and ps != ns:
+                        closed_at_naive = datetime.utcnow()
+                        closed_at_str = closed_at_naive.isoformat() + "Z"
+                        existing_ev = typosquat.closure_events
+                        if existing_ev is None or not isinstance(existing_ev, list):
+                            existing_ev = []
+                        ev: Dict[str, Any] = {
+                            "to_status": ns,
+                            "closed_at": closed_at_str,
+                            "closed_by_user_id": typosquat.assigned_to or None,
+                        }
+                        typosquat.closure_events = list(existing_ev) + [ev]
+                        typosquat.last_closure_at = closed_at_naive
+                        if ns == "resolved":
+                            typosquat.fixed_at = closed_at_naive
+                    elif ns in ("new", "inprogress") and ps in _TERMINAL_CLOSURE_STATUSES:
+                        typosquat.fixed_at = None
 
                 typosquat.updated_at = datetime.utcnow()
                 logger.debug(f"Committing database changes for domain {domain_id}")

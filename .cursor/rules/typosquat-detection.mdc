@@ -17,6 +17,8 @@ This is a **multi-phase orchestrator task** that produces `FindingType.TYPOSQUAT
 
 **WHOIS persistence (API database):** Runner/worker payloads still send flat `whois_*` fields on typosquat findings. The API stores registration/WHOIS on **`typosquat_apex_domains`** (one row per `(program_id, registrable apex_domain)`), linked via `typosquat_domains.apex_typosquat_domain_id`. Listing and detail responses **merge** apex WHOIS onto each finding so JSON shape stays the same for clients.
 
+**Closure history (`typosquat_domains.closure_events`):** JSONB array, append-only. Each element: `to_status` (`resolved` | `dismissed`), `closed_at` (ISO string), `closed_by_user_id`, optional `source_action_log_id` (backfill from `action_logs`). **`last_closure_at`** (column, UTC naive) duplicates the latest `closed_at` for indexing/sorting; backfilled from the last JSON element in migrations; updated on each new closure (not cleared on reopen). `TyposquatFindingsRepository.update_typosquat_domain` appends on transitions into `resolved`/`dismissed` when the status actually changes; sets `fixed_at` on resolve and clears it on reopen from a terminal status. Clients must not send `closure_events` or `last_closure_at` in update payloads (ignored). API exposes `last_closure_at`, `last_closure_to_status`, `last_closed_by_user_id` (date from column when present).
+
 ## Architecture
 
 ```

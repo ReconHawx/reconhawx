@@ -348,6 +348,8 @@ class TyposquatSearchRequest(BaseModel):
     created_at_to: Optional[datetime] = Field(None, description="Inclusive upper bound on created_at")
     updated_at_from: Optional[datetime] = Field(None, description="Inclusive lower bound on updated_at")
     updated_at_to: Optional[datetime] = Field(None, description="Inclusive upper bound on updated_at")
+    last_closure_at_from: Optional[datetime] = Field(None, description="Inclusive lower bound on last_closure_at")
+    last_closure_at_to: Optional[datetime] = Field(None, description="Inclusive upper bound on last_closure_at")
     program: Optional[Union[List[str], str]] = Field(None, description="Restrict to program(s) within user's access scope")
     sort_by: Optional[str] = Field("updated_at")
     sort_dir: Optional[str] = Field("desc")
@@ -728,6 +730,8 @@ async def search_typosquat_typed(request: TyposquatSearchRequest, current_user: 
             created_at_to=request.created_at_to,
             updated_at_from=request.updated_at_from,
             updated_at_to=request.updated_at_to,
+            last_closure_at_from=request.last_closure_at_from,
+            last_closure_at_to=request.last_closure_at_to,
             programs=programs,
             sort_by=request.sort_by or "updated_at",
             sort_dir=request.sort_dir or "desc",

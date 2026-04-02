@@ -1547,6 +1547,49 @@ function TyposquatFindingDetail() {
         </Card.Body>
       </Card>
 
+      {/* Resolved / dismissed closure history (persisted; survives reopen) */}
+      {Array.isArray(finding?.closure_events) && finding.closure_events.length > 0 && (
+        <Card className="mb-4">
+          <Card.Header>
+            <h6 className="mb-0">Closure history</h6>
+          </Card.Header>
+          <Card.Body className="p-0">
+            <Table responsive hover className="mb-0" size="sm">
+              <thead className="table-light">
+                <tr>
+                  <th>Closed at</th>
+                  <th>Outcome</th>
+                  <th>Closed by</th>
+                </tr>
+              </thead>
+              <tbody>
+                {finding.closure_events.map((ev, idx) => (
+                  <tr key={ev.source_action_log_id || `${idx}-${ev.closed_at}`}>
+                    <td>{ev.closed_at ? formatDate(ev.closed_at) : '—'}</td>
+                    <td>
+                      {ev.to_status ? (
+                        <Badge bg={getStatusBadgeVariant(ev.to_status)}>
+                          {formatStatus(ev.to_status)}
+                        </Badge>
+                      ) : (
+                        '—'
+                      )}
+                    </td>
+                    <td>
+                      {ev.closed_by_username
+                        ? ev.closed_by_username
+                        : ev.closed_by_user_id
+                          ? formatAssignedTo(ev.closed_by_user_id)
+                          : '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </Table>
+          </Card.Body>
+        </Card>
+      )}
+
       {/* History Section */}
       <Card className="mb-4">
         <Card.Header>
