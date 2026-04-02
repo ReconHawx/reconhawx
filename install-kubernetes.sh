@@ -7,7 +7,6 @@
 # downloads the latest GitHub release source tarball (see --from-release / RECONHAWX_FROM_RELEASE).
 # Release install uses the extracted tree in place (full kubernetes/base from the tarball).
 # Local-repo install copies only kubernetes/base to INSTALL_STAGING_DIR (default /tmp/reconhawx).
-# Schema migrations run in-cluster via the API Deployment init container (run-migrations), not here.
 #
 # Set RECONHAWX_NO_COLOR=1 to disable ANSI styling.
 #
@@ -771,8 +770,6 @@ main() {
   ui_step "Kubernetes: waiting for PostgreSQL"
   tool_stream kubectl wait deploy/postgresql -n reconhawx --for=condition=available --timeout=5m
   ui_ok "PostgreSQL available"
-
-  ui_note "Database schema: pending migrations run in the API pod init container (run-migrations). Check: kubectl logs -n reconhawx deploy/api -c run-migrations"
 
   update_hosts_file "$hosts_ip"
 

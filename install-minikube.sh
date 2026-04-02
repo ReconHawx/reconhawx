@@ -4,7 +4,7 @@
 # Uses `minikube … kubectl` (standalone kubectl not required).
 # Manifests: local kubernetes/base when present, otherwise latest GitHub release tarball
 # (full tree in place under the extract). Local clones copy kubernetes/base to INSTALL_STAGING_DIR
-# (default /tmp/reconhawx). Schema migrations run in-cluster via the API init container (run-migrations).
+# (default /tmp/reconhawx).
 #
 # Set RECONHAWX_NO_COLOR=1 to disable ANSI styling.
 # Long tool logs: show RUN_TOOL_LONG_HEAD_LINES (default 10) on success; on failure, error-like lines plus a tail.
@@ -656,8 +656,6 @@ main() {
   ui_step "Kubernetes: waiting for PostgreSQL"
   tool_stream mk wait deploy/postgresql -n reconhawx --for=condition=available --timeout=5m
   ui_ok "PostgreSQL available"
-
-  ui_note "Database schema: pending migrations run in the API pod init container (run-migrations). Check: minikube -p ${MINIKUBE_PROFILE} kubectl -- logs -n reconhawx deploy/api -c run-migrations"
 
   local ip
   ip="$(minikube -p "$MINIKUBE_PROFILE" ip)"
