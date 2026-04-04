@@ -343,7 +343,7 @@ class JobSchedulerService:
                 elif request.job_type == JobType.PHISHLABS_BATCH:
                     self.job_submission_service.create_phishlabs_batch_job(job_id, worker_payload)
                 elif request.job_type == JobType.AI_ANALYSIS_BATCH:
-                    self.job_submission_service.create_ai_analysis_batch_job(job_id, worker_payload)
+                    await self.job_submission_service.create_ai_analysis_batch_job(job_id, worker_payload)
                 elif request.job_type == JobType.GATHER_API_FINDINGS:
                     self.job_submission_service.create_gather_api_findings_job(job_id, worker_payload)
                 elif request.job_type == JobType.SYNC_RECORDEDFUTURE_DATA:

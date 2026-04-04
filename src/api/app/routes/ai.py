@@ -31,8 +31,9 @@ async def list_models(
     current_user: UserResponse = Depends(require_superuser_or_admin),
 ):
     """List available Ollama models and the configured default if that model is installed."""
-    from services.ollama_client import ollama_client
+    from services.ai_analysis_service import create_ollama_client_from_settings
     try:
+        ollama_client = await create_ollama_client_from_settings()
         raw_models = await ollama_client.list_models()
         models = [
             {
@@ -76,7 +77,8 @@ async def health_check(
     current_user: UserResponse = Depends(get_current_user_from_middleware),
 ):
     """Check if the Ollama AI service is reachable."""
-    from services.ollama_client import ollama_client
+    from services.ai_analysis_service import create_ollama_client_from_settings
+    ollama_client = await create_ollama_client_from_settings()
     healthy = await ollama_client.health_check()
     return {
         "status": "healthy" if healthy else "unavailable",

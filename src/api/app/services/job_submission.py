@@ -5,6 +5,8 @@ import logging
 import json
 from typing import Dict, Any, Optional
 
+from services.ai_analysis_service import get_merged_ollama_connection_settings
+
 logger = logging.getLogger(__name__)
 
 
@@ -238,13 +240,20 @@ class JobSubmissionService:
             logger.error(f"Error creating Kubernetes job: {str(e)}")
             raise
 
-    def create_ai_analysis_batch_job(self, job_id: str, job_data: Dict[str, Any]):
+    async def create_ai_analysis_batch_job(self, job_id: str, job_data: Dict[str, Any]):
         """Create a Kubernetes job for AI analysis batch processing."""
         try:
             namespace = os.getenv('KUBERNETES_NAMESPACE', 'recon')
             runner_image = os.getenv('RUNNER_IMAGE', 'runner:latest')
             service_account = os.getenv('RUNNER_SERVICE_ACCOUNT', 'runner-service-account')
             int(os.getenv('JOB_TTL_SECONDS', '300'))
+
+            ollama_cfg = await get_merged_ollama_connection_settings()
+            model_override = job_data.get("model")
+            if isinstance(model_override, str) and model_override.strip():
+                ollama_model = model_override.strip()
+            else:
+                ollama_model = ollama_cfg["model"]
 
             configmap_name = f"ai-analysis-job-data-{job_id}"
             job_json = json.dumps(job_data)
@@ -297,9 +306,10 @@ class JobSubmissionService:
                     client.V1EnvVar(name="POSTGRES_PASSWORD", value=os.getenv('POSTGRES_PASSWORD', 'password')),
                     _internal_service_api_key_env_var(),
                     client.V1EnvVar(name="API_BASE_URL", value=os.getenv('API_BASE_URL', 'http://api:8000')),
-                    client.V1EnvVar(name="OLLAMA_URL", value=os.getenv('OLLAMA_URL', 'http://ollama:11434')),
-                    client.V1EnvVar(name="OLLAMA_MODEL", value=os.getenv('OLLAMA_MODEL', 'llama3:latest')),
-                    client.V1EnvVar(name="OLLAMA_TIMEOUT", value=os.getenv('OLLAMA_TIMEOUT', '900')),
+                    client.V1EnvVar(name="OLLAMA_URL", value=ollama_cfg["url"]),
+                    client.V1EnvVar(name="OLLAMA_MODEL", value=ollama_model),
+                    client.V1EnvVar(name="OLLAMA_TIMEOUT", value=str(ollama_cfg["timeout"])),
+                    client.V1EnvVar(name="OLLAMA_MAX_RETRIES", value=str(ollama_cfg["max_retries"])),
                     client.V1EnvVar(name="LOG_LEVEL", value=os.getenv('LOG_LEVEL', 'INFO')),
                 ],
                 resources=client.V1ResourceRequirements(
