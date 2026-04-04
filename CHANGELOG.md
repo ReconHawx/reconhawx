@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.9.0](https://github.com/ReconHawx/reconhawx/compare/v0.8.0...v0.9.0) (2026-04-04)
+
+
+### Features
+
+* **admin:** store Ollama connection in AI system settings ([0b1d901](https://github.com/ReconHawx/reconhawx/commit/0b1d901f4b27ea87171610968fc5f8912f809beb))
+* **k8s:** improve cluster and minikube installers ([0c46b89](https://github.com/ReconHawx/reconhawx/commit/0c46b898cf9cd36b644cccb25c33befde5d9d1f5))
+
+
+### Bug Fixes
+
+* **frontend:** improve dark mode borders and heading contrast ([abed02f](https://github.com/ReconHawx/reconhawx/commit/abed02f38416b6098596f3409608f29b375b9416))
+
 ## [0.8.0](https://github.com/ReconHawx/reconhawx/compare/v0.7.0...v0.8.0) (2026-04-02)
 
 
