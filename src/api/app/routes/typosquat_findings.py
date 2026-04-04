@@ -4273,7 +4273,7 @@ async def _create_ai_analysis_batch_job_impl(
 
     try:
         job_submission_service = JobSubmissionService()
-        job_submission_service.create_ai_analysis_batch_job(job_id, job_payload)
+        await job_submission_service.create_ai_analysis_batch_job(job_id, job_payload)
         logger.info(f"Submitted AI analysis batch job {job_id} to Kubernetes")
     except Exception as e:
         logger.error(f"Failed to submit job to Kubernetes: {str(e)}")

@@ -419,6 +419,7 @@ class InternalTokenListResponse(BaseModel):
 class AiSettingsUpdateRequest(BaseModel):
     """Request model for updating AI settings (merge into existing)"""
     typosquat: Optional[Dict[str, Any]] = Field(None, description="Typosquat AI settings")
+    ollama: Optional[Dict[str, Any]] = Field(None, description="Ollama URL, model, timeout, retries")
 
 # Internal Service Token Management Endpoints
 @router.get("/internal-tokens", response_model=InternalTokenListResponse)
@@ -587,6 +588,12 @@ async def update_ai_settings(
             for k, v in request.typosquat.items():
                 if v is not None:
                     current["typosquat"][k] = v
+
+        if request.ollama:
+            current.setdefault("ollama", {})
+            for k, v in request.ollama.items():
+                if v is not None:
+                    current["ollama"][k] = v
 
         await admin_repo.set_system_setting("ai_settings", current)
         settings = await get_ai_settings()

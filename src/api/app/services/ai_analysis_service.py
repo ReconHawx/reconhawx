@@ -9,6 +9,7 @@ optionally auto-acts on high-confidence recommendations.
 import asyncio
 import base64
 import logging
+import os
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional
 
@@ -22,7 +23,7 @@ from models.postgres import (
     TyposquatScreenshotFile,
     Program,
 )
-from services.ollama_client import OllamaClient, ollama_client
+from services.ollama_client import OllamaClient
 
 # Max screenshots to send per analysis (vision models have context limits)
 MAX_SCREENSHOTS_FOR_ANALYSIS = 2
@@ -96,7 +97,17 @@ Based on the enrichment data below, provide a threat assessment with analyst-lev
 """
 
 
-def _get_default_ai_settings_structure() -> Dict[str, Dict[str, str]]:
+def _get_default_ollama_settings() -> Dict[str, Any]:
+    """Defaults for Ollama connection (aligned with ollama_client env fallbacks)."""
+    return {
+        "url": "http://ollama:11434",
+        "model": "llama3:latest",
+        "timeout_seconds": 900,
+        "max_retries": 1,
+    }
+
+
+def _get_default_ai_settings_structure() -> Dict[str, Dict[str, Any]]:
     """Return the full default AI settings structure (in-code fallbacks)."""
     return {
         "typosquat": {
@@ -105,7 +116,64 @@ def _get_default_ai_settings_structure() -> Dict[str, Dict[str, str]]:
             "response_format_suffix": RESPONSE_FORMAT_SUFFIX,
             "user_content_prefix": DEFAULT_USER_CONTENT_PREFIX,
         },
+        "ollama": _get_default_ollama_settings(),
     }
+
+
+def _int_setting(value: Any, env_name: str, code_default: int) -> int:
+    if value is not None and str(value).strip():
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            pass
+    env_v = os.getenv(env_name)
+    if env_v and str(env_v).strip():
+        try:
+            return int(env_v)
+        except ValueError:
+            pass
+    return code_default
+
+
+def _str_setting(value: Any, env_name: str, code_default: str) -> str:
+    if value is not None and str(value).strip():
+        return str(value).strip()
+    env_v = os.getenv(env_name)
+    if env_v and str(env_v).strip():
+        return str(env_v).strip()
+    return code_default
+
+
+async def get_merged_ollama_connection_settings() -> Dict[str, Any]:
+    """
+    Effective Ollama URL, model, timeout, and retries for API and job env injection.
+    Precedence per field: non-empty DB (ai_settings.ollama) -> OLLAMA_* env -> in-code default.
+    """
+    o = await get_ai_settings("ollama")
+    if not isinstance(o, dict):
+        o = {}
+    d = _get_default_ollama_settings()
+    url = _str_setting(o.get("url"), "OLLAMA_URL", d["url"])
+    model = _str_setting(o.get("model"), "OLLAMA_MODEL", d["model"])
+    timeout = _int_setting(o.get("timeout_seconds"), "OLLAMA_TIMEOUT", d["timeout_seconds"])
+    max_retries = _int_setting(o.get("max_retries"), "OLLAMA_MAX_RETRIES", d["max_retries"])
+    return {
+        "url": url.rstrip("/"),
+        "model": model,
+        "timeout": timeout,
+        "max_retries": max_retries,
+    }
+
+
+async def create_ollama_client_from_settings(model: Optional[str] = None) -> OllamaClient:
+    """Build an OllamaClient from system settings (and optional per-request model override)."""
+    s = await get_merged_ollama_connection_settings()
+    return OllamaClient(
+        base_url=s["url"],
+        model=model or s["model"],
+        timeout=s["timeout"],
+        max_retries=s["max_retries"],
+    )
 
 
 async def get_ai_settings(feature: Optional[str] = None) -> Dict[str, Any]:
@@ -124,6 +192,8 @@ async def get_ai_settings(feature: Optional[str] = None) -> Dict[str, Any]:
     merged: Dict[str, Any] = {}
     for feat_key, feat_defaults in defaults.items():
         feat_db = db_value.get(feat_key) or {}
+        if not isinstance(feat_db, dict):
+            feat_db = {}
         merged[feat_key] = {
             k: feat_db.get(k, v)
             for k, v in feat_defaults.items()
@@ -360,7 +430,7 @@ class AIAnalysisService:
     """Orchestrates AI-powered analysis of typosquat findings."""
 
     def __init__(self, client: Optional[OllamaClient] = None):
-        self.client = client or ollama_client
+        self._optional_client = client
 
     # ------------------------------------------------------------------
     # Single finding analysis
@@ -447,7 +517,8 @@ class AIAnalysisService:
             {"role": "system", "content": system_prompt},
             user_message,
         ]
-        result = await self.client.generate(messages, model=model)
+        ollama = self._optional_client or await create_ollama_client_from_settings(model=model)
+        result = await ollama.generate(messages, model=model)
         logger.info(
             "Received from Ollama: threat_level=%s confidence=%s",
             result.get("threat_level"), result.get("confidence"),

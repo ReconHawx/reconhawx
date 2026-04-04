@@ -100,7 +100,8 @@ function SystemSettings() {
 
   const FEATURE_LABELS = {
     typosquat: 'Typosquat Analysis',
-    nuclei: 'Nuclei Analysis'
+    nuclei: 'Nuclei Analysis',
+    ollama: 'Ollama connection'
   };
   const FIELD_LABELS = {
     default_prompt: 'Default System Prompt',
@@ -218,7 +219,24 @@ function SystemSettings() {
     try {
       setAiSettingsSaving(true);
       setError('');
-      const payload = { typosquat: aiEditForm.typosquat || {} };
+      const o = aiEditForm.ollama || {};
+      const payload = {
+        typosquat: aiEditForm.typosquat || {},
+        ollama: {
+          url: o.url ?? '',
+          model: o.model ?? '',
+          timeout_seconds: parseInt(String(o.timeout_seconds ?? '900'), 10),
+          max_retries: parseInt(String(o.max_retries ?? '1'), 10)
+        }
+      };
+      if (Number.isNaN(payload.ollama.timeout_seconds)) {
+        setError('Ollama timeout must be a valid number');
+        return;
+      }
+      if (Number.isNaN(payload.ollama.max_retries)) {
+        setError('Ollama max retries must be a valid number');
+        return;
+      }
       await adminAPI.updateAiSettings(payload);
       setSuccess('AI settings saved successfully');
       loadAiSettings();
@@ -847,51 +865,144 @@ function SystemSettings() {
                   </div>
                 </Card.Header>
                 <Card.Body>
-                  <Alert variant="info" className="mb-4">
-                    <strong>How the Ollama message is built:</strong> The API sends a 2-message array. <strong>System</strong> = Default Prompt + Rules and Mapping. <strong>User</strong> = User Message Prefix (with {'{RESPONSE_FORMAT_SUFFIX}'} replaced) + the finding&apos;s enrichment data (DNS, WHOIS, HTTP probes, screenshot text), which is appended automatically.
-                  </Alert>
                   {aiSettingsLoading ? (
                     <div className="text-center py-4">
                       <Spinner animation="border" />
                       <p className="mt-2 text-muted">Loading AI settings...</p>
                     </div>
-                  ) : Object.keys(aiEditForm).length > 0 ? (
-                    <Tabs defaultActiveKey={Object.keys(aiEditForm)[0]} className="mb-0">
-                      {Object.entries(aiEditForm).map(([featureKey, featureData]) => (
-                        <Tab
-                          eventKey={featureKey}
-                          title={FEATURE_LABELS[featureKey] || featureKey}
-                          key={featureKey}
-                        >
-                          {['default_prompt', 'rules_and_mapping_instructions', 'response_format_suffix', 'user_content_prefix'].map((fieldKey) => (
-                            <Form.Group className="mb-4" key={fieldKey}>
-                              <Form.Label>{FIELD_LABELS[fieldKey] || fieldKey}</Form.Label>
-                              <Form.Control
-                                as="textarea"
-                                rows={fieldKey === 'default_prompt' || fieldKey === 'rules_and_mapping_instructions' ? 8 : 6}
-                                value={featureData?.[fieldKey] ?? ''}
-                                onChange={(e) => handleAiFieldChange(featureKey, fieldKey, e.target.value)}
-                                className="font-monospace"
-                                style={{ fontSize: '0.9rem' }}
-                              />
-                              <Form.Text className="text-muted">
-                                {FIELD_HELP[fieldKey]}
-                              </Form.Text>
-                            </Form.Group>
-                          ))}
+                  ) : (
+                    <>
+                      <Card className="mb-4 border-secondary">
+                        <Card.Header>
+                          <h6 className="mb-0">Ollama connection</h6>
+                        </Card.Header>
+                        <Card.Body>
+                          <p className="text-muted small mb-3">
+                            Used by the API for model calls and copied into each AI analysis batch runner job at submit time.
+                            Changing these settings does not affect jobs already running.
+                          </p>
+                          <Row className="g-3">
+                            <Col md={12}>
+                              <Form.Group>
+                                <Form.Label>Ollama base URL</Form.Label>
+                                <Form.Control
+                                  type="text"
+                                  value={aiEditForm.ollama?.url ?? ''}
+                                  onChange={(e) => handleAiFieldChange('ollama', 'url', e.target.value)}
+                                  disabled={aiSettingsSaving}
+                                  className="font-monospace"
+                                />
+                                <Form.Text className="text-muted">
+                                  Example: http://ollama:11434 or http://host.minikube.internal:11434
+                                </Form.Text>
+                              </Form.Group>
+                            </Col>
+                            <Col md={6}>
+                              <Form.Group>
+                                <Form.Label>Default model</Form.Label>
+                                <Form.Control
+                                  type="text"
+                                  value={aiEditForm.ollama?.model ?? ''}
+                                  onChange={(e) => handleAiFieldChange('ollama', 'model', e.target.value)}
+                                  disabled={aiSettingsSaving}
+                                  className="font-monospace"
+                                />
+                              </Form.Group>
+                            </Col>
+                            <Col md={3}>
+                              <Form.Group>
+                                <Form.Label>Timeout (seconds)</Form.Label>
+                                <Form.Control
+                                  type="number"
+                                  min={1}
+                                  value={aiEditForm.ollama?.timeout_seconds ?? ''}
+                                  onChange={(e) =>
+                                    handleAiFieldChange('ollama', 'timeout_seconds', e.target.value === '' ? '' : parseInt(e.target.value, 10))
+                                  }
+                                  disabled={aiSettingsSaving}
+                                />
+                              </Form.Group>
+                            </Col>
+                            <Col md={3}>
+                              <Form.Group>
+                                <Form.Label>Max retries</Form.Label>
+                                <Form.Control
+                                  type="number"
+                                  min={0}
+                                  value={aiEditForm.ollama?.max_retries ?? ''}
+                                  onChange={(e) =>
+                                    handleAiFieldChange('ollama', 'max_retries', e.target.value === '' ? '' : parseInt(e.target.value, 10))
+                                  }
+                                  disabled={aiSettingsSaving}
+                                />
+                              </Form.Group>
+                            </Col>
+                          </Row>
                           <Button
                             variant="outline-warning"
                             size="sm"
-                            onClick={() => handleResetAiSettings(featureKey)}
+                            className="mt-2"
+                            onClick={() => handleResetAiSettings('ollama')}
                             disabled={aiSettingsSaving}
                           >
-                            Reset to defaults
+                            Reset Ollama to defaults
                           </Button>
-                        </Tab>
-                      ))}
-                    </Tabs>
-                  ) : (
-                    <p className="text-muted text-center py-4 mb-0">No AI features configured. Settings will use in-code defaults.</p>
+                        </Card.Body>
+                      </Card>
+
+                      <Alert variant="info" className="mb-4">
+                        <strong>How the Ollama message is built:</strong> The API sends a 2-message array. <strong>System</strong> = Default Prompt + Rules and Mapping. <strong>User</strong> = User Message Prefix (with {'{RESPONSE_FORMAT_SUFFIX}'} replaced) + the finding&apos;s enrichment data (DNS, WHOIS, HTTP probes, screenshot text), which is appended automatically.
+                      </Alert>
+                      {Object.entries(aiEditForm).filter(([k]) => k !== 'ollama').length > 0 ? (
+                        <Tabs
+                          defaultActiveKey={
+                            Object.entries(aiEditForm).filter(([k]) => k !== 'ollama')[0]?.[0] || 'typosquat'
+                          }
+                          className="mb-0"
+                        >
+                          {Object.entries(aiEditForm)
+                            .filter(([featureKey]) => featureKey !== 'ollama')
+                            .map(([featureKey, featureData]) => (
+                              <Tab
+                                eventKey={featureKey}
+                                title={FEATURE_LABELS[featureKey] || featureKey}
+                                key={featureKey}
+                              >
+                                {['default_prompt', 'rules_and_mapping_instructions', 'response_format_suffix', 'user_content_prefix'].map((fieldKey) => (
+                                  <Form.Group className="mb-4" key={fieldKey}>
+                                    <Form.Label>{FIELD_LABELS[fieldKey] || fieldKey}</Form.Label>
+                                    <Form.Control
+                                      as="textarea"
+                                      rows={
+                                        fieldKey === 'default_prompt' || fieldKey === 'rules_and_mapping_instructions'
+                                          ? 8
+                                          : 6
+                                      }
+                                      value={featureData?.[fieldKey] ?? ''}
+                                      onChange={(e) => handleAiFieldChange(featureKey, fieldKey, e.target.value)}
+                                      className="font-monospace"
+                                      style={{ fontSize: '0.9rem' }}
+                                    />
+                                    <Form.Text className="text-muted">{FIELD_HELP[fieldKey]}</Form.Text>
+                                  </Form.Group>
+                                ))}
+                                <Button
+                                  variant="outline-warning"
+                                  size="sm"
+                                  onClick={() => handleResetAiSettings(featureKey)}
+                                  disabled={aiSettingsSaving}
+                                >
+                                  Reset to defaults
+                                </Button>
+                              </Tab>
+                            ))}
+                        </Tabs>
+                      ) : (
+                        <p className="text-muted text-center py-4 mb-0">
+                          No prompt feature settings loaded. Typosquat prompts will use in-code defaults until loaded.
+                        </p>
+                      )}
+                    </>
                   )}
                 </Card.Body>
               </Card>
