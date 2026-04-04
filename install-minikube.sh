@@ -96,7 +96,7 @@ ui_ok() {
 }
 
 ui_note() {
-  printf '%s  %s%s\n' "$_D" "$*" "$_Z"
+  printf '%s  %s%s\n' "$_D" "$*" "$_Z" >&2
 }
 
 # Stream minikube/kubectl (and similar) output: prefixed gutter so it reads separately from installer text.
@@ -221,6 +221,7 @@ Environment:
   RECONHAWX_FROM_RELEASE   unset = auto; 0 = local kubernetes/base only; 1 = release tarball only.
   RECONHAWX_GITHUB_REPO    owner/repo (default: ReconHawx/reconhawx).
   INSTALL_STAGING_DIR      Git-clone installs: staging copy (default: /tmp/reconhawx); deleted after success.
+  INGRESS_HOST             Frontend URL hostname (default: reconhawx.local); also written to frontend-ingress when not default.
 EOF
 }
 
@@ -405,6 +406,19 @@ write_secrets_from_examples() {
   ui_ok "Wrote secrets under $base/secrets/ (values not shown)."
 }
 
+# Ship host is reconhawx.local; replace only when the installer picks another name.
+patch_frontend_ingress_host_if_custom() {
+  local base="$1" host="$2" ing otmp
+  ing="$base/frontend/frontend-ingress.yaml"
+  [[ -f "$ing" ]] || die "missing frontend ingress manifest: $ing"
+  if [[ "$host" != "reconhawx.local" ]]; then
+    otmp="$(mktemp)"
+    awk -v h="$host" '$0 == "  - host: reconhawx.local" { print "  - host: " h; next } { print }' "$ing" >"$otmp"
+    mv "$otmp" "$ing"
+    ui_note "frontend-ingress: using host ${host}"
+  fi
+}
+
 hosts_lines_matching_reconhawx_local() {
   local pat
   pat="$(_dots_escape_host "$INGRESS_HOST")"
@@ -568,6 +582,13 @@ main() {
     sync_kubernetes_base "$BASE_SRC" "$BASE_DST"
     ui_ok "Manifest tree ready"
   fi
+
+  local _ingress_reply
+  read_installer -r -p "$(printf '%sinstaller · %s' "$_B" "Frontend ingress hostname [${INGRESS_HOST}]: ")" _ingress_reply
+  _ingress_reply="$(printf '%s' "${_ingress_reply:-$INGRESS_HOST}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+  [[ -n "$_ingress_reply" ]] || _ingress_reply=reconhawx.local
+  INGRESS_HOST="$_ingress_reply"
+  patch_frontend_ingress_host_if_custom "$BASE_DST" "$INGRESS_HOST"
 
   local default_profile=reconhawx
   read_installer -r -p "$(printf '%sinstaller · %s' "$_B" "Minikube profile (cluster name) [${default_profile}]: ")" MINIKUBE_PROFILE
