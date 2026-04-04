@@ -85,7 +85,7 @@ ui_ok() {
 }
 
 ui_note() {
-  printf '%s  %s%s\n' "$_D" "$*" "$_Z"
+  printf '%s  %s%s\n' "$_D" "$*" "$_Z" >&2
 }
 
 tool_stream() {

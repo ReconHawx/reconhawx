@@ -101,7 +101,7 @@ ui_ok() {
 }
 
 ui_note() {
-  printf '%s  %s%s\n' "$_D" "$*" "$_Z"
+  printf '%s  %s%s\n' "$_D" "$*" "$_Z" >&2
 }
 
 # Run the given command (e.g. kubectl …) with optional log gutter on TTY. Pass the full argv (do not wrap kubectl twice).
@@ -225,6 +225,7 @@ Environment:
   RECONHAWX_FROM_RELEASE   unset = auto; 0 = require local kubernetes/base; 1 = require release tarball.
   RECONHAWX_GITHUB_REPO    owner/repo (default: ReconHawx/reconhawx).
   INSTALL_STAGING_DIR      Git-clone installs only: staging copy (default: /tmp/reconhawx); deleted after success.
+  INGRESS_HOST             Frontend URL hostname (default: reconhawx.local); also written to frontend-ingress when not default.
 
 Examples (no git clone):
 
@@ -420,6 +421,19 @@ write_secrets_from_examples() {
   ui_ok "Wrote secrets under $base/secrets/ (values not shown)."
 }
 
+# Ship host is reconhawx.local; replace only when the installer picks another name.
+patch_frontend_ingress_host_if_custom() {
+  local base="$1" host="$2" ing otmp
+  ing="$base/frontend/frontend-ingress.yaml"
+  [[ -f "$ing" ]] || die "missing frontend ingress manifest: $ing"
+  if [[ "$host" != "reconhawx.local" ]]; then
+    otmp="$(mktemp)"
+    awk -v h="$host" '$0 == "  - host: reconhawx.local" { print "  - host: " h; next } { print }' "$ing" >"$otmp"
+    mv "$otmp" "$ing"
+    ui_note "frontend-ingress: using host ${host}"
+  fi
+}
+
 hosts_lines_matching_reconhawx_local() {
   local pat
   pat="$(_dots_escape_host "$INGRESS_HOST")"
@@ -508,7 +522,6 @@ list_cluster_nodes() {
 print_node_menu() {
   local i
   ui_step "Cluster nodes (runner hosts API stack; workers run workflow tasks; a node may be both)"
-  tool_stream kubectl get nodes -o wide
   printf '\n'
   for i in "${!CLUSTER_NODES[@]}"; do
     printf '%s  %2d) %s%s\n' "$_D" "$((i + 1))" "${CLUSTER_NODES[$i]}" "$_Z"
@@ -571,6 +584,27 @@ apply_node_labels() {
     tool_stream kubectl label node "$n" reconhawx.worker=true --overwrite
   done
   ui_ok "Node labels applied"
+}
+
+# Populates RUNNER_NODES / WORKER_NODES with nodes that already have reconhawx.runner=true / reconhawx.worker=true.
+collect_reconhawx_node_roles_from_cluster() {
+  RUNNER_NODES=()
+  WORKER_NODES=()
+  local n rv wv
+  for n in "${CLUSTER_NODES[@]}"; do
+    rv="$(kubectl get node "$n" -o jsonpath='{.metadata.labels.reconhawx\.runner}' 2>/dev/null || true)"
+    wv="$(kubectl get node "$n" -o jsonpath='{.metadata.labels.reconhawx\.worker}' 2>/dev/null || true)"
+    if [[ "$rv" == "true" ]]; then
+      RUNNER_NODES+=("$n")
+    fi
+    if [[ "$wv" == "true" ]]; then
+      WORKER_NODES+=("$n")
+    fi
+  done
+}
+
+cluster_already_has_runner_and_worker_labels() {
+  [[ ${#RUNNER_NODES[@]} -gt 0 && ${#WORKER_NODES[@]} -gt 0 ]]
 }
 
 discover_or_prompt_ingress_ip() {
@@ -678,6 +712,13 @@ main() {
     sync_kubernetes_base "$BASE_SRC" "$BASE_DST"
   fi
 
+  local _ingress_reply
+  read_installer -r -p "$(printf '%sinstaller · %s' "$_B" "Frontend ingress hostname [${INGRESS_HOST}]: ")" _ingress_reply
+  _ingress_reply="$(printf '%s' "${_ingress_reply:-$INGRESS_HOST}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+  [[ -n "$_ingress_reply" ]] || _ingress_reply=reconhawx.local
+  INGRESS_HOST="$_ingress_reply"
+  patch_frontend_ingress_host_if_custom "$BASE_DST" "$INGRESS_HOST"
+
   local jwt_plain refresh_plain pg_user pg_pass
   ui_note "JWT / refresh: leave empty for random hex keys (base64-encoded in manifests, per docs)."
   read_installer -r -s -p "$(printf '%sinstaller · %s' "$_B" "JWT signing secret (empty = random): ")" jwt_plain
@@ -703,8 +744,28 @@ main() {
 
   list_cluster_nodes
   print_node_menu
-  prompt_node_roles
-  apply_node_labels
+  collect_reconhawx_node_roles_from_cluster
+  if cluster_already_has_runner_and_worker_labels; then
+    local rs ws labeling_ok
+    printf -v rs '%s, ' "${RUNNER_NODES[@]}"
+    rs="${rs%, }"
+    printf -v ws '%s, ' "${WORKER_NODES[@]}"
+    ws="${ws%, }"
+    ui_note "Existing labels — runners: ${rs}; workers: ${ws}"
+    read_installer -r -p "$(printf '%sinstaller · %s' "$_B" "Keep current runner/worker labels? [Y/n] ")" labeling_ok
+    case "${labeling_ok:-y}" in
+    n | N | no | NO | No)
+      prompt_node_roles
+      apply_node_labels
+      ;;
+    *)
+      ui_ok "Keeping existing node labels"
+      ;;
+    esac
+  else
+    prompt_node_roles
+    apply_node_labels
+  fi
 
   ui_step "Kubernetes: ensuring namespace reconhawx"
   kubectl create namespace reconhawx --dry-run=client -o yaml | kubectl apply -f -
@@ -734,7 +795,12 @@ main() {
   wait_ingress_nginx_admission_endpoints
   ui_ok "Ingress admission webhook should be reachable"
 
-  local hosts_ip="" ml_ans pool_ip
+  local hosts_ip="" ml_ans pool_ip want_hosts=1 hosts_ans
+  read_installer -r -p "$(printf '%sinstaller · %s' "$_B" "Add ${INGRESS_HOST} to /etc/hosts (requires sudo)? [Y/n] ")" hosts_ans
+  case "${hosts_ans:-y}" in
+  n | N | no | NO | No) want_hosts=0 ;;
+  esac
+
   read_installer -r -p "$(printf '%sinstaller · %s' "$_B" "Install MetalLB (optional, for LoadBalancer IPs)? [y/N] ")" ml_ans
   case "$ml_ans" in
   y | Y | yes | YES | Yes)
@@ -749,11 +815,20 @@ main() {
     [[ -f "$ml_ex" ]] || die "missing $ml_ex"
     sed "s#LB_IP_PLACEHOLDER#${pool_ip}#g" "$ml_ex" >"$ml_out"
     tool_stream kubectl apply -f "$ml_out"
-    hosts_ip="$pool_ip"
-    ui_ok "MetalLB configured; using ${pool_ip} for /etc/hosts."
+    if [[ "$want_hosts" -eq 1 ]]; then
+      hosts_ip="$pool_ip"
+      ui_ok "MetalLB configured; using ${pool_ip} for /etc/hosts."
+    else
+      ui_ok "MetalLB configured (pool IP ${pool_ip})."
+      ui_note "Skipping /etc/hosts; map ${INGRESS_HOST} to your ingress (e.g. ${pool_ip}) via DNS or a manual hosts file."
+    fi
     ;;
   *)
-    hosts_ip="$(discover_or_prompt_ingress_ip)"
+    if [[ "$want_hosts" -eq 1 ]]; then
+      hosts_ip="$(discover_or_prompt_ingress_ip)"
+    else
+      ui_note "Skipping /etc/hosts; map ${INGRESS_HOST} to your ingress via DNS or a manual hosts file."
+    fi
     ;;
   esac
 
@@ -775,7 +850,9 @@ main() {
   tool_stream kubectl wait deploy/postgresql -n reconhawx --for=condition=available --timeout=5m
   ui_ok "PostgreSQL available"
 
-  update_hosts_file "$hosts_ip"
+  if [[ -n "$hosts_ip" ]]; then
+    update_hosts_file "$hosts_ip"
+  fi
 
   ui_step "Kubernetes: waiting for API and frontend"
   tool_stream kubectl wait deploy/frontend deploy/api -n reconhawx --for=condition=available --timeout=5m

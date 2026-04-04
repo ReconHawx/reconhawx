@@ -83,7 +83,7 @@ ui_ok() {
 }
 
 ui_note() {
-  printf '%s  %s%s\n' "$_D" "$*" "$_Z"
+  printf '%s  %s%s\n' "$_D" "$*" "$_Z" >&2
 }
 
 # Pass the full command (e.g. tool_stream kubectl delete …). Same pattern as install-minikube.sh tool_stream.
@@ -261,7 +261,7 @@ uninstall_kueue_completely() {
   if ns_exists kueue-system; then
     ui_note "Namespace kueue-system still exists; you may need to remove finalizers on remaining objects or run kubectl get ns kueue-system -o yaml"
   else
-    ui_ok "Kueue uninstalled (controller namespace and CRDs should be gone)"
+    ui_ok "Kueue uninstalled"
   fi
 }
 
@@ -291,8 +291,6 @@ delete_cluster_scoped_grep() {
 
 # Match install-kubernetes.sh: cloud deploy manifest + webhook teardown (namespace-only delete often hangs).
 uninstall_ingress_nginx_completely() {
-  ui_note "Removing admission webhooks first, then the controller manifest, then the namespace. Other ingress classes or shared controllers may use different names."
-
   delete_ingress_nginx_webhooks
   sleep 2
 
