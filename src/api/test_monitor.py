@@ -14,7 +14,7 @@ DB_CONFIG = {
     "port": os.getenv("POSTGRES_PORT", "5432"),
     "user": os.getenv("POSTGRES_USER", "admin"),
     "password": os.getenv("POSTGRES_PASSWORD", "password"),
-    "database": os.getenv("DATABASE_NAME", "recon_db")
+    "database": os.getenv("DATABASE_NAME", "reconhawx")
 }
 
 def test_connection():

@@ -24,7 +24,7 @@ class DummyBatchTask:
         # PostgreSQL connection parameters
         self.db_host = os.getenv("POSTGRES_HOST", "localhost")
         self.db_port = int(os.getenv("POSTGRES_PORT", "5432"))
-        self.db_name = os.getenv("DATABASE_NAME", "recon_db")
+        self.db_name = os.getenv("DATABASE_NAME", "reconhawx")
         self.db_user = os.getenv("POSTGRES_USER", "admin")
         self.db_password = os.getenv("POSTGRES_PASSWORD", "password")
     

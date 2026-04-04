@@ -35,7 +35,7 @@ def setup_logging(verbose: bool = False):
 
 def get_db_url(port: Optional[int] = None) -> str:
     """Get database URL from environment or default, optionally overriding the port."""
-    base_url = os.getenv('DATABASE_URL', 'postgresql://admin:password@localhost:5432/recon_db')
+    base_url = os.getenv('DATABASE_URL', 'postgresql://admin:password@localhost:5432/reconhawx')
     
     # If a custom port is provided, replace the port in the URL
     if port is not None:

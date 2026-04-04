@@ -148,7 +148,7 @@ class JobSubmissionService:
                     # PostgreSQL connection
                     client.V1EnvVar(name="POSTGRES_HOST", value=os.getenv('POSTGRES_HOST', 'postgresql')),
                     client.V1EnvVar(name="POSTGRES_PORT", value=os.getenv('POSTGRES_PORT', '5432')),
-                    client.V1EnvVar(name="DATABASE_NAME", value=os.getenv('DATABASE_NAME', 'recon_db')),
+                    client.V1EnvVar(name="DATABASE_NAME", value=os.getenv('DATABASE_NAME', 'reconhawx')),
                     client.V1EnvVar(name="POSTGRES_USER", value=os.getenv('POSTGRES_USER', 'admin')),
                     client.V1EnvVar(name="POSTGRES_PASSWORD", value=os.getenv('POSTGRES_PASSWORD', 'password')),
                     _internal_service_api_key_env_var(),
@@ -292,7 +292,7 @@ class JobSubmissionService:
                 env=[
                     client.V1EnvVar(name="POSTGRES_HOST", value=os.getenv('POSTGRES_HOST', 'postgresql')),
                     client.V1EnvVar(name="POSTGRES_PORT", value=os.getenv('POSTGRES_PORT', '5432')),
-                    client.V1EnvVar(name="DATABASE_NAME", value=os.getenv('DATABASE_NAME', 'recon_db')),
+                    client.V1EnvVar(name="DATABASE_NAME", value=os.getenv('DATABASE_NAME', 'reconhawx')),
                     client.V1EnvVar(name="POSTGRES_USER", value=os.getenv('POSTGRES_USER', 'admin')),
                     client.V1EnvVar(name="POSTGRES_PASSWORD", value=os.getenv('POSTGRES_PASSWORD', 'password')),
                     _internal_service_api_key_env_var(),
@@ -426,12 +426,12 @@ class JobSubmissionService:
                 env=[
                     # Service URLs
                     client.V1EnvVar(name="MONGO_URI", value=os.getenv('MONGO_URI')),
-                    client.V1EnvVar(name="MONGO_DATABASE_NAME", value="recon_db"),
+                    client.V1EnvVar(name="MONGO_DATABASE_NAME", value="reconhawx"),
 
                     # PostgreSQL connection
                     client.V1EnvVar(name="POSTGRES_HOST", value=os.getenv('POSTGRES_HOST', 'postgresql')),
                     client.V1EnvVar(name="POSTGRES_PORT", value=os.getenv('POSTGRES_PORT', '5432')),
-                    client.V1EnvVar(name="DATABASE_NAME", value=os.getenv('DATABASE_NAME', 'recon_db')),
+                    client.V1EnvVar(name="DATABASE_NAME", value=os.getenv('DATABASE_NAME', 'reconhawx')),
                     client.V1EnvVar(name="POSTGRES_USER", value=os.getenv('POSTGRES_USER', 'admin')),
                     client.V1EnvVar(name="POSTGRES_PASSWORD", value=os.getenv('POSTGRES_PASSWORD', 'password')),
 
@@ -585,7 +585,7 @@ class JobSubmissionService:
                     # PostgreSQL connection
                     client.V1EnvVar(name="POSTGRES_HOST", value=os.getenv('POSTGRES_HOST', 'postgresql')),
                     client.V1EnvVar(name="POSTGRES_PORT", value=os.getenv('POSTGRES_PORT', '5432')),
-                    client.V1EnvVar(name="DATABASE_NAME", value=os.getenv('DATABASE_NAME', 'recon_db')),
+                    client.V1EnvVar(name="DATABASE_NAME", value=os.getenv('DATABASE_NAME', 'reconhawx')),
                     client.V1EnvVar(name="POSTGRES_USER", value=os.getenv('POSTGRES_USER', 'admin')),
                     client.V1EnvVar(name="POSTGRES_PASSWORD", value=os.getenv('POSTGRES_PASSWORD', 'password')),
                     _internal_service_api_key_env_var(),
@@ -739,7 +739,7 @@ class JobSubmissionService:
                     # PostgreSQL connection
                     client.V1EnvVar(name="POSTGRES_HOST", value=os.getenv('POSTGRES_HOST', 'postgresql')),
                     client.V1EnvVar(name="POSTGRES_PORT", value=os.getenv('POSTGRES_PORT', '5432')),
-                    client.V1EnvVar(name="DATABASE_NAME", value=os.getenv('DATABASE_NAME', 'recon_db')),
+                    client.V1EnvVar(name="DATABASE_NAME", value=os.getenv('DATABASE_NAME', 'reconhawx')),
                     client.V1EnvVar(name="POSTGRES_USER", value=os.getenv('POSTGRES_USER', 'admin')),
                     client.V1EnvVar(name="POSTGRES_PASSWORD", value=os.getenv('POSTGRES_PASSWORD', 'password')),
 
@@ -896,7 +896,7 @@ class JobSubmissionService:
                     # PostgreSQL connection
                     client.V1EnvVar(name="POSTGRES_HOST", value=os.getenv('POSTGRES_HOST', 'postgresql')),
                     client.V1EnvVar(name="POSTGRES_PORT", value=os.getenv('POSTGRES_PORT', '5432')),
-                    client.V1EnvVar(name="DATABASE_NAME", value=os.getenv('DATABASE_NAME', 'recon_db')),
+                    client.V1EnvVar(name="DATABASE_NAME", value=os.getenv('DATABASE_NAME', 'reconhawx')),
                     client.V1EnvVar(name="POSTGRES_USER", value=os.getenv('POSTGRES_USER', 'admin')),
                     client.V1EnvVar(name="POSTGRES_PASSWORD", value=os.getenv('POSTGRES_PASSWORD', 'password')),
 
