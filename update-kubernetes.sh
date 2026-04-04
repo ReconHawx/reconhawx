@@ -156,6 +156,16 @@ require_cmd() {
   command -v "$1" &>/dev/null || die "missing required command: $1"
 }
 
+read_installer() {
+  if [[ -t 0 ]]; then
+    read "$@" || die "Unexpected end of input"
+  elif [[ -r /dev/tty ]]; then
+    read "$@" </dev/tty || die "Cannot read prompts (try saving this script and running bash update-kubernetes.sh)"
+  else
+    die "No TTY for prompts. Save the script and run: bash update-kubernetes.sh"
+  fi
+}
+
 usage() {
   cat <<'EOF'
 Usage: update-kubernetes.sh [options]
@@ -168,6 +178,7 @@ Environment:
   RECONHAWX_FROM_RELEASE   unset = auto (local kubernetes/base if present, else release).
   RECONHAWX_GITHUB_REPO    owner/repo (default: ReconHawx/reconhawx).
   RECONHAWX_NS             Namespace (default: reconhawx).
+  INSTALL_STAGING_DIR      Git clones only: copied manifests before apply (default: /tmp/reconhawx); removed after success.
 
 Inspect deployed manifest version:
   kubectl get configmap reconhawx-version -n reconhawx -o jsonpath='{.data.APP_VERSION}{"\n"}'
@@ -221,6 +232,13 @@ main() {
     ui_note "Cluster has no reconhawx-version ConfigMap yet (upgrade tracking starts after this release)."
   fi
 
+  local upgrade_staged=0 upgrade_stage_root=""
+  if [[ "${RECONHAWX_INSTALL_FROM_RELEASE:-0}" -eq 0 ]] && [[ -e "$REPO_ROOT/.git" ]]; then
+    upgrade_stage_root="${INSTALL_STAGING_DIR:-/tmp/reconhawx}"
+    BASE_SRC="$(reconhawx_stage_kubernetes_upgrade_manifests "$REPO_ROOT" "$upgrade_stage_root")"
+    upgrade_staged=1
+  fi
+
   local base_up
   base_up="$(reconhawx_base_update_dir "$BASE_SRC")"
 
@@ -228,6 +246,8 @@ main() {
   if [[ -n "${KUBECONFIG:-}" ]]; then
     ui_note "Using KUBECONFIG=${KUBECONFIG}"
   fi
+
+  reconhawx_sync_frontend_ingress_manifest_from_cluster "$BASE_SRC" "$RECONHAWX_NS" kubectl
 
   local _attempt _max=6
   for _attempt in $(seq 1 "$_max"); do
@@ -260,6 +280,9 @@ main() {
   ui_note "Inspect deployed manifest version: kubectl get configmap reconhawx-version -n ${RECONHAWX_NS} -o jsonpath='{.data.APP_VERSION}'"
   if [[ "${RECONHAWX_INSTALL_FROM_RELEASE:-0}" -eq 1 ]] && [[ -n "${RECONHAWX_SOURCE_TREE_ROOT:-}" ]]; then
     ui_note "Release source tree left at ${RECONHAWX_SOURCE_TREE_ROOT}"
+  fi
+  if [[ "$upgrade_staged" -eq 1 ]]; then
+    reconhawx_update_staging_cleanup_on_success "$upgrade_stage_root"
   fi
 }
 
