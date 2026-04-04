@@ -67,26 +67,26 @@ spec:
           containerPort: 8002
           protocol: TCP
         
-        livenessProbe:
-          exec:
-            command:
-            - python
-            - -c
-            - "from main import CTMonitorService; print('OK')"
-          initialDelaySeconds: 30
-          periodSeconds: 60
-          timeoutSeconds: 10
-          failureThreshold: 3
+        # livenessProbe:
+        #   exec:
+        #     command:
+        #     - python
+        #     - -c
+        #     - "from main import CTMonitorService; print('OK')"
+        #   initialDelaySeconds: 30
+        #   periodSeconds: 60
+        #   timeoutSeconds: 10
+        #   failureThreshold: 3
         
-        readinessProbe:
-          exec:
-            command:
-            - python
-            - -c
-            - "import aiohttp; import nats; import cryptography; print('OK')"
-          initialDelaySeconds: 10
-          periodSeconds: 30
-          timeoutSeconds: 5
+        # readinessProbe:
+        #   exec:
+        #     command:
+        #     - python
+        #     - -c
+        #     - "import aiohttp; import nats; import cryptography; print('OK')"
+        #   initialDelaySeconds: 10
+        #   periodSeconds: 30
+        #   timeoutSeconds: 5
       restartPolicy: Always
       terminationGracePeriodSeconds: 30
 

@@ -26,6 +26,11 @@
 #   (APP_VERSION — tied to release-please / cluster ConfigMap reconhawx-version).
 # - Locate kubernetes/base-update next to kubernetes/base (safe apply without
 #   re-applying jwt/postgres secrets from git).
+# - Sync frontend Ingress host in kubernetes/base from the cluster before upgrade apply
+#   so custom install hostnames are not overwritten by the repo default.
+# - From a git clone, copy kubernetes/base and kubernetes/base-update to
+#   INSTALL_STAGING_DIR (default /tmp/reconhawx) so patches do not dirty the repo;
+#   release trees apply from the extracted path in place.
 #
 # Usage
 # -----
@@ -35,6 +40,7 @@
 # The caller must define: die(), require_cmd(). If download path runs, it also
 # calls ui_step, ui_ok, ui_note — define those for consistent installer-style
 # output, or stub them if you need a silent/tooling caller.
+# Git staging paths also need read_installer() (and _B/_Z if you style prompts).
 #
 # Not runnable on its own (no main); do not execute directly.
 #
@@ -150,8 +156,86 @@ reconhawx_resolve_kubernetes_base_src() {
     reconhawx_download_release_kubernetes_base_set_BASE_SRC
   else
     [[ -d "$BASE_SRC" ]] || die "kubernetes/base not found at $BASE_SRC (use --from-release or RECONHAWX_FROM_RELEASE=1)"
-    RECONHAWX_INSTALL_FROM_RELEASE=0
     RECONHAWX_SOURCE_TREE_ROOT="$REPO_ROOT"
+    if [[ -e "$REPO_ROOT/.git" ]]; then
+      RECONHAWX_INSTALL_FROM_RELEASE=0
+    else
+      RECONHAWX_INSTALL_FROM_RELEASE=1
+    fi
+  fi
+}
+
+reconhawx_sync_directory_tree() {
+  local src="$1" dst="$2"
+  if command -v rsync &>/dev/null; then
+    mkdir -p "$dst"
+    rsync -a --delete "$src/" "$dst/"
+  else
+    rm -rf "$dst"
+    mkdir -p "$dst"
+    cp -a "$src"/. "$dst"/
+  fi
+}
+
+reconhawx_ensure_install_prefix() {
+  local root="$1"
+  if [[ -d "$root" ]] && [[ -w "$root" ]]; then
+    return 0
+  fi
+  local parent
+  parent="$(dirname "$root")"
+  if [[ -d "$parent" ]] && [[ -w "$parent" ]]; then
+    mkdir -p "$root/kubernetes/base" 2>/dev/null && return 0
+  fi
+  ui_note "Creating staging directory with sudo: $root"
+  sudo mkdir -p "$root/kubernetes"
+  sudo chown -R "$(id -u):$(id -g)" "$root"
+}
+
+# If staging_dir exists, prompt to remove (needs read_installer, ui_*, die, _B, _Z).
+reconhawx_staging_dir_prepare() {
+  local dir="$1"
+  if [[ ! -e "$dir" ]]; then
+    return 0
+  fi
+  ui_note "Upgrade staging path ${dir} already exists."
+  local ans
+  read_installer -r -p "$(printf '%supgrade · %s' "$_B" "Remove ${dir} and continue? [y/N] ")" ans
+  case "$ans" in
+  y | Y | yes | YES | Yes)
+    rm -rf "$dir"
+    ui_note "Removed ${dir}"
+    ;;
+  *)
+    die "Aborted: remove or rename ${dir} and re-run."
+    ;;
+  esac
+}
+
+# Copy kubernetes/base and kubernetes/base-update under staging_root; print new kubernetes/base path
+# on stdout only. Helpers here must not write ui_ok/ui_step to stdout (callers use BASE_SRC="$(…)").
+reconhawx_stage_kubernetes_upgrade_manifests() {
+  local repo_root="$1" staging_root="$2"
+  local dst_base="$staging_root/kubernetes/base" dst_up="$staging_root/kubernetes/base-update"
+  [[ -d "$repo_root/kubernetes/base-update" ]] || die "missing ${repo_root}/kubernetes/base-update"
+  reconhawx_staging_dir_prepare "$staging_root"
+  reconhawx_ensure_install_prefix "$staging_root"
+  mkdir -p "$staging_root/kubernetes"
+  # ui_note only: stdout must be only the path (callers use BASE_SRC="$(…)" ).
+  ui_note "Syncing upgrade manifests to ${staging_root} (git clone; removed after success)"
+  reconhawx_sync_directory_tree "$repo_root/kubernetes/base" "$dst_base"
+  reconhawx_sync_directory_tree "$repo_root/kubernetes/base-update" "$dst_up"
+  ui_note "Staged kubernetes/base and kubernetes/base-update"
+  printf '%s' "$dst_base"
+}
+
+reconhawx_update_staging_cleanup_on_success() {
+  local dir="${1:-}"
+  [[ -n "$dir" ]] || return 0
+  if [[ -e "$dir" ]]; then
+    ui_note "Removing upgrade staging directory ${dir} …"
+    rm -rf "$dir"
+    ui_note "Staging directory removed"
   fi
 }
 
@@ -161,6 +245,24 @@ reconhawx_base_update_dir() {
   upd="$(cd "$base_dir/.." && pwd)/base-update"
   [[ -d "$upd" ]] || die "missing ${upd} (kubernetes/base-update must sit next to kubernetes/base)"
   printf '%s' "$upd"
+}
+
+# Sync kubernetes/base/frontend/frontend-ingress.yaml host rule from the live Ingress so
+# upgrades do not re-apply a repo-default host (e.g. reconhawx.local) over a custom install.
+# Args: BASE_SRC (kubernetes/base path), namespace, then kubectl argv prefix (e.g. kubectl or
+# minikube -p PROFILE kubectl --). No-op if manifest or ingress is missing or host is empty.
+reconhawx_sync_frontend_ingress_manifest_from_cluster() {
+  local base_dir="$1" ns="$2" ing_file cluster_host otmp
+  shift 2
+  ing_file="$base_dir/frontend/frontend-ingress.yaml"
+  [[ -f "$ing_file" ]] || return 0
+  cluster_host="$("$@" get ingress frontend-ingress -n "$ns" -o jsonpath='{.spec.rules[0].host}' 2>/dev/null || true)"
+  cluster_host="$(printf '%s' "$cluster_host" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+  [[ -n "$cluster_host" ]] || return 0
+  otmp="$(mktemp)"
+  awk -v h="$cluster_host" '/^  - host: / { print "  - host: " h; next } { print }' "$ing_file" >"$otmp"
+  mv "$otmp" "$ing_file"
+  ui_note "frontend-ingress.yaml host synced from cluster: ${cluster_host}"
 }
 
 reconhawx_manifest_bundle_version() {
