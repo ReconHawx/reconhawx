@@ -26,7 +26,7 @@ def setup_logging():
 
 def get_db_url():
     """Get database URL from environment or default."""
-    return os.getenv('DATABASE_URL', 'postgresql://admin:password@localhost:5432/recon_db')
+    return os.getenv('DATABASE_URL', 'postgresql://admin:password@localhost:5432/reconhawx')
 
 def get_migrations_dir():
     """Get migrations directory path."""

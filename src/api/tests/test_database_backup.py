@@ -30,7 +30,7 @@ def superuser_override():
 @pytest.mark.asyncio
 async def test_database_status_route(client: httpx.AsyncClient, superuser_override):
     payload = {
-        "database_name": "recon_db",
+        "database_name": "reconhawx",
         "postgres_host": "postgresql",
         "postgres_port": 5432,
         "pg_dump_available": True,
@@ -43,7 +43,7 @@ async def test_database_status_route(client: httpx.AsyncClient, superuser_overri
     assert r.status_code == 200
     body = r.json()
     assert body["status"] == "success"
-    assert body["database_name"] == "recon_db"
+    assert body["database_name"] == "reconhawx"
     assert "backup_restore_feature_enabled" not in body
 
 

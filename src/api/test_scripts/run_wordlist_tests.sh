@@ -62,7 +62,7 @@ except Exception as e:
     echo "Please ensure:"
     echo "1. PostgreSQL is running"
     echo "2. Database credentials are correct in environment variables"
-    echo "3. Database 'recon_db' exists"
+    echo "3. Database 'reconhawx' exists"
     echo ""
     echo "Environment variables needed:"
     echo "- POSTGRES_USER"
