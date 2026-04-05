@@ -400,3 +400,20 @@ class AdminRepository:
         except Exception as e:
             logger.error(f"Error setting system setting {key}: {str(e)}")
             raise
+
+    async def delete_system_setting(self, key: str) -> bool:
+        """Delete a system setting row by key. Returns True if a row was deleted."""
+        try:
+            async with get_db_session() as db:
+                result = db.query(SystemSetting).filter(SystemSetting.key == key).first()
+                if result:
+                    db.delete(result)
+                    db.commit()
+                    return True
+                return False
+        except SQLAlchemyError as e:
+            logger.error(f"Database error deleting system setting {key}: {str(e)}")
+            raise
+        except Exception as e:
+            logger.error(f"Error deleting system setting {key}: {str(e)}")
+            raise

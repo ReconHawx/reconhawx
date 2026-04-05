@@ -288,6 +288,21 @@ export const adminAPI = {
     return response.data;
   },
 
+  getWorkflowKubernetesSettings: async () => {
+    const response = await api.get('/admin/workflow-kubernetes-settings');
+    return response.data;
+  },
+
+  updateWorkflowKubernetesSettings: async (payload) => {
+    const response = await api.put('/admin/workflow-kubernetes-settings', payload);
+    return response.data;
+  },
+
+  deleteWorkflowKubernetesSettings: async () => {
+    const response = await api.delete('/admin/workflow-kubernetes-settings');
+    return response.data;
+  },
+
   // AI Settings
   getAiSettings: async () => {
     const response = await api.get('/admin/ai-settings');

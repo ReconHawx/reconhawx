@@ -134,24 +134,12 @@ spec:
             configMapKeyRef:
               name: service-config
               key: kubernetes.namespace
-          
-        - name: RUNNER_IMAGE
+
+        - name: APP_VERSION
           valueFrom:
             configMapKeyRef:
-              name: service-config
-              key: runner.image
-        
-        - name: WORKER_IMAGE
-          valueFrom:
-            configMapKeyRef:
-              name: service-config
-              key: worker.image
-        
-        - name: IMAGE_PULL_POLICY
-          valueFrom:
-            configMapKeyRef:
-              name: service-config
-              key: image.pull.policy
+              name: reconhawx-version
+              key: APP_VERSION
 
         - name: RUNNER_SERVICE_ACCOUNT
           valueFrom:

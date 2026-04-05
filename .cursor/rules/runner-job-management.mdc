@@ -149,7 +149,7 @@ def _build_job_params(self, task_name: str, command: str,
         "step_num": kwargs.get('step_num', 0),
         "step_name": kwargs.get('step_name', safe_task_name),
         "job_name": job_name,
-        "image": os.getenv('WORKER_IMAGE', 'worker:latest'),
+        "image": os.getenv('WORKER_IMAGE', 'worker:latest'),  # set on runner pod by API (Workflow settings)
         "image_pull_policy": os.getenv('IMAGE_PULL_POLICY', 'Always'),
         "args": [command],
         "timeout": timeout or self.default_timeout

@@ -6,6 +6,10 @@ import json
 from typing import Dict, Any, Optional
 
 from services.ai_analysis_service import get_merged_ollama_connection_settings
+from services.workflow_kubernetes_settings import (
+    get_workflow_kubernetes_merged,
+    get_workflow_kubernetes_merged_sync,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +93,9 @@ class JobSubmissionService:
         """Create a Kubernetes job for PhishLabs batch processing"""
         try:
             namespace = os.getenv('KUBERNETES_NAMESPACE', 'recon')
-            runner_image = os.getenv('RUNNER_IMAGE', 'runner:latest')
+            wk = get_workflow_kubernetes_merged_sync()
+            runner_image = wk["runner_image"]
+            image_pull_policy = wk["image_pull_policy"]
             service_account = os.getenv('RUNNER_SERVICE_ACCOUNT', 'runner-service-account')
             int(os.getenv('JOB_TTL_SECONDS', '300'))
             
@@ -143,7 +149,7 @@ class JobSubmissionService:
             container = client.V1Container(
                 name="job-runner",
                 image=runner_image,
-                image_pull_policy=os.getenv('IMAGE_PULL_POLICY', 'Always'),
+                image_pull_policy=image_pull_policy,
                 command=["/usr/local/bin/python"],
                 args=["/app/run-job.py"],
                 env=[
@@ -244,7 +250,9 @@ class JobSubmissionService:
         """Create a Kubernetes job for AI analysis batch processing."""
         try:
             namespace = os.getenv('KUBERNETES_NAMESPACE', 'recon')
-            runner_image = os.getenv('RUNNER_IMAGE', 'runner:latest')
+            wk = await get_workflow_kubernetes_merged()
+            runner_image = wk["runner_image"]
+            image_pull_policy = wk["image_pull_policy"]
             service_account = os.getenv('RUNNER_SERVICE_ACCOUNT', 'runner-service-account')
             int(os.getenv('JOB_TTL_SECONDS', '300'))
 
@@ -295,7 +303,7 @@ class JobSubmissionService:
             container = client.V1Container(
                 name="job-runner",
                 image=runner_image,
-                image_pull_policy=os.getenv('IMAGE_PULL_POLICY', 'Always'),
+                image_pull_policy=image_pull_policy,
                 command=["/usr/local/bin/python"],
                 args=["/app/run-job.py"],
                 env=[
@@ -376,7 +384,9 @@ class JobSubmissionService:
         """Create a Kubernetes job for dummy batch processing (testing purposes)"""
         try:
             namespace = os.getenv('KUBERNETES_NAMESPACE', 'recon')
-            runner_image = os.getenv('RUNNER_IMAGE', 'runner:latest')
+            wk = get_workflow_kubernetes_merged_sync()
+            runner_image = wk["runner_image"]
+            image_pull_policy = wk["image_pull_policy"]
             service_account = os.getenv('RUNNER_SERVICE_ACCOUNT', 'runner-service-account')
             int(os.getenv('JOB_TTL_SECONDS', '300'))
             
@@ -430,7 +440,7 @@ class JobSubmissionService:
             container = client.V1Container(
                 name="job-runner",
                 image=runner_image,
-                image_pull_policy=os.getenv('IMAGE_PULL_POLICY', 'Always'),
+                image_pull_policy=image_pull_policy,
                 command=["/usr/local/bin/python"],
                 args=["/app/run-job.py"],
                 env=[
@@ -534,7 +544,9 @@ class JobSubmissionService:
         """Create a Kubernetes job for typosquat batch processing"""
         try:
             namespace = os.getenv('KUBERNETES_NAMESPACE', 'recon')
-            runner_image = os.getenv('RUNNER_IMAGE', 'runner:latest')
+            wk = get_workflow_kubernetes_merged_sync()
+            runner_image = wk["runner_image"]
+            image_pull_policy = wk["image_pull_policy"]
             service_account = os.getenv('RUNNER_SERVICE_ACCOUNT', 'runner-service-account')
             int(os.getenv('JOB_TTL_SECONDS', '300'))
 
@@ -588,7 +600,7 @@ class JobSubmissionService:
             container = client.V1Container(
                 name="job-runner",
                 image=runner_image,
-                image_pull_policy=os.getenv('IMAGE_PULL_POLICY', 'Always'),
+                image_pull_policy=image_pull_policy,
                 command=["/usr/local/bin/python"],
                 args=["/app/run-job.py"],
                 env=[
@@ -689,7 +701,9 @@ class JobSubmissionService:
         """Create a Kubernetes job for gathering API findings"""
         try:
             namespace = os.getenv('KUBERNETES_NAMESPACE', 'recon')
-            runner_image = os.getenv('RUNNER_IMAGE', 'runner:latest')
+            wk = get_workflow_kubernetes_merged_sync()
+            runner_image = wk["runner_image"]
+            image_pull_policy = wk["image_pull_policy"]
             service_account = os.getenv('RUNNER_SERVICE_ACCOUNT', 'runner-service-account')
 
             # Create ConfigMap with job data
@@ -742,7 +756,7 @@ class JobSubmissionService:
             container = client.V1Container(
                 name="job-runner",
                 image=runner_image,
-                image_pull_policy=os.getenv('IMAGE_PULL_POLICY', 'Always'),
+                image_pull_policy=image_pull_policy,
                 command=["/usr/local/bin/python"],
                 args=["/app/run-job.py"],
                 env=[
@@ -846,7 +860,9 @@ class JobSubmissionService:
         """Create a Kubernetes job for syncing RecordedFuture data"""
         try:
             namespace = os.getenv('KUBERNETES_NAMESPACE', 'recon')
-            runner_image = os.getenv('RUNNER_IMAGE', 'runner:latest')
+            wk = get_workflow_kubernetes_merged_sync()
+            runner_image = wk["runner_image"]
+            image_pull_policy = wk["image_pull_policy"]
             service_account = os.getenv('RUNNER_SERVICE_ACCOUNT', 'runner-service-account')
 
             # Create ConfigMap with job data
@@ -899,7 +915,7 @@ class JobSubmissionService:
             container = client.V1Container(
                 name="job-runner",
                 image=runner_image,
-                image_pull_policy=os.getenv('IMAGE_PULL_POLICY', 'Always'),
+                image_pull_policy=image_pull_policy,
                 command=["/usr/local/bin/python"],
                 args=["/app/run-job.py"],
                 env=[
