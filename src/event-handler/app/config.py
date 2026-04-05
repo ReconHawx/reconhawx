@@ -41,8 +41,4 @@ class NotifierConfig:
     # Concurrency: max messages processed concurrently per fetch batch (0 = sequential)
     max_concurrent_messages: int = int(os.getenv("EVENTHANDLER_MAX_CONCURRENT_MESSAGES", "25"))
 
-    # HTTP API (health, future pause/start)
-    http_host: str = os.getenv("EVENTHANDLER_HTTP_HOST", "0.0.0.0")
-    http_port: int = int(os.getenv("EVENTHANDLER_HTTP_PORT", "8000"))
-
 

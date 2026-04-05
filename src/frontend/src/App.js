@@ -7,7 +7,6 @@ import { ThemeProvider } from './contexts/ThemeContext';
 import Navigation from './components/Navigation';
 import Login from './components/Login';
 import ProtectedRoute from './components/ProtectedRoute';
-import PublicHealthStatus from './components/PublicHealthStatus';
 import LoadingFallback from './components/LoadingFallback';
 
 // Lazy load all page components for better code splitting
@@ -90,7 +89,6 @@ function AppContent() {
             <Suspense fallback={<LoadingFallback />}>
               <Routes>
                 <Route path="/login" element={<Login />} />
-                <Route path="/status" element={<PublicHealthStatus />} />
                 <Route path="/change-password" element={
                   <ProtectedRoute>
                     <ChangePassword />

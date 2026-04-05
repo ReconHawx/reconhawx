@@ -39,27 +39,6 @@ spec:
         - name: redis-config
           mountPath: /usr/local/etc/redis/redis.conf
           subPath: redis.conf
-
-        # Liveness: accept TCP on Redis port (process listening)
-        livenessProbe:
-          tcpSocket:
-            port: redis
-          initialDelaySeconds: 20
-          periodSeconds: 15
-          timeoutSeconds: 3
-          failureThreshold: 3
-
-        # Readiness: RESP-level check (PONG)
-        readinessProbe:
-          exec:
-            command:
-            - redis-cli
-            - ping
-          initialDelaySeconds: 5
-          periodSeconds: 5
-          timeoutSeconds: 3
-          failureThreshold: 3
-
       volumes:
       - name: redis-data
         emptyDir: {}

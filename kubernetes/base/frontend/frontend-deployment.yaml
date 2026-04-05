@@ -57,24 +57,18 @@ spec:
           limits:
             memory: "256Mi"
             cpu: "200m"
-        # Liveness: accept connections only (nginx process alive)
         livenessProbe:
-          tcpSocket:
+          httpGet:
+            path: /
             port: 80
           initialDelaySeconds: 30
           periodSeconds: 10
-          timeoutSeconds: 3
-          failureThreshold: 3
-
-        # Readiness: JSON health file + config path (see nginx-config /status)
         readinessProbe:
           httpGet:
-            path: /status
+            path: /
             port: 80
           initialDelaySeconds: 5
           periodSeconds: 5
-          timeoutSeconds: 3
-          failureThreshold: 3
       volumes:
       - name: nginx-config
         configMap:

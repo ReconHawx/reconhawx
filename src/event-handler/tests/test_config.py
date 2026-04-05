@@ -42,8 +42,3 @@ class TestNotifierConfig:
     def test_enable_event_handlers_default(self):
         cfg = NotifierConfig()
         assert isinstance(cfg.enable_event_handlers, bool)
-
-    def test_http_listen_defaults(self):
-        cfg = NotifierConfig()
-        assert cfg.http_host == "0.0.0.0"
-        assert cfg.http_port == 8000

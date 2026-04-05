@@ -24,7 +24,4 @@ ENV APP_VERSION=${APP_VERSION}
 
 COPY --from=build /app/build /usr/share/nginx/html
 
-# Serve GET /status via nginx (see frontend-nginx-config); bake semver into JSON
-RUN printf '{"status":"healthy","service":"frontend","version":"%s","checks":{"static":{"status":"ok"}}}\n' "$APP_VERSION" > /usr/share/nginx/html/status.json
-
 EXPOSE 80

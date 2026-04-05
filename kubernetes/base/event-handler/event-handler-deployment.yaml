@@ -51,35 +51,9 @@ spec:
         
         - name: EVENTHANDLER_ENABLE_EVENT_HANDLERS
           value: "true"
-
-        - name: EVENTHANDLER_HTTP_PORT
-          value: "8000"
         
         - name: LOG_LEVEL
           value: "DEBUG"
-
-        ports:
-        - name: http
-          containerPort: 8000
-          protocol: TCP
-
-        # Liveness: HTTP server listening; avoid NATS/Redis flapping (those are readiness)
-        livenessProbe:
-          tcpSocket:
-            port: http
-          initialDelaySeconds: 30
-          periodSeconds: 20
-          timeoutSeconds: 3
-          failureThreshold: 3
-
-        readinessProbe:
-          httpGet:
-            path: /status
-            port: http
-          initialDelaySeconds: 5
-          periodSeconds: 10
-          timeoutSeconds: 3
-          failureThreshold: 3
         
         resources:
           requests:

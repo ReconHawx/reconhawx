@@ -19,13 +19,6 @@ data:
         root /usr/share/nginx/html;
         index index.html index.htm;
 
-        # Health / readiness (JSON; status.json from build, version set in image Dockerfile)
-        location = /status {
-            rewrite ^ /status.json break;
-            default_type application/json;
-            add_header Cache-Control "no-store";
-        }
-
         # Handle client-side routing
         location / {
             try_files $uri $uri/ /index.html;

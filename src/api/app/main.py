@@ -6,7 +6,6 @@ from routes import assets, programs, findings, workflows, auth, nuclei_templates
 from middleware.auth import AuthMiddleware
 from middleware.maintenance import MaintenanceMiddleware
 from config.settings import settings
-from db import init_database, test_connection
 import asyncio
 import logging
 import os
@@ -19,8 +18,8 @@ else:
 logger = logging.getLogger(__name__)
 
 app = FastAPI(
-    title="ReconHawx API",
-    description="API for ReconHawx",
+    title="Recon API",
+    description="API for Recon",
     version=os.getenv("APP_VERSION", "dev"),
     openapi_url=f"{settings.API_V1_STR}/openapi.json",
     docs_url=f"{settings.API_V1_STR}/docs",
@@ -171,6 +170,7 @@ async def startup_event():
 def initialize_database():
     """Initialize database tables and default parameters"""
     try:
+        from db import init_database, test_connection
         logger.debug("Testing database connection...")
         
         # Test connection first
@@ -306,18 +306,14 @@ async def shutdown_event():
 @app.get("/")
 async def root():
     """Health check endpoint"""
-    return {"status": "healthy", "service": "api"}
+    return {"status": "healthy", "service": "unified-api"}
 
 @app.get("/status")
 async def status():
-    """
-    Service health for operators and Kubernetes readiness (path: /status).
-
-    Returns 503 when PostgreSQL is unavailable (default), or when any check
-    fails if ``API_READINESS_STRICT=true``. Redis, NATS/JetStream, and internal
-    service token are always reported under ``checks``.
-    """
-    from services.health import get_health_payload
-
-    payload, status_code = await get_health_payload()
-    return JSONResponse(content=payload, status_code=status_code)
+    """Service status endpoint"""
+    return {
+        "status": "operational",
+        "service": "unified-api",
+        "version": os.getenv("APP_VERSION", "dev"),
+        "features": ["data-management", "workflow-execution"]
+    } 
