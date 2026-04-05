@@ -1097,3 +1097,83 @@ async def put_ct_monitor_runtime_settings_admin(
     except Exception as e:
         logger.error("Error updating ct_monitor runtime settings: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+class WorkflowKubernetesUpdateRequest(BaseModel):
+    """Partial update for workflow runner/worker images (stored in system_settings)."""
+
+    runner_image: Optional[str] = None
+    worker_image: Optional[str] = None
+    image_pull_policy: Optional[Literal["Always", "Never", "IfNotPresent"]] = None
+
+
+@router.get("/workflow-kubernetes-settings", response_model=Dict[str, Any])
+async def get_workflow_kubernetes_settings_admin(
+    current_user: UserResponse = Depends(require_superuser),
+):
+    """Get effective workflow K8s image settings (merged with APP_VERSION defaults) (superuser)."""
+    try:
+        from services.workflow_kubernetes_settings import get_workflow_kubernetes_merged
+
+        settings = await get_workflow_kubernetes_merged()
+        return {"status": "success", "settings": settings}
+    except Exception as e:
+        logger.error("Error getting workflow kubernetes settings: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/workflow-kubernetes-settings/defaults", response_model=Dict[str, Any])
+async def get_workflow_kubernetes_settings_defaults_admin(
+    current_user: UserResponse = Depends(require_superuser),
+):
+    """Built-in defaults from current APP_VERSION (superuser)."""
+    try:
+        from services.workflow_kubernetes_settings import builtin_workflow_kubernetes_defaults
+
+        return {"status": "success", "settings": builtin_workflow_kubernetes_defaults()}
+    except Exception as e:
+        logger.error("Error getting workflow kubernetes defaults: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/workflow-kubernetes-settings", response_model=Dict[str, Any])
+async def put_workflow_kubernetes_settings_admin(
+    request: WorkflowKubernetesUpdateRequest = Body(...),
+    current_user: UserResponse = Depends(require_superuser),
+):
+    """Partial update of stored overrides; effective settings returned (superuser)."""
+    try:
+        from services.workflow_kubernetes_settings import update_workflow_kubernetes_partial
+
+        payload = request.model_dump(exclude_unset=True)
+        if not payload:
+            raise HTTPException(status_code=400, detail="No fields to update")
+        settings = await update_workflow_kubernetes_partial(payload)
+        return {"status": "success", "settings": settings}
+    except HTTPException:
+        raise
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        logger.error("Error updating workflow kubernetes settings: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/workflow-kubernetes-settings", response_model=Dict[str, Any])
+async def delete_workflow_kubernetes_settings_admin(
+    current_user: UserResponse = Depends(require_superuser),
+):
+    """Remove stored overrides so effective settings follow APP_VERSION defaults (superuser)."""
+    try:
+        from services.workflow_kubernetes_settings import (
+            WORKFLOW_KUBERNETES_KEY,
+            get_workflow_kubernetes_merged,
+        )
+
+        admin_repo = AdminRepository()
+        await admin_repo.delete_system_setting(WORKFLOW_KUBERNETES_KEY)
+        settings = await get_workflow_kubernetes_merged()
+        return {"status": "success", "settings": settings}
+    except Exception as e:
+        logger.error("Error deleting workflow kubernetes settings: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))

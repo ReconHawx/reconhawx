@@ -178,7 +178,7 @@ pod_template = {
         "containers": [{
             "name": "workflow-runner",
             "image": runner_image,
-            "imagePullPolicy": os.getenv('IMAGE_PULL_POLICY', 'Always'),
+            "imagePullPolicy": image_pull_policy,
             "command": ["/usr/local/bin/python"],
             "args": ["/app/run-workflow.py", "/workflow-data/workflow.json"],
             "env": env_vars,
@@ -486,8 +486,7 @@ Key environment variables for workflow execution:
 | `WORKFLOW_CPU_LIMIT` | `2000m` | CPU limit |
 | `WORKFLOW_MEMORY_REQUEST` | `1Gi` | Memory request |
 | `WORKFLOW_MEMORY_LIMIT` | `4Gi` | Memory limit |
-| `RUNNER_IMAGE` | `runner:latest` | Runner container image |
-| `WORKER_IMAGE` | `worker:latest` | Worker container image |
+| *(DB / `APP_VERSION`)* | see `workflow_kubernetes_settings` | Runner/worker images and pull policy for spawned jobs: `system_settings` key `workflow_kubernetes` via superuser admin API; defaults from `APP_VERSION` (`ghcr.io/.../runner|worker:<tag>`, `IfNotPresent`) |
 | `JOB_TTL_SECONDS` | `300` | TTL after job completion |
 | `INTERNAL_SERVICE_API_KEY` | - | API key for internal auth |
 

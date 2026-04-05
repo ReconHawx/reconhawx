@@ -180,7 +180,7 @@ kubectl get configmap reconhawx-version -n reconhawx -o jsonpath='{.data.APP_VER
 
 To use a **custom registry or tag**, create a kustomize overlay on top of `base` (or `base-update`) and patch images / ConfigMap data as needed—for example, extend **`images:`** if you replace `components/pinned-releases` in your overlay.
 
-Runner and worker job images are set via **`service-config`** keys **`runner.image`** and **`worker.image`** (rewritten by the pinned-releases component to match **`APP_VERSION`**).
+The API chooses runner and worker images when it creates jobs from **`system_settings`** (`workflow_kubernetes`), exposed to superusers under **Admin → System settings → Workflow settings**. With no stored overrides, defaults use **`APP_VERSION`** on the API pod (`ghcr.io/reconhawx/reconhawx/runner:<version>` and `.../worker:<version>`, pull policy **`IfNotPresent`**); base deploys set **`APP_VERSION`** from the **`reconhawx-version`** ConfigMap. The **`service-config`** keys **`runner.image`**, **`worker.image`**, and **`image.pull.policy`** remain for Kustomize pinned-releases / gitops consistency but are **not** injected into the API as environment variables.
 
 ### Ingress
 

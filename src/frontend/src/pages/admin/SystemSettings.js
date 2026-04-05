@@ -98,6 +98,14 @@ function SystemSettings() {
   const [ctMonitorRuntimeLoading, setCtMonitorRuntimeLoading] = useState(false);
   const [ctMonitorRuntimeSaving, setCtMonitorRuntimeSaving] = useState(false);
 
+  const [workflowK8s, setWorkflowK8s] = useState({
+    runner_image: '',
+    worker_image: '',
+    image_pull_policy: 'IfNotPresent'
+  });
+  const [workflowK8sLoading, setWorkflowK8sLoading] = useState(false);
+  const [workflowK8sSaving, setWorkflowK8sSaving] = useState(false);
+
   const FEATURE_LABELS = {
     typosquat: 'Typosquat Analysis',
     nuclei: 'Nuclei Analysis',
@@ -122,6 +130,7 @@ function SystemSettings() {
     loadAwsCredentials();
     loadAiSettings();
     loadCtMonitorRuntime();
+    loadWorkflowK8sSettings();
   }, []);
 
   // Load Font Awesome CSS
@@ -170,6 +179,67 @@ function SystemSettings() {
       setError('Failed to load CT monitor runtime settings: ' + (err.response?.data?.detail || err.message));
     } finally {
       setCtMonitorRuntimeLoading(false);
+    }
+  };
+
+  const normalizeWorkflowPullPolicy = (v) => {
+    const x = String(v ?? 'IfNotPresent');
+    return ['Always', 'Never', 'IfNotPresent'].includes(x) ? x : 'IfNotPresent';
+  };
+
+  const loadWorkflowK8sSettings = async () => {
+    try {
+      setWorkflowK8sLoading(true);
+      setError('');
+      const response = await adminAPI.getWorkflowKubernetesSettings();
+      const s = response.settings || {};
+      setWorkflowK8s({
+        runner_image: String(s.runner_image ?? ''),
+        worker_image: String(s.worker_image ?? ''),
+        image_pull_policy: normalizeWorkflowPullPolicy(s.image_pull_policy)
+      });
+    } catch (err) {
+      setError('Failed to load workflow settings: ' + (err.response?.data?.detail || err.message));
+    } finally {
+      setWorkflowK8sLoading(false);
+    }
+  };
+
+  const handleSaveWorkflowK8s = async () => {
+    try {
+      setWorkflowK8sSaving(true);
+      setError('');
+      const r = workflowK8s.runner_image.trim();
+      const w = workflowK8s.worker_image.trim();
+      if (!r || !w) {
+        setError('Runner image and worker image are required.');
+        return;
+      }
+      await adminAPI.updateWorkflowKubernetesSettings({
+        runner_image: r,
+        worker_image: w,
+        image_pull_policy: workflowK8s.image_pull_policy
+      });
+      setSuccess('Workflow Kubernetes settings saved.');
+      loadWorkflowK8sSettings();
+    } catch (err) {
+      setError('Failed to save workflow settings: ' + (err.response?.data?.detail || err.message));
+    } finally {
+      setWorkflowK8sSaving(false);
+    }
+  };
+
+  const handleResetWorkflowK8sDefaults = async () => {
+    try {
+      setWorkflowK8sSaving(true);
+      setError('');
+      await adminAPI.deleteWorkflowKubernetesSettings();
+      setSuccess('Cleared stored overrides; runner and worker images now follow APP_VERSION defaults.');
+      loadWorkflowK8sSettings();
+    } catch (err) {
+      setError('Failed to reset workflow settings: ' + (err.response?.data?.detail || err.message));
+    } finally {
+      setWorkflowK8sSaving(false);
     }
   };
 
@@ -710,6 +780,95 @@ function SystemSettings() {
                         ))}
                       </tbody>
                     </Table>
+                  )}
+                </Card.Body>
+              </Card>
+            </Tab>
+
+            <Tab eventKey="workflow" title="Workflow settings">
+              <Card className="mb-4">
+                <Card.Header className="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                  <h5 className="mb-0">Workflow Kubernetes</h5>
+                  <div className="d-flex flex-wrap gap-2">
+                    <Button
+                      variant="outline-warning"
+                      size="sm"
+                      onClick={handleResetWorkflowK8sDefaults}
+                      disabled={workflowK8sSaving || workflowK8sLoading}
+                      title="Remove stored overrides; images follow APP_VERSION"
+                    >
+                      Reset to version defaults
+                    </Button>
+                    <Button
+                      variant="outline-secondary"
+                      size="sm"
+                      onClick={loadWorkflowK8sSettings}
+                      disabled={workflowK8sLoading}
+                    >
+                      {workflowK8sLoading ? <Spinner animation="border" size="sm" /> : 'Refresh'}
+                    </Button>
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      onClick={handleSaveWorkflowK8s}
+                      disabled={workflowK8sSaving || workflowK8sLoading}
+                    >
+                      {workflowK8sSaving ? (
+                        <>
+                          <Spinner animation="border" size="sm" className="me-2" />
+                          Saving...
+                        </>
+                      ) : (
+                        'Save'
+                      )}
+                    </Button>
+                  </div>
+                </Card.Header>
+                <Card.Body>
+                  <p className="text-muted small">
+                    Images used when the API creates runner jobs and the pull policy for those jobs and for worker
+                    jobs spawned by the runner. With no saved overrides, image tags default to the API&apos;s{' '}
+                    <code>APP_VERSION</code> (e.g. from the <code>reconhawx-version</code> ConfigMap in the default
+                    deployment).
+                  </p>
+                  {workflowK8sLoading ? (
+                    <div className="text-center py-4">
+                      <Spinner animation="border" />
+                    </div>
+                  ) : (
+                    <>
+                      <Form.Group className="mb-3">
+                        <Form.Label>Runner image</Form.Label>
+                        <Form.Control
+                          type="text"
+                          value={workflowK8s.runner_image}
+                          onChange={(e) => setWorkflowK8s({ ...workflowK8s, runner_image: e.target.value })}
+                          autoComplete="off"
+                        />
+                      </Form.Group>
+                      <Form.Group className="mb-3">
+                        <Form.Label>Worker image</Form.Label>
+                        <Form.Control
+                          type="text"
+                          value={workflowK8s.worker_image}
+                          onChange={(e) => setWorkflowK8s({ ...workflowK8s, worker_image: e.target.value })}
+                          autoComplete="off"
+                        />
+                      </Form.Group>
+                      <Form.Group className="mb-0">
+                        <Form.Label>Image pull policy</Form.Label>
+                        <Form.Select
+                          value={workflowK8s.image_pull_policy}
+                          onChange={(e) =>
+                            setWorkflowK8s({ ...workflowK8s, image_pull_policy: e.target.value })
+                          }
+                        >
+                          <option value="IfNotPresent">IfNotPresent</option>
+                          <option value="Always">Always</option>
+                          <option value="Never">Never</option>
+                        </Form.Select>
+                      </Form.Group>
+                    </>
                   )}
                 </Card.Body>
               </Card>

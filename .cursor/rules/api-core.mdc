@@ -336,7 +336,6 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "Workflow API"
     
     # Kubernetes
-    RUNNER_IMAGE: str = "runner:latest"
     RUNNER_SERVICE_ACCOUNT: str = "runner-service-account"
     JOB_TTL_SECONDS: int = 86400
     

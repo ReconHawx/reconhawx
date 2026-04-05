@@ -300,9 +300,13 @@ class KubernetesService:
 
     async def _create_workflow_pod_template(self, workflow_data: Dict[str, Any], execution_id: str, configmap_name: str) -> Dict[str, Any]:
         """Create pod template for workflow runner with resource requirements"""
+        from services.workflow_kubernetes_settings import get_workflow_kubernetes_merged
+
         namespace = os.getenv('KUBERNETES_NAMESPACE', 'default')
-        runner_image = os.getenv('RUNNER_IMAGE', 'runner:latest')
-        worker_image = os.getenv('WORKER_IMAGE', 'worker:latest')
+        wk = await get_workflow_kubernetes_merged()
+        runner_image = wk["runner_image"]
+        worker_image = wk["worker_image"]
+        image_pull_policy = wk["image_pull_policy"]
         service_account = os.getenv('RUNNER_SERVICE_ACCOUNT', 'runner-service-account')
 
         # Fetch AWS credentials from database
@@ -336,7 +340,7 @@ class KubernetesService:
             # Kubernetes configuration
             {"name": "KUBERNETES_NAMESPACE", "value": namespace},
             {"name": "WORKER_IMAGE", "value": worker_image},
-            {"name": "IMAGE_PULL_POLICY", "value": os.getenv('IMAGE_PULL_POLICY', 'Always')},
+            {"name": "IMAGE_PULL_POLICY", "value": image_pull_policy},
 
             # Progressive Asset Streaming Configuration
             {"name": "ENABLE_PROGRESSIVE_STREAMING", "value": os.getenv('ENABLE_PROGRESSIVE_STREAMING', 'true')},
@@ -378,7 +382,7 @@ class KubernetesService:
         container = {
             "name": "workflow-runner",
             "image": runner_image,
-            "imagePullPolicy": os.getenv('IMAGE_PULL_POLICY', 'Always'),
+            "imagePullPolicy": image_pull_policy,
             "command": ["/usr/local/bin/python"],
             "args": ["/app/run-workflow.py", "/workflow-data/workflow.json"],
             "env": env_vars,
@@ -803,9 +807,13 @@ class KubernetesService:
     async def _create_direct_job(self, workflow_data: Dict[str, Any]):
         """Create a direct Kubernetes job (original implementation)"""
         try:
+            from services.workflow_kubernetes_settings import get_workflow_kubernetes_merged
+
             namespace = os.getenv('KUBERNETES_NAMESPACE', 'default')
-            runner_image = os.getenv('RUNNER_IMAGE', 'runner:latest')
-            worker_image = os.getenv('WORKER_IMAGE', 'worker:latest')
+            wk = await get_workflow_kubernetes_merged()
+            runner_image = wk["runner_image"]
+            worker_image = wk["worker_image"]
+            image_pull_policy = wk["image_pull_policy"]
             service_account = os.getenv('RUNNER_SERVICE_ACCOUNT', 'runner-service-account')
             job_ttl = int(os.getenv('JOB_TTL_SECONDS', '300'))
             
@@ -913,7 +921,7 @@ class KubernetesService:
                 # Kubernetes configuration
                 client.V1EnvVar(name="KUBERNETES_NAMESPACE", value=namespace),
                 client.V1EnvVar(name="WORKER_IMAGE", value=worker_image),
-                client.V1EnvVar(name="IMAGE_PULL_POLICY", value=os.getenv('IMAGE_PULL_POLICY', 'Always')),
+                client.V1EnvVar(name="IMAGE_PULL_POLICY", value=image_pull_policy),
 
                 # Progressive Asset Streaming Configuration
                 client.V1EnvVar(name="ENABLE_PROGRESSIVE_STREAMING", value=os.getenv('ENABLE_PROGRESSIVE_STREAMING', 'true')),
@@ -956,7 +964,7 @@ class KubernetesService:
             container = client.V1Container(
                 name="workflow-runner",
                 image=runner_image,
-                image_pull_policy=os.getenv('IMAGE_PULL_POLICY'),
+                image_pull_policy=image_pull_policy,
                 command=["/usr/local/bin/python"],
                 args=["/app/run-workflow.py", "/workflow-data/workflow.json"],
                 env=env_vars,

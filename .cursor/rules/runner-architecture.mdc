@@ -101,8 +101,8 @@ sequenceDiagram
 | `PROGRAM_NAME` | Required | Program context for assets |
 | `KUBERNETES_NAMESPACE` | Required | Target K8s namespace |
 | `DOCKER_REGISTRY` | - | Container registry prefix |
-| `WORKER_IMAGE` | `worker:latest` | Worker container image |
-| `IMAGE_PULL_POLICY` | `Always` | K8s image pull policy |
+| `WORKER_IMAGE` | from API job spec | Injected by the API when creating the runner pod (Admin **Workflow settings** / `workflow_kubernetes` + `APP_VERSION` defaults) |
+| `IMAGE_PULL_POLICY` | `IfNotPresent` typical | Same source as `WORKER_IMAGE` |
 | `INTERNAL_SERVICE_API_KEY` | Required | API authentication token |
 
 ## NATS Subject Patterns
