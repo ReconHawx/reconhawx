@@ -21,6 +21,7 @@ spec:
         image: postgres:15
         ports:
         - containerPort: 5432
+          name: postgres
         env:
         - name: POSTGRES_USER
           valueFrom:
@@ -44,6 +45,39 @@ spec:
           limits:
             memory: "512Mi"
             cpu: "500m"
+
+        # Startup: give slow PVC / crash recovery time before liveness can restart the pod
+        startupProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - exec pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"
+          periodSeconds: 5
+          timeoutSeconds: 5
+          failureThreshold: 36
+        # Liveness: exec via local socket (trust); -h 127.0.0.1 can fail auth depending on pg_hba.conf
+        livenessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - exec pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"
+          periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 3
+
+        # Readiness: gates Service endpoints after startupProbe has succeeded
+        readinessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - exec pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"
+          periodSeconds: 5
+          timeoutSeconds: 5
+          failureThreshold: 3
+
         volumeMounts:
         - name: postgresql-data
           mountPath: /var/lib/postgresql/data

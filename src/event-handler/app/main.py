@@ -12,8 +12,10 @@ import time
 from typing import Any, Dict
 
 import redis
+import uvicorn
 
 from .config import NotifierConfig
+from .http_api import create_http_app
 from .nats_client import EventsSubscriber
 from .program_settings import ProgramSettingsProvider
 from .event_handlers import SimpleBatchManager, close_http_client
@@ -55,6 +57,8 @@ class SimpleNotifierApp:
             self.api_config_provider = None
             self._handler_set_cache = {}
             logger.info("Event handler system disabled")
+
+        self._uvicorn_server: uvicorn.Server | None = None
     
     async def start(self):
         """Start the notifier application"""
@@ -65,9 +69,30 @@ class SimpleNotifierApp:
         # Start background tasks
         if self.batch_manager:
             asyncio.create_task(self._batch_recovery_loop())
-        
-        # Start main event processing loop
-        await self.subscriber.run(self.handle_event)
+
+        http_app = create_http_app(self)
+        uvicorn_config = uvicorn.Config(
+            http_app,
+            host=self.cfg.http_host,
+            port=self.cfg.http_port,
+            log_level=self.cfg.log_level.lower(),
+            access_log=False,
+        )
+        self._uvicorn_server = uvicorn.Server(uvicorn_config)
+        http_task = asyncio.create_task(self._uvicorn_server.serve())
+        logger.info(
+            "HTTP API listening on %s:%s (GET /status)",
+            self.cfg.http_host,
+            self.cfg.http_port,
+        )
+
+        try:
+            await self.subscriber.run(self.handle_event)
+        finally:
+            if self._uvicorn_server is not None:
+                self._uvicorn_server.should_exit = True
+            await http_task
+            self._uvicorn_server = None
     
     async def handle_event(self, subject: str, payload: Dict[str, Any]) -> bool:
         """
@@ -250,6 +275,8 @@ class SimpleNotifierApp:
     async def shutdown(self):
         """Graceful shutdown"""
         logger.info("Shutting down notifier application")
+        if self._uvicorn_server is not None:
+            self._uvicorn_server.should_exit = True
         try:
             await close_http_client()
         except Exception as e:
