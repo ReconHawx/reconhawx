@@ -1,5 +1,5 @@
 ---
-globs: ["src/event-handler/app/main.py", "src/event-handler/app/config.py", "src/event-handler/app/nats_client.py"]
+globs: ["src/event-handler/app/main.py", "src/event-handler/app/config.py", "src/event-handler/app/nats_client.py", "src/event-handler/app/http_api.py"]
 ---
 
 # Event-Handler Architecture Overview
@@ -12,6 +12,7 @@ The event-handler (notifier) service processes events from NATS JetStream and ex
 
 ```
 Event-Handler Service (SimpleNotifierApp)
+├── HTTP API (http_api.py) — uvicorn on EVENTHANDLER_HTTP_HOST:PORT (default :8080); GET /status; room for pause/start later
 ├── EventsSubscriber (nats_client.py)
 │   ├── NATS JetStream connection
 │   ├── Durable consumer management
@@ -70,7 +71,7 @@ sequenceDiagram
   - Handle batch vs single events from API
   - Run batch recovery background loop
 - **Key Methods**:
-  - `start()` - Initialize and start event loop
+  - `start()` - Connect NATS, start uvicorn HTTP server (concurrent with subscriber loop), run event loop
   - `handle_event()` - Main event routing
   - `_handle_batch_event()` - Process API batch events
   - `_handle_single_event()` - Process individual events
