@@ -41,6 +41,26 @@ spec:
         - name: nats-scripts
           mountPath: /init.sh
           subPath: init.sh
+
+        # Liveness: client port accepting (server process bound)
+        livenessProbe:
+          tcpSocket:
+            port: client
+          initialDelaySeconds: 20
+          periodSeconds: 20
+          timeoutSeconds: 3
+          failureThreshold: 3
+
+        # Readiness: HTTP monitoring /varz (JetStream + server actually responding)
+        readinessProbe:
+          httpGet:
+            path: /varz
+            port: monitoring
+          initialDelaySeconds: 15
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 6
+
       volumes:
       - name: nats-data
         emptyDir: {}

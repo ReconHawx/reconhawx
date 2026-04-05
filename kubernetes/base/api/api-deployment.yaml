@@ -239,13 +239,24 @@ spec:
         - name: LOG_LEVEL
           value: "INFO"
 
+        # Liveness: process up; no DB/NATS (avoids restart loops on dependency blips)
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 8000
+          initialDelaySeconds: 15
+          periodSeconds: 20
+          timeoutSeconds: 3
+          failureThreshold: 3
+
+        # Readiness: dependency-aware /status (503 when DB down by default)
         readinessProbe:
           httpGet:
             path: /status
             port: 8000
           initialDelaySeconds: 5
           periodSeconds: 5
-          timeoutSeconds: 3
+          timeoutSeconds: 5
           failureThreshold: 6
 
         resources:

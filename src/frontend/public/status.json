@@ -1,0 +1,8 @@
+{
+  "status": "healthy",
+  "service": "frontend",
+  "version": "dev",
+  "checks": {
+    "static": { "status": "ok" }
+  }
+}
