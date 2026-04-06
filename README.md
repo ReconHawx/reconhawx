@@ -47,7 +47,6 @@ ReconHawx builds on many open-source projects. Thanks to their authors and maint
 - [Katana](https://github.com/projectdiscovery/katana)
 - [massdns](https://github.com/blechschmidt/massdns)
 - [nerva](https://github.com/praetorian-inc/nerva)
-- [Nmap](https://nmap.org/)
 - [Nuclei](https://github.com/projectdiscovery/nuclei)
 - [puredns](https://github.com/d3mondev/puredns)
 - [Subfinder](https://github.com/projectdiscovery/subfinder)
