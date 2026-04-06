@@ -48,12 +48,3 @@ replacements:
         options:
           delimiter: ":"
           index: 1
-      - select:
-          kind: ConfigMap
-          name: service-config
-        fieldPaths:
-          - data.[runner.image]
-          - data.[worker.image]
-        options:
-          delimiter: ":"
-          index: 1
