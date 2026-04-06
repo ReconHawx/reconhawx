@@ -366,7 +366,21 @@ jobs:
           o=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')
           echo "prefix=ghcr.io/${o}/reconhawx" >> "$GITHUB_OUTPUT"
           echo "REGISTRY_PREFIX=ghcr.io/${o}/reconhawx" >> "$GITHUB_ENV"
-      - uses: docker/setup-qemu-action@v3
+      # setup-qemu-action runs a privileged tonistiigi/binfmt container; that fails on rootless/hardened
+      # Docker (e.g. sysctl permission denied). Host qemu-user-static registers binfmt without that.
+      - name: Ensure QEMU binfmt for linux/arm64
+        run: |
+          set -euo pipefail
+          if [ -f /proc/sys/fs/binfmt_misc/qemu-aarch64 ]; then
+            echo "qemu-aarch64 binfmt already registered"
+            exit 0
+          fi
+          if ! command -v apt-get >/dev/null 2>&1; then
+            echo "Install qemu-user-static on this runner (or use a Debian/Ubuntu host with passwordless sudo for apt-get)."
+            exit 1
+          fi
+          sudo apt-get update
+          sudo apt-get install -y qemu-user-static
       - uses: docker/setup-buildx-action@v3
         id: buildx
         with:
