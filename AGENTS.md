@@ -68,7 +68,7 @@ python scripts/deploy.py -e production d all
 
 ### GitHub Container Registry (CI)
 
-Workflow [`.github/workflows/docker-ghcr.yml`](.github/workflows/docker-ghcr.yml) pushes to `ghcr.io/<lowercase_github_owner>/reconhawx/<service>`. Images are built via **`workflow_call`** (chained from release-please after a release) or **`workflow_dispatch`** (manual). Both accept an optional `version` input for semver tagging. All **7** application images are built on every run (`api`, `frontend`, `migrations`, `runner`, `worker`, `event-handler`, `ct-monitor`). Worker image is built for **linux/amd64** only (single job, same tagging pattern as other services).
+Workflow [`.github/workflows/docker-ghcr.yml`](.github/workflows/docker-ghcr.yml) pushes to `ghcr.io/<lowercase_github_owner>/reconhawx/<service>`. Images are built via **`workflow_call`** (chained from release-please after a release) or **`workflow_dispatch`** (manual). Both accept an optional `version` input for semver tagging. All **7** application images are built on every run (`api`, `frontend`, `migrations`, `runner`, `worker`, `event-handler`, `ct-monitor`). The **worker** image is built as **linux/amd64** and **linux/arm64** (multi-arch manifest; single job, same tagging pattern as other services).
 
 ### Versioning and releases
 
