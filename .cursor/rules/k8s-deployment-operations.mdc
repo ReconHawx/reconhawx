@@ -51,7 +51,7 @@ kubectl apply -k kubernetes/overlays/dev/nats
 kubectl apply -k kubernetes/overlays/dev/kueue
 
 # Wait for readiness
-kubectl wait --for=condition=available deployment/postgresql -n recon
+kubectl rollout status statefulset/postgresql -n recon --timeout=5m
 kubectl wait --for=condition=available deployment/nats -n recon
 kubectl wait --for=condition=available deployment/redis -n recon
 

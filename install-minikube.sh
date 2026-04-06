@@ -504,12 +504,12 @@ update_hosts_file() {
 # PostgreSQL init prints Username:/Password:; log collectors often prefix lines (^ no longer matches).
 _fetch_pg_logs() {
   local cur prev
-  cur="$("$@" logs deploy/postgresql -n reconhawx 2>&1 || true)"
+  cur="$("$@" logs statefulset/postgresql -n reconhawx 2>&1 || true)"
   if printf '%s\n' "$cur" | grep -qF 'ADMIN USER CREATED'; then
     printf '%s' "$cur"
     return 0
   fi
-  prev="$("$@" logs deploy/postgresql -n reconhawx --previous 2>/dev/null || true)"
+  prev="$("$@" logs statefulset/postgresql -n reconhawx --previous 2>/dev/null || true)"
   if printf '%s\n' "$prev" | grep -qF 'ADMIN USER CREATED'; then
     printf '%s' "$prev"
     return 0
@@ -681,7 +681,7 @@ main() {
   done
 
   ui_step "Kubernetes: waiting for PostgreSQL"
-  tool_stream mk wait deploy/postgresql -n reconhawx --for=condition=available --timeout=5m
+  tool_stream mk rollout status statefulset/postgresql -n reconhawx --timeout=5m
   ui_ok "PostgreSQL available"
 
   local ip
@@ -711,7 +711,7 @@ main() {
   elif printf '%s' "$pg_logs" | grep -qF 'skipping admin user creation'; then
     ui_note "No new admin user (database already had users). Use your existing admin credentials or reset via the API/DB."
   else
-    ui_note "Could not read admin credentials from logs yet. Try: minikube -p ${MINIKUBE_PROFILE} kubectl -- logs deploy/postgresql -n reconhawx | grep -A3 ADMIN"
+    ui_note "Could not read admin credentials from logs yet. Try: minikube -p ${MINIKUBE_PROFILE} kubectl -- logs statefulset/postgresql -n reconhawx | grep -A3 ADMIN"
   fi
 
   if [[ "${RECONHAWX_INSTALL_FROM_RELEASE}" -eq 0 ]]; then

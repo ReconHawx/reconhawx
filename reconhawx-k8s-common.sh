@@ -31,6 +31,8 @@
 # - From a git clone, copy kubernetes/base and kubernetes/base-update to
 #   INSTALL_STAGING_DIR (default /tmp/reconhawx) so patches do not dirty the repo;
 #   release trees apply from the extracted path in place.
+# - Run kubernetes/base-update/pre-apply.d/[0-9]*.sh (reconhawx_run_base_update_pre_apply_hooks)
+#   before kubectl apply -k base-update so breaking manifest transitions stay idempotent.
 #
 # Usage
 # -----
@@ -245,6 +247,84 @@ reconhawx_base_update_dir() {
   upd="$(cd "$base_dir/.." && pwd)/base-update"
   [[ -d "$upd" ]] || die "missing ${upd} (kubernetes/base-update must sit next to kubernetes/base)"
   printf '%s' "$upd"
+}
+
+# Log pre-apply progress to stderr (same style as ui_note when _D/_Z are set).
+reconhawx__pre_apply_log() {
+  printf '%s  pre-apply: %s%s\n' "${_D:-}" "$*" "${_Z:-}" >&2
+}
+
+# Run kubernetes/base-update/pre-apply.d/[0-9]*.sh in sorted order before kubectl apply -k base-update.
+# Args: kubernetes/base path, namespace, cluster APP_VERSION (may be empty), bundle APP_VERSION,
+#       then kubectl argv prefix (e.g. kubectl OR minikube -p PROFILE kubectl --).
+# Exports RECONHAWX_NS, RECONHAWX_CLUSTER_VERSION, RECONHAWX_BUNDLE_VERSION, RECONHAWX_PRE_APPLY_LIB (temp file).
+# Requires: die(), and for UX ui_step / ui_ok like other helpers in this file.
+reconhawx_run_base_update_pre_apply_hooks() {
+  local base_src="$1" ns="$2" cver="$3" bver="$4"
+  local -a kube_prefix=( "${@:5}" )
+  [[ "${#kube_prefix[@]}" -ge 1 ]] || die "reconhawx_run_base_update_pre_apply_hooks: missing kubectl argv prefix (pass kubectl or 'minikube -p PROFILE kubectl --' after bundle version)"
+
+  reconhawx__pre_apply_log "dispatcher starting (namespace ${ns})."
+
+  local hookdir lib h
+  hookdir="$(reconhawx_base_update_dir "$base_src")/pre-apply.d"
+  if [[ ! -d "$hookdir" ]]; then
+    reconhawx__pre_apply_log "no directory ${hookdir}; skipping."
+    return 0
+  fi
+
+  local -a hooks=()
+  local _nullglob_was_on=1
+  shopt -q nullglob || _nullglob_was_on=0
+  shopt -s nullglob
+  hooks=( "$hookdir"/[0-9]*.sh )
+  if [[ "$_nullglob_was_on" -eq 0 ]]; then
+    shopt -u nullglob
+  fi
+
+  if [[ "${#hooks[@]}" -eq 0 ]]; then
+    reconhawx__pre_apply_log "no matching [0-9]*.sh in ${hookdir}; skipping."
+    return 0
+  fi
+
+  reconhawx__pre_apply_log "running ${#hooks[@]} script(s) from ${hookdir}."
+
+  lib="$(mktemp "${TMPDIR:-/tmp}/reconhawx-pre-apply-lib.XXXXXX")"
+  [[ -n "$lib" ]] || die "reconhawx_run_base_update_pre_apply_hooks: mktemp failed for kubectl wrapper"
+  {
+    printf 'reconhawx_kubectl() {\n  '
+    local a
+    for a in "${kube_prefix[@]}"; do
+      printf '%q ' "$a"
+    done
+    printf -- '-n "${RECONHAWX_NS}" "$@"\n}\n'
+  } >"$lib"
+  bash -n "$lib" || die "reconhawx_run_base_update_pre_apply_hooks: generated kubectl wrapper is invalid (${lib})"
+
+  local _c _b
+  _c="$(printf '%s' "$cver" | tr -d ' \t\r\n')"
+  _b="$(printf '%s' "$bver" | tr -d ' \t\r\n')"
+  export RECONHAWX_NS="$ns"
+  export RECONHAWX_CLUSTER_VERSION="${_c:-}"
+  export RECONHAWX_BUNDLE_VERSION="${_b:-}"
+  export RECONHAWX_PRE_APPLY_LIB="$lib"
+
+  # Run hooks in this shell (not a subshell) so ui_step / stderr behave like the rest of the upgrade.
+  for h in "${hooks[@]}"; do
+    [[ -f "$h" ]] || continue
+    ui_step "Kubernetes: pre-apply hook $(basename "$h")"
+    if ! bash -euo pipefail "$h"; then
+      printf '%spre-apply hook failed: %s%s\n' "${_R:-}" "$h" "${_Z:-}" >&2
+      rm -f "$lib"
+      unset RECONHAWX_PRE_APPLY_LIB
+      die "Pre-apply hooks aborted."
+    fi
+    ui_ok "Finished $(basename "$h")"
+  done
+
+  rm -f "$lib"
+  unset RECONHAWX_PRE_APPLY_LIB
+  reconhawx__pre_apply_log "all hooks finished."
 }
 
 # Sync kubernetes/base/frontend/frontend-ingress.yaml host rule from the live Ingress so

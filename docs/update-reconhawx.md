@@ -56,8 +56,9 @@ MINIKUBE_PROFILE=my-profile ./update-minikube.sh
 
 1. **Resolve manifests** — Either use **`kubernetes/base`** next to your clone (default when the directory exists) or download the **latest GitHub release** source tarball (same logic as install: see flags below).
 2. **Print version context** — Manifest **`APP_VERSION`**, GitHub **latest release tag**, and in-cluster **`reconhawx-version`** when present.
-3. **Apply** — `kubectl apply -k` on **[`kubernetes/base-update/`](../kubernetes/base-update/kustomization.yaml)** (not full `kubernetes/base/`). The **update** overlay applies the same workloads and config as `base` but **omits** `jwt-secret` and `postgres-secret` from the repo so a fresh clone does **not** overwrite live database or signing secrets.
-4. **Roll out** — `kubectl rollout restart` for **api**, **frontend**, **event-handler**, and **ct-monitor**, then wait for rollouts to finish.
+3. **Pre-apply hooks** — Run shell scripts in **[`kubernetes/base-update/pre-apply.d/`](../kubernetes/base-update/pre-apply.d/)** (if any) **before** applying manifests. They perform idempotent cluster fixups—for example removing a workload replaced by a different controller kind. See [Pre-apply hooks](#pre-apply-hooks) below.
+4. **Apply** — `kubectl apply -k` on **[`kubernetes/base-update/`](../kubernetes/base-update/kustomization.yaml)** (not full `kubernetes/base/`). The **update** overlay applies the same workloads and config as `base` but **omits** `jwt-secret` and `postgres-secret` from the repo so a fresh clone does **not** overwrite live database or signing secrets.
+5. **Roll out** — `kubectl rollout restart` for **api**, **frontend**, **event-handler**, and **ct-monitor**, then wait for rollouts to finish.
 
 Restarting **api** creates a new Pod: the **`run-migrations`** init container runs again with the **migrations** image for the target release, then the API container starts. If migrations fail, the API Pod will not become Ready until the issue is fixed—see [Database migrations (automated)](install-on-kubernetes.md#database-migrations-automated).
 
@@ -77,18 +78,36 @@ Script help:
 ./update-minikube.sh --help
 ```
 
+## Pre-apply hooks
+
+Scripts in [`kubernetes/base-update/pre-apply.d/`](../kubernetes/base-update/pre-apply.d/) run **automatically** (step 3 above) **before** `kubectl apply -k kubernetes/base-update/`. They are **not** part of Kustomize; they exist because **`kubectl apply` does not delete** API objects that were removed from newer manifests.
+
+The update scripts export:
+
+| Variable | Purpose |
+|----------|---------|
+| `RECONHAWX_NS` | Target namespace (default `reconhawx`). |
+| `RECONHAWX_CLUSTER_VERSION` | In-cluster `reconhawx-version` / `APP_VERSION`, or empty if missing. |
+| `RECONHAWX_BUNDLE_VERSION` | Semver from the bundle being applied. |
+| `RECONHAWX_PRE_APPLY_LIB` | Generated `reconhawx_kubectl` helper (see [`pre-apply.d/README.md`](../kubernetes/base-update/pre-apply.d/README.md)). |
+
+Hooks can use **`sort -V`** on those strings for semver-gated behavior (documented in that README).
+
+**Manual upgrades:** if you do not use `./update-kubernetes.sh` or `./update-minikube.sh`, run the same scripts **in lexicographic order** before applying manifests—see the manual example in [`pre-apply.d/README.md`](../kubernetes/base-update/pre-apply.d/README.md)—and export `RECONHAWX_CLUSTER_VERSION` / `RECONHAWX_BUNDLE_VERSION` when a hook relies on them.
+
 ## Manual upgrade (without scripts)
 
 Equivalent high-level steps:
 
 1. Obtain a tree whose **`kubernetes/base`** matches the release you want (checkout tag, or extract release tarball).
-2. Apply the safe overlay (no secrets from git):
+2. Run **pre-apply hooks** (if present) in order—see [Pre-apply hooks](#pre-apply-hooks) and [`kubernetes/base-update/pre-apply.d/README.md`](../kubernetes/base-update/pre-apply.d/README.md).
+3. Apply the safe overlay (no secrets from git):
 
    ```bash
    kubectl apply -k kubernetes/base-update/
    ```
 
-3. Restart workloads and wait:
+4. Restart workloads and wait:
 
    ```bash
    kubectl rollout restart deploy/api deploy/frontend deploy/event-handler deploy/ct-monitor -n reconhawx
@@ -96,7 +115,7 @@ Equivalent high-level steps:
    # … repeat for other deployments as needed
    ```
 
-You still need **`curl` / GitHub** only if you choose to fetch a tarball yourself; the scripts automate that path.
+You still need **`curl` / GitHub** only if you choose to fetch a tarball yourself; the scripts automate that path (including pre-apply hooks).
 
 ## Why `base-update` instead of `base`?
 
