@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.10.0](https://github.com/ReconHawx/reconhawx/compare/v0.9.0...v0.10.0) (2026-04-06)
+
+
+### Features
+
+* **admin:** store workflow runner images in system settings ([0583e59](https://github.com/ReconHawx/reconhawx/commit/0583e59f88a24aa478f9be938ea9d2c2ff426f31))
+* **k8s:** run postgres as statefulset and add upgrade pre-apply hooks ([cb77b98](https://github.com/ReconHawx/reconhawx/commit/cb77b989dd7fe6cdc5c323e61985d23547f78cf8))
+
 ## [0.9.0](https://github.com/ReconHawx/reconhawx/compare/v0.8.0...v0.9.0) (2026-04-04)
 
 
