@@ -36,12 +36,32 @@ kubectl apply -k kubernetes/base/
 
 Use repo root **`update-kubernetes.sh`** or **`update-minikube.sh`**, or manually `kubectl apply -k kubernetes/base-update/` then restart app Deployments. See **[`docs/update-reconhawx.md`](../docs/update-reconhawx.md)** for prerequisites, versioning (`reconhawx-version` / `APP_VERSION`), why **`base-update`** avoids re-applying Secrets from git, and troubleshooting.
 
+### PostgreSQL: Deployment to StatefulSet (existing clusters)
+
+Manifests run PostgreSQL as a **StatefulSet** with a **headless** Service (`postgresql-headless`) for pod identity and the existing **NodePort** Service `postgresql` for clients. If the cluster still has **`deployment.apps/postgresql`** from an older release, do **not** apply the StatefulSet while that Deployment is running: both select `app=postgresql`, so the Service could send traffic to two Postgres instances.
+
+**Preferred:** run **`./update-kubernetes.sh`** or **`./update-minikube.sh`** from the release you are upgrading to. Pre-apply hooks in [`base-update/pre-apply.d/`](base-update/pre-apply.d/) drop the legacy Deployment and wait for pods to exit before `kubectl apply`. See **[`docs/update-reconhawx.md`](../docs/update-reconhawx.md#pre-apply-hooks)**.
+
+**Manual:** plan a short database downtime window, then:
+
+1. Remove the old controller and wait until no pod with `app=postgresql` is running so the **ReadWriteOnce** PVC can attach to the new pod:
+
+   ```bash
+   kubectl delete deployment postgresql -n reconhawx --ignore-not-found
+   ```
+
+   Re-run `kubectl get pods -n reconhawx -l app=postgresql` until it lists no pods (often a few seconds).
+
+2. Apply updated manifests (`kubectl apply -k kubernetes/base-update/` or your overlay), or run pre-apply hooks by hand as described in [`kubernetes/base-update/pre-apply.d/README.md`](base-update/pre-apply.d/README.md).
+
+Clusters that never had the Deployment only need a normal apply.
+
 ## Default Admin User
 
 On first deploy (fresh PVC), PostgreSQL automatically creates an `admin` superuser with a random password. Retrieve the credentials from the pod logs:
 
 ```bash
-kubectl logs deploy/postgresql -n reconhawx | grep -A4 "ADMIN USER CREATED"
+kubectl logs statefulset/postgresql -n reconhawx | grep -A4 "ADMIN USER CREATED"
 ```
 
 Change this password after your first login.
@@ -75,7 +95,7 @@ The API image ships **PostgreSQL 15 client tools** (`postgresql-client-15`). The
 
 | Component | Description |
 |-----------|-------------|
-| **PostgreSQL** | Database (PVC-backed) |
+| **PostgreSQL** | StatefulSet, PVC-backed (`postgresql-headless` + `postgresql` Service) |
 | **NATS** | Message broker with JetStream (streams created on startup) |
 | **Redis** | Cache / pub-sub |
 | **Kueue** | Job queue CRDs, cluster queues, and resource flavors |

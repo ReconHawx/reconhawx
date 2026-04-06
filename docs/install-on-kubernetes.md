@@ -229,8 +229,8 @@ After Postgres is up, the **API** pod’s **`run-migrations`** init container ap
 ### Wait for the postgresql pod to be ready and get admin password from the postgresql pod
 
 ```shell
-kubectl wait deploy/postgresql -n reconhawx --for=condition=available --timeout=5m
-kubectl logs deploy/postgresql -n reconhawx | grep -A2 "ADMIN USER CREATED"
+kubectl rollout status statefulset/postgresql -n reconhawx --timeout=5m
+kubectl logs statefulset/postgresql -n reconhawx | grep -A2 "ADMIN USER CREATED"
 ```
 
 ### Set hosts file

@@ -237,6 +237,9 @@ main() {
 
   reconhawx_sync_frontend_ingress_manifest_from_cluster "$BASE_SRC" "$RECONHAWX_NS" minikube -p "$MINIKUBE_PROFILE" kubectl --
 
+  ui_step "Kubernetes: pre-apply hooks (if any)"
+  reconhawx_run_base_update_pre_apply_hooks "$BASE_SRC" "$RECONHAWX_NS" "${cluster_ver:-}" "${bundle_ver:-}" minikube -p "$MINIKUBE_PROFILE" kubectl --
+
   local _attempt _max=6
   for _attempt in $(seq 1 "$_max"); do
     ui_step "Kubernetes: apply upgrade bundle (attempt ${_attempt}/${_max})"

@@ -109,8 +109,8 @@ minikube -p reconhawx kubectl -- apply -k kubernetes/base/
 ### Wait for the postgresql pod to be ready and get admin password from the postgresql pod
 
 ```shell
-minikube -p reconhawx kubectl -- wait deploy/postgresql -n reconhawx --for=condition=available --timeout=5m
-minikube -p reconhawx kubectl -- logs deploy/postgresql -n reconhawx | grep -A2 "ADMIN USER CREATED"
+minikube -p reconhawx kubectl -- rollout status statefulset/postgresql -n reconhawx --timeout=5m
+minikube -p reconhawx kubectl -- logs statefulset/postgresql -n reconhawx | grep -A2 "ADMIN USER CREATED"
 ```
 
 ### Get Ingress IP and set hosts file
