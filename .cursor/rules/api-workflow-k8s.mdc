@@ -486,7 +486,7 @@ Key environment variables for workflow execution:
 | `WORKFLOW_CPU_LIMIT` | `2000m` | CPU limit |
 | `WORKFLOW_MEMORY_REQUEST` | `1Gi` | Memory request |
 | `WORKFLOW_MEMORY_LIMIT` | `4Gi` | Memory limit |
-| *(DB / `APP_VERSION`)* | see `workflow_kubernetes_settings` | Runner/worker images and pull policy for spawned jobs: `system_settings` key `workflow_kubernetes` via superuser admin API; defaults from `APP_VERSION` (`ghcr.io/.../runner|worker:<tag>`, `IfNotPresent`) |
+| *(DB / `APP_VERSION`)* | see `workflow_kubernetes_settings` | Runner/worker images and pull policy for spawned jobs: `system_settings` key `workflow_kubernetes` via superuser admin API; defaults from `APP_VERSION` (`ghcr.io/.../runner|worker:<tag>`, `IfNotPresent`). Stored JSON can use per-service **structured** fields (`runner_repository` / `worker_repository`, `runner_tag_source` / `worker_tag_source` = `app_version` or `custom`, optional `*_custom_tag`) or legacy full `runner_image` / `worker_image` strings. |
 | `JOB_TTL_SECONDS` | `300` | TTL after job completion |
 | `INTERNAL_SERVICE_API_KEY` | - | API key for internal auth |
 
