@@ -168,6 +168,7 @@ Environment:
   RECONHAWX_GITHUB_REPO    owner/repo (default: ReconHawx/reconhawx).
   RECONHAWX_NS             Namespace (default: reconhawx).
   INSTALL_STAGING_DIR      Git clones only: copied manifests before apply (default: /tmp/reconhawx); removed after success.
+  RECONHAWX_KUEUE_RESYNC_QUOTAS  Set to 1 to re-run reconhawx-kueue-quota-sync.py after apply (e.g. after adding nodes).
 EOF
 }
 
@@ -253,6 +254,14 @@ main() {
     ui_note "Apply failed; waiting 15s …"
     sleep 15
   done
+
+  if [[ "${RECONHAWX_KUEUE_RESYNC_QUOTAS:-0}" == "1" ]]; then
+    require_cmd python3
+    local _qsync="${tree_root}/reconhawx-kueue-quota-sync.py"
+    [[ -f "$_qsync" ]] || die "missing ${_qsync} (run from repo root or release tree with reconhawx-kueue-quota-sync.py)"
+    run_tool_long "Kubernetes: re-sync Kueue ClusterQueue quotas (RECONHAWX_KUEUE_RESYNC_QUOTAS=1)" \
+      python3 "$_qsync" minikube -p "$MINIKUBE_PROFILE" kubectl --
+  fi
 
   run_tool_long "Kubernetes: restart app deployments" \
     mk rollout restart deploy/api deploy/frontend deploy/event-handler deploy/ct-monitor -n "$RECONHAWX_NS"

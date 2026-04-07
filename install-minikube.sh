@@ -558,6 +558,7 @@ _pg_admin_pass_from_logs() {
 main() {
   require_cmd minikube
   require_cmd openssl
+  require_cmd python3
 
   ui_banner
 
@@ -679,6 +680,16 @@ main() {
     ui_note "Apply failed (attempt ${_attempt}/${_max}); waiting 15s and retrying (ingress admission may still be starting) …"
     sleep 15
   done
+
+  local _qsync
+  if [[ "${RECONHAWX_INSTALL_FROM_RELEASE}" -eq 1 ]]; then
+    _qsync="${RECONHAWX_SOURCE_TREE_ROOT}/reconhawx-kueue-quota-sync.py"
+  else
+    _qsync="${REPO_ROOT}/reconhawx-kueue-quota-sync.py"
+  fi
+  [[ -f "$_qsync" ]] || die "missing ${_qsync} (expected at repository root next to install-minikube.sh)"
+  run_tool_long "Kubernetes: sizing Kueue ClusterQueues from labeled nodes" \
+    python3 "$_qsync" minikube -p "$MINIKUBE_PROFILE" kubectl --
 
   ui_step "Kubernetes: waiting for PostgreSQL"
   tool_stream mk rollout status statefulset/postgresql -n reconhawx --timeout=5m

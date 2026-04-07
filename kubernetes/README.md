@@ -32,6 +32,8 @@ cd ../../..
 kubectl apply -k kubernetes/base/
 ```
 
+After a manual deploy, **[`reconhawx-kueue-quota-sync.py`](../reconhawx-kueue-quota-sync.py)** at the repo root sets **ClusterQueue** `nominalQuota` from nodes labeled `reconhawx.runner` / `reconhawx.worker` (requires **`python3`**). The **`install-kubernetes.sh`** / **`install-minikube.sh`** helpers run it automatically.
+
 ## Upgrading an existing install
 
 Use repo root **`update-kubernetes.sh`** or **`update-minikube.sh`**, or manually `kubectl apply -k kubernetes/base-update/` then restart app Deployments. See **[`docs/update-reconhawx.md`](../docs/update-reconhawx.md)** for prerequisites, versioning (`reconhawx-version` / `APP_VERSION`), why **`base-update`** avoids re-applying Secrets from git, and troubleshooting.
@@ -79,7 +81,7 @@ The API exposes `/admin/database/status`, `/admin/database/backup`, and **`/admi
 
 ### Kueue drain before restore
 
-Patch all four **ClusterQueue** resources to **`spec.stopPolicy: Hold`** (via admin API or `kubectl`) so **new** workloads are not admitted while **admitted** jobs **run to completion**. Use **`Hold`**, not **`HoldAndDrain`**: in Kueue, **HoldAndDrain evicts** admitted workloads (they tend to restart when you clear the policy). Reserving workloads cancel reservation under either policy. Clear `stopPolicy` when done. The API **`api-sa`** needs **ClusterRole** permission to **patch** `clusterqueues` (see `kubernetes/base/kueue/api-kueue-clusterqueue-rbac.yaml`).
+Patch all four **ClusterQueue** resources to **`spec.stopPolicy: Hold`** (via admin API or `kubectl`) so **new** workloads are not admitted while **admitted** jobs **run to completion**. Use **`Hold`**, not **`HoldAndDrain`**: in Kueue, **HoldAndDrain evicts** admitted workloads (they tend to restart when you clear the policy). Reserving workloads cancel reservation under either policy. Clear `stopPolicy` when done. The API **`api-sa`** needs **ClusterRole** permission to **patch** `clusterqueues` (see `kubernetes/base/kueue/core/api-kueue-clusterqueue-rbac.yaml`).
 
 ### Job-based restore (recommended in cluster)
 
@@ -129,37 +131,39 @@ Wait until the `kueue-controller-manager` pod is `Running` before proceeding.
 
 ### 2. What `base/kueue/` provides
 
-The base manifests create the following Kueue resources in the `recon` namespace:
+The base manifests create the following Kueue resources in the **`reconhawx`** namespace:
 
 | Resource | Name | Purpose |
 |----------|------|---------|
-| ResourceFlavor | `runner-flavor` | Targets nodes with label `type: runner` |
-| ResourceFlavor | `worker-flavor` | Targets nodes with label `type: worker` |
-| ClusterQueue | `runner-cluster-queue` | Runner jobs — 2 CPU, 4Gi memory (runner-flavor) |
-| ClusterQueue | `worker-cluster-queue` | Worker jobs — 4 CPU, 8Gi memory (worker-flavor) |
-| ClusterQueue | `ai-analysis-cluster-queue` | AI analysis — 500m CPU, 512Mi memory (runner-flavor) |
+| ResourceFlavor | `runner-flavor` | Targets nodes with label `reconhawx.runner: "true"` |
+| ResourceFlavor | `worker-flavor` | Targets nodes with label `reconhawx.worker: "true"` |
+| ClusterQueue | `runner-cluster-queue` | Runner workflow jobs (runner-flavor); placeholder in git — run [`reconhawx-kueue-quota-sync.py`](../reconhawx-kueue-quota-sync.py) or the install helpers to size from the cluster |
+| ClusterQueue | `worker-cluster-queue` | Worker jobs (worker-flavor); same as above |
+| ClusterQueue | `ai-analysis-cluster-queue` | AI batch jobs — fixed **500m CPU, 512Mi** (one concurrent job); keep aligned with Job **requests** in `src/api/app/services/job_submission.py` |
 | LocalQueue | `recon-runner-queue` | Namespace queue bound to `runner-cluster-queue` |
 | LocalQueue | `recon-worker-queue` | Namespace queue bound to `worker-cluster-queue` |
 | LocalQueue | `recon-ai-analysis-queue` | Namespace queue bound to `ai-analysis-cluster-queue` |
 | Role/RoleBinding | `kueue-workload-manager` | Grants the API service account permission to manage namespaced Kueue workloads |
 | ClusterRole/ClusterRoleBinding | `reconhawx-api-kueue-clusterqueues` | **`clusterqueues`** get/list/patch/update for maintenance **stopPolicy** |
 
-These are all applied automatically as part of `kubectl apply -k kubernetes/base/`.
+These are all applied automatically as part of `kubectl apply -k kubernetes/base/`. **[`kubernetes/base-update/`](../base-update/kustomization.yaml)** includes **`kueue/core`** only (flavors, local queues, RBAC), not **ClusterQueue** YAMLs under [`kueue/cluster-queues/`](base/kueue/cluster-queues/kustomization.yaml), so updates do not overwrite cluster-sized quotas. Use **`RECONHAWX_KUEUE_RESYNC_QUOTAS=1`** on an update run, or run **`reconhawx-kueue-quota-sync.py`** manually after adding nodes.
 
 ### 3. Node labels for flavors
 
-The `runner-flavor` and `worker-flavor` target specific node labels. If your cluster does not have dedicated runner/worker nodes, you can label any node:
+The `runner-flavor` and `worker-flavor` target **`reconhawx.runner`** and **`reconhawx.worker`**. If your cluster does not have dedicated runner/worker nodes, you can label any node:
 
 ```bash
-kubectl label node <node-name> type=runner --overwrite
-kubectl label node <node-name> type=worker --overwrite
+kubectl label node <node-name> reconhawx.runner=true --overwrite
+kubectl label node <node-name> reconhawx.worker=true --overwrite
 ```
 
 On a single-node cluster, apply both labels to the same node.
 
 ### 4. Tuning quotas
 
-The default quotas are conservative. Adjust them to match your cluster capacity by patching the ClusterQueue resources. For example, to increase the runner queue:
+Default **ClusterQueue** quotas in git are placeholders. Prefer **`reconhawx-kueue-quota-sync.py`** (or the install scripts) so **`runner-cluster-queue`** and **`worker-cluster-queue`** match allocatable resources after a small reserve. **`ai-analysis-cluster-queue`** stays at one-job capacity (500m / 512Mi by default) so only one AI analysis batch runs at a time.
+
+You can still patch or overlay **ClusterQueue** resources manually. For example, to increase the runner queue:
 
 ```yaml
 # my-overlay/patches/runner-cluster-queue-patch.yaml
@@ -179,7 +183,7 @@ spec:
         nominalQuota: 24Gi
 ```
 
-Or edit the files under `base/kueue/` directly if you are not using overlays.
+Or edit the files under `base/kueue/cluster-queues/` directly if you are not using overlays.
 
 ## Customization
 

@@ -1,0 +1,9 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# ClusterQueue nominalQuota defaults — sized on install via reconhawx-kueue-quota-sync.py.
+# Not included in kubernetes/base-update/ so upgrades preserve cluster-sized quotas.
+resources:
+  - runner-cluster-queue.yaml
+  - worker-cluster-queue.yaml
+  - ai-analysis-cluster-queue.yaml

@@ -57,7 +57,7 @@ MINIKUBE_PROFILE=my-profile ./update-minikube.sh
 1. **Resolve manifests** — Either use **`kubernetes/base`** next to your clone (default when the directory exists) or download the **latest GitHub release** source tarball (same logic as install: see flags below).
 2. **Print version context** — Manifest **`APP_VERSION`**, GitHub **latest release tag**, and in-cluster **`reconhawx-version`** when present.
 3. **Pre-apply hooks** — Run shell scripts in **[`kubernetes/base-update/pre-apply.d/`](../kubernetes/base-update/pre-apply.d/)** (if any) **before** applying manifests. They perform idempotent cluster fixups—for example removing a workload replaced by a different controller kind. See [Pre-apply hooks](#pre-apply-hooks) below.
-4. **Apply** — `kubectl apply -k` on **[`kubernetes/base-update/`](../kubernetes/base-update/kustomization.yaml)** (not full `kubernetes/base/`). The **update** overlay applies the same workloads and config as `base` but **omits** `jwt-secret` and `postgres-secret` from the repo so a fresh clone does **not** overwrite live database or signing secrets.
+4. **Apply** — `kubectl apply -k` on **[`kubernetes/base-update/`](../kubernetes/base-update/kustomization.yaml)** (not full `kubernetes/base/`). The **update** overlay applies the same workloads and config as `base` but **omits** `jwt-secret` and `postgres-secret` from the repo so a fresh clone does **not** overwrite live database or signing secrets. It includes **[`kubernetes/base/kueue/core`](../kubernetes/base/kueue/core/kustomization.yaml)** (flavors, local queues, RBAC) but **not** the **ClusterQueue** manifests under [`kubernetes/base/kueue/cluster-queues/`](../kubernetes/base/kueue/cluster-queues/kustomization.yaml), so upgrades **do not reset** cluster-sized `nominalQuota` values. To recompute quotas after scaling nodes, run **`RECONHAWX_KUEUE_RESYNC_QUOTAS=1 ./update-kubernetes.sh`** (or **`update-minikube.sh`**) from a tree that contains [`reconhawx-kueue-quota-sync.py`](../reconhawx-kueue-quota-sync.py), or invoke that script manually.
 5. **Roll out** — `kubectl rollout restart` for **api**, **frontend**, **event-handler**, and **ct-monitor**, then wait for rollouts to finish.
 
 Restarting **api** creates a new Pod: the **`run-migrations`** init container runs again with the **migrations** image for the target release, then the API container starts. If migrations fail, the API Pod will not become Ready until the issue is fixed—see [Database migrations (automated)](install-on-kubernetes.md#database-migrations-automated).
@@ -70,6 +70,7 @@ Restarting **api** creates a new Pod: the **`run-migrations`** init container ru
 | **`RECONHAWX_FROM_RELEASE`** | `1` = force release tarball; `0` = force local `kubernetes/base`; **unset** = use local tree when `kubernetes/base` exists, otherwise download release. |
 | **`RECONHAWX_GITHUB_REPO`** | `owner/repo` for releases API and tarball (default `ReconHawx/reconhawx`). Use your fork if images and releases live there. |
 | **`RECONHAWX_NS`** | Namespace (default `reconhawx`). |
+| **`RECONHAWX_KUEUE_RESYNC_QUOTAS`** | Set to **`1`** to run [`reconhawx-kueue-quota-sync.py`](../reconhawx-kueue-quota-sync.py) after a successful apply (needs **`python3`**). |
 
 Script help:
 
@@ -121,7 +122,7 @@ You still need **`curl` / GitHub** only if you choose to fetch a tarball yoursel
 
 [`kubernetes/base/`](../kubernetes/base/kustomization.yaml) includes Secret manifests under **`kubernetes/base/secrets/`**. Those files in git are **examples or local dev** values. Running `kubectl apply -k kubernetes/base/` from a **new** clone can **replace** cluster Secrets and break login or database access.
 
-[`kubernetes/base-update/`](../kubernetes/base-update/kustomization.yaml) applies the same ConfigMaps, Deployments, RBAC, Kueue resources in the namespace, etc., but **does not** apply those Secret objects. Existing cluster Secrets are left unchanged.
+[`kubernetes/base-update/`](../kubernetes/base-update/kustomization.yaml) applies the same ConfigMaps, Deployments, RBAC, Kueue flavors/local queues/RBAC, etc., but **does not** apply those Secret objects. Existing cluster Secrets are left unchanged. **ClusterQueue** objects are also **not** part of the update bundle (see step 4 above), so their quotas stay as last set by install or [`reconhawx-kueue-quota-sync.py`](../reconhawx-kueue-quota-sync.py).
 
 If you intentionally need to rotate Secrets from files, do that with a controlled process (e.g. `kubectl apply` specific Secret YAMLs you generated securely), not by blindly applying full `base` from an unchecked-in tree.
 
