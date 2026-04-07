@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator, model_validator, validator
 from typing import Dict, Any, List, Optional
 from datetime import datetime
 from enum import Enum
@@ -177,16 +177,49 @@ class ScheduledJobRequest(BaseModel):
     schedule: JobSchedule = Field(..., description="Schedule configuration")
     name: str = Field(..., description="Name for the scheduled job")
     description: Optional[str] = Field(None, description="Description of the scheduled job")
-    program_name: str = Field(..., description="Program name for the scheduled job")
+    program_name: Optional[str] = Field(None, description="Program name for the scheduled job (single program)")
+    program_names: Optional[List[str]] = Field(
+        None,
+        description="Program names; multiple entries allowed for workflow jobs only",
+    )
     tags: Optional[List[str]] = Field(default_factory=list, description="Tags for the scheduled job")
-    
-    @validator('name')
-    def validate_name(cls, v):
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: str) -> str:
         if not v.strip():
             raise ValueError("Name cannot be empty")
         if len(v) > 100:
             raise ValueError("Name cannot exceed 100 characters")
         return v.strip()
+
+    @model_validator(mode="after")
+    def validate_programs(self):
+        job_type = self.job_type
+        names_param = self.program_names
+        single = self.program_name
+
+        jt_val = job_type.value if hasattr(job_type, "value") else job_type
+
+        if names_param is not None:
+            if not isinstance(names_param, list) or len(names_param) == 0:
+                raise ValueError("program_names must be a non-empty list when provided")
+            clean: List[str] = []
+            seen = set()
+            for n in names_param:
+                if n is None or not str(n).strip():
+                    raise ValueError("program_names entries must be non-empty strings")
+                s = str(n).strip()
+                if s not in seen:
+                    seen.add(s)
+                    clean.append(s)
+            if jt_val != JobType.WORKFLOW.value and len(clean) > 1:
+                raise ValueError("Multiple programs are only supported for workflow scheduled jobs")
+            return self.model_copy(update={"program_names": clean, "program_name": clean[0]})
+
+        if not single or not str(single).strip():
+            raise ValueError("program_name is required when program_names is not set")
+        return self.model_copy(update={"program_name": str(single).strip()})
 
 class ScheduledJobResponse(BaseModel):
     """Response model for scheduled jobs"""
@@ -194,8 +227,10 @@ class ScheduledJobResponse(BaseModel):
     job_type: JobType
     name: str
     description: Optional[str]
-    program_id: str
-    program_name: Optional[str] = None
+    program_ids: List[str] = Field(default_factory=list)
+    program_names: List[str] = Field(default_factory=list)
+    program_id: Optional[str] = Field(None, description="First program id (compat)")
+    program_name: Optional[str] = Field(None, description="First program name (compat)")
     job_data: Dict[str, Any] = Field(default_factory=dict, description="Job-specific data")
     schedule: JobSchedule
     status: JobStatus
@@ -216,6 +251,10 @@ class ScheduledJobUpdateRequest(BaseModel):
     enabled: Optional[bool] = Field(None, description="Whether to enable/disable the schedule")
     tags: Optional[List[str]] = Field(None, description="New tags")
     job_data: Optional[Dict[str, Any]] = Field(None, description="Job-specific data updates")
+    program_names: Optional[List[str]] = Field(
+        None,
+        description="Replace program targets (workflow jobs only; requires manager on each)",
+    )
 
 class JobExecutionHistory(BaseModel):
     """Model for job execution history"""

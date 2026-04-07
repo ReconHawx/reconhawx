@@ -14,7 +14,7 @@ import httpx
 import logging
 import uuid
 from datetime import datetime, timezone, timedelta
-from typing import List
+from typing import List, Optional
 
 # Import the common managers
 from common_auth_manager import create_auth_session
@@ -39,24 +39,46 @@ class ScheduledJobsTester:
         
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         await self.client.aclose()
-    
+
+    async def _resolve_test_program_name(self, auth_headers: dict) -> Optional[str]:
+        """Pick a program the test user can schedule jobs for (prefers manager)."""
+        try:
+            response = await self.client.get(f"{self.base_url}/programs", headers=auth_headers)
+            if response.status_code != 200:
+                return None
+            data = response.json()
+            programs = data.get("programs_with_permissions") or []
+            for p in programs:
+                if p.get("permission_level") == "manager" or p.get("permission") == "manager":
+                    return p.get("name")
+            if programs:
+                return programs[0].get("name")
+        except Exception:
+            pass
+        return None
+
     async def test_create_one_time_dummy_job(self, auth_headers: dict) -> bool:
         """Test creating a one-time dummy batch job"""
         logger.info("Testing create one-time dummy batch job")
         
         try:
+            program_name = await self._resolve_test_program_name(auth_headers)
+            if not program_name:
+                logger.error("❌ No accessible program for scheduled job test")
+                return False
             job_data = {
                 "job_type": "dummy_batch",
                 "job_data": {
-            "items": ["item1", "item2", "item3", "item4", "item5"]
-        },
+                    "items": ["item1", "item2", "item3", "item4", "item5"]
+                },
                 "schedule": {
                     "schedule_type": "once",
                     "start_time": (datetime.now(timezone.utc) + timedelta(minutes=2)).isoformat()
                 },
                 "name": f"Test Dummy Job {uuid.uuid4().hex[:8]}",
                 "description": "A test dummy batch job created via API",
-                "tags": ["test", "dummy", "batch"]
+                "tags": ["test", "dummy", "batch"],
+                "program_name": program_name,
             }
             
             response = await self.client.post(
@@ -72,6 +94,10 @@ class ScheduledJobsTester:
                 logger.info(f"   Schedule ID: {schedule_id}")
                 logger.info(f"   Status: {data.get('status')}")
                 logger.info(f"   Next Run: {data.get('next_run')}")
+                pids = data.get("program_ids") or []
+                if not pids:
+                    logger.error("❌ Response missing program_ids")
+                    return False
                 
                 if schedule_id:
                     self.created_jobs.append(schedule_id)
@@ -91,6 +117,10 @@ class ScheduledJobsTester:
         logger.info("Testing create recurring dummy batch job")
         
         try:
+            program_name = await self._resolve_test_program_name(auth_headers)
+            if not program_name:
+                logger.error("❌ No accessible program for scheduled job test")
+                return False
             job_data = {
                 "job_type": "dummy_batch",
                 "job_data": {
@@ -107,7 +137,8 @@ class ScheduledJobsTester:
                 },
                 "name": f"Test Recurring Dummy Job {uuid.uuid4().hex[:8]}",
                 "description": "A test recurring dummy batch job created via API",
-                "tags": ["test", "recurring", "dummy"]
+                "tags": ["test", "recurring", "dummy"],
+                "program_name": program_name,
             }
             
             response = await self.client.post(

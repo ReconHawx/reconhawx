@@ -16,6 +16,32 @@ router = APIRouter()
 # Global scheduler service instance
 scheduler_service = JobSchedulerService()
 
+async def _resolve_program_names_to_ids(current_user: UserResponse, names: List[str]) -> List[str]:
+    """Resolve ordered unique program names to UUID strings."""
+    out: List[str] = []
+    for name in names:
+        out.append(await _resolve_program_id(current_user, name))
+    return out
+
+
+async def _user_has_analyst_on_any_program(current_user: UserResponse, program_ids: List[str]) -> bool:
+    if not program_ids:
+        return False
+    for pid in program_ids:
+        if await check_program_permission_by_id(current_user, pid, "analyst"):
+            return True
+    return False
+
+
+async def _user_has_manager_on_all_programs(current_user: UserResponse, program_ids: List[str]) -> bool:
+    if not program_ids:
+        return False
+    for pid in program_ids:
+        if not await check_program_permission_by_id(current_user, pid, "manager"):
+            return False
+    return True
+
+
 async def _resolve_program_id(current_user: UserResponse, program_name: str) -> str:
     """Resolve program name to program ID and verify user has access"""
     
@@ -79,23 +105,20 @@ async def create_scheduled_job(
         
         # Validate job data based on job type
         await _validate_job_data(request.job_type, request.job_data)
-        
-        # Resolve program name to program ID and verify user has access
-        program_id = await _resolve_program_id(current_user, request.program_name)
-        
-        # Require manager-level permission to create a scheduled job for the program
-        has_manager = await check_program_permission_by_id(current_user, program_id, "manager")
-        if not has_manager:
+
+        target_names = list(request.program_names) if request.program_names else [request.program_name]
+        program_id_list = await _resolve_program_names_to_ids(current_user, target_names)
+
+        if not await _user_has_manager_on_all_programs(current_user, program_id_list):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Manager access required to create scheduled job",
+                detail="Manager access required on all selected programs to create scheduled job",
             )
-        
-        # Create the scheduled job
+
         scheduled_job = await scheduler_service.create_scheduled_job(
-            request, 
+            request,
             current_user.id or "unknown",
-            program_id
+            program_id_list,
         )
         
         logger.info(f"Successfully created scheduled job {scheduled_job.schedule_id}")
@@ -258,12 +281,14 @@ async def get_supported_job_types():
                 "description": "Execute a predefined workflow",
                 "required_data": {
                     "workflow_id": "str - ID of the workflow to execute",
-                    "program_name": "str - Program name for the execution",
                     "workflow_variables": "Optional[Dict] - Variable values for workflow execution"
+                },
+                "schedule_fields": {
+                    "program_name": "str - Single program (non-workflow jobs)",
+                    "program_names": "List[str] - For workflow jobs only: one runner per program (manager on all required)"
                 },
                 "example": {
                     "workflow_id": "workflow-123",
-                    "program_name": "security-assessment",
                     "workflow_variables": {
                         "domain": "example.com",
                         "port": "443"
@@ -297,11 +322,10 @@ async def get_scheduled_job(
         if not scheduled_job:
             raise HTTPException(status_code=404, detail=f"Scheduled job {schedule_id} not found")
         
-        # Check program permission for this job using program_id
-        if scheduled_job.program_id and not await check_program_permission_by_id(current_user, scheduled_job.program_id, "analyst"):
+        if not await _user_has_analyst_on_any_program(current_user, scheduled_job.program_ids):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied to scheduled job"
+                detail="Access denied to scheduled job",
             )
         
         return scheduled_job
@@ -328,11 +352,10 @@ async def update_scheduled_job(
         if not existing_job:
             raise HTTPException(status_code=404, detail=f"Scheduled job {schedule_id} not found")
         
-        # Check program permission for updating this job using program_id
-        if existing_job.program_id and not await check_program_permission_by_id(current_user, existing_job.program_id, "manager"):
+        if not await _user_has_manager_on_all_programs(current_user, existing_job.program_ids):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Manager access required to update scheduled job"
+                detail="Manager access required on all programs for this scheduled job",
             )
         
         # Build update data from request
@@ -350,7 +373,26 @@ async def update_scheduled_job(
         if request.job_data is not None:
             await _validate_job_data(existing_job.job_type, request.job_data)
             update_data["job_data"] = request.job_data
-        
+
+        if request.program_names is not None:
+            if len(request.program_names) == 0:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="program_names cannot be empty",
+                )
+            if existing_job.job_type != JobType.WORKFLOW:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="program_names can only be updated for workflow scheduled jobs",
+                )
+            new_ids = await _resolve_program_names_to_ids(current_user, request.program_names)
+            if not await _user_has_manager_on_all_programs(current_user, new_ids):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Manager access required on all selected programs",
+                )
+            update_data["program_ids"] = new_ids
+
         if not update_data:
             raise HTTPException(status_code=400, detail="No fields to update")
         
@@ -387,11 +429,10 @@ async def delete_scheduled_job(
         if not existing_job:
             raise HTTPException(status_code=404, detail=f"Scheduled job {schedule_id} not found")
         
-        # Check program permission for deleting this job using program_id
-        if existing_job.program_id and not await check_program_permission_by_id(current_user, existing_job.program_id, "manager"):
+        if not await _user_has_manager_on_all_programs(current_user, existing_job.program_ids):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Manager access required to delete scheduled job"
+                detail="Manager access required on all programs for this scheduled job",
             )
         
         success = await scheduler_service.delete_scheduled_job(schedule_id)
@@ -427,11 +468,10 @@ async def enable_scheduled_job(
         if not existing_job:
             raise HTTPException(status_code=404, detail=f"Scheduled job {schedule_id} not found")
         
-        # Check program permission for enabling this job using program_id
-        if existing_job.program_id and not await check_program_permission_by_id(current_user, existing_job.program_id, "manager"):
+        if not await _user_has_manager_on_all_programs(current_user, existing_job.program_ids):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Manager access required to enable scheduled job"
+                detail="Manager access required on all programs for this scheduled job",
             )
         
         success = await scheduler_service.enable_scheduled_job(schedule_id)
@@ -467,11 +507,10 @@ async def disable_scheduled_job(
         if not existing_job:
             raise HTTPException(status_code=404, detail=f"Scheduled job {schedule_id} not found")
         
-        # Check program permission for disabling this job using program_id
-        if existing_job.program_id and not await check_program_permission_by_id(current_user, existing_job.program_id, "manager"):
+        if not await _user_has_manager_on_all_programs(current_user, existing_job.program_ids):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Manager access required to disable scheduled job"
+                detail="Manager access required on all programs for this scheduled job",
             )
         
         success = await scheduler_service.disable_scheduled_job(schedule_id)
@@ -508,11 +547,10 @@ async def run_scheduled_job_now(
         if not scheduled_job:
             raise HTTPException(status_code=404, detail=f"Scheduled job {schedule_id} not found")
         
-        # Check program permission for running this job using program_id
-        if scheduled_job.program_id and not await check_program_permission_by_id(current_user, scheduled_job.program_id, "manager"):
+        if not await _user_has_manager_on_all_programs(current_user, scheduled_job.program_ids):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Manager access required to run scheduled job"
+                detail="Manager access required on all programs for this scheduled job",
             )
         
         # Trigger the job immediately
@@ -553,11 +591,10 @@ async def get_scheduled_job_executions(
         if not scheduled_job:
             raise HTTPException(status_code=404, detail=f"Scheduled job {schedule_id} not found")
         
-        # Check program permission for viewing execution history using program_id
-        if scheduled_job.program_id and not await check_program_permission_by_id(current_user, scheduled_job.program_id, "analyst"):
+        if not await _user_has_analyst_on_any_program(current_user, scheduled_job.program_ids):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied to execution history for scheduled job"
+                detail="Access denied to execution history for scheduled job",
             )
         
         # Get execution history from database

@@ -994,7 +994,8 @@ CREATE TABLE public.scheduled_jobs (
     created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
     updated_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
     workflow_variables jsonb DEFAULT '{}'::jsonb,
-    program_id uuid NOT NULL
+    program_ids uuid[] NOT NULL,
+    CONSTRAINT scheduled_jobs_program_ids_nonempty CHECK (cardinality(program_ids) >= 1)
 );
 
 
@@ -3027,17 +3028,10 @@ CREATE INDEX ix_scheduled_jobs_next_run ON public.scheduled_jobs USING btree (ne
 
 
 --
--- Name: ix_scheduled_jobs_program_id; Type: INDEX; Schema: public; Owner: -
+-- Name: ix_scheduled_jobs_program_ids; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX ix_scheduled_jobs_program_id ON public.scheduled_jobs USING btree (program_id);
-
-
---
--- Name: ix_scheduled_jobs_program_id_fkey; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX ix_scheduled_jobs_program_id_fkey ON public.scheduled_jobs USING btree (program_id);
+CREATE INDEX ix_scheduled_jobs_program_ids ON public.scheduled_jobs USING gin (program_ids);
 
 
 --
@@ -3718,14 +3712,6 @@ ALTER TABLE ONLY public.nuclei_findings
 
 ALTER TABLE ONLY public.refresh_tokens
     ADD CONSTRAINT refresh_tokens_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
-
-
---
--- Name: scheduled_jobs scheduled_jobs_program_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.scheduled_jobs
-    ADD CONSTRAINT scheduled_jobs_program_id_fkey FOREIGN KEY (program_id) REFERENCES public.programs(id);
 
 
 --
