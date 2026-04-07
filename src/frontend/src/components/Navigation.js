@@ -192,37 +192,22 @@ function Navigation() {
                   {(isSuperuser() || isAdmin()) && (
                     <>
                       <Dropdown.Divider />
-                      <Dropdown.Item as={Link} to="/admin/events">
-                        📊 Event Queue Stats
+                      <Dropdown.Item as={Link} to="/admin/system-status">
+                        🖥️ System Status
                       </Dropdown.Item>
                     </>
                   )}
                   {isSuperuser() && (
                     <>
+                      <Dropdown.Divider />
                       <Dropdown.Item as={Link} to="/admin/users">
                         👥 User Management
-                      </Dropdown.Item>
-                      <Dropdown.Item as={Link} to="/admin/jobs">
-                        ⚙️ Job Management
                       </Dropdown.Item>
                       <Dropdown.Item as={Link} to="/admin/settings">
                         ⚙️ System Settings
                       </Dropdown.Item>
-                      <Dropdown.Item as={Link} to="/admin/social-media-credentials">
-                        🔑 Social Media Credentials
-                      </Dropdown.Item>
-                      <Dropdown.Item as={Link} to="/admin/ct-monitor">
-                        🔍 CT Monitor
-                      </Dropdown.Item>
-                      <Dropdown.Item as={Link} to="/admin/event-handler-config">
-                        ⚡ Event Handlers
-                      </Dropdown.Item>
                       <Dropdown.Item as={Link} to="/admin/system-maintenance">
                         🔧 System maintenance
-                      </Dropdown.Item>
-                      <Dropdown.Divider />
-                      <Dropdown.Item as={Link} to="/admin/system-status">
-                        🖥️ System Status
                       </Dropdown.Item>
                     </>
                   )}

@@ -1340,7 +1340,7 @@ function TyposquatFindings() {
         text: (
           <span>
             AI analysis batch started for {n} finding(s). Job ID: {jobId}.{' '}
-            <Link to="/admin/jobs">View jobs</Link>
+            <Link to="/workflows/status?tab=jobs">View jobs</Link>
           </span>
         ),
         type: 'info',

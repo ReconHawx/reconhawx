@@ -18,8 +18,7 @@ import {
 import { adminAPI } from '../../services/api';
 import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
 
-function EventStats() {
-  usePageTitle(formatPageTitle('Event Stats'));
+export function EventStatsInner({ embedded = false }) {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -211,26 +210,33 @@ function EventStats() {
     );
   };
 
+  const Outer = embedded ? 'div' : Container;
+  const outerProps = embedded ? {} : { fluid: true };
+
   if (loading && !stats) {
     return (
-      <Container fluid>
-        <Row className="justify-content-center mt-5">
+      <Outer {...outerProps} className={embedded ? '' : undefined}>
+        <Row className={`justify-content-center ${embedded ? 'py-4' : 'mt-5'}`}>
           <Col md="auto">
             <Spinner animation="border" role="status">
               <span className="visually-hidden">Loading...</span>
             </Spinner>
           </Col>
         </Row>
-      </Container>
+      </Outer>
     );
   }
 
   return (
-    <Container fluid>
+    <Outer {...outerProps}>
       <Row className="mb-4">
         <Col>
-          <h2>Event Queue Statistics</h2>
-          <p className="text-muted">NATS JetStream EVENTS stream and notifier consumer metrics</p>
+          {!embedded && (
+            <>
+              <h2>Event Queue Statistics</h2>
+              <p className="text-muted">NATS JetStream EVENTS stream and notifier consumer metrics</p>
+            </>
+          )}
         </Col>
         <Col xs="auto">
           <div className="d-flex gap-2 align-items-center">
@@ -702,8 +708,13 @@ function EventStats() {
           </Button>
         </Modal.Footer>
       </Modal>
-    </Container>
+    </Outer>
   );
+}
+
+function EventStats() {
+  usePageTitle(formatPageTitle('Event Stats'));
+  return <EventStatsInner embedded={false} />;
 }
 
 export default EventStats;

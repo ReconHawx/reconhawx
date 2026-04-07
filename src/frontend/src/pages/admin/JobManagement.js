@@ -18,8 +18,7 @@ import { jobAPI } from '../../services/api';
 import { formatDate } from '../../utils/dateUtils';
 import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
 
-function JobManagement() {
-  usePageTitle(formatPageTitle('Job Management'));
+export function JobManagementInner({ embedded = false }) {
   const [jobs, setJobs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -198,13 +197,16 @@ function JobManagement() {
     return <Pagination className="justify-content-center">{items}</Pagination>;
   };
 
+  const Outer = embedded ? 'div' : Container;
+  const outerProps = embedded ? {} : { fluid: true };
+
   return (
-    <Container fluid className="mt-4">
+    <Outer {...outerProps} className={embedded ? '' : 'mt-4'}>
       <Row>
         <Col>
           <Card>
             <Card.Header className="d-flex justify-content-between align-items-center">
-              <h4 className="mb-0">Job Management</h4>
+              <h4 className="mb-0">{embedded ? 'Job monitoring' : 'Job Management'}</h4>
               <div className="d-flex align-items-center gap-3">
                 <Form.Check
                   type="switch"
@@ -452,8 +454,13 @@ function JobManagement() {
           </Button>
         </Modal.Footer>
       </Modal>
-    </Container>
+    </Outer>
   );
+}
+
+function JobManagement() {
+  usePageTitle(formatPageTitle('Job Management'));
+  return <JobManagementInner embedded={false} />;
 }
 
 export default JobManagement; 

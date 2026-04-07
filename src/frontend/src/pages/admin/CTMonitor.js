@@ -16,8 +16,7 @@ import { Link } from 'react-router-dom';
 import { ctMonitorAPI } from '../../services/api';
 import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
 
-function CTMonitor() {
-  usePageTitle(formatPageTitle('CT Monitor'));
+export function CTMonitorInner({ embedded = false }) {
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -134,26 +133,33 @@ function CTMonitor() {
     );
   };
 
+  const Outer = embedded ? 'div' : Container;
+  const outerProps = embedded ? {} : { fluid: true };
+
   if (loading && !status) {
     return (
-      <Container fluid>
-        <Row className="justify-content-center mt-5">
+      <Outer {...outerProps}>
+        <Row className={`justify-content-center ${embedded ? 'py-4' : 'mt-5'}`}>
           <Col md="auto">
             <Spinner animation="border" role="status">
               <span className="visually-hidden">Loading...</span>
             </Spinner>
           </Col>
         </Row>
-      </Container>
+      </Outer>
     );
   }
 
   return (
-    <Container fluid>
+    <Outer {...outerProps}>
       <Row className="mb-4">
         <Col>
-          <h2>🔍 CT Monitor</h2>
-          <p className="text-muted">Monitor Certificate Transparency logs for typosquatting detection</p>
+          {!embedded && (
+            <>
+              <h2>🔍 CT Monitor</h2>
+              <p className="text-muted">Monitor Certificate Transparency logs for typosquatting detection</p>
+            </>
+          )}
         </Col>
         <Col xs="auto">
           <div className="d-flex gap-2 align-items-center">
@@ -503,8 +509,13 @@ function CTMonitor() {
           )}
         </>
       )}
-    </Container>
+    </Outer>
   );
+}
+
+function CTMonitor() {
+  usePageTitle(formatPageTitle('CT Monitor'));
+  return <CTMonitorInner embedded={false} />;
 }
 
 export default CTMonitor;

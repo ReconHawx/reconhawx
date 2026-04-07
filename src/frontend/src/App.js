@@ -71,12 +71,7 @@ const UserManagement = lazy(() => import('./pages/admin/UserManagement'));
 const ApiTokens = lazy(() => import('./pages/admin/ApiTokens'));
 const NucleiTemplates = lazy(() => import('./pages/admin/NucleiTemplates'));
 const Wordlists = lazy(() => import('./pages/admin/Wordlists'));
-const JobManagement = lazy(() => import('./pages/admin/JobManagement'));
 const SystemSettings = lazy(() => import('./pages/admin/SystemSettings'));
-const SocialMediaCredentials = lazy(() => import('./pages/admin/SocialMediaCredentials'));
-const CTMonitor = lazy(() => import('./pages/admin/CTMonitor'));
-const EventStats = lazy(() => import('./pages/admin/EventStats'));
-const EventHandlerConfig = lazy(() => import('./pages/admin/EventHandlerConfig'));
 const SystemStatus = lazy(() => import('./pages/admin/SystemStatus'));
 const SystemMaintenance = lazy(() => import('./pages/admin/SystemMaintenance'));
 
@@ -338,7 +333,7 @@ function AppContent() {
                 } />
                 <Route path="/admin/jobs" element={
                   <ProtectedRoute requireSuperuser={true}>
-                    <JobManagement />
+                    <Navigate to="/workflows/status?tab=jobs" replace />
                   </ProtectedRoute>
                 } />
                 <Route path="/settings/api-tokens" element={
@@ -353,26 +348,26 @@ function AppContent() {
                 } />
                 <Route path="/admin/social-media-credentials" element={
                   <ProtectedRoute requireSuperuser={true}>
-                    <SocialMediaCredentials />
+                    <Navigate to="/admin/settings?tab=social-media" replace />
                   </ProtectedRoute>
                 } />
                 <Route path="/admin/ct-monitor" element={
                   <ProtectedRoute requireSuperuser={true}>
-                    <CTMonitor />
+                    <Navigate to="/admin/system-status?tab=ct-monitor" replace />
                   </ProtectedRoute>
                 } />
                 <Route path="/admin/event-handler-config" element={
                   <ProtectedRoute requireSuperuser={true}>
-                    <EventHandlerConfig />
+                    <Navigate to="/admin/settings?tab=event-handlers" replace />
                   </ProtectedRoute>
                 } />
                 <Route path="/admin/events" element={
                   <ProtectedRoute requireAdmin={true}>
-                    <EventStats />
+                    <Navigate to="/admin/system-status?tab=events" replace />
                   </ProtectedRoute>
                 } />
                 <Route path="/admin/system-status" element={
-                  <ProtectedRoute requireSuperuser={true}>
+                  <ProtectedRoute requireAdmin={true}>
                     <SystemStatus />
                   </ProtectedRoute>
                 } />
