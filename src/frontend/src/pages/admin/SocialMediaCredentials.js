@@ -3,8 +3,7 @@ import { Container, Card, Table, Button, Modal, Form, Alert, Spinner, Badge, Row
 import { socialMediaCredentialsAPI } from '../../services/api';
 import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
 
-function SocialMediaCredentials() {
-  usePageTitle(formatPageTitle('Social Media Credentials'));
+export function SocialMediaCredentialsInner({ embedded = false }) {
   const [credentials, setCredentials] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -127,24 +126,27 @@ function SocialMediaCredentials() {
     }
   };
 
+  const Outer = embedded ? 'div' : Container;
+  const outerProps = embedded ? {} : { fluid: true };
+
   if (loading) {
     return (
-      <Container fluid className="mt-4">
+      <Outer {...outerProps} className={embedded ? '' : 'mt-4'}>
         <div className="text-center">
           <Spinner animation="border" />
           <p className="mt-2">Loading credentials...</p>
         </div>
-      </Container>
+      </Outer>
     );
   }
 
   return (
-    <Container fluid className="mt-4">
+    <Outer {...outerProps} className={embedded ? '' : 'mt-4'}>
       <Card>
         <Card.Header>
           <Row className="align-items-center">
             <Col>
-              <h4>Social Media Credentials</h4>
+              {!embedded ? <h4 className="mb-0">Social Media Credentials</h4> : <span className="fw-medium text-muted">Social platform logins</span>}
             </Col>
             <Col xs="auto">
               <Button variant="primary" onClick={() => { resetForm(); setShowCreateModal(true); }}>
@@ -398,8 +400,13 @@ function SocialMediaCredentials() {
           </Button>
         </Modal.Footer>
       </Modal>
-    </Container>
+    </Outer>
   );
+}
+
+function SocialMediaCredentials() {
+  usePageTitle(formatPageTitle('Social Media Credentials'));
+  return <SocialMediaCredentialsInner embedded={false} />;
 }
 
 export default SocialMediaCredentials;

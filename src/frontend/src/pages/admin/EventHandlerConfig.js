@@ -13,8 +13,7 @@ import { adminAPI } from '../../services/api';
 import EventHandlerForm from '../../components/EventHandlerForm';
 import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
 
-function EventHandlerConfig() {
-  usePageTitle(formatPageTitle('Event Handler Config'));
+export function EventHandlerConfigInner({ embedded = false }) {
   const [handlers, setHandlers] = useState([]);
   const [systemHandlers, setSystemHandlers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -124,17 +123,19 @@ function EventHandlerConfig() {
     setHandlers(handlers.filter((_, i) => i !== index));
   };
 
+  const Outer = embedded ? 'div' : Container;
+
   if (loading) {
     return (
-      <Container className="py-4">
+      <Outer className={embedded ? 'py-3' : 'py-4'}>
         <Spinner animation="border" /> Loading event handler config...
-      </Container>
+      </Outer>
     );
   }
 
   return (
-    <Container className="py-4">
-      <h4 className="mb-4">Event Handler Configuration</h4>
+    <Outer className={embedded ? '' : 'py-4'}>
+      {!embedded && <h4 className="mb-4">Event Handler Configuration</h4>}
 
       {error && <Alert variant="danger" onClose={() => setError('')} dismissible>{error}</Alert>}
       {success && <Alert variant="success" onClose={() => setSuccess('')} dismissible>{success}</Alert>}
@@ -234,8 +235,13 @@ function EventHandlerConfig() {
           <Button variant="primary" onClick={handleEditSave}>Save</Button>
         </Modal.Footer>
       </Modal>
-    </Container>
+    </Outer>
   );
+}
+
+function EventHandlerConfig() {
+  usePageTitle(formatPageTitle('Event Handler Config'));
+  return <EventHandlerConfigInner embedded={false} />;
 }
 
 export default EventHandlerConfig;

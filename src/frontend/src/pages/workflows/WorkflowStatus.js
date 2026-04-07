@@ -1,9 +1,14 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Container, Row, Col, Card, Table, Badge, Button, Spinner, Alert, Pagination, ButtonGroup, Modal } from 'react-bootstrap';
-import { Link } from 'react-router-dom';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { Container, Row, Col, Card, Table, Badge, Button, Spinner, Alert, Pagination, ButtonGroup, Modal, Tabs, Tab } from 'react-bootstrap';
+import { Link, useSearchParams } from 'react-router-dom';
 import { workflowAPI } from '../../services/api';
 import { formatDate, calculateDuration } from '../../utils/dateUtils';
 import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
+import { useAuth } from '../../contexts/AuthContext';
+import { JobManagementInner } from '../admin/JobManagement';
+
+const TAB_WORKFLOWS = 'workflows';
+const TAB_JOBS = 'jobs';
 
 // Add some custom styles for sortable headers
 const sortableHeaderStyle = {
@@ -11,8 +16,7 @@ const sortableHeaderStyle = {
   userSelect: 'none'
 };
 
-function WorkflowStatus() {
-  usePageTitle(formatPageTitle('Workflow Status'));
+export function WorkflowMonitoringPanel({ embedded = false }) {
   const [executions, setExecutions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -188,27 +192,31 @@ function WorkflowStatus() {
     return sortOrder === 'asc' ? <span>↑</span> : <span>↓</span>;
   };
 
+  const Outer = embedded ? 'div' : Container;
+  const outerProps = embedded ? {} : { fluid: true };
+  const outerClassName = embedded ? '' : 'p-4';
+
   if (loading && executions.length === 0) {
     return (
-      <Container fluid className="p-4">
-        <div className="text-center">
+      <Outer {...outerProps} className={`${outerClassName} text-center`.trim()}>
+        <div className={embedded ? 'py-4' : ''}>
           <Spinner animation="border" role="status">
             <span className="visually-hidden">Loading...</span>
           </Spinner>
           <p className="mt-2">Loading workflow executions...</p>
         </div>
-      </Container>
+      </Outer>
     );
   }
 
   return (
-    <Container fluid className="p-4">
+    <Outer {...outerProps} className={outerClassName}>
       <Row className="mb-4">
         <Col>
           <div className="d-flex justify-content-between align-items-center">
             <div>
-              <h1>📊 Workflow Status</h1>
-              <p className="text-muted">Monitor workflow execution status and progress</p>
+              {!embedded && <h1>📊 Workflow Status</h1>}
+              <p className={`text-muted ${embedded ? 'mb-0' : ''}`}>Monitor workflow execution status and progress</p>
             </div>
             <div>
               <Button
@@ -443,6 +451,55 @@ function WorkflowStatus() {
           </Button>
         </Modal.Footer>
       </Modal>
+    </Outer>
+  );
+}
+
+function WorkflowStatus() {
+  const { isSuperuser } = useAuth();
+  const superuser = isSuperuser();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tabParam = searchParams.get('tab');
+
+  const activeTab = useMemo(() => {
+    if (tabParam === TAB_JOBS && !superuser) return TAB_WORKFLOWS;
+    if (tabParam === TAB_JOBS || tabParam === TAB_WORKFLOWS) return tabParam;
+    return TAB_WORKFLOWS;
+  }, [tabParam, superuser]);
+
+  usePageTitle(
+    formatPageTitle(
+      'Status Monitor',
+      activeTab === TAB_JOBS ? 'Job monitoring' : 'Workflow monitoring'
+    )
+  );
+
+  useEffect(() => {
+    if (tabParam === TAB_JOBS && !superuser) {
+      setSearchParams({ tab: TAB_WORKFLOWS }, { replace: true });
+    } else if (tabParam && tabParam !== TAB_JOBS && tabParam !== TAB_WORKFLOWS) {
+      setSearchParams({ tab: TAB_WORKFLOWS }, { replace: true });
+    }
+  }, [tabParam, superuser, setSearchParams]);
+
+  return (
+    <Container fluid className="p-4">
+      <Row className="mb-3">
+        <Col>
+          <h1 className="h3 mb-0">📈 Status Monitor</h1>
+          <p className="text-muted small mb-0">Workflow runs and batch jobs</p>
+        </Col>
+      </Row>
+      <Tabs activeKey={activeTab} onSelect={(k) => k && setSearchParams({ tab: k })} className="mb-3">
+        <Tab eventKey={TAB_WORKFLOWS} title="Workflow monitoring">
+          <WorkflowMonitoringPanel embedded />
+        </Tab>
+        {superuser && (
+          <Tab eventKey={TAB_JOBS} title="Job monitoring">
+            <JobManagementInner embedded />
+          </Tab>
+        )}
+      </Tabs>
     </Container>
   );
 }

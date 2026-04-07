@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { 
   Container, 
   Row, 
@@ -17,6 +18,20 @@ import {
 import { adminAPI, aiAPI } from '../../services/api';
 import { formatDate } from '../../utils/dateUtils';
 import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
+import { EventHandlerConfigInner } from './EventHandlerConfig';
+import { SocialMediaCredentialsInner } from './SocialMediaCredentials';
+
+const VALID_SETTINGS_TABS = ['recon', 'aws', 'workflow', 'ctmonitor', 'ai', 'event-handlers', 'social-media'];
+
+const SETTINGS_TAB_LABELS = {
+  recon: 'Recon task parameters',
+  aws: 'AWS credentials',
+  workflow: 'Workflow settings',
+  ctmonitor: 'CT monitor',
+  ai: 'AI settings',
+  'event-handlers': 'Event handlers',
+  'social-media': 'Social media credentials',
+};
 
 // Add Font Awesome CSS if not already loaded
 const loadFontAwesome = () => {
@@ -43,7 +58,21 @@ function ollamaDraftUrlForModelList(draftUrl) {
 }
 
 function SystemSettings() {
-  usePageTitle(formatPageTitle('System Settings'));
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tabParam = searchParams.get('tab');
+  const activeTab = useMemo(
+    () => (VALID_SETTINGS_TABS.includes(tabParam) ? tabParam : 'recon'),
+    [tabParam]
+  );
+
+  usePageTitle(formatPageTitle('System Settings', SETTINGS_TAB_LABELS[activeTab] || ''));
+
+  useEffect(() => {
+    if (tabParam && !VALID_SETTINGS_TABS.includes(tabParam)) {
+      setSearchParams({ tab: 'recon' }, { replace: true });
+    }
+  }, [tabParam, setSearchParams]);
+
   const [reconTasks, setReconTasks] = useState([]);
   const [awsCredentials, setAwsCredentials] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -102,8 +131,6 @@ function SystemSettings() {
   const [ollamaModelsLoading, setOllamaModelsLoading] = useState(false);
   const [ollamaModelsFetchError, setOllamaModelsFetchError] = useState('');
 
-  const [activeTab, setActiveTab] = useState('recon');
-
   const [ctMonitorRuntime, setCtMonitorRuntime] = useState({
     domain_refresh_interval: '',
     stats_interval: '',
@@ -159,6 +186,7 @@ function SystemSettings() {
     loadAiSettings();
     loadCtMonitorRuntime();
     loadWorkflowK8sSettings();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only aggregated load
   }, []);
 
   // Load Font Awesome CSS
@@ -760,7 +788,11 @@ function SystemSettings() {
 
       <Row>
         <Col>
-          <Tabs activeKey={activeTab} onSelect={(k) => setActiveTab(k)} className="mb-3">
+          <Tabs
+            activeKey={activeTab}
+            onSelect={(k) => k && setSearchParams({ tab: k })}
+            className="mb-3"
+          >
             <Tab eventKey="recon" title="Recon task parameters">
               <Card className="mb-4">
                 <Card.Header className="d-flex justify-content-between align-items-center flex-wrap gap-2">
@@ -1494,6 +1526,13 @@ function SystemSettings() {
                   )}
                 </Card.Body>
               </Card>
+            </Tab>
+
+            <Tab eventKey="event-handlers" title="Event handlers">
+              <EventHandlerConfigInner embedded />
+            </Tab>
+            <Tab eventKey="social-media" title="Social media credentials">
+              <SocialMediaCredentialsInner embedded />
             </Tab>
           </Tabs>
         </Col>
