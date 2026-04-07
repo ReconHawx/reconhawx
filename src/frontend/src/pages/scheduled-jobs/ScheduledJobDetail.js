@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Container, Row, Col, Card, Button, Badge, Table, Alert, Modal, Tabs, Tab, Form } from 'react-bootstrap';
 import { useParams, useNavigate } from 'react-router-dom';
 import { scheduledJobsAPI, workflowAPI, programAPI } from '../../services/api';
@@ -19,7 +19,6 @@ const ScheduledJobDetail = () => {
   const [activeTab, setActiveTab] = useState('overview');
   const [isEditing, setIsEditing] = useState(false);
   const [editFormData, setEditFormData] = useState(null);
-  const [jobTypes, setJobTypes] = useState([]);
   const [workflows, setWorkflows] = useState([]);
   const [programs, setPrograms] = useState([]);
   const [editLoading, setEditLoading] = useState(false);
@@ -68,27 +67,37 @@ const ScheduledJobDetail = () => {
     return { total, successful, failed };
   };
 
-  const loadEditData = async () => {
+  const loadProgramsForEdit = useCallback(async () => {
     try {
-      const [jobTypesResponse, workflowsResponse, programsResponse] = await Promise.all([
-        scheduledJobsAPI.getJobTypes(),
-        workflowAPI.getWorkflows(),
-        programAPI.getAll(),
-      ]);
-      
-      const supportedTypes = jobTypesResponse.supported_job_types || {};
-      const jobTypesList = Object.entries(supportedTypes).map(([value, info]) => ({
-        value,
-        label: info.name,
-        description: info.description
-      }));
-      
-      setJobTypes(jobTypesList);
-      setWorkflows(workflowsResponse.workflows || []);
-      setPrograms(programsResponse.programs_with_permissions || []);
+      const res = await programAPI.getAll();
+      const withPerms = res.programs_with_permissions;
+      const nameList = res.programs;
+      if (Array.isArray(withPerms) && withPerms.length > 0) {
+        setPrograms(withPerms);
+      } else if (Array.isArray(nameList) && nameList.length > 0) {
+        setPrograms(nameList.map((name) => ({ name, permission_level: 'analyst' })));
+      } else {
+        setPrograms([]);
+      }
     } catch (err) {
-      console.error('Error loading edit data:', err);
+      console.error('Error loading programs for edit:', err);
     }
+  }, []);
+
+  const loadWorkflowsForEdit = useCallback(async () => {
+    try {
+      const res = await workflowAPI.getWorkflows();
+      const list = res?.workflows ?? res?.items ?? [];
+      setWorkflows(Array.isArray(list) ? list : []);
+    } catch (err) {
+      console.error('Error loading workflows for edit:', err);
+      setWorkflows([]);
+    }
+  }, []);
+
+  const loadEditData = async () => {
+    await loadProgramsForEdit();
+    await loadWorkflowsForEdit();
   };
 
   useEffect(() => {
@@ -98,6 +107,41 @@ const ScheduledJobDetail = () => {
       loadEditData();
     }
   }, [jobId, isEditing, loadJobDetails, loadExecutionHistory]);
+
+  /** Workflow definitions from API plus the job's current workflow_id if missing from the list. */
+  const workflowSelectOptions = useMemo(() => {
+    const list = Array.isArray(workflows) ? workflows.map((w) => ({ ...w })) : [];
+    const currentId = editFormData?.job_data?.workflow_id;
+    if (currentId && !list.some((w) => w && w.id === currentId)) {
+      list.push({
+        id: currentId,
+        name: `Current workflow (${String(currentId).slice(0, 8)}…)`,
+        program_name: null,
+        variables: {},
+      });
+    }
+    return list.sort((a, b) =>
+      (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' }),
+    );
+  }, [workflows, editFormData?.job_data?.workflow_id]);
+
+  /** Programs from API plus any names already selected on the job so checkboxes always render. */
+  const workflowProgramOptions = useMemo(() => {
+    const byName = new Map();
+    for (const p of programs) {
+      if (p && p.name) byName.set(p.name, p);
+    }
+    const selected = editFormData?.workflow_program_names || [];
+    for (const n of selected) {
+      const name = typeof n === 'string' ? n.trim() : '';
+      if (name && !byName.has(name)) {
+        byName.set(name, { name });
+      }
+    }
+    return Array.from(byName.values()).sort((a, b) =>
+      (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' }),
+    );
+  }, [programs, editFormData?.workflow_program_names]);
 
   const handleToggleStatus = async () => {
     try {
@@ -164,12 +208,15 @@ const ScheduledJobDetail = () => {
       name: job.name,
       description: job.description || '',
       program_name: job.program_name || '',
-      workflow_program_names:
+      workflow_program_names: (
         job.program_names && job.program_names.length > 0
           ? [...job.program_names]
           : job.program_name
             ? [job.program_name]
-            : [],
+            : []
+      )
+        .map((n) => (typeof n === 'string' ? n.trim() : n))
+        .filter(Boolean),
       schedule: scheduleData,
       job_data: { ...job.job_data },
       tags: job.tags || []
@@ -424,6 +471,8 @@ const ScheduledJobDetail = () => {
       'typosquat_batch': 'Typosquat Batch',
       'phishlabs_batch': 'PhishLabs Batch',
       'ai_analysis_batch': 'AI Analysis Batch',
+      'gather_api_findings': 'Gather API Findings',
+      'sync_recordedfuture_data': 'Sync RecordedFuture Data',
       'workflow': 'Workflow'
     };
     return labels[jobType] || jobType;
@@ -1010,16 +1059,13 @@ const ScheduledJobDetail = () => {
                     <Col md={6}>
                       <Form.Group className="mb-3">
                         <Form.Label>Job Type</Form.Label>
-                        <Form.Select
-                          value={editFormData.job_type}
-                          onChange={(e) => handleEditInputChange('job_type', e.target.value)}
-                        >
-                          {jobTypes.map(type => (
-                            <option key={type.value} value={type.value}>
-                              {type.label}
-                            </option>
-                          ))}
-                        </Form.Select>
+                        <Form.Control
+                          plaintext
+                          readOnly
+                          className="border rounded px-3 py-2 bg-light"
+                          value={getJobTypeLabel(editFormData.job_type)}
+                        />
+                        <Form.Text className="text-muted">Job type cannot be changed after creation.</Form.Text>
                       </Form.Group>
                     </Col>
                   </Row>
@@ -1208,10 +1254,13 @@ const ScheduledJobDetail = () => {
                             const workflowId = e.target.value;
                             handleWorkflowChange(workflowId);
 
-                            // Auto-fill program name if workflow is selected
                             if (workflowId) {
-                              const selectedWorkflow = workflows.find(w => w.id === workflowId);
-                              if (selectedWorkflow && selectedWorkflow.program_name) {
+                              const selectedWorkflow = workflowSelectOptions.find((w) => w.id === workflowId);
+                              if (
+                                selectedWorkflow &&
+                                selectedWorkflow.program_name &&
+                                (editFormData.workflow_program_names || []).length === 0
+                              ) {
                                 handleEditInputChange('workflow_program_names', [
                                   selectedWorkflow.program_name,
                                 ]);
@@ -1221,10 +1270,9 @@ const ScheduledJobDetail = () => {
                           }}
                         >
                           <option value="">Choose a workflow...</option>
-                          {workflows.map((workflow) => (
+                          {workflowSelectOptions.map((workflow) => (
                             <option key={workflow.id} value={workflow.id}>
                               {workflow.name} {workflow.program_name && `(${workflow.program_name})`}
-                              {/* Show if workflow has variables */}
                               {(workflow.variables && Object.keys(workflow.variables).length > 0) && ' 📝'}
                             </option>
                           ))}
@@ -1240,7 +1288,10 @@ const ScheduledJobDetail = () => {
                           className="border rounded p-2 bg-light"
                           style={{ maxHeight: '200px', overflowY: 'auto' }}
                         >
-                          {programs.map((p) => (
+                          {workflowProgramOptions.length === 0 && (
+                            <span className="text-muted small">No programs to show.</span>
+                          )}
+                          {workflowProgramOptions.map((p) => (
                             <Form.Check
                               key={p.name}
                               type="checkbox"
