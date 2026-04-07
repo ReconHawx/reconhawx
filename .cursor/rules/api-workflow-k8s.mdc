@@ -52,7 +52,7 @@ Kueue provides workload queuing and resource management:
 # Kueue configuration from environment
 self.kueue_enabled = os.getenv('KUEUE_ENABLED', 'true').lower() == 'true'
 self.kueue_workflow_queue = os.getenv('KUEUE_WORKFLOW_QUEUE', 'recon-runner-queue')
-self.kueue_cluster_queue = os.getenv('KUEUE_CLUSTER_QUEUE', 'cluster-queue')
+self.kueue_cluster_queue = os.getenv('KUEUE_CLUSTER_QUEUE', 'runner-cluster-queue')
 self.kueue_priority_class = os.getenv('KUEUE_PRIORITY_CLASS', 'workflow-priority')
 self.workflow_default_priority = os.getenv('WORKFLOW_DEFAULT_PRIORITY', 'normal')
 
@@ -481,7 +481,7 @@ Key environment variables for workflow execution:
 | `KUBERNETES_NAMESPACE` | `default` | Namespace for K8s resources |
 | `KUEUE_ENABLED` | `true` | Enable Kueue integration |
 | `KUEUE_WORKFLOW_QUEUE` | `recon-runner-queue` | Local queue name |
-| `KUEUE_CLUSTER_QUEUE` | `cluster-queue` | Cluster queue name |
+| `KUEUE_CLUSTER_QUEUE` | `runner-cluster-queue` | Cluster queue name |
 | `WORKFLOW_CPU_REQUEST` | `500m` | CPU request |
 | `WORKFLOW_CPU_LIMIT` | `2000m` | CPU limit |
 | `WORKFLOW_MEMORY_REQUEST` | `1Gi` | Memory request |

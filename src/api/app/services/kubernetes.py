@@ -45,7 +45,7 @@ class KubernetesService:
         # Kueue configuration
         self.kueue_enabled = os.getenv('KUEUE_ENABLED', 'true').lower() == 'true'
         self.kueue_workflow_queue = os.getenv('KUEUE_WORKFLOW_QUEUE', 'recon-runner-queue')
-        self.kueue_cluster_queue = os.getenv('KUEUE_CLUSTER_QUEUE', 'cluster-queue')
+        self.kueue_cluster_queue = os.getenv('KUEUE_CLUSTER_QUEUE', 'runner-cluster-queue')
         self.kueue_priority_class = os.getenv('KUEUE_PRIORITY_CLASS', 'workflow-priority')
         self.workflow_default_priority = os.getenv('WORKFLOW_DEFAULT_PRIORITY', 'normal')
 
@@ -1347,7 +1347,6 @@ class KubernetesService:
     # --- Kueue maintenance (ClusterQueue stopPolicy) & database restore Job ---
 
     KUEUE_CLUSTER_QUEUE_NAMES = (
-        "cluster-queue",
         "runner-cluster-queue",
         "worker-cluster-queue",
         "ai-analysis-cluster-queue",

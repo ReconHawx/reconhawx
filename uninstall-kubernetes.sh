@@ -18,13 +18,11 @@ INGRESS_NGINX_DEPLOY_URL="${INGRESS_NGINX_DEPLOY_URL:-https://raw.githubusercont
 
 # Names must match kubernetes/base/kueue/*.yaml (ClusterQueue and ResourceFlavor).
 KUEUE_CLUSTER_QUEUES=(
-  cluster-queue
   runner-cluster-queue
   worker-cluster-queue
   ai-analysis-cluster-queue
 )
 KUEUE_RESOURCE_FLAVORS=(
-  default-flavor
   runner-flavor
   worker-flavor
 )
