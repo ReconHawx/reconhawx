@@ -165,11 +165,19 @@ async def get_merged_ollama_connection_settings() -> Dict[str, Any]:
     }
 
 
-async def create_ollama_client_from_settings(model: Optional[str] = None) -> OllamaClient:
-    """Build an OllamaClient from system settings (and optional per-request model override)."""
+async def create_ollama_client_from_settings(
+    model: Optional[str] = None,
+    base_url_override: Optional[str] = None,
+) -> OllamaClient:
+    """Build an OllamaClient from system settings (and optional per-request model override).
+
+    If base_url_override is a non-empty string, it replaces the merged URL (e.g. admin UI draft URL).
+    """
     s = await get_merged_ollama_connection_settings()
+    raw = base_url_override if base_url_override and str(base_url_override).strip() else s["url"]
+    url = str(raw).strip().rstrip("/")
     return OllamaClient(
-        base_url=s["url"],
+        base_url=url,
         model=model or s["model"],
         timeout=s["timeout"],
         max_retries=s["max_retries"],

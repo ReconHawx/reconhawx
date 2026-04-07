@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   Container, 
   Row, 
@@ -14,7 +14,7 @@ import {
   Tabs,
   Tab
 } from 'react-bootstrap';
-import { adminAPI } from '../../services/api';
+import { adminAPI, aiAPI } from '../../services/api';
 import { formatDate } from '../../utils/dateUtils';
 import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
 
@@ -27,6 +27,20 @@ const loadFontAwesome = () => {
     document.head.appendChild(link);
   }
 };
+
+/** Draft URL suitable for GET /ai/models when it is a parsed http(s) URL; otherwise null (caller handles empty field). */
+function ollamaDraftUrlForModelList(draftUrl) {
+  const u = String(draftUrl ?? '').trim();
+  if (!u) return null;
+  try {
+    const parsed = new URL(u);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
+    if (!parsed.hostname) return null;
+    return u;
+  } catch {
+    return null;
+  }
+}
 
 function SystemSettings() {
   usePageTitle(formatPageTitle('System Settings'));
@@ -84,6 +98,9 @@ function SystemSettings() {
   const [aiSettingsLoading, setAiSettingsLoading] = useState(false);
   const [aiSettingsSaving, setAiSettingsSaving] = useState(false);
   const [aiEditForm, setAiEditForm] = useState({});
+  const [ollamaModels, setOllamaModels] = useState([]);
+  const [ollamaModelsLoading, setOllamaModelsLoading] = useState(false);
+  const [ollamaModelsFetchError, setOllamaModelsFetchError] = useState('');
 
   const [activeTab, setActiveTab] = useState('recon');
 
@@ -272,17 +289,64 @@ function SystemSettings() {
   };
 
   const loadAiSettings = async () => {
+    let settings = null;
     try {
       setAiSettingsLoading(true);
       setError('');
       const response = await adminAPI.getAiSettings();
-      const settings = response.settings || {};
+      settings = response.settings || {};
       setAiEditForm(JSON.parse(JSON.stringify(settings)));
+      return settings;
     } catch (err) {
       setError('Failed to load AI settings: ' + (err.response?.data?.detail || err.message));
+      return null;
     } finally {
       setAiSettingsLoading(false);
     }
+  };
+
+  const loadOllamaModels = useCallback(async (baseUrlOverride) => {
+    const opts =
+      baseUrlOverride != null && String(baseUrlOverride).trim() !== ''
+        ? { baseUrl: String(baseUrlOverride).trim() }
+        : {};
+    try {
+      setOllamaModelsLoading(true);
+      setOllamaModelsFetchError('');
+      const data = await aiAPI.getModels(opts);
+      setOllamaModels(data.models || []);
+    } catch (err) {
+      setOllamaModels([]);
+      setOllamaModelsFetchError(
+        err.response?.data?.detail || err.message || 'Could not load models from Ollama.'
+      );
+    } finally {
+      setOllamaModelsLoading(false);
+    }
+  }, []);
+
+  const OLLAMA_URL_MODELS_DEBOUNCE_MS = 600;
+
+  useEffect(() => {
+    if (aiSettingsLoading) return;
+    const raw = String(aiEditForm.ollama?.url ?? '').trim();
+    const timer = setTimeout(() => {
+      if (raw === '') {
+        loadOllamaModels(undefined);
+        return;
+      }
+      const valid = ollamaDraftUrlForModelList(raw);
+      if (valid) {
+        loadOllamaModels(valid);
+      }
+    }, OLLAMA_URL_MODELS_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [aiEditForm.ollama?.url, aiSettingsLoading, loadOllamaModels]);
+
+  const handleRefreshAiSection = async () => {
+    const settings = await loadAiSettings();
+    const u = String(settings?.ollama?.url ?? '').trim();
+    await loadOllamaModels(u || undefined);
   };
 
   const handleSaveAiSettings = async () => {
@@ -309,7 +373,9 @@ function SystemSettings() {
       }
       await adminAPI.updateAiSettings(payload);
       setSuccess('AI settings saved successfully');
-      loadAiSettings();
+      const settings = await loadAiSettings();
+      const u = String(settings?.ollama?.url ?? '').trim();
+      await loadOllamaModels(u || undefined);
     } catch (err) {
       setError('Failed to save AI settings: ' + (err.response?.data?.detail || err.message));
     } finally {
@@ -332,7 +398,9 @@ function SystemSettings() {
 
       const payload = { [feature]: defaults[feature] || {} };
       await adminAPI.updateAiSettings(payload);
-      loadAiSettings();
+      const settings = await loadAiSettings();
+      const u = String(settings?.ollama?.url ?? '').trim();
+      await loadOllamaModels(u || undefined);
     } catch (err) {
       setError('Failed to reset AI settings: ' + (err.response?.data?.detail || err.message));
     } finally {
@@ -1001,10 +1069,14 @@ function SystemSettings() {
                       variant="outline-secondary"
                       size="sm"
                       className="me-2"
-                      onClick={loadAiSettings}
-                      disabled={aiSettingsLoading}
+                      onClick={handleRefreshAiSection}
+                      disabled={aiSettingsLoading || ollamaModelsLoading}
                     >
-                      {aiSettingsLoading ? <Spinner animation="border" size="sm" /> : 'Refresh'}
+                      {aiSettingsLoading || ollamaModelsLoading ? (
+                        <Spinner animation="border" size="sm" />
+                      ) : (
+                        'Refresh'
+                      )}
                     </Button>
                     <Button
                       variant="primary"
@@ -1059,13 +1131,65 @@ function SystemSettings() {
                             <Col md={6}>
                               <Form.Group>
                                 <Form.Label>Default model</Form.Label>
-                                <Form.Control
-                                  type="text"
-                                  value={aiEditForm.ollama?.model ?? ''}
-                                  onChange={(e) => handleAiFieldChange('ollama', 'model', e.target.value)}
-                                  disabled={aiSettingsSaving}
-                                  className="font-monospace"
-                                />
+                                {ollamaModelsLoading ? (
+                                  <div className="text-muted small">
+                                    <Spinner animation="border" size="sm" className="me-2" />
+                                    Loading models…
+                                  </div>
+                                ) : ollamaModels.length > 0 ? (
+                                  <>
+                                    {(() => {
+                                      const current = String(aiEditForm.ollama?.model ?? '').trim();
+                                      const names = new Set(ollamaModels.map((m) => m.name).filter(Boolean));
+                                      const selectValue = current && names.has(current) ? current : '';
+                                      const savedNotOnServer = Boolean(current && !names.has(current));
+                                      return (
+                                        <>
+                                          <Form.Select
+                                            className="font-monospace"
+                                            value={selectValue}
+                                            onChange={(e) => handleAiFieldChange('ollama', 'model', e.target.value)}
+                                            disabled={aiSettingsSaving}
+                                          >
+                                            <option value="">Select a model…</option>
+                                            {ollamaModels.map((m) => (
+                                              <option key={m.name} value={m.name}>
+                                                {m.name}{m.parameter_size ? ` (${m.parameter_size})` : ''}
+                                              </option>
+                                            ))}
+                                          </Form.Select>
+                                          {savedNotOnServer ? (
+                                            <Form.Text className="text-warning">
+                                              Saved default model &quot;{current}&quot; is not in this server&apos;s list.
+                                              Choose a model above to update the setting.
+                                            </Form.Text>
+                                          ) : null}
+                                        </>
+                                      );
+                                    })()}
+                                    <Form.Text className="text-muted">
+                                      The model list follows the URL above; it reloads shortly after you stop typing. Save
+                                      to persist settings. Use Refresh to reload all AI settings from the server.
+                                    </Form.Text>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Form.Control
+                                      type="text"
+                                      value={aiEditForm.ollama?.model ?? ''}
+                                      onChange={(e) => handleAiFieldChange('ollama', 'model', e.target.value)}
+                                      disabled={aiSettingsSaving}
+                                      className="font-monospace"
+                                    />
+                                    {ollamaModelsFetchError ? (
+                                      <Form.Text className="text-warning">{ollamaModelsFetchError}</Form.Text>
+                                    ) : null}
+                                    <Form.Text className="text-muted">
+                                      Enter a model tag when the server cannot list models. Fix the URL (triggers a
+                                      delayed reload) or use Refresh after saving.
+                                    </Form.Text>
+                                  </>
+                                )}
                               </Form.Group>
                             </Col>
                             <Col md={3}>
