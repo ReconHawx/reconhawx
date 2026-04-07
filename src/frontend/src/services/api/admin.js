@@ -89,9 +89,10 @@ export const userManagementAPI = {
     return response.data;
   },
 
-  changePassword: async (userId, newPassword) => {
+  changePassword: async (userId, newPassword, forcePasswordChange = false) => {
     const response = await api.put(`/auth/users/${userId}/password`, {
-      new_password: newPassword
+      new_password: newPassword,
+      force_password_change: Boolean(forcePasswordChange),
     });
     return response.data;
   },

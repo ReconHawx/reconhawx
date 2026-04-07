@@ -69,7 +69,8 @@ function UserManagement() {
   
   const [passwordForm, setPasswordForm] = useState({
     new_password: '',
-    confirm_password: ''
+    confirm_password: '',
+    force_password_change: false,
   });
 
   const loadUsers = useCallback(async () => {
@@ -215,11 +216,19 @@ function UserManagement() {
       if (!userId) {
         throw new Error('User ID is missing');
       }
-      await userManagementAPI.changePassword(userId, passwordForm.new_password);
+      await userManagementAPI.changePassword(
+        userId,
+        passwordForm.new_password,
+        passwordForm.force_password_change,
+      );
       setSuccess('Password changed successfully');
       setShowPasswordModal(false);
       setSelectedUser(null);
-      setPasswordForm({ new_password: '', confirm_password: '' });
+      setPasswordForm({
+        new_password: '',
+        confirm_password: '',
+        force_password_change: false,
+      });
     } catch (err) {
       setError('Failed to change password: ' + (err.response?.data?.detail || err.message));
     } finally {
@@ -247,7 +256,11 @@ function UserManagement() {
 
   const openPasswordModal = (user) => {
     setSelectedUser(user);
-    setPasswordForm({ new_password: '', confirm_password: '' });
+    setPasswordForm({
+      new_password: '',
+      confirm_password: '',
+      force_password_change: false,
+    });
     setShowPasswordModal(true);
   };
 
@@ -908,6 +921,19 @@ function UserManagement() {
                 required
               />
             </Form.Group>
+
+            <Form.Check
+              type="checkbox"
+              id="reset-password-force-change"
+              label="Require password change on next login"
+              checked={passwordForm.force_password_change}
+              onChange={(e) =>
+                setPasswordForm({
+                  ...passwordForm,
+                  force_password_change: e.target.checked,
+                })
+              }
+            />
           </Modal.Body>
           <Modal.Footer>
             <Button variant="secondary" onClick={() => setShowPasswordModal(false)}>

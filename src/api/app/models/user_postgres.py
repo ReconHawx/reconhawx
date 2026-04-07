@@ -134,8 +134,12 @@ class UserUpdateRequest(BaseModel):
     must_change_password: Optional[bool] = None
 
 class PasswordChangeRequest(BaseModel):
-    """Password change request model"""
+    """Admin/superuser password reset request"""
     new_password: str = Field(..., min_length=4)
+    force_password_change: bool = Field(
+        default=False,
+        description="If true, user must change password on next login",
+    )
 
 class OwnPasswordChangeRequest(BaseModel):
     """Authenticated user changes their own password"""

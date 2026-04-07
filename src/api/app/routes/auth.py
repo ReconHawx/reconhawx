@@ -10,6 +10,7 @@ from models.user_postgres import (
 from auth.utils import generate_access_token, generate_refresh_token_value, REFRESH_TOKEN_EXPIRE_DAYS, ACCESS_TOKEN_EXPIRE_MINUTES
 from auth.dependencies import require_authentication, require_superuser
 from repository import AuthRepository
+from repository.auth_repo import PASSWORD_SAME_AS_CURRENT_MESSAGE
 import logging
 from datetime import datetime
 
@@ -137,7 +138,7 @@ async def change_own_password(
         return UserResponse(**updated)
     except ValueError as e:
         msg = str(e)
-        if msg == "Invalid current password":
+        if msg in ("Invalid current password", PASSWORD_SAME_AS_CURRENT_MESSAGE):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=msg,
@@ -515,7 +516,11 @@ async def change_user_password(
             )
         
         # Change password
-        changed = await auth_repo.change_user_password(user_id, password_data.new_password)
+        changed = await auth_repo.change_user_password(
+            user_id,
+            password_data.new_password,
+            force_password_change=password_data.force_password_change,
+        )
         if not changed:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

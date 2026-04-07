@@ -13,6 +13,11 @@ import bcrypt
 
 logger = logging.getLogger(__name__)
 DUMMY_HASH = bcrypt.hashpw(b"dummy password", bcrypt.gensalt()).decode()
+
+# Stable client-facing message; keep in sync with routes/auth.py ValueError → 400 mapping.
+PASSWORD_SAME_AS_CURRENT_MESSAGE = "New password must be different from the current password"
+
+
 class AuthRepository:
     """PostgreSQL repository for authentication and user management"""
     
@@ -331,14 +336,21 @@ class AuthRepository:
             logger.error(f"Error deleting user {user_id}: {str(e)}")
             raise
     
-    async def change_user_password(self, user_id: str, new_password: str) -> bool:
+    async def change_user_password(
+        self,
+        user_id: str,
+        new_password: str,
+        *,
+        force_password_change: bool = False,
+    ) -> bool:
         """
-        Change user password
-        
+        Change user password (admin reset).
+
         Args:
             user_id: User UUID string
             new_password: New plain text password
-            
+            force_password_change: When True, set must_change_password so the user must pick a new password at next login.
+
         Returns:
             True if password changed, False if user not found
         """
@@ -350,7 +362,7 @@ class AuthRepository:
                 
                 # Hash new password
                 user.password_hash = hash_password(new_password)
-                user.must_change_password = False
+                user.must_change_password = bool(force_password_change)
                 db.commit()
                 
                 return True
@@ -369,7 +381,7 @@ class AuthRepository:
         Change password for the authenticated user. Verifies current password.
         
         Raises:
-            ValueError: user not found or current password incorrect
+            ValueError: user not found, current password incorrect, or new password unchanged
         """
         try:
             async with get_db_session() as db:
@@ -378,6 +390,8 @@ class AuthRepository:
                     raise ValueError("User not found")
                 if not verify_password(current_password, user.password_hash):
                     raise ValueError("Invalid current password")
+                if verify_password(new_password, user.password_hash):
+                    raise ValueError(PASSWORD_SAME_AS_CURRENT_MESSAGE)
                 user.password_hash = hash_password(new_password)
                 user.must_change_password = False
                 db.commit()
