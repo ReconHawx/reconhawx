@@ -26,7 +26,6 @@ function formatBytes(n) {
 }
 
 const CLUSTER_QUEUE_NAMES = [
-  'cluster-queue',
   'runner-cluster-queue',
   'worker-cluster-queue',
   'ai-analysis-cluster-queue'

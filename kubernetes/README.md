@@ -133,14 +133,11 @@ The base manifests create the following Kueue resources in the `recon` namespace
 
 | Resource | Name | Purpose |
 |----------|------|---------|
-| ResourceFlavor | `default-flavor` | Generic resource flavor (no node constraints) |
 | ResourceFlavor | `runner-flavor` | Targets nodes with label `type: runner` |
 | ResourceFlavor | `worker-flavor` | Targets nodes with label `type: worker` |
-| ClusterQueue | `cluster-queue` | General queue — 10 CPU, 4Gi memory (default-flavor) |
 | ClusterQueue | `runner-cluster-queue` | Runner jobs — 2 CPU, 4Gi memory (runner-flavor) |
 | ClusterQueue | `worker-cluster-queue` | Worker jobs — 4 CPU, 8Gi memory (worker-flavor) |
 | ClusterQueue | `ai-analysis-cluster-queue` | AI analysis — 500m CPU, 512Mi memory (runner-flavor) |
-| LocalQueue | `recon-user-queue` | Namespace queue bound to `cluster-queue` |
 | LocalQueue | `recon-runner-queue` | Namespace queue bound to `runner-cluster-queue` |
 | LocalQueue | `recon-worker-queue` | Namespace queue bound to `worker-cluster-queue` |
 | LocalQueue | `recon-ai-analysis-queue` | Namespace queue bound to `ai-analysis-cluster-queue` |
