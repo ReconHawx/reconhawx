@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.12.0](https://github.com/ReconHawx/reconhawx/compare/v0.11.0...v0.12.0) (2026-04-07)
+
+
+### Features
+
+* **admin:** structured runner/worker images with APP_VERSION tag mode ([77a525a](https://github.com/ReconHawx/reconhawx/commit/77a525a7a85cb1ad104fd9f49ca02510b6b7d54d))
+* **auth:** harden password change and admin reset options ([ea61186](https://github.com/ReconHawx/reconhawx/commit/ea6118654dc316445b37f76fcc2c63689f1ba099))
+* **frontend:** tab admin areas into status, settings, and workflow monitors ([c72749f](https://github.com/ReconHawx/reconhawx/commit/c72749f6247d0b10dbe4ab7c406513680b86036e))
+* **scheduled-jobs:** multi-program workflow schedules with program_ids ([65aa322](https://github.com/ReconHawx/reconhawx/commit/65aa32249e70cdb2280ac7dd092399c5602d2755))
+* **scheduled-jobs:** show workflow name with id on job detail ([ea09e52](https://github.com/ReconHawx/reconhawx/commit/ea09e5286b0c4e4a0fe2fe7a1fdcef916b10876c))
+
+
+### Bug Fixes
+
+* **scheduled-jobs:** repair scheduled job edit form loading and workflow picker ([500f321](https://github.com/ReconHawx/reconhawx/commit/500f321d2cb0db2692a8b38e1b9af156eb39250d))
+
 ## [0.11.0](https://github.com/ReconHawx/reconhawx/compare/v0.10.0...v0.11.0) (2026-04-07)
 
 
