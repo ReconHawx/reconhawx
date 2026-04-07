@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.0](https://github.com/ReconHawx/reconhawx/compare/v0.10.0...v0.11.0) (2026-04-07)
+
+
+### Features
+
+* **admin:** Ollama model dropdown and draft URL listing in AI settings ([f740bb1](https://github.com/ReconHawx/reconhawx/commit/f740bb16b3fb3680aa14370eb15fbf6cda33cbc5))
+
 ## [0.10.0](https://github.com/ReconHawx/reconhawx/compare/v0.9.0...v0.10.0) (2026-04-06)
 
 
