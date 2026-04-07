@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Container, Row, Col, Card, Button, Badge, Table, Alert, Modal, Tabs, Tab, Form } from 'react-bootstrap';
 import { useParams, useNavigate } from 'react-router-dom';
-import { scheduledJobsAPI, workflowAPI } from '../../services/api';
+import { scheduledJobsAPI, workflowAPI, programAPI } from '../../services/api';
 import { formatDate, formatRelativeTime } from '../../utils/dateUtils';
 import VariableInput from '../../components/VariableInput';
 import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
@@ -21,6 +21,7 @@ const ScheduledJobDetail = () => {
   const [editFormData, setEditFormData] = useState(null);
   const [jobTypes, setJobTypes] = useState([]);
   const [workflows, setWorkflows] = useState([]);
+  const [programs, setPrograms] = useState([]);
   const [editLoading, setEditLoading] = useState(false);
   const [editError, setEditError] = useState(null);
 
@@ -69,9 +70,10 @@ const ScheduledJobDetail = () => {
 
   const loadEditData = async () => {
     try {
-      const [jobTypesResponse, workflowsResponse] = await Promise.all([
+      const [jobTypesResponse, workflowsResponse, programsResponse] = await Promise.all([
         scheduledJobsAPI.getJobTypes(),
-        workflowAPI.getWorkflows()
+        workflowAPI.getWorkflows(),
+        programAPI.getAll(),
       ]);
       
       const supportedTypes = jobTypesResponse.supported_job_types || {};
@@ -83,6 +85,7 @@ const ScheduledJobDetail = () => {
       
       setJobTypes(jobTypesList);
       setWorkflows(workflowsResponse.workflows || []);
+      setPrograms(programsResponse.programs_with_permissions || []);
     } catch (err) {
       console.error('Error loading edit data:', err);
     }
@@ -161,6 +164,12 @@ const ScheduledJobDetail = () => {
       name: job.name,
       description: job.description || '',
       program_name: job.program_name || '',
+      workflow_program_names:
+        job.program_names && job.program_names.length > 0
+          ? [...job.program_names]
+          : job.program_name
+            ? [job.program_name]
+            : [],
       schedule: scheduleData,
       job_data: { ...job.job_data },
       tags: job.tags || []
@@ -242,6 +251,15 @@ const ScheduledJobDetail = () => {
       }
 
       if (
+        editFormData.job_type === 'workflow' &&
+        (!editFormData.workflow_program_names ||
+          editFormData.workflow_program_names.length === 0)
+      ) {
+        setEditError('Select at least one program for this workflow schedule');
+        return;
+      }
+
+      if (
         editFormData.job_type === 'gather_api_findings' &&
         (editFormData.job_data.api_vendor || 'threatstream') === 'threatstream'
       ) {
@@ -254,7 +272,23 @@ const ScheduledJobDetail = () => {
         }
       }
 
-      await scheduledJobsAPI.update(jobId, editFormData);
+      const updatePayload = {
+        name: editFormData.name,
+        description: editFormData.description,
+        schedule: editFormData.schedule,
+        tags: editFormData.tags,
+        job_data: editFormData.job_data,
+        enabled: editFormData.schedule?.enabled,
+      };
+      if (
+        editFormData.job_type === 'workflow' &&
+        editFormData.workflow_program_names &&
+        editFormData.workflow_program_names.length > 0
+      ) {
+        updatePayload.program_names = editFormData.workflow_program_names;
+      }
+
+      await scheduledJobsAPI.update(jobId, updatePayload);
       await loadJobDetails();
       setIsEditing(false);
       setEditFormData(null);
@@ -792,8 +826,23 @@ const ScheduledJobDetail = () => {
                             <td>{getJobTypeLabel(job.job_type)}</td>
                           </tr>
                           <tr>
-                                                <td><strong>Program:</strong></td>
-                    <td>{job.program_name || job.program_id || 'N/A'}</td>
+                            <td><strong>Programs:</strong></td>
+                            <td>
+                              {(job.program_names && job.program_names.length > 0
+                                ? job.program_names
+                                : job.program_name
+                                  ? [job.program_name]
+                                  : []
+                              ).map((name) => (
+                                <Badge key={name} bg="info" className="me-1 mb-1">
+                                  {name}
+                                </Badge>
+                              ))}
+                              {!(
+                                (job.program_names && job.program_names.length > 0) ||
+                                job.program_name
+                              ) && <span className="text-muted">N/A</span>}
+                            </td>
                           </tr>
                           <tr>
                             <td><strong>Status:</strong></td>
@@ -1163,6 +1212,9 @@ const ScheduledJobDetail = () => {
                             if (workflowId) {
                               const selectedWorkflow = workflows.find(w => w.id === workflowId);
                               if (selectedWorkflow && selectedWorkflow.program_name) {
+                                handleEditInputChange('workflow_program_names', [
+                                  selectedWorkflow.program_name,
+                                ]);
                                 handleEditInputChange('program_name', selectedWorkflow.program_name);
                               }
                             }
@@ -1179,6 +1231,36 @@ const ScheduledJobDetail = () => {
                         </Form.Select>
                         <Form.Text className="text-muted">
                           Select a saved workflow to schedule
+                        </Form.Text>
+                      </Form.Group>
+
+                      <Form.Group className="mb-3">
+                        <Form.Label>Programs *</Form.Label>
+                        <div
+                          className="border rounded p-2 bg-light"
+                          style={{ maxHeight: '200px', overflowY: 'auto' }}
+                        >
+                          {programs.map((p) => (
+                            <Form.Check
+                              key={p.name}
+                              type="checkbox"
+                              id={`edit-workflow-program-${p.name}`}
+                              label={p.name}
+                              checked={(editFormData.workflow_program_names || []).includes(p.name)}
+                              onChange={(e) => {
+                                const current = editFormData.workflow_program_names || [];
+                                const next = e.target.checked
+                                  ? (current.includes(p.name) ? current : [...current, p.name])
+                                  : current.filter((n) => n !== p.name);
+                                handleEditInputChange('workflow_program_names', next);
+                                handleEditInputChange('program_name', next.length > 0 ? next[0] : '');
+                              }}
+                              className="mb-1"
+                            />
+                          ))}
+                        </div>
+                        <Form.Text className="text-muted">
+                          One workflow run is started per program on each schedule tick
                         </Form.Text>
                       </Form.Group>
 

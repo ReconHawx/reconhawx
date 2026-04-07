@@ -1,4 +1,5 @@
 import asyncio
+import copy
 import logging
 import uuid
 from datetime import datetime, timezone
@@ -20,6 +21,66 @@ from repository import ScheduledJobRepository
 logger = logging.getLogger(__name__)
 
 class JobSchedulerService:
+    def _parse_datetime_field(self, value: Any) -> Any:
+        if value is None:
+            return None
+        if isinstance(value, datetime):
+            return value
+        if isinstance(value, str):
+            try:
+                return datetime.fromisoformat(value.replace("Z", "+00:00"))
+            except ValueError:
+                return value
+        return value
+
+    def _request_from_stored_row(self, job_data: Dict[str, Any]) -> ScheduledJobRequest:
+        """Rebuild API request from a DB/enriched scheduled job row."""
+        pnames = job_data.get("program_names") or []
+        first_name = job_data.get("program_name") or (pnames[0] if pnames else "unknown")
+        kwargs: Dict[str, Any] = dict(
+            job_type=JobType(job_data["job_type"]),
+            job_data=job_data["job_data"],
+            schedule=JobSchedule(**job_data["schedule_data"]),
+            name=job_data["name"],
+            description=job_data.get("description"),
+            program_name=first_name,
+            tags=job_data.get("tags", []),
+        )
+        if len(pnames) > 1:
+            kwargs["program_names"] = pnames
+        return ScheduledJobRequest(**kwargs)
+
+    def _stored_row_to_response(self, job_data: Dict[str, Any]) -> ScheduledJobResponse:
+        schedule_id = job_data["schedule_id"]
+        next_run = None
+        if self.scheduler.get_job(schedule_id):
+            next_run = self.scheduler.get_job(schedule_id).next_run_time
+        pids = job_data.get("program_ids") or []
+        pnames = job_data.get("program_names") or []
+        first_id = pids[0] if pids else None
+        first_name = pnames[0] if pnames else job_data.get("program_name")
+        return ScheduledJobResponse(
+            schedule_id=schedule_id,
+            job_type=JobType(job_data["job_type"]),
+            name=job_data["name"],
+            description=job_data["description"],
+            program_ids=[str(p) for p in pids],
+            program_names=list(pnames),
+            program_id=first_id,
+            program_name=first_name,
+            job_data=job_data.get("job_data", {}),
+            schedule=JobSchedule(**job_data["schedule_data"]),
+            status=JobStatus(job_data["status"]),
+            next_run=next_run,
+            last_run=self._parse_datetime_field(job_data.get("last_run")),
+            total_executions=job_data.get("total_executions", 0),
+            successful_executions=job_data.get("successful_executions", 0),
+            failed_executions=job_data.get("failed_executions", 0),
+            created_at=self._parse_datetime_field(job_data["created_at"]),
+            updated_at=self._parse_datetime_field(job_data["updated_at"]),
+            tags=job_data.get("tags", []),
+        )
+
     def __init__(self):
         """Initialize the job scheduler service"""
         self.scheduler = AsyncIOScheduler(
@@ -61,19 +122,7 @@ class JobSchedulerService:
             
             for job_data in scheduled_jobs_data:
                 if job_data.get("enabled", True):
-                    # Recreate the scheduled job request
-                    from models.job import ScheduledJobRequest, JobSchedule
-                    
-                    request = ScheduledJobRequest(
-                        job_type=JobType(job_data["job_type"]),
-                        job_data=job_data["job_data"],
-                        schedule=JobSchedule(**job_data["schedule_data"]),
-                        name=job_data["name"],
-                        description=job_data.get("description"),
-                        program_name=job_data.get("program_name", "unknown"),
-                        tags=job_data.get("tags", [])
-                    )
-                    
+                    request = self._request_from_stored_row(job_data)
                     # Schedule the job
                     await self._schedule_job(job_data["schedule_id"], request)
                     
@@ -85,8 +134,10 @@ class JobSchedulerService:
         except Exception as e:
             logger.error(f"Error loading scheduled jobs: {str(e)}")
     
-    async def create_scheduled_job(self, request: ScheduledJobRequest, user_id: str, program_id: str) -> ScheduledJobResponse:
-        """Create a new scheduled job"""
+    async def create_scheduled_job(
+        self, request: ScheduledJobRequest, user_id: str, program_ids: List[str]
+    ) -> ScheduledJobResponse:
+        """Create a new scheduled job (program_ids: UUID strings, non-empty)."""
         try:
             schedule_id = str(uuid.uuid4())
             
@@ -100,7 +151,7 @@ class JobSchedulerService:
                 "job_data": request.job_data,
                 "workflow_variables": request.job_data.get("workflow_variables", {}),
                 "user_id": user_id,
-                "program_id": program_id,
+                "program_ids": program_ids,
                 "status": JobStatus.SCHEDULED.value,
                 "tags": request.tags,
                 "created_at": datetime.now(timezone.utc),
@@ -113,29 +164,14 @@ class JobSchedulerService:
             # Schedule the job
             await self._schedule_job(schedule_id, request)
             
-            # Store in memory
-            self.scheduled_jobs[schedule_id] = scheduled_job_data
-            
+            stored = await ScheduledJobRepository.get_scheduled_job(schedule_id)
+            if not stored:
+                raise RuntimeError("Scheduled job row missing after create")
+            self.scheduled_jobs[schedule_id] = stored
+
             logger.info(f"Created scheduled job {schedule_id}: {request.name}")
-            
-            return ScheduledJobResponse(
-                schedule_id=schedule_id,
-                job_type=request.job_type,
-                name=request.name,
-                description=request.description,
-                program_id=program_id,
-                job_data=request.job_data,
-                schedule=request.schedule,
-                status=JobStatus.SCHEDULED,
-                next_run=await self._get_next_run_time(schedule_id, request.schedule),
-                last_run=None,
-                total_executions=0,
-                successful_executions=0,
-                failed_executions=0,
-                created_at=scheduled_job_data["created_at"],
-                updated_at=scheduled_job_data["updated_at"],
-                tags=request.tags
-            )
+
+            return self._stored_row_to_response(stored)
             
         except Exception as e:
             logger.error(f"Error creating scheduled job: {str(e)}")
@@ -280,62 +316,162 @@ class JobSchedulerService:
             logger.error(f"Error scheduling job {schedule_id}: {str(e)}")
             raise
     
+    async def _execute_multi_program_workflow(
+        self, schedule_id: str, request: ScheduledJobRequest, job_row: Dict[str, Any]
+    ) -> None:
+        """Run one Kubernetes workflow runner per program on this scheduled job."""
+        from services.kubernetes import KubernetesService
+        from repository import WorkflowDefinitionRepository
+
+        k8s_service = KubernetesService()
+        workflow_repo = WorkflowDefinitionRepository()
+
+        effective_job_data = job_row.get("job_data") or {}
+        stored_variables = job_row.get("workflow_variables") or {}
+        target_program_names = [n for n in (job_row.get("program_names") or []) if n]
+        if not target_program_names:
+            raise ValueError("Scheduled workflow has no resolved programs")
+
+        wf_id = effective_job_data.get("workflow_id")
+        workflow_specs: List[Dict[str, Any]] = []
+
+        if wf_id:
+            workflow_definition = await workflow_repo.get_workflow_definition(wf_id)
+            if not workflow_definition:
+                raise ValueError(f"Workflow definition not found: {wf_id}")
+            base = {
+                "workflow_id": wf_id,
+                "program_name": "",
+                "execution_id": "",
+                "name": workflow_definition.get("name", request.name),
+                "description": workflow_definition.get(
+                    "description", request.description or "Scheduled workflow execution"
+                ),
+                "variables": workflow_definition.get("variables", {}),
+                "inputs": workflow_definition.get("inputs", {}),
+                "steps": workflow_definition.get("steps", []),
+            }
+            if stored_variables and base.get("variables"):
+                try:
+                    from utils.workflow_processor import process_workflow_with_variables
+
+                    base = process_workflow_with_variables(base, stored_variables)
+                except ImportError:
+                    logger.warning("Workflow processing utilities not available, using raw workflow")
+                except Exception as e:
+                    logger.error(f"Error processing workflow with variables: {str(e)}")
+            for _pn in target_program_names:
+                workflow_specs.append(copy.deepcopy(base))
+        else:
+            logger.warning("No workflow_id in job_data; using inline job_data for workflow")
+            for _pn in target_program_names:
+                wd = {
+                    "workflow_id": None,
+                    "program_name": "",
+                    "execution_id": "",
+                    "name": request.name,
+                    "description": request.description or "Scheduled workflow execution",
+                    "variables": effective_job_data.get("variables", {}),
+                    "inputs": effective_job_data.get("inputs", {}),
+                    "steps": effective_job_data.get("steps", []),
+                }
+                if stored_variables and wd.get("variables"):
+                    try:
+                        from utils.workflow_processor import process_workflow_with_variables
+
+                        wd = process_workflow_with_variables(wd, stored_variables)
+                    except Exception as e:
+                        logger.error(f"Error processing workflow with variables: {str(e)}")
+                workflow_specs.append(wd)
+
+        monitor_coros: List[Any] = []
+        for program_name, spec in zip(target_program_names, workflow_specs):
+            job_id = str(uuid.uuid4())
+            spec["program_name"] = program_name
+            spec["execution_id"] = job_id
+            job_payload = {
+                "job_id": job_id,
+                "job_type": request.job_type.value,
+                "schedule_id": schedule_id,
+                "job_data": effective_job_data,
+                "user_id": job_row["user_id"],
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            }
+            await JobRepository.create_job(job_id, request.job_type.value, job_payload)
+            await k8s_service.create_runner_job(spec)
+            logger.info(
+                f"Created workflow runner job for scheduled workflow: {job_id} program={program_name}"
+            )
+            await self._record_job_execution(schedule_id, job_id, JobStatus.RUNNING)
+            execution_id = await self._get_latest_execution_id(schedule_id, job_id)
+            if execution_id:
+                monitor_coros.append(
+                    self._monitor_job_completion(
+                        schedule_id, job_id, execution_id, update_schedule_status=False
+                    )
+                )
+
+        if monitor_coros:
+            results = await asyncio.gather(*monitor_coros, return_exceptions=True)
+            failed = any(isinstance(r, Exception) for r in results) or any(r is not True for r in results if not isinstance(r, Exception))
+            if failed:
+                await self._update_scheduled_job_status(schedule_id, JobStatus.FAILED)
+            else:
+                await self._update_scheduled_job_status(schedule_id, JobStatus.SCHEDULED)
+        else:
+            await self._update_scheduled_job_status(schedule_id, JobStatus.SCHEDULED)
+
     def _create_job_execution_function(self, schedule_id: str, request: ScheduledJobRequest) -> Callable:
         """Create a function that will be executed when the scheduled job runs"""
         async def execute_scheduled_job():
             try:
                 logger.info(f"Executing scheduled job {schedule_id}: {request.name}")
                 logger.debug(f"Request: {request}")
-                # Update status to running
                 await self._update_scheduled_job_status(schedule_id, JobStatus.RUNNING)
-                
-                # Get the scheduled job data to get user_id and other details
-                job_data = await ScheduledJobRepository.get_scheduled_job(schedule_id)
-                if not job_data:
+
+                job_row = await ScheduledJobRepository.get_scheduled_job(schedule_id)
+                if not job_row:
                     raise ValueError(f"Scheduled job {schedule_id} not found in database")
-                
-                # Create and submit the actual job
+
+                if request.job_type == JobType.WORKFLOW:
+                    await self._execute_multi_program_workflow(schedule_id, request, job_row)
+                    logger.info(f"Finished multi-program workflow submission for schedule {schedule_id}")
+                    return
+
+                effective_job_data = job_row.get("job_data") or {}
+
                 job_id = str(uuid.uuid4())
                 job_payload = {
                     "job_id": job_id,
                     "job_type": request.job_type.value,
                     "schedule_id": schedule_id,
-                    "job_data": request.job_data,
-                    "user_id": job_data["user_id"],
-                    "created_at": datetime.now(timezone.utc).isoformat()
+                    "job_data": effective_job_data,
+                    "user_id": job_row["user_id"],
+                    "created_at": datetime.now(timezone.utc).isoformat(),
                 }
 
-                # Create job status record
-                await JobRepository.create_job(
-                    job_id,
-                    request.job_type.value,
-                    job_payload
-                )
+                await JobRepository.create_job(job_id, request.job_type.value, job_payload)
 
-                # Create payload for worker - structure depends on job type
                 if request.job_type == JobType.GATHER_API_FINDINGS:
-                    # gather_api_findings expects program_name at top level but other params nested in job_data
                     worker_payload = {
                         "job_id": job_id,
                         "job_type": request.job_type.value,
                         "schedule_id": schedule_id,
-                        "user_id": job_data["user_id"],
-                        "program_name": request.program_name,  # From scheduled job
+                        "user_id": job_row["user_id"],
+                        "program_name": request.program_name,
                         "created_at": datetime.now(timezone.utc).isoformat(),
-                        "job_data": request.job_data  # Keep nested structure for api_vendor, date_range_hours
+                        "job_data": effective_job_data,
                     }
                 else:
-                    # Other job types expect flattened structure
                     worker_payload = {
                         "job_id": job_id,
                         "job_type": request.job_type.value,
                         "schedule_id": schedule_id,
-                        "user_id": job_data["user_id"],
+                        "user_id": job_row["user_id"],
                         "created_at": datetime.now(timezone.utc).isoformat(),
-                        **request.job_data  # Flatten job_data fields to top level
+                        **effective_job_data,
                     }
 
-                # Submit to Kubernetes based on job type
                 if request.job_type == JobType.DUMMY_BATCH:
                     self.job_submission_service.create_dummy_batch_job(job_id, worker_payload)
                 elif request.job_type == JobType.TYPOSQUAT_BATCH:
@@ -348,88 +484,15 @@ class JobSchedulerService:
                     self.job_submission_service.create_gather_api_findings_job(job_id, worker_payload)
                 elif request.job_type == JobType.SYNC_RECORDEDFUTURE_DATA:
                     self.job_submission_service.create_sync_recordedfuture_data_job(job_id, worker_payload)
-                elif request.job_type == JobType.WORKFLOW:
-                    # For workflow jobs, use the workflow execution system
-                    from services.kubernetes import KubernetesService
-                    from repository import WorkflowDefinitionRepository
-                    k8s_service = KubernetesService()
-                    workflow_repo = WorkflowDefinitionRepository()
-                    
-                    # Get workflow definition ID from job data
-                    workflow_definition_id = job_payload.get("job_data", {}).get("workflow_id")
-                    
-                    if workflow_definition_id:
-                        # Load complete workflow definition from database
-                        try:
-                            workflow_definition = await workflow_repo.get_workflow_definition(workflow_definition_id)
-                            if workflow_definition:
-                                logger.info(f"Loaded workflow definition for scheduled workflow: {workflow_definition_id}")
-                                
-                                # Get stored workflow variables from scheduled job
-                                stored_variables = self.scheduled_jobs[schedule_id].get("workflow_variables", {})
-                                
-                                # Extract workflow data from database definition
-                                workflow_data = {
-                                    "workflow_id": workflow_definition_id,
-                                    "execution_id": job_id,  # Use job_id as execution_id
-                                    "program_name": request.program_name,
-                                    "name": workflow_definition.get("name", request.name),
-                                    "description": workflow_definition.get("description", request.description or "Scheduled workflow execution"),
-                                    "variables": workflow_definition.get("variables", {}),
-                                    "inputs": workflow_definition.get("inputs", {}),
-                                    "steps": workflow_definition.get("steps", [])
-                                }
-                                
-                                # Process workflow with stored variables if any
-                                if stored_variables and workflow_data["variables"]:
-                                    logger.info(f"Processing workflow with {len(stored_variables)} stored variables")
-                                    try:
-                                        # Import workflow processing utilities
-                                        from utils.workflow_processor import process_workflow_with_variables
-                                        workflow_data = process_workflow_with_variables(workflow_data, stored_variables)
-                                        logger.info("Workflow processed with variables successfully")
-                                    except ImportError:
-                                        logger.warning("Workflow processing utilities not available, using raw workflow")
-                                    except Exception as e:
-                                        logger.error(f"Error processing workflow with variables: {str(e)}")
-                                        # Continue with unprocessed workflow
-                                
-                                logger.info(f"Workflow definition loaded: {len(workflow_data['steps'])} steps, {len(workflow_data['variables'])} variables, {len(workflow_data['inputs'])} inputs")
-                            else:
-                                logger.error(f"Workflow definition not found: {workflow_definition_id}")
-                                raise ValueError(f"Workflow definition not found: {workflow_definition_id}")
-                        except Exception as e:
-                            logger.error(f"Error loading workflow definition {workflow_definition_id}: {str(e)}")
-                            raise
-                    else:
-                        # Fallback to job_data if no workflow_definition_id
-                        logger.warning("No workflow_definition_id provided, using job_data")
-                        workflow_data = {
-                            "workflow_id": None,
-                            "execution_id": job_id,
-                            "program_name": job_payload.get("job_data", {}).get("program_name", "scheduled-workflow"),
-                            "name": request.name,
-                            "description": request.description or "Scheduled workflow execution",
-                            "variables": job_payload.get("job_data", {}).get("variables", {}),
-                            "inputs": job_payload.get("job_data", {}).get("inputs", {}),
-                            "steps": job_payload.get("job_data", {}).get("steps", [])
-                        }
-                    
-                    # Create runner job using the workflow execution system
-                    await k8s_service.create_runner_job(workflow_data)
-                    logger.info(f"Created workflow runner job for scheduled workflow: {job_id}")
-                
-                # Record execution
+
                 await self._record_job_execution(schedule_id, job_id, JobStatus.RUNNING)
-                
-                # Start monitoring job completion in background
+
                 execution_id = await self._get_latest_execution_id(schedule_id, job_id)
                 if execution_id:
-                    # Start monitoring in background task
                     asyncio.create_task(self._monitor_job_completion(schedule_id, job_id, execution_id))
-                
+
                 logger.info(f"Successfully submitted scheduled job {schedule_id} as job {job_id}")
-                
+
             except Exception as e:
                 logger.error(f"Error executing scheduled job {schedule_id}: {str(e)}")
                 await self._update_scheduled_job_status(schedule_id, JobStatus.FAILED)
@@ -445,32 +508,9 @@ class JobSchedulerService:
             
             if not job_data:
                 return None
-            
-            # Get next run time from scheduler
-            next_run = None
-            if self.scheduler.get_job(schedule_id):
-                next_run = self.scheduler.get_job(schedule_id).next_run_time
-            
-            return ScheduledJobResponse(
-                schedule_id=schedule_id,
-                job_type=JobType(job_data["job_type"]),
-                name=job_data["name"],
-                description=job_data["description"],
-                program_id=job_data.get("program_id", ""),
-                program_name=job_data.get("program_name", ""),
-                job_data=job_data.get("job_data", {}),
-                schedule=JobSchedule(**job_data["schedule_data"]),
-                status=JobStatus(job_data["status"]),
-                next_run=next_run,
-                last_run=job_data.get("last_run"),
-                total_executions=job_data.get("total_executions", 0),
-                successful_executions=job_data.get("successful_executions", 0),
-                failed_executions=job_data.get("failed_executions", 0),
-                created_at=job_data["created_at"],
-                updated_at=job_data["updated_at"],
-                tags=job_data.get("tags", [])
-            )
-            
+
+            return self._stored_row_to_response(job_data)
+
         except Exception as e:
             logger.error(f"Error getting scheduled job {schedule_id}: {str(e)}")
             return None
@@ -481,32 +521,7 @@ class JobSchedulerService:
             # Get from database
             scheduled_jobs_data = await ScheduledJobRepository.get_all_scheduled_jobs(user_id, program_ids)
             
-            jobs = []
-            for job_data in scheduled_jobs_data:
-                # Get next run time from scheduler
-                next_run = None
-                if self.scheduler.get_job(job_data["schedule_id"]):
-                    next_run = self.scheduler.get_job(job_data["schedule_id"]).next_run_time
-                
-                jobs.append(ScheduledJobResponse(
-                    schedule_id=job_data["schedule_id"],
-                    job_type=JobType(job_data["job_type"]),
-                    name=job_data["name"],
-                    description=job_data["description"],
-                    program_id=job_data.get("program_id", ""),
-                    program_name=job_data.get("program_name", ""),
-                    job_data=job_data.get("job_data", {}),
-                    schedule=JobSchedule(**job_data["schedule_data"]),
-                    status=JobStatus(job_data["status"]),
-                    next_run=next_run,
-                    last_run=job_data.get("last_run"),
-                    total_executions=job_data.get("total_executions", 0),
-                    successful_executions=job_data.get("successful_executions", 0),
-                    failed_executions=job_data.get("failed_executions", 0),
-                    created_at=job_data["created_at"],
-                    updated_at=job_data["updated_at"],
-                    tags=job_data.get("tags", [])
-                ))
+            jobs = [self._stored_row_to_response(job_data) for job_data in scheduled_jobs_data]
             
             return jobs
             
@@ -537,31 +552,25 @@ class JobSchedulerService:
                 db_update_data["tags"] = update_data["tags"]
             if "job_data" in update_data:
                 db_update_data["job_data"] = update_data["job_data"]
-            
+            if "program_ids" in update_data:
+                db_update_data["program_ids"] = update_data["program_ids"]
+
             # Update in database
             success = await ScheduledJobRepository.update_scheduled_job(schedule_id, db_update_data)
-            
+
             if not success:
                 return None
-            
-            # Reschedule if schedule changed
-            if "schedule" in update_data:
-                # Remove existing job
+
+            reschedule = any(k in update_data for k in ("schedule", "job_data", "program_ids"))
+            if reschedule and job_data.get("enabled", True):
                 if self.scheduler.get_job(schedule_id):
                     self.scheduler.remove_job(schedule_id)
-                
-                # Create new schedule
-                request = ScheduledJobRequest(
-                    job_type=JobType(job_data["job_type"]),
-                    job_data=job_data["job_data"],
-                    schedule=JobSchedule(**update_data["schedule"]),
-                    name=job_data["name"],
-                    description=job_data["description"],
-                    program_name=job_data.get("program_name", "unknown"),
-                    tags=job_data.get("tags", [])
-                )
-                await self._schedule_job(schedule_id, request)
-            
+                fresh = await ScheduledJobRepository.get_scheduled_job(schedule_id)
+                if fresh:
+                    request = self._request_from_stored_row(fresh)
+                    await self._schedule_job(schedule_id, request)
+                    self.scheduled_jobs[schedule_id] = fresh
+
             return await self.get_scheduled_job(schedule_id)
             
         except Exception as e:
@@ -656,21 +665,7 @@ class JobSchedulerService:
                 logger.error(f"Scheduled job {schedule_id} not found")
                 return False
             
-            # Create the scheduled job request from stored data
-            from models.job import ScheduledJobRequest, JobSchedule
-            
-            # Use the program name that's already stored in the job data
-            program_name = job_data.get("program_name", "unknown")
-            
-            request = ScheduledJobRequest(
-                job_type=JobType(job_data["job_type"]),
-                job_data=job_data["job_data"],
-                schedule=JobSchedule(**job_data["schedule_data"]),
-                name=job_data["name"],
-                description=job_data.get("description"),
-                program_name=program_name,
-                tags=job_data.get("tags", [])
-            )
+            request = self._request_from_stored_row(job_data)
             
             # Execute the job immediately using the same function as scheduled execution
             execution_function = self._create_job_execution_function(schedule_id, request)
@@ -731,8 +726,15 @@ class JobSchedulerService:
         except Exception as e:
             logger.error(f"Error recording job execution: {str(e)}")
     
-    async def _monitor_job_completion(self, schedule_id: str, job_id: str, execution_id: str):
-        """Monitor a Kubernetes job for completion and update execution history"""
+    async def _monitor_job_completion(
+        self,
+        schedule_id: str,
+        job_id: str,
+        execution_id: str,
+        *,
+        update_schedule_status: bool = True,
+    ) -> bool:
+        """Monitor a Kubernetes job for completion. Returns True if the job completed successfully."""
         try:
             logger.info(f"Starting job completion monitoring for job {job_id} (schedule {schedule_id})")
             
@@ -768,21 +770,24 @@ class JobSchedulerService:
                     if not job_status:
                         logger.warning(f"Job {job_id} not found in Kubernetes, marking as failed")
                         await self._update_execution_completion(execution_id, JobStatus.FAILED, error_message="Job not found in Kubernetes")
-                        await self._update_scheduled_job_status(schedule_id, JobStatus.SCHEDULED)
-                        return
+                        if update_schedule_status:
+                            await self._update_scheduled_job_status(schedule_id, JobStatus.SCHEDULED)
+                        return False
                     
                     # Check if job is completed
                     if hasattr(job_status, 'status'):
                         if job_status.status.succeeded:
                             logger.info(f"Job {job_id} completed successfully")
                             await self._update_execution_completion(execution_id, JobStatus.COMPLETED)
-                            await self._update_scheduled_job_status(schedule_id, JobStatus.SCHEDULED)
-                            return
+                            if update_schedule_status:
+                                await self._update_scheduled_job_status(schedule_id, JobStatus.SCHEDULED)
+                            return True
                         elif job_status.status.failed:
                             logger.error(f"Job {job_id} failed")
                             await self._update_execution_completion(execution_id, JobStatus.FAILED, error_message="Kubernetes job failed")
-                            await self._update_scheduled_job_status(schedule_id, JobStatus.SCHEDULED)
-                            return
+                            if update_schedule_status:
+                                await self._update_scheduled_job_status(schedule_id, JobStatus.SCHEDULED)
+                            return False
                     
                     # Job still running, wait and check again
                     await asyncio.sleep(10)  # Wait 10 seconds
@@ -796,12 +801,16 @@ class JobSchedulerService:
             # Timeout reached
             logger.warning(f"Job {job_id} monitoring timed out after 30 minutes")
             await self._update_execution_completion(execution_id, JobStatus.FAILED, error_message="Job monitoring timed out")
-            await self._update_scheduled_job_status(schedule_id, JobStatus.SCHEDULED)
+            if update_schedule_status:
+                await self._update_scheduled_job_status(schedule_id, JobStatus.SCHEDULED)
+            return False
             
         except Exception as e:
             logger.error(f"Error in job completion monitoring for {job_id}: {str(e)}")
             await self._update_execution_completion(execution_id, JobStatus.FAILED, error_message=f"Monitoring error: {str(e)}")
-            await self._update_scheduled_job_status(schedule_id, JobStatus.SCHEDULED)
+            if update_schedule_status:
+                await self._update_scheduled_job_status(schedule_id, JobStatus.SCHEDULED)
+            return False
     
     async def _update_execution_completion(self, execution_id: str, status: JobStatus, error_message: Optional[str] = None, results: Optional[Any] = None):
         """Update execution history with completion details"""

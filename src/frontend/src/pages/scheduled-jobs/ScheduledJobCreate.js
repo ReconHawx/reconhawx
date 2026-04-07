@@ -41,6 +41,7 @@ const ScheduledJobCreate = () => {
     name: '',
     description: '',
     program_name: '',
+    workflow_program_names: [],
     schedule: {
       schedule_type: 'once',
       run_at: (() => {
@@ -248,7 +249,8 @@ const ScheduledJobCreate = () => {
     setFormData(prev => ({
       ...prev,
       job_type: jobType,
-      job_data: getDefaultJobData(jobType)
+      job_data: getDefaultJobData(jobType),
+      workflow_program_names: jobType === 'workflow' ? [] : [],
     }));
     
     // Clear workflow variables when changing job type
@@ -311,7 +313,12 @@ const ScheduledJobCreate = () => {
       return;
     }
 
-    if (!formData.program_name) {
+    if (formData.job_type === 'workflow') {
+      if (!formData.workflow_program_names || formData.workflow_program_names.length === 0) {
+        setError('Select at least one program for the workflow schedule');
+        return;
+      }
+    } else if (!formData.program_name) {
       setError('Program is required');
       return;
     }
@@ -410,10 +417,12 @@ const ScheduledJobCreate = () => {
         tags: formData.tags
       };
 
-      // All job types use program_name
-      jobPayload.program_name = formData.program_name;
+      if (formData.job_type === 'workflow') {
+        jobPayload.program_names = formData.workflow_program_names;
+      } else {
+        jobPayload.program_name = formData.program_name;
+      }
 
-      // For gather_api_findings, also include program_name in job_data for the job runner
       if (formData.job_type === 'gather_api_findings') {
         jobPayload.job_data.program_name = formData.program_name;
       }
@@ -765,10 +774,10 @@ const ScheduledJobCreate = () => {
                   const workflowId = e.target.value;
                   handleWorkflowChange(workflowId);
                   
-                  // Auto-fill program if workflow is selected
                   if (workflowId) {
                     const selectedWorkflow = workflows.find(w => w.id === workflowId);
                     if (selectedWorkflow && selectedWorkflow.program_name) {
+                      handleInputChange('workflow_program_names', [selectedWorkflow.program_name]);
                       handleInputChange('program_name', selectedWorkflow.program_name);
                     }
                   }
@@ -884,21 +893,53 @@ const ScheduledJobCreate = () => {
                     </Form.Group>
                   </Col>
                   <Col md={4}>
-                    <Form.Group className="mb-3">
-                      <Form.Label>Program *</Form.Label>
-                      <Form.Select
-                        value={formData.program_name}
-                        onChange={(e) => handleInputChange('program_name', e.target.value)}
-                        required
-                      >
-                        <option value="">Choose a program...</option>
-                        {programs.map((program) => (
-                          <option key={program.name} value={program.name}>
-                            {program.name}
-                          </option>
-                        ))}
-                      </Form.Select>
-                    </Form.Group>
+                    {formData.job_type === 'workflow' ? (
+                      <Form.Group className="mb-3">
+                        <Form.Label>Programs *</Form.Label>
+                        <div
+                          className="border rounded p-2 bg-light"
+                          style={{ maxHeight: '200px', overflowY: 'auto' }}
+                        >
+                          {programs.map((program) => (
+                            <Form.Check
+                              key={program.name}
+                              type="checkbox"
+                              id={`create-workflow-program-${program.name}`}
+                              label={program.name}
+                              checked={formData.workflow_program_names.includes(program.name)}
+                              onChange={(e) => {
+                                const cur = formData.workflow_program_names;
+                                const next = e.target.checked
+                                  ? (cur.includes(program.name) ? cur : [...cur, program.name])
+                                  : cur.filter((n) => n !== program.name);
+                                handleInputChange('workflow_program_names', next);
+                                handleInputChange('program_name', next.length > 0 ? next[0] : '');
+                              }}
+                              className="mb-1"
+                            />
+                          ))}
+                        </div>
+                        <Form.Text className="text-muted">
+                          One workflow run per selected program on each schedule
+                        </Form.Text>
+                      </Form.Group>
+                    ) : (
+                      <Form.Group className="mb-3">
+                        <Form.Label>Program *</Form.Label>
+                        <Form.Select
+                          value={formData.program_name}
+                          onChange={(e) => handleInputChange('program_name', e.target.value)}
+                          required
+                        >
+                          <option value="">Choose a program...</option>
+                          {programs.map((program) => (
+                            <option key={program.name} value={program.name}>
+                              {program.name}
+                            </option>
+                          ))}
+                        </Form.Select>
+                      </Form.Group>
+                    )}
                   </Col>
                 </Row>
                 

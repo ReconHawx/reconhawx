@@ -135,7 +135,6 @@ class Program(Base):
     workflows = relationship("Workflow", back_populates="program", cascade="all, delete-orphan")
     workflow_logs = relationship("WorkflowLog", back_populates="program", cascade="all, delete-orphan")
     wordlists = relationship("Wordlist", back_populates="program")
-    scheduled_jobs = relationship("ScheduledJob", back_populates="program", cascade="all, delete-orphan")
 
 class ApexDomain(Base):
     """Root/apex domains (e.g., example.com)"""
@@ -1104,7 +1103,7 @@ class ScheduledJob(Base):
     job_data = Column(JSONB, nullable=False)  # Job-specific data
     workflow_variables = Column(JSONB, default={})  # Workflow variable values for scheduled workflow jobs
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
-    program_id = Column(UUID(as_uuid=True), ForeignKey("programs.id"), nullable=False, index=True)
+    program_ids = Column(ARRAY(UUID(as_uuid=True)), nullable=False)
     status = Column(String(20), nullable=False, index=True)  # scheduled, running, completed, failed, cancelled
     tags = Column(ARRAY(String(100)), default=[])
     next_run = Column(DateTime, nullable=True, index=True)
@@ -1118,7 +1117,6 @@ class ScheduledJob(Base):
     
     # Relationships
     user = relationship("User")
-    program = relationship("Program", back_populates="scheduled_jobs")
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert model instance to dictionary"""
@@ -1132,7 +1130,7 @@ class ScheduledJob(Base):
             'job_data': self.job_data,
             'workflow_variables': self.workflow_variables or {},
             'user_id': str(self.user_id) if self.user_id else None,
-            'program_id': str(self.program_id) if self.program_id else None,
+            'program_ids': [str(pid) for pid in self.program_ids] if self.program_ids else [],
             'status': self.status,
             'tags': self.tags or [],
             'next_run': self.next_run.isoformat() if self.next_run else None,

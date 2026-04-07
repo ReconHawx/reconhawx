@@ -36,11 +36,14 @@ const ScheduledJobs = () => {
   const canManageJob = (job) => {
     if (isSuperuser && isSuperuser()) return true;
     if (isAdmin && isAdmin()) return true;
-    // Prefer explicit program_name; if missing, be conservative and treat as not manageable
-    if (job?.program_name) {
-      return hasProgramPermission && hasProgramPermission(job.program_name, 'manager');
-    }
-    return false;
+    const names =
+      job?.program_names?.length > 0
+        ? job.program_names
+        : job?.program_name
+          ? [job.program_name]
+          : [];
+    if (!names.length || !hasProgramPermission) return false;
+    return names.every((n) => hasProgramPermission(n, 'manager'));
   };
 
   const loadJobs = useCallback(async () => {
@@ -280,7 +283,7 @@ const ScheduledJobs = () => {
                 <tr>
                   <th>Name</th>
                   <th>Type</th>
-                  <th>Program</th>
+                  <th>Programs</th>
                   <th>Schedule</th>
                   <th>Status</th>
                   <th>Next Run</th>
@@ -302,7 +305,20 @@ const ScheduledJobs = () => {
                     </td>
                     <td>{getJobTypeLabel(job.job_type)}</td>
                     <td>
-                      <Badge bg="info">{job.program_name || job.program_id || 'N/A'}</Badge>
+                      {(job.program_names && job.program_names.length > 0
+                        ? job.program_names
+                        : job.program_name
+                          ? [job.program_name]
+                          : []
+                      ).map((name) => (
+                        <Badge key={name} bg="info" className="me-1 mb-1">
+                          {name}
+                        </Badge>
+                      ))}
+                      {!(
+                        (job.program_names && job.program_names.length > 0) ||
+                        job.program_name
+                      ) && <span className="text-muted small">N/A</span>}
                     </td>
                     <td>
                       <small>{getScheduleDescription(job.schedule, job.last_run, job.status)}</small>
