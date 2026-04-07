@@ -1104,6 +1104,12 @@ class WorkflowKubernetesUpdateRequest(BaseModel):
 
     runner_image: Optional[str] = None
     worker_image: Optional[str] = None
+    runner_repository: Optional[str] = None
+    runner_tag_source: Optional[Literal["app_version", "custom"]] = None
+    runner_custom_tag: Optional[str] = None
+    worker_repository: Optional[str] = None
+    worker_tag_source: Optional[Literal["app_version", "custom"]] = None
+    worker_custom_tag: Optional[str] = None
     image_pull_policy: Optional[Literal["Always", "Never", "IfNotPresent"]] = None
 
 
@@ -1111,12 +1117,11 @@ class WorkflowKubernetesUpdateRequest(BaseModel):
 async def get_workflow_kubernetes_settings_admin(
     current_user: UserResponse = Depends(require_superuser),
 ):
-    """Get effective workflow K8s image settings (merged with APP_VERSION defaults) (superuser)."""
+    """Get effective workflow K8s settings, editor state, and APP_VERSION (superuser)."""
     try:
-        from services.workflow_kubernetes_settings import get_workflow_kubernetes_merged
+        from services.workflow_kubernetes_settings import workflow_kubernetes_admin_success_payload
 
-        settings = await get_workflow_kubernetes_merged()
-        return {"status": "success", "settings": settings}
+        return await workflow_kubernetes_admin_success_payload()
     except Exception as e:
         logger.error("Error getting workflow kubernetes settings: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
@@ -1128,9 +1133,16 @@ async def get_workflow_kubernetes_settings_defaults_admin(
 ):
     """Built-in defaults from current APP_VERSION (superuser)."""
     try:
-        from services.workflow_kubernetes_settings import builtin_workflow_kubernetes_defaults
+        from services.workflow_kubernetes_settings import (
+            builtin_workflow_kubernetes_defaults,
+            get_workflow_kubernetes_app_version,
+        )
 
-        return {"status": "success", "settings": builtin_workflow_kubernetes_defaults()}
+        return {
+            "status": "success",
+            "app_version": get_workflow_kubernetes_app_version(),
+            "settings": builtin_workflow_kubernetes_defaults(),
+        }
     except Exception as e:
         logger.error("Error getting workflow kubernetes defaults: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
@@ -1141,15 +1153,18 @@ async def put_workflow_kubernetes_settings_admin(
     request: WorkflowKubernetesUpdateRequest = Body(...),
     current_user: UserResponse = Depends(require_superuser),
 ):
-    """Partial update of stored overrides; effective settings returned (superuser)."""
+    """Partial update of stored overrides; full admin payload returned (superuser)."""
     try:
-        from services.workflow_kubernetes_settings import update_workflow_kubernetes_partial
+        from services.workflow_kubernetes_settings import (
+            update_workflow_kubernetes_partial,
+            workflow_kubernetes_admin_success_payload,
+        )
 
         payload = request.model_dump(exclude_unset=True)
         if not payload:
             raise HTTPException(status_code=400, detail="No fields to update")
-        settings = await update_workflow_kubernetes_partial(payload)
-        return {"status": "success", "settings": settings}
+        await update_workflow_kubernetes_partial(payload)
+        return await workflow_kubernetes_admin_success_payload()
     except HTTPException:
         raise
     except ValueError as ve:
@@ -1167,13 +1182,12 @@ async def delete_workflow_kubernetes_settings_admin(
     try:
         from services.workflow_kubernetes_settings import (
             WORKFLOW_KUBERNETES_KEY,
-            get_workflow_kubernetes_merged,
+            workflow_kubernetes_admin_success_payload,
         )
 
         admin_repo = AdminRepository()
         await admin_repo.delete_system_setting(WORKFLOW_KUBERNETES_KEY)
-        settings = await get_workflow_kubernetes_merged()
-        return {"status": "success", "settings": settings}
+        return await workflow_kubernetes_admin_success_payload()
     except Exception as e:
         logger.error("Error deleting workflow kubernetes settings: %s", e)
         raise HTTPException(status_code=500, detail=str(e))

@@ -116,8 +116,19 @@ function SystemSettings() {
   const [ctMonitorRuntimeSaving, setCtMonitorRuntimeSaving] = useState(false);
 
   const [workflowK8s, setWorkflowK8s] = useState({
-    runner_image: '',
-    worker_image: '',
+    app_version: '',
+    effective_runner_image: '',
+    effective_worker_image: '',
+    runner_kind: 'structured',
+    runner_repository: '',
+    runner_tag_source: 'app_version',
+    runner_custom_tag: '',
+    runner_legacy_full: '',
+    worker_kind: 'structured',
+    worker_repository: '',
+    worker_tag_source: 'app_version',
+    worker_custom_tag: '',
+    worker_legacy_full: '',
     image_pull_policy: 'IfNotPresent'
   });
   const [workflowK8sLoading, setWorkflowK8sLoading] = useState(false);
@@ -210,9 +221,23 @@ function SystemSettings() {
       setError('');
       const response = await adminAPI.getWorkflowKubernetesSettings();
       const s = response.settings || {};
+      const r = response.runner || {};
+      const w = response.worker || {};
+      const mapKind = (block) => (block.kind === 'legacy' ? 'legacy' : 'structured');
       setWorkflowK8s({
-        runner_image: String(s.runner_image ?? ''),
-        worker_image: String(s.worker_image ?? ''),
+        app_version: String(response.app_version ?? ''),
+        effective_runner_image: String(s.runner_image ?? ''),
+        effective_worker_image: String(s.worker_image ?? ''),
+        runner_kind: mapKind(r),
+        runner_repository: String(r.repository ?? ''),
+        runner_tag_source: r.tag_source === 'custom' ? 'custom' : 'app_version',
+        runner_custom_tag: String(r.custom_tag ?? ''),
+        runner_legacy_full: String(r.full_image ?? ''),
+        worker_kind: mapKind(w),
+        worker_repository: String(w.repository ?? ''),
+        worker_tag_source: w.tag_source === 'custom' ? 'custom' : 'app_version',
+        worker_custom_tag: String(w.custom_tag ?? ''),
+        worker_legacy_full: String(w.full_image ?? ''),
         image_pull_policy: normalizeWorkflowPullPolicy(s.image_pull_policy)
       });
     } catch (err) {
@@ -222,21 +247,70 @@ function SystemSettings() {
     }
   };
 
+  const buildWorkflowK8sSavePayload = () => {
+    const payload = { image_pull_policy: workflowK8s.image_pull_policy };
+
+    if (workflowK8s.runner_kind === 'legacy') {
+      const ref = workflowK8s.runner_legacy_full.trim();
+      if (!ref) {
+        return { error: 'Runner image reference is required.' };
+      }
+      payload.runner_image = ref;
+    } else {
+      const repo = workflowK8s.runner_repository.trim();
+      if (!repo) {
+        return { error: 'Runner image repository is required.' };
+      }
+      payload.runner_repository = repo;
+      payload.runner_tag_source = workflowK8s.runner_tag_source;
+      if (workflowK8s.runner_tag_source === 'custom') {
+        const t = workflowK8s.runner_custom_tag.trim();
+        if (!t) {
+          return { error: 'Runner custom tag is required when tag source is Custom.' };
+        }
+        payload.runner_custom_tag = t;
+      } else {
+        payload.runner_custom_tag = null;
+      }
+    }
+
+    if (workflowK8s.worker_kind === 'legacy') {
+      const ref = workflowK8s.worker_legacy_full.trim();
+      if (!ref) {
+        return { error: 'Worker image reference is required.' };
+      }
+      payload.worker_image = ref;
+    } else {
+      const repo = workflowK8s.worker_repository.trim();
+      if (!repo) {
+        return { error: 'Worker image repository is required.' };
+      }
+      payload.worker_repository = repo;
+      payload.worker_tag_source = workflowK8s.worker_tag_source;
+      if (workflowK8s.worker_tag_source === 'custom') {
+        const t = workflowK8s.worker_custom_tag.trim();
+        if (!t) {
+          return { error: 'Worker custom tag is required when tag source is Custom.' };
+        }
+        payload.worker_custom_tag = t;
+      } else {
+        payload.worker_custom_tag = null;
+      }
+    }
+
+    return { payload };
+  };
+
   const handleSaveWorkflowK8s = async () => {
     try {
       setWorkflowK8sSaving(true);
       setError('');
-      const r = workflowK8s.runner_image.trim();
-      const w = workflowK8s.worker_image.trim();
-      if (!r || !w) {
-        setError('Runner image and worker image are required.');
+      const built = buildWorkflowK8sSavePayload();
+      if (built.error) {
+        setError(built.error);
         return;
       }
-      await adminAPI.updateWorkflowKubernetesSettings({
-        runner_image: r,
-        worker_image: w,
-        image_pull_policy: workflowK8s.image_pull_policy
-      });
+      await adminAPI.updateWorkflowKubernetesSettings(built.payload);
       setSuccess('Workflow Kubernetes settings saved.');
       loadWorkflowK8sSettings();
     } catch (err) {
@@ -895,9 +969,10 @@ function SystemSettings() {
                 <Card.Body>
                   <p className="text-muted small">
                     Images used when the API creates runner jobs and the pull policy for those jobs and for worker
-                    jobs spawned by the runner. With no saved overrides, image tags default to the API&apos;s{' '}
-                    <code>APP_VERSION</code> (e.g. from the <code>reconhawx-version</code> ConfigMap in the default
-                    deployment).
+                    jobs spawned by the runner. Choose <strong>Match deployment (APP_VERSION)</strong> so the tag
+                    tracks this API&apos;s version (e.g. from the <code>reconhawx-version</code> ConfigMap). Use{' '}
+                    <strong>Custom tag</strong> only when you need to pin a different tag. <strong>Reset to version
+                    defaults</strong> clears all stored overrides.
                   </p>
                   {workflowK8sLoading ? (
                     <div className="text-center py-4">
@@ -905,25 +980,155 @@ function SystemSettings() {
                     </div>
                   ) : (
                     <>
-                      <Form.Group className="mb-3">
-                        <Form.Label>Runner image</Form.Label>
-                        <Form.Control
-                          type="text"
-                          value={workflowK8s.runner_image}
-                          onChange={(e) => setWorkflowK8s({ ...workflowK8s, runner_image: e.target.value })}
-                          autoComplete="off"
-                        />
+                      <p className="small mb-3">
+                        <strong>Deployment version (APP_VERSION):</strong>{' '}
+                        <code>{workflowK8s.app_version || '—'}</code>
+                        <span className="text-muted ms-2">
+                          Effective runner: <code>{workflowK8s.effective_runner_image}</code>
+                          {' · '}
+                          Effective worker: <code>{workflowK8s.effective_worker_image}</code>
+                        </span>
+                      </p>
+
+                      <h6 className="mt-2">Runner image</h6>
+                      <Form.Group className="mb-2">
+                        <Form.Label className="small text-muted">Reference format</Form.Label>
+                        <Form.Select
+                          value={workflowK8s.runner_kind}
+                          onChange={(e) =>
+                            setWorkflowK8s({ ...workflowK8s, runner_kind: e.target.value })
+                          }
+                        >
+                          <option value="structured">Repository + tag</option>
+                          <option value="legacy">Full reference (digest or advanced)</option>
+                        </Form.Select>
                       </Form.Group>
-                      <Form.Group className="mb-3">
-                        <Form.Label>Worker image</Form.Label>
-                        <Form.Control
-                          type="text"
-                          value={workflowK8s.worker_image}
-                          onChange={(e) => setWorkflowK8s({ ...workflowK8s, worker_image: e.target.value })}
-                          autoComplete="off"
-                        />
+                      {workflowK8s.runner_kind === 'legacy' ? (
+                        <Form.Group className="mb-3">
+                          <Form.Label>Full image reference</Form.Label>
+                          <Form.Control
+                            type="text"
+                            value={workflowK8s.runner_legacy_full}
+                            onChange={(e) =>
+                              setWorkflowK8s({ ...workflowK8s, runner_legacy_full: e.target.value })
+                            }
+                            autoComplete="off"
+                            placeholder="e.g. registry/image@sha256:…"
+                          />
+                        </Form.Group>
+                      ) : (
+                        <>
+                          <Form.Group className="mb-2">
+                            <Form.Label>Image repository (no tag)</Form.Label>
+                            <Form.Control
+                              type="text"
+                              value={workflowK8s.runner_repository}
+                              onChange={(e) =>
+                                setWorkflowK8s({ ...workflowK8s, runner_repository: e.target.value })
+                              }
+                              autoComplete="off"
+                              placeholder="ghcr.io/reconhawx/reconhawx/runner"
+                            />
+                          </Form.Group>
+                          <Form.Group className="mb-2">
+                            <Form.Label>Tag</Form.Label>
+                            <Form.Select
+                              value={workflowK8s.runner_tag_source}
+                              onChange={(e) =>
+                                setWorkflowK8s({ ...workflowK8s, runner_tag_source: e.target.value })
+                              }
+                            >
+                              <option value="app_version">Match deployment (APP_VERSION)</option>
+                              <option value="custom">Custom tag</option>
+                            </Form.Select>
+                          </Form.Group>
+                          {workflowK8s.runner_tag_source === 'custom' && (
+                            <Form.Group className="mb-3">
+                              <Form.Label>Custom tag</Form.Label>
+                              <Form.Control
+                                type="text"
+                                value={workflowK8s.runner_custom_tag}
+                                onChange={(e) =>
+                                  setWorkflowK8s({ ...workflowK8s, runner_custom_tag: e.target.value })
+                                }
+                                autoComplete="off"
+                                placeholder="e.g. 0.10.0 or latest"
+                              />
+                            </Form.Group>
+                          )}
+                        </>
+                      )}
+
+                      <h6 className="mt-4">Worker image</h6>
+                      <Form.Group className="mb-2">
+                        <Form.Label className="small text-muted">Reference format</Form.Label>
+                        <Form.Select
+                          value={workflowK8s.worker_kind}
+                          onChange={(e) =>
+                            setWorkflowK8s({ ...workflowK8s, worker_kind: e.target.value })
+                          }
+                        >
+                          <option value="structured">Repository + tag</option>
+                          <option value="legacy">Full reference (digest or advanced)</option>
+                        </Form.Select>
                       </Form.Group>
-                      <Form.Group className="mb-0">
+                      {workflowK8s.worker_kind === 'legacy' ? (
+                        <Form.Group className="mb-3">
+                          <Form.Label>Full image reference</Form.Label>
+                          <Form.Control
+                            type="text"
+                            value={workflowK8s.worker_legacy_full}
+                            onChange={(e) =>
+                              setWorkflowK8s({ ...workflowK8s, worker_legacy_full: e.target.value })
+                            }
+                            autoComplete="off"
+                            placeholder="e.g. registry/image@sha256:…"
+                          />
+                        </Form.Group>
+                      ) : (
+                        <>
+                          <Form.Group className="mb-2">
+                            <Form.Label>Image repository (no tag)</Form.Label>
+                            <Form.Control
+                              type="text"
+                              value={workflowK8s.worker_repository}
+                              onChange={(e) =>
+                                setWorkflowK8s({ ...workflowK8s, worker_repository: e.target.value })
+                              }
+                              autoComplete="off"
+                              placeholder="ghcr.io/reconhawx/reconhawx/worker"
+                            />
+                          </Form.Group>
+                          <Form.Group className="mb-2">
+                            <Form.Label>Tag</Form.Label>
+                            <Form.Select
+                              value={workflowK8s.worker_tag_source}
+                              onChange={(e) =>
+                                setWorkflowK8s({ ...workflowK8s, worker_tag_source: e.target.value })
+                              }
+                            >
+                              <option value="app_version">Match deployment (APP_VERSION)</option>
+                              <option value="custom">Custom tag</option>
+                            </Form.Select>
+                          </Form.Group>
+                          {workflowK8s.worker_tag_source === 'custom' && (
+                            <Form.Group className="mb-3">
+                              <Form.Label>Custom tag</Form.Label>
+                              <Form.Control
+                                type="text"
+                                value={workflowK8s.worker_custom_tag}
+                                onChange={(e) =>
+                                  setWorkflowK8s({ ...workflowK8s, worker_custom_tag: e.target.value })
+                                }
+                                autoComplete="off"
+                                placeholder="e.g. 0.10.0 or latest"
+                              />
+                            </Form.Group>
+                          )}
+                        </>
+                      )}
+
+                      <Form.Group className="mb-0 mt-3">
                         <Form.Label>Image pull policy</Form.Label>
                         <Form.Select
                           value={workflowK8s.image_pull_policy}
