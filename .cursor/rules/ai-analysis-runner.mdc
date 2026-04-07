@@ -23,7 +23,7 @@ AI analysis runs in **runner pods** (not the API) for load isolation. Uses a ded
 | ClusterQueue | `ai-analysis-cluster-queue` | Quota: 500m CPU, 512Mi → 1 concurrent job |
 | LocalQueue | `recon-ai-analysis-queue` | Namespace-scoped queue |
 
-- **Base**: `kubernetes/base/kueue/ai-analysis-queue.yaml`, `ai-analysis-cluster-queue.yaml`
+- **Base**: `kubernetes/base/kueue/core/ai-analysis-queue.yaml`, `kubernetes/base/kueue/cluster-queues/ai-analysis-cluster-queue.yaml`
 - **Overlays**: Patch quota per env in `kubernetes/overlays/{dev,vrev,production}/kueue/patches/ai-analysis-cluster-queue-patch.yaml`
 
 ## Job Naming

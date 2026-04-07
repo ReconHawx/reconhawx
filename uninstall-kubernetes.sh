@@ -16,7 +16,7 @@ KUEUE_VISIBILITY_URL="${KUEUE_VISIBILITY_URL:-https://github.com/kubernetes-sigs
 # Same default as install-kubernetes.sh (cloud / static provider manifest).
 INGRESS_NGINX_DEPLOY_URL="${INGRESS_NGINX_DEPLOY_URL:-https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.14.2/deploy/static/provider/cloud/deploy.yaml}"
 
-# Names must match kubernetes/base/kueue/*.yaml (ClusterQueue and ResourceFlavor).
+# Names must match kubernetes/base/kueue/core/* and cluster-queues/* (ClusterQueue and ResourceFlavor).
 KUEUE_CLUSTER_QUEUES=(
   runner-cluster-queue
   worker-cluster-queue

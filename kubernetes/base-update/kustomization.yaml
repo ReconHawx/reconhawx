@@ -13,7 +13,7 @@ resources:
   - ../base/postgresql
   - ../base/nats
   - ../base/redis
-  - ../base/kueue
+  - ../base/kueue/core
   - ../base/api
   - ../base/frontend
   - ../base/event-handler

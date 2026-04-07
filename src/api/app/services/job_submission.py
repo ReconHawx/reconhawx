@@ -321,6 +321,7 @@ class JobSubmissionService:
                     client.V1EnvVar(name="LOG_LEVEL", value=os.getenv('LOG_LEVEL', 'INFO')),
                 ],
                 resources=client.V1ResourceRequirements(
+                    # Keep in sync with ai-analysis ClusterQueue nominalQuota (reconhawx-kueue-quota-sync.py).
                     requests={"cpu": "500m", "memory": "512Mi"},
                     limits={"cpu": "2000m", "memory": "2Gi"}
                 ),
