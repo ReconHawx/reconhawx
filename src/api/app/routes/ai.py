@@ -7,8 +7,9 @@ that are shared across all AI-powered features in the application.
 
 import logging
 from typing import Any, Dict, List, Optional, Set
+from urllib.parse import urlparse
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from auth.dependencies import get_current_user_from_middleware, require_superuser_or_admin
 from models.user_postgres import UserResponse
@@ -26,14 +27,40 @@ def _ollama_tag_names(raw_models: List[Dict[str, Any]]) -> Set[str]:
     return names
 
 
+def _validate_optional_ollama_base_url(base_url: Optional[str]) -> Optional[str]:
+    """Admin-only hint URL: must be http(s) with a host. Empty/unset uses merged settings."""
+    if base_url is None:
+        return None
+    u = str(base_url).strip()
+    if not u:
+        return None
+    parsed = urlparse(u)
+    if parsed.scheme not in ("http", "https"):
+        raise HTTPException(
+            status_code=400,
+            detail="base_url must be an http or https URL",
+        )
+    if not parsed.netloc:
+        raise HTTPException(
+            status_code=400,
+            detail="base_url must include a host",
+        )
+    return u
+
+
 @router.get("/models", response_model=Dict[str, Any])
 async def list_models(
+    base_url: Optional[str] = Query(
+        None,
+        description="Override Ollama base URL for this request only (admin; e.g. unsaved settings).",
+    ),
     current_user: UserResponse = Depends(require_superuser_or_admin),
 ):
     """List available Ollama models and the configured default if that model is installed."""
     from services.ai_analysis_service import create_ollama_client_from_settings
     try:
-        ollama_client = await create_ollama_client_from_settings()
+        override = _validate_optional_ollama_base_url(base_url)
+        ollama_client = await create_ollama_client_from_settings(base_url_override=override)
         raw_models = await ollama_client.list_models()
         models = [
             {

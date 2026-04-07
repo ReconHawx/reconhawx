@@ -1,8 +1,15 @@
 import { api } from './client';
 
 export const aiAPI = {
-  getModels: async () => {
-    const response = await api.get('/ai/models');
+  /**
+   * @param {{ baseUrl?: string }} [opts] If baseUrl is set, list models from that Ollama base URL (admin).
+   */
+  getModels: async (opts = {}) => {
+    const params = {};
+    if (opts.baseUrl != null && String(opts.baseUrl).trim() !== '') {
+      params.base_url = String(opts.baseUrl).trim();
+    }
+    const response = await api.get('/ai/models', { params });
     return response.data;
   },
 
