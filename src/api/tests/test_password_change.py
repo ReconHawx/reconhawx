@@ -8,6 +8,7 @@ import pytest
 from app.main import app
 from app.models.user_postgres import UserResponse
 from auth.dependencies import require_authentication
+from repository.auth_repo import PASSWORD_SAME_AS_CURRENT_MESSAGE
 
 
 def _user(**kwargs) -> UserResponse:
@@ -96,6 +97,30 @@ async def test_change_own_password_wrong_current(client: httpx.AsyncClient, over
             )
     assert response.status_code == 400
     assert "Invalid current password" in response.text
+
+
+@pytest.mark.asyncio
+async def test_change_own_password_same_as_current(client: httpx.AsyncClient, override_auth):
+    u = _user()
+    app.dependency_overrides[require_authentication] = lambda: u
+    with patch(
+        "routes.auth.AuthRepository",
+    ) as mock_cls:
+        mock_cls.return_value.change_own_password = AsyncMock(
+            side_effect=ValueError(PASSWORD_SAME_AS_CURRENT_MESSAGE)
+        )
+        with patch(
+            "middleware.auth.get_current_user",
+            new_callable=AsyncMock,
+            return_value=u,
+        ):
+            response = await client.post(
+                "/auth/me/password",
+                json={"current_password": "same", "new_password": "same"},
+                headers={"Authorization": "Bearer test-token"},
+            )
+    assert response.status_code == 400
+    assert PASSWORD_SAME_AS_CURRENT_MESSAGE in response.text
 
 
 @pytest.mark.asyncio
