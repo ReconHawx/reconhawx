@@ -1018,16 +1018,6 @@ const ScheduledJobDetail = () => {
                       {renderJobDataDisplay(job)}
                     </>
                   )}
-
-                  {job.schedule && (
-                    <>
-                      <hr />
-                      <h6>Schedule Details</h6>
-                      <pre className="bg-light p-3 rounded" style={{ fontSize: '0.875rem' }}>
-                        {JSON.stringify(job.schedule, null, 2)}
-                      </pre>
-                    </>
-                  )}
                 </Card.Body>
               </Card>
             </Tab>
