@@ -110,6 +110,7 @@ const ScheduledJobDetail = () => {
     if (isEditing) {
       loadEditData();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- loadEditData is mount/edit-guarded here
   }, [jobId, isEditing, loadJobDetails, loadExecutionHistory]);
 
   useEffect(() => {
@@ -144,6 +145,7 @@ const ScheduledJobDetail = () => {
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- granular job fields sufficient; full job object changes often
   }, [job?.schedule_id, job?.job_type, job?.job_data?.workflow_id]);
 
   /** Workflow definitions from API plus the job's current workflow_id if missing from the list. */
