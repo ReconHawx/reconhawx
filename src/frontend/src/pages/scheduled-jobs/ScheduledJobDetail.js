@@ -29,6 +29,10 @@ const ScheduledJobDetail = () => {
   const [variableValues, setVariableValues] = useState({});
   const [variableErrors, setVariableErrors] = useState({});
 
+  /** Resolved workflow definition name for overview Job Configuration (workflow jobs only). */
+  const [overviewWorkflowName, setOverviewWorkflowName] = useState(null);
+  const [overviewWorkflowNameLoading, setOverviewWorkflowNameLoading] = useState(false);
+
   usePageTitle(formatPageTitle(job?.name, 'Scheduled Job'));
 
   const loadJobDetails = useCallback(async () => {
@@ -107,6 +111,40 @@ const ScheduledJobDetail = () => {
       loadEditData();
     }
   }, [jobId, isEditing, loadJobDetails, loadExecutionHistory]);
+
+  useEffect(() => {
+    if (!job || job.job_type !== 'workflow') {
+      setOverviewWorkflowName(null);
+      setOverviewWorkflowNameLoading(false);
+      return;
+    }
+    const wid = job.job_data?.workflow_id;
+    if (!wid) {
+      setOverviewWorkflowName(null);
+      setOverviewWorkflowNameLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setOverviewWorkflowName(null);
+    setOverviewWorkflowNameLoading(true);
+    workflowAPI
+      .getWorkflow(wid)
+      .then((wf) => {
+        if (!cancelled) {
+          const n = wf?.name && String(wf.name).trim();
+          setOverviewWorkflowName(n || null);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setOverviewWorkflowName(null);
+      })
+      .finally(() => {
+        if (!cancelled) setOverviewWorkflowNameLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [job?.schedule_id, job?.job_type, job?.job_data?.workflow_id]);
 
   /** Workflow definitions from API plus the job's current workflow_id if missing from the list. */
   const workflowSelectOptions = useMemo(() => {
@@ -718,8 +756,26 @@ const ScheduledJobDetail = () => {
             <Table size="sm" className="mb-0">
               <tbody>
                 <tr>
-                  <td><strong>Workflow ID:</strong></td>
-                  <td><code className="small">{jobData.workflow_id || 'Not specified'}</code></td>
+                  <td><strong>Workflow:</strong></td>
+                  <td>
+                    {!jobData.workflow_id ? (
+                      <span className="text-muted">—</span>
+                    ) : (
+                      <>
+                        {overviewWorkflowNameLoading && (
+                          <span className="text-muted">Loading…</span>
+                        )}
+                        {!overviewWorkflowNameLoading && overviewWorkflowName && (
+                          <span>{overviewWorkflowName}</span>
+                        )}
+                        {!overviewWorkflowNameLoading && !overviewWorkflowName && (
+                          <span className="text-muted">Not available</span>
+                        )}
+                        {' '}
+                        <code className="small">({jobData.workflow_id})</code>
+                      </>
+                    )}
+                  </td>
                 </tr>
                 {jobData.workflow_variables && Object.keys(jobData.workflow_variables).length > 0 && (
                   <tr>
