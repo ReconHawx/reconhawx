@@ -50,6 +50,7 @@ kubernetes/base/secrets/*.yaml
 kubernetes/base/metal-lb/metal-lb.yaml
 !kubernetes/base/secrets/*.yaml.example
 scripts/
+src/api/test_scripts/
 
 # Logs
 *.log
