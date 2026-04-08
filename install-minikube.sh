@@ -425,7 +425,7 @@ hosts_lines_matching_reconhawx_local() {
   grep -nE '(^|[[:space:]])'"${pat}"'([[:space:]]|$)' /etc/hosts 2>/dev/null || true
 }
 
-# Classify /etc/hosts mapping for INGRESS_HOST vs Minikube IP (word-boundary match on hostname).
+# Classify /etc/hosts mapping for INGRESS_HOST vs expected loopback IP (word-boundary match on hostname).
 # Prints one of: missing | ok | wrong
 _hosts_ingress_mapping_state() {
   local want_ip="$1"
@@ -555,6 +555,22 @@ _pg_admin_pass_from_logs() {
   printf '%s' "$1" | sed -n 's/.*Password:[[:space:]]*//p' | tail -n1 | sed 's/[[:space:]]*$//;s/\r$//'
 }
 
+# Bind test on 0.0.0.0: returns 0 if nothing is listening on this host TCP port (IPv4).
+_host_tcp_port_available() {
+  python3 -c '
+import socket, sys
+port = int(sys.argv[1])
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+try:
+    s.bind(("0.0.0.0", port))
+except OSError:
+    sys.exit(1)
+finally:
+    s.close()
+sys.exit(0)
+' "$1"
+}
+
 main() {
   require_cmd minikube
   require_cmd openssl
@@ -595,6 +611,81 @@ main() {
   read_installer -r -p "$(printf '%sinstaller · %s' "$_B" "Minikube profile (cluster name) [${default_profile}]: ")" MINIKUBE_PROFILE
   MINIKUBE_PROFILE="${MINIKUBE_PROFILE:-$default_profile}"
 
+  local default_http_port=8080 default_https_port=8443
+  local _http_port_reply _https_port_reply
+  local _prompt_http=1 _prompt_https=1
+  local _http_busy _https_busy
+
+  while true; do
+    if [[ "$_prompt_http" -eq 1 ]]; then
+      read_installer -r -p "$(printf '%sinstaller · %s' "$_B" "Host HTTP port (→ ingress 80) [${default_http_port}]: ")" _http_port_reply
+      _http_port_reply="$(printf '%s' "${_http_port_reply:-}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+      MINIKUBE_HTTP_PORT="${_http_port_reply:-$default_http_port}"
+    fi
+    if [[ "$_prompt_https" -eq 1 ]]; then
+      read_installer -r -p "$(printf '%sinstaller · %s' "$_B" "Host HTTPS port (→ ingress 443) [${default_https_port}]: ")" _https_port_reply
+      _https_port_reply="$(printf '%s' "${_https_port_reply:-}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+      MINIKUBE_HTTPS_PORT="${_https_port_reply:-$default_https_port}"
+    fi
+    _prompt_http=0
+    _prompt_https=0
+
+    if [[ ! "$MINIKUBE_HTTP_PORT" =~ ^[0-9]+$ ]]; then
+      ui_note "Invalid HTTP port: ${MINIKUBE_HTTP_PORT} — use a number (1–65535)."
+      _prompt_http=1
+      continue
+    fi
+    if [[ "$MINIKUBE_HTTP_PORT" -lt 1 || "$MINIKUBE_HTTP_PORT" -gt 65535 ]]; then
+      ui_note "Invalid HTTP port: ${MINIKUBE_HTTP_PORT} — use 1–65535."
+      _prompt_http=1
+      continue
+    fi
+    if [[ ! "$MINIKUBE_HTTPS_PORT" =~ ^[0-9]+$ ]]; then
+      ui_note "Invalid HTTPS port: ${MINIKUBE_HTTPS_PORT} — use a number (1–65535)."
+      _prompt_https=1
+      continue
+    fi
+    if [[ "$MINIKUBE_HTTPS_PORT" -lt 1 || "$MINIKUBE_HTTPS_PORT" -gt 65535 ]]; then
+      ui_note "Invalid HTTPS port: ${MINIKUBE_HTTPS_PORT} — use 1–65535."
+      _prompt_https=1
+      continue
+    fi
+
+    if [[ "$MINIKUBE_HTTP_PORT" -eq "$MINIKUBE_HTTPS_PORT" ]]; then
+      ui_note "HTTP and HTTPS host ports must be different."
+      _prompt_http=1
+      _prompt_https=1
+      continue
+    fi
+
+    _http_busy=0
+    _https_busy=0
+    if ! _host_tcp_port_available "$MINIKUBE_HTTP_PORT"; then
+      _http_busy=1
+    fi
+    if ! _host_tcp_port_available "$MINIKUBE_HTTPS_PORT"; then
+      _https_busy=1
+    fi
+
+    if [[ "$_http_busy" -eq 0 && "$_https_busy" -eq 0 ]]; then
+      break
+    fi
+
+    if [[ "$_http_busy" -eq 1 && "$_https_busy" -eq 1 ]]; then
+      ui_note "Ports already in use on this host: ${MINIKUBE_HTTP_PORT} (HTTP) and ${MINIKUBE_HTTPS_PORT} (HTTPS). Enter different ports."
+      _prompt_http=1
+      _prompt_https=1
+      continue
+    fi
+    if [[ "$_http_busy" -eq 1 ]]; then
+      ui_note "HTTP port ${MINIKUBE_HTTP_PORT} is already in use on this host. Enter a different HTTP port."
+      _prompt_http=1
+      continue
+    fi
+    ui_note "HTTPS port ${MINIKUBE_HTTPS_PORT} is already in use on this host. Enter a different HTTPS port."
+    _prompt_https=1
+  done
+
   local jwt_plain refresh_plain pg_user pg_pass
   ui_note "JWT / refresh: leave empty for random hex keys (base64-encoded in manifests, per docs)."
   read_installer -r -s -p "$(printf '%sinstaller · %s' "$_B" "JWT signing secret (empty = random): ")" jwt_plain
@@ -623,8 +714,8 @@ main() {
   }
 
   # Verbose cluster steps: capture full log; print a short preview (see run_tool_long).
-  run_tool_long "Minikube: starting cluster (profile ${MINIKUBE_PROFILE}, docker, ports 80/443)" \
-    minikube -p "$MINIKUBE_PROFILE" start --driver=docker --ports=80:80 --ports=443:443
+  run_tool_long "Minikube: starting cluster (profile ${MINIKUBE_PROFILE}, docker, host ports ${MINIKUBE_HTTP_PORT}/${MINIKUBE_HTTPS_PORT} → 80/443)" \
+    minikube -p "$MINIKUBE_PROFILE" start --driver=docker --ports="${MINIKUBE_HTTP_PORT}:80" --ports="${MINIKUBE_HTTPS_PORT}:443"
 
   local node
   node="$(mk get nodes -o jsonpath='{.items[0].metadata.name}')"
@@ -695,9 +786,7 @@ main() {
   tool_stream mk rollout status statefulset/postgresql -n reconhawx --timeout=5m
   ui_ok "PostgreSQL available"
 
-  local ip
-  ip="$(minikube -p "$MINIKUBE_PROFILE" ip)"
-  update_hosts_file "$ip"
+  update_hosts_file "127.0.0.1"
 
   ui_step "Kubernetes: waiting for API and frontend"
   tool_stream mk wait deploy/frontend deploy/api -n reconhawx --for=condition=available --timeout=5m
@@ -714,7 +803,13 @@ main() {
   _ui_box_mid "$_G" "$_B" "Installation complete" "$_Z"
   _ui_box_bot "$_G" "$_Z"
 
-  ui_step "Sign in at http://${INGRESS_HOST}"
+  local _signin_url
+  if [[ "$MINIKUBE_HTTP_PORT" == "80" ]]; then
+    _signin_url="http://${INGRESS_HOST}"
+  else
+    _signin_url="http://${INGRESS_HOST}:${MINIKUBE_HTTP_PORT}"
+  fi
+  ui_step "Sign in at ${_signin_url}"
   if [[ -n "$admin_user" && -n "$admin_pass" ]]; then
     printf '%s  Username:%s %s\n' "$_B" "$_Z" "$admin_user"
     printf '%s  Password:%s %s\n' "$_B" "$_Z" "$admin_pass"
