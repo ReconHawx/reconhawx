@@ -173,7 +173,6 @@ function IPDetail() {
           <div className="d-flex justify-content-between align-items-center">
             <div>
               <h1>🖥️ {ip.ip}</h1>
-              <p className="text-muted">IP address details and reconnaissance information</p>
             </div>
             <div>
               <Button 

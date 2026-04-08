@@ -883,7 +883,6 @@ function IPs() {
       <Row className="mb-4">
         <Col>
           <h1>🖥️ IP Addresses</h1>
-          <p className="text-muted">Browse and manage IP addresses discovered during reconnaissance</p>
         </Col>
       </Row>
 

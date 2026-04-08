@@ -903,7 +903,6 @@ function Services() {
       <Row className="mb-4">
         <Col>
           <h1>⚙️ Services</h1>
-          <p className="text-muted">Browse and manage network services discovered during reconnaissance</p>
         </Col>
       </Row>
 

@@ -922,7 +922,6 @@ function Certificates() {
       <Row className="mb-4">
         <Col>
           <h1>🔐 Certificates</h1>
-          <p className="text-muted">Browse and manage SSL/TLS certificates discovered during reconnaissance</p>
         </Col>
       </Row>
 

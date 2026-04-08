@@ -157,7 +157,6 @@ export function CTMonitorInner({ embedded = false }) {
           {!embedded && (
             <>
               <h2>🔍 CT Monitor</h2>
-              <p className="text-muted">Monitor Certificate Transparency logs for typosquatting detection</p>
             </>
           )}
         </Col>

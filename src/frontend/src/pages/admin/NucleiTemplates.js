@@ -353,7 +353,6 @@ function NucleiTemplates() {
       <Row className="mb-3">
         <Col>
           <h2>🎯 Nuclei Templates</h2>
-          <p className="text-muted">Manage custom nuclei templates for vulnerability scanning</p>
         </Col>
         <Col xs="auto">
           <Button 

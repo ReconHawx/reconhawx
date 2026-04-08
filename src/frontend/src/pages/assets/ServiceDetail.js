@@ -156,7 +156,6 @@ function ServiceDetail() {
           <div className="d-flex justify-content-between align-items-center">
             <div>
               <h1>⚙️ {service.ip}:{service.port}</h1>
-              <p className="text-muted">Service details and reconnaissance information</p>
             </div>
             <div>
               <Button 

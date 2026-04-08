@@ -367,12 +367,6 @@ function Technologies() {
           <div className="d-flex justify-content-between align-items-start">
             <div>
               <h1>⚙️ Technologies</h1>
-              <p className="text-muted">
-                Technologies detected across all websites ({totalTechnologies} unique technologies across {totalWebsites} website instances)
-                {selectedProgram && (
-                  <><br />Filtered by program: "{selectedProgram}"</>
-                )}
-              </p>
             </div>
             <div>
               <Button 
