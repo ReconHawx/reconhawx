@@ -24,4 +24,5 @@ fi
 docker buildx build --platform "${arch}" \
   --builder "${BUILDX_BUILDER:-multiarch-builder}" \
   --build-arg APP_VERSION="${APP_VERSION:-dev}" \
+  --build-arg REACT_APP_GITHUB_RELEASES_REPO="${REACT_APP_GITHUB_RELEASES_REPO:-ReconHawx/reconhawx}" \
   -f ./Dockerfile "${docker_tags[@]}" . ${image_dest}

@@ -12,6 +12,9 @@ RUN npm install
 
 COPY . .
 
+ARG REACT_APP_GITHUB_RELEASES_REPO=ReconHawx/reconhawx
+ENV REACT_APP_GITHUB_RELEASES_REPO=$REACT_APP_GITHUB_RELEASES_REPO
+
 RUN npm run build
 
 # Slim variant: full nginx:alpine adds image-filter (libavif, libtiff) and curl.

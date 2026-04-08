@@ -51,6 +51,8 @@ kubectl apply -k /path/to/recon/kubernetes/overlays/react-frontend/dev
 
 The SPA always calls **`/api`** on the same origin as the page. Nginx (local or in-cluster) proxies that to the API and strips the `/api` prefix. Do not set **`REACT_APP_API_URL`** for this app: Create React App inlines it at compile time, and an accidental value (e.g. `http://localhost:8000`) makes the browser talk to the API directly and **bypasses** `/api`.
 
+- **`REACT_APP_GITHUB_RELEASES_REPO`** (optional): `owner/repo` used by the footer to compare your running version with GitHub’s latest release (default `ReconHawx/reconhawx`). Set at **build time** (e.g. Docker `--build-arg` or `npm`/`docker` env before `npm run build`) so forks can point at their own releases.
+
 ## Architecture
 
 - **React 18** - Modern React with hooks
