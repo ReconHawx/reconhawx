@@ -348,6 +348,14 @@ import { formatDate, formatRelativeTime, formatDateOnly, isExpired, isExpiringSo
 {isExpiringSoon(cert.expires_at, 30) && <Badge bg="warning">Expiring Soon</Badge>}
 ```
 
+## Theming (components & pages)
+
+Follow **[`frontend-theming.mdc`](frontend-theming.mdc)** for every UI change:
+
+- Prefer Bootstrap + `className` that already respects `index.css` overrides.
+- For inline `style`, use **`var(--bs-border-color)`**, **`var(--bs-card-bg)`**, **`var(--bs-body-color)`**, etc. — not `#f8f9fa`, `#dee2e6`, or default Bootstrap blues.
+- For charts or React Flow nodes, use **[`utils/chartTheme.js`](../../src/frontend/src/utils/chartTheme.js)** and **[`utils/workflowNodeTheme.js`](../../src/frontend/src/utils/workflowNodeTheme.js)** instead of duplicating palettes.
+
 ## Best Practices
 
 1. **Always destructure context values** - `const { selectedProgram } = useProgramFilter();`

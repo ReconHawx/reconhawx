@@ -795,7 +795,7 @@ const ScheduledJobDetail = () => {
                             <tr key={index}>
                               <td className="small"><code>{key}</code></td>
                               <td className="small text-break">
-                                <code style={{ backgroundColor: 'rgba(0,123,255,0.1)', padding: '2px 4px', borderRadius: '3px' }}>
+                                <code style={{ backgroundColor: 'var(--rh-highlight-bg)', padding: '2px 4px', borderRadius: '3px' }}>
                                   {typeof value === 'object' ? JSON.stringify(value) : String(value)}
                                 </code>
                               </td>

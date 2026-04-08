@@ -13,6 +13,7 @@ import {
 import { useProgramFilter } from '../../contexts/ProgramFilterContext';
 import api from '../../services/api';
 import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
+import { chartTheme } from '../../utils/chartTheme';
 
 // Simple chart components (you can replace these with a charting library like Chart.js or Recharts)
 const SimpleBarChart = ({ data, title }) => {
@@ -53,6 +54,7 @@ const SimpleBarChart = ({ data, title }) => {
 const TimeSeriesLineChart = ({ data, title, isHourly = true }) => {
   const containerRef = React.useRef(null);
   const [chartWidth, setChartWidth] = React.useState(1200);
+  const gridPatternId = React.useId().replace(/:/g, '');
 
   React.useEffect(() => {
     const updateWidth = () => {
@@ -81,12 +83,7 @@ const TimeSeriesLineChart = ({ data, title, isHourly = true }) => {
   const plotWidth = chartWidth - padding.left - padding.right;
   const plotHeight = chartHeight - padding.top - padding.bottom;
 
-  // Color mapping for the three series
-  const seriesColors = {
-    created: '#0d6efd',    // Blue
-    resolved: '#198754',   // Green
-    dismissed: '#ffc107'   // Yellow
-  };
+  const seriesColors = chartTheme.typosquatSeries;
 
   const seriesKeys = ['created', 'resolved', 'dismissed'];
 
@@ -116,11 +113,22 @@ const TimeSeriesLineChart = ({ data, title, isHourly = true }) => {
         <svg width={chartWidth} height={chartHeight} style={{ width: '100%', height: 'auto' }}>
           {/* Grid lines */}
           <defs>
-            <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
-              <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#e9ecef" strokeWidth="1"/>
+            <pattern id={gridPatternId} width="40" height="40" patternUnits="userSpaceOnUse">
+              <path
+                d="M 40 0 L 0 0 0 40"
+                fill="none"
+                stroke={chartTheme.gridStroke}
+                strokeWidth="1"
+              />
             </pattern>
           </defs>
-          <rect width={plotWidth} height={plotHeight} x={padding.left} y={padding.top} fill="url(#grid)" />
+          <rect
+            width={plotWidth}
+            height={plotHeight}
+            x={padding.left}
+            y={padding.top}
+            fill={`url(#${gridPatternId})`}
+          />
 
           {/* Y-axis labels */}
           {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
@@ -133,14 +141,14 @@ const TimeSeriesLineChart = ({ data, title, isHourly = true }) => {
                   y1={y}
                   x2={padding.left}
                   y2={y}
-                  stroke="#6c757d"
+                  stroke={chartTheme.axisStroke}
                 />
                 <text
                   x={padding.left - 10}
                   y={y + 4}
                   textAnchor="end"
                   fontSize="12"
-                  fill="#6c757d"
+                  fill={chartTheme.axisLabelFill}
                 >
                   {value}
                 </text>
@@ -168,14 +176,14 @@ const TimeSeriesLineChart = ({ data, title, isHourly = true }) => {
                   y1={padding.top + plotHeight}
                   x2={x}
                   y2={padding.top + plotHeight + 5}
-                  stroke="#6c757d"
+                  stroke={chartTheme.axisStroke}
                 />
                 <text
                   x={x}
                   y={padding.top + plotHeight + 18}
                   textAnchor="middle"
                   fontSize="12"
-                  fill="#6c757d"
+                  fill={chartTheme.axisLabelFill}
                 >
                   {label}
                 </text>
@@ -211,7 +219,7 @@ const TimeSeriesLineChart = ({ data, title, isHourly = true }) => {
                         cy={y}
                         r="3"
                         fill={color}
-                        stroke="white"
+                        stroke={chartTheme.pointRingStroke}
                         strokeWidth="1"
                       />
                       <title>{`${timeLabel} - ${seriesKey}: ${value}`}</title>
@@ -228,7 +236,7 @@ const TimeSeriesLineChart = ({ data, title, isHourly = true }) => {
             y1={padding.top}
             x2={padding.left}
             y2={padding.top + plotHeight}
-            stroke="#6c757d"
+            stroke={chartTheme.axisStroke}
             strokeWidth="2"
           />
           <line
@@ -236,7 +244,7 @@ const TimeSeriesLineChart = ({ data, title, isHourly = true }) => {
             y1={padding.top + plotHeight}
             x2={padding.left + plotWidth}
             y2={padding.top + plotHeight}
-            stroke="#6c757d"
+            stroke={chartTheme.axisStroke}
             strokeWidth="2"
           />
         </svg>

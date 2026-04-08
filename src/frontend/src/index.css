@@ -48,6 +48,16 @@
   --bs-info-rgb: 0, 168, 192;
   --bs-secondary: #9d22e8;
   --bs-secondary-rgb: 157, 34, 232;
+
+  /* Convenience aliases for inline styles / overlays (theme-aware) */
+  --rh-code-bg: var(--bs-pre-bg);
+  --rh-code-color: var(--bs-pre-color);
+  --rh-overlay-scrim: rgba(10, 15, 28, 0.2);
+  --rh-shadow-color: rgba(10, 15, 28, 0.1);
+  --rh-highlight-bg: rgba(0, 189, 212, 0.12);
+  --rh-mark-bg: #fff3cd;
+  --rh-mark-color: #0a0f1c;
+  --rh-text-subtle: var(--bs-text-muted);
 }
 
 [data-theme="dark"] {
@@ -86,6 +96,15 @@
   --bs-info-rgb: 51, 240, 255;
   --bs-secondary: #b026ff;
   --bs-secondary-rgb: 176, 38, 255;
+
+  --rh-code-bg: #151d30;
+  --rh-code-color: #9df6ff;
+  --rh-overlay-scrim: rgba(0, 0, 0, 0.35);
+  --rh-shadow-color: rgba(0, 0, 0, 0.25);
+  --rh-highlight-bg: rgba(0, 242, 255, 0.08);
+  --rh-mark-bg: rgba(0, 242, 255, 0.18);
+  --rh-mark-color: #f0fbff;
+  --rh-text-subtle: var(--bs-text-muted);
 }
 
 /* Bootstrap’s compiled .btn-* uses hardcoded blues — align fills to brand cyan */

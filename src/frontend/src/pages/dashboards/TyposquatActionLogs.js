@@ -434,7 +434,7 @@ function TyposquatActionLogs() {
         }
 
         .log-entry:hover {
-          background-color: #f8f9fa;
+          background-color: var(--bs-table-hover-bg);
           border-radius: 8px;
           padding: 8px;
           margin-left: -8px;

@@ -70,7 +70,7 @@ const TaskLibrarySidebar = ({ setDraggedTaskType }) => {
 
         {/* Task Categories */}
         {Object.entries(tasksByCategory).map(([category, tasks]) => {
-          const categoryInfo = TASK_CATEGORIES[category] || { color: '#666', icon: '⚙️' };
+          const categoryInfo = TASK_CATEGORIES[category] || { color: 'var(--bs-text-muted)', icon: '⚙️' };
           
           return (
             <div key={category} className="mb-4">

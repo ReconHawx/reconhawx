@@ -47,8 +47,8 @@ const LazyImage = ({ src, alt, style, onClick, onError, placeholder }) => {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            backgroundColor: '#f8f9fa',
-            border: '1px solid #dee2e6'
+            backgroundColor: 'var(--bs-card-bg)',
+            border: '1px solid var(--bs-border-color)'
           }}
         >
           <i className="fas fa-image text-muted"></i>
@@ -61,7 +61,7 @@ const LazyImage = ({ src, alt, style, onClick, onError, placeholder }) => {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            backgroundColor: '#f8f9fa'
+            backgroundColor: 'var(--bs-card-bg)'
           }}
         >
           <i className="fas fa-image text-muted" style={{ fontSize: '2rem' }}></i>
@@ -76,7 +76,7 @@ const LazyImage = ({ src, alt, style, onClick, onError, placeholder }) => {
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                backgroundColor: '#f8f9fa',
+                backgroundColor: 'var(--bs-card-bg)',
                 position: 'absolute',
                 zIndex: 1
               }}
@@ -399,7 +399,7 @@ function RelatedScreenshotsViewer({ relatedUrls, programName }) {
                     width: '100%',
                     cursor: 'pointer',
                     objectFit: 'contain',
-                    backgroundColor: '#f8f9fa'
+                    backgroundColor: 'var(--bs-card-bg)'
                   }}
                   onClick={() => handleScreenshotClick(screenshot)}
                 />
@@ -505,9 +505,9 @@ function RelatedScreenshotsViewer({ relatedUrls, programName }) {
                   style={{
                     maxHeight: '600px',
                     overflow: 'auto',
-                    border: '1px solid #dee2e6',
+                    border: '1px solid var(--bs-border-color)',
                     borderRadius: '8px',
-                    backgroundColor: '#f8f9fa',
+                    backgroundColor: 'var(--bs-card-bg)',
                     position: 'relative'
                   }}
                 >

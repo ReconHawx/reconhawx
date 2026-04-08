@@ -99,7 +99,7 @@ Browse [`.cursor/rules/`](.cursor/rules/). Entry points by component (globs in e
 | Component | Path | Rule files |
 |-----------|------|------------|
 | API | [`src/api/`](src/api/) | [`api-core.mdc`](.cursor/rules/api-core.mdc), [`api-data.mdc`](.cursor/rules/api-data.mdc), [`api-http.mdc`](.cursor/rules/api-http.mdc), [`api-testing.mdc`](.cursor/rules/api-testing.mdc), [`api-workflow-k8s.mdc`](.cursor/rules/api-workflow-k8s.mdc) |
-| Frontend | [`src/frontend/`](src/frontend/) | [`frontend-architecture.mdc`](.cursor/rules/frontend-architecture.mdc), [`frontend-api-services.mdc`](.cursor/rules/frontend-api-services.mdc), [`frontend-component-patterns.mdc`](.cursor/rules/frontend-component-patterns.mdc), [`frontend-state-management.mdc`](.cursor/rules/frontend-state-management.mdc), [`frontend-workflow-builder.mdc`](.cursor/rules/frontend-workflow-builder.mdc) |
+| Frontend | [`src/frontend/`](src/frontend/) | [`frontend-architecture.mdc`](.cursor/rules/frontend-architecture.mdc), [`frontend-theming.mdc`](.cursor/rules/frontend-theming.mdc), [`frontend-api-services.mdc`](.cursor/rules/frontend-api-services.mdc), [`frontend-component-patterns.mdc`](.cursor/rules/frontend-component-patterns.mdc), [`frontend-state-management.mdc`](.cursor/rules/frontend-state-management.mdc), [`frontend-workflow-builder.mdc`](.cursor/rules/frontend-workflow-builder.mdc) |
 | Runner | [`src/runner/`](src/runner/) | [`runner-architecture.mdc`](.cursor/rules/runner-architecture.mdc), [`runner-job-management.mdc`](.cursor/rules/runner-job-management.mdc), [`runner-models.mdc`](.cursor/rules/runner-models.mdc), [`runner-task-patterns.mdc`](.cursor/rules/runner-task-patterns.mdc) |
 | Worker | [`src/worker/`](src/worker/) | [`worker-architecture.mdc`](.cursor/rules/worker-architecture.mdc) |
 | CT-Monitor | [`src/ct-monitor/`](src/ct-monitor/) | [`ct-monitor.mdc`](.cursor/rules/ct-monitor.mdc) |
@@ -135,7 +135,7 @@ When a change updates **how a component works**, **how to run or operate it**, o
 
 | What changed | Prefer updating |
 |--------------|-----------------|
-| Any listed component (API, frontend, runner, worker, CT-monitor, event-handler) | Matching `.mdc` row in **Scoped Cursor rules**, and [`AGENTS.md`](AGENTS.md) if commands, paths, or overview change |
+| Any listed component (API, frontend, runner, worker, CT-monitor, event-handler) | Matching `.mdc` row in **Scoped Cursor rules** (frontend UI/theming: [`frontend-theming.mdc`](.cursor/rules/frontend-theming.mdc)), and [`AGENTS.md`](AGENTS.md) if commands, paths, or overview change |
 | Schema / migrations | [`migrations.mdc`](.cursor/rules/migrations.mdc), [`scripts/README.md`](scripts/README.md) if CLI changes |
 | Deploy, overlays, Kueue, cluster layout | [`k8s-*.mdc`](.cursor/rules/), [`scripts/README.md`](scripts/README.md), [`kubernetes/README.md`](kubernetes/README.md), this file |
 | [`scripts/`](scripts/) (deploy, migrate, init DB, admin user, …) | [`scripts/README.md`](scripts/README.md) and this file if behavior or flags change |

@@ -133,7 +133,7 @@ function WordlistSelector({
               </div>
             </div>
 
-            <div style={{ maxHeight: '200px', overflowY: 'auto', border: '1px solid #dee2e6', borderRadius: '0.375rem' }}>
+            <div style={{ maxHeight: '200px', overflowY: 'auto', border: '1px solid var(--bs-border-color)', borderRadius: '0.375rem' }}>
               {wordlistLoading ? (
                 <div className="text-center py-3">
                   <Spinner animation="border" size="sm" />
