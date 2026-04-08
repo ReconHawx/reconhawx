@@ -165,8 +165,7 @@ function CertificateDetail() {
         <Col>
           <div className="d-flex justify-content-between align-items-center">
             <div>
-              <h1>🔒 Certificate Details</h1>
-              <p className="text-muted">SSL/TLS certificate information and analysis</p>
+              <h1>🔒 {certificate.subject_dn}</h1>
             </div>
             <div>
               <Button 

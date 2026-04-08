@@ -423,8 +423,7 @@ function URLDetail() {
         <Col>
           <div className="d-flex justify-content-between align-items-center">
             <div>
-              <h1>🔗 URL Details</h1>
-              <p className="text-muted">URL information and reconnaissance data</p>
+              <h1>🔗 {url.url}</h1>
             </div>
             <div>
               <Button 

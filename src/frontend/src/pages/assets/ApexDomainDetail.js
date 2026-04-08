@@ -154,7 +154,6 @@ function ApexDomainDetail() {
           <div className="d-flex justify-content-between align-items-center">
             <div>
               <h1>🌐 {apexDomain.name}</h1>
-              <p className="text-muted">Apex domain details and WHOIS information</p>
             </div>
             <div>
               <Button 

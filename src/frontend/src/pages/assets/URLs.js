@@ -968,7 +968,6 @@ function URLs() {
       <Row className="mb-4">
         <Col>
           <h1>🔗 URLs</h1>
-          <p className="text-muted">Browse and manage URLs discovered during reconnaissance</p>
         </Col>
       </Row>
 

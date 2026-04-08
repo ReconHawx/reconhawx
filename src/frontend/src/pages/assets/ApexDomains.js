@@ -833,9 +833,6 @@ function ApexDomains() {
       <Row className="mb-3">
         <Col>
           <h2>🌐 Apex Domains</h2>
-          <p className="text-muted">
-            Apex domains are the root domains stored as separate assets. This view shows apex domains with their WHOIS information and program associations.
-          </p>
         </Col>
       </Row>
 

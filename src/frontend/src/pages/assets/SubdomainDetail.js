@@ -161,7 +161,6 @@ function SubdomainDetail() {
           <div className="d-flex justify-content-between align-items-center">
             <div>
               <h1>🌐 {domain.name}</h1>
-              <p className="text-muted">Domain details and reconnaissance information</p>
             </div>
             <div>
               <Button 

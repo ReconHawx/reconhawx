@@ -615,7 +615,6 @@ function Screenshots() {
       <Row className="mb-4">
         <Col>
           <h1>📸 Screenshots</h1>
-          <p className="text-muted">Browse and manage screenshots captured during reconnaissance</p>
         </Col>
       </Row>
 

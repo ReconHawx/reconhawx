@@ -988,7 +988,6 @@ function Subdomains() {
       <Row className="mb-4">
         <Col>
           <h1>🌐 Subdomains</h1>
-          <p className="text-muted">Discovered subdomains from reconnaissance activities</p>
         </Col>
       </Row>
 
