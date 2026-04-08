@@ -1247,7 +1247,7 @@ function TyposquatFindingDetail() {
       </div>
 
       {/* Basic Information */}
-      <Card className="mb-4">
+      <Card className="dashboard-panel mb-4">
         <Card.Header>
           <h6 className="mb-0">Basic Information</h6>
         </Card.Header>
@@ -1389,7 +1389,7 @@ function TyposquatFindingDetail() {
       </Card>
 
       {/* Investigation Status */}
-      <Card className="mb-4">
+      <Card className="dashboard-panel mb-4">
         <Card.Header>
           <h6 className="mb-0">Investigation Status</h6>
         </Card.Header>
@@ -1552,7 +1552,7 @@ function TyposquatFindingDetail() {
 
       {/* Resolved / dismissed closure history (persisted; survives reopen) */}
       {Array.isArray(finding?.closure_events) && finding.closure_events.length > 0 && (
-        <Card className="mb-4">
+        <Card className="dashboard-panel mb-4">
           <Card.Header>
             <h6 className="mb-0">Closure history</h6>
           </Card.Header>
@@ -1594,7 +1594,7 @@ function TyposquatFindingDetail() {
       )}
 
       {/* History Section */}
-      <Card className="mb-4">
+      <Card className="dashboard-panel mb-4">
         <Card.Header>
           <h6 className="mb-0">📋 History</h6>
         </Card.Header>
@@ -1878,7 +1878,7 @@ function TyposquatFindingDetail() {
 
       {/* Parked Domain Detection Details */}
       {finding.is_parked === true && finding.parked_detection_reasons && (
-        <Card className="mb-4">
+        <Card className="dashboard-panel mb-4">
           <Card.Header className="d-flex justify-content-between align-items-center">
             <h6 className="mb-0">
               🅿️ Parked Domain Detection
@@ -2023,7 +2023,7 @@ function TyposquatFindingDetail() {
 
       {/* DNS Records */}
       {dnsRecords && (
-        <Card className="mb-4">
+        <Card className="dashboard-panel mb-4">
           <Card.Header className="d-flex justify-content-between align-items-center">
             <h6 className="mb-0">DNS Records</h6>
             <Button
@@ -2061,7 +2061,7 @@ function TyposquatFindingDetail() {
 
       {/* WHOIS Information */}
       {whoisDisplay && (
-        <Card className="mb-4">
+        <Card className="dashboard-panel mb-4">
           <Card.Header className="d-flex justify-content-between align-items-center">
             <h6 className="mb-0">WHOIS Information</h6>
             <Button
@@ -2149,7 +2149,7 @@ function TyposquatFindingDetail() {
 
       {/* Protected Domain Similarities */}
       {finding && (
-        <Card className="mb-4">
+        <Card className="dashboard-panel mb-4">
           <Card.Header className="d-flex justify-content-between align-items-center flex-wrap gap-2">
             <h6 className="mb-0">
               🛡️ Protected Domain Similarities
@@ -2282,7 +2282,7 @@ function TyposquatFindingDetail() {
 
       {/* AI Analysis - visible to admin/superuser only */}
       {isAdmin() && (
-        <Card className="mb-4">
+        <Card className="dashboard-panel mb-4">
           <Card.Header className="d-flex justify-content-between align-items-center">
             <h6 className="mb-0">
               AI Threat Analysis
@@ -2424,7 +2424,7 @@ function TyposquatFindingDetail() {
 
       {/* Threatstream Data */}
       {finding.threatstream_data && (
-        <Card className="mb-4">
+        <Card className="dashboard-panel mb-4">
           <Card.Header className="d-flex justify-content-between align-items-center">
             <h6 className="mb-0">🔍 Threatstream Intelligence</h6>
             <div className="d-flex align-items-center">
@@ -2622,7 +2622,7 @@ function TyposquatFindingDetail() {
 
       {/* RecordedFuture Data */}
       {finding.recordedfuture_data && (
-        <Card className="mb-4">
+        <Card className="dashboard-panel mb-4">
           <Card.Header className="d-flex justify-content-between align-items-center">
             <h6 className="mb-0">🔮 RecordedFuture Intelligence</h6>
             <div className="d-flex align-items-center">
@@ -2878,7 +2878,7 @@ function TyposquatFindingDetail() {
 
       {/* PhishLabs Information */}
       {(phishlabsIncident || phishlabsCreateIncident) && (
-        <Card className="mb-4">
+        <Card className="dashboard-panel mb-4">
           <Card.Header>
             <div className="d-flex justify-content-between align-items-center">
               <h6 className="mb-0">PhishLabs Incident</h6>
@@ -3033,10 +3033,11 @@ function TyposquatFindingDetail() {
         currentNotes={finding.notes || ''}
         apiUpdateFunction={api.findings.typosquat.updateNotes}
         onNotesUpdate={handleNotesUpdate}
+        cardClassName="dashboard-panel"
       />
 
       {/* Related Typosquat Domains */}
-      <Card className="mb-4">
+      <Card className="dashboard-panel mb-4">
         <Card.Header>
           <h6 className="mb-0">🌐 Related Typosquat Domains</h6>
         </Card.Header>
@@ -3145,7 +3146,7 @@ function TyposquatFindingDetail() {
       </Card>
 
       {/* Related Domain URLs */}
-      <Card className="mb-4">
+      <Card className="dashboard-panel mb-4">
         <Card.Header>
           <h6 className="mb-0">🔗 Related Domain URLs</h6>
         </Card.Header>
@@ -3275,7 +3276,7 @@ function TyposquatFindingDetail() {
       </Card>
 
       {/* Screenshots Section */}
-      <Card className="mb-4">
+      <Card className="dashboard-panel mb-4">
         <Card.Header>
           <h6 className="mb-0">📸 Screenshots from Related URLs</h6>
         </Card.Header>
@@ -3289,7 +3290,7 @@ function TyposquatFindingDetail() {
 
       {/* Fuzzing Techniques */}
       {finding.fuzzers && finding.fuzzers.length > 0 && (
-        <Card className="mb-4">
+        <Card className="dashboard-panel mb-4">
           <Card.Header>
             <h6 className="mb-0">Fuzzing Techniques Used</h6>
           </Card.Header>
@@ -3312,7 +3313,7 @@ function TyposquatFindingDetail() {
 
       {/* SSL Certificate
       {sslCertificate && (
-        <Card className="mb-4">
+        <Card className="dashboard-panel mb-4">
           <Card.Header className="d-flex justify-content-between align-items-center">
             <h6 className="mb-0">SSL Certificate</h6>
             <Button
@@ -3359,7 +3360,7 @@ function TyposquatFindingDetail() {
       )}
 
       {httpInfo && (
-        <Card className="mb-4">
+        <Card className="dashboard-panel mb-4">
           <Card.Header className="d-flex justify-content-between align-items-center">
             <h6 className="mb-0">HTTP Information</h6>
             <Button
@@ -3451,7 +3452,7 @@ function TyposquatFindingDetail() {
       )} */}
 
       {/* Full Finding JSON */}
-      <Card className="mb-4">
+      <Card className="dashboard-panel mb-4">
         <Card.Header className="d-flex justify-content-between align-items-center">
           <h6 className="mb-0">Full Finding (JSON)</h6>
           <div>

@@ -491,7 +491,7 @@ function TyposquatUrlDetails() {
 
       <Row>
         <Col md={8}>
-          <Card className="mb-4">
+          <Card className="dashboard-panel mb-4">
             <Card.Header>
               <h5 className="mb-0">🌐 URL Information</h5>
             </Card.Header>
@@ -569,7 +569,7 @@ function TyposquatUrlDetails() {
         </Col>
 
         <Col md={4}>
-          <Card className="mb-4">
+          <Card className="dashboard-panel mb-4">
             <Card.Header>
               <h5 className="mb-0">📋 Basic Information</h5>
             </Card.Header>
@@ -627,7 +627,7 @@ function TyposquatUrlDetails() {
       {url.technologies && url.technologies.length > 0 && (
         <Row>
           <Col>
-            <Card className="mb-4">
+            <Card className="dashboard-panel mb-4">
               <Card.Header>
                 <h5 className="mb-0">⚙️ Technologies</h5>
               </Card.Header>
@@ -648,7 +648,7 @@ function TyposquatUrlDetails() {
       {/* Redirect Chain Section */}
       <Row>
         <Col>
-          <Card className="mb-4">
+          <Card className="dashboard-panel mb-4">
             <Card.Header>
               <h5 className="mb-0">🔄 Redirect Chain</h5>
             </Card.Header>
@@ -662,7 +662,7 @@ function TyposquatUrlDetails() {
       {/* Content Information */}
       <Row>
         <Col>
-          <Card className="mb-4">
+          <Card className="dashboard-panel mb-4">
             <Card.Header>
               <h5 className="mb-0">📄 Content Information</h5>
             </Card.Header>
@@ -736,7 +736,7 @@ function TyposquatUrlDetails() {
       {viewMode === 'detail' && url?.typosquat_certificate_id && (
         <Row>
           <Col>
-            <Card className="mb-4">
+            <Card className="dashboard-panel mb-4">
               <Card.Header>
                 <h5 className="mb-0">🔒 SSL Certificate Information</h5>
               </Card.Header>
@@ -851,7 +851,7 @@ function TyposquatUrlDetails() {
       {viewMode === 'detail' && (
         <Row>
           <Col>
-            <Card className="mb-4">
+            <Card className="dashboard-panel mb-4">
               <Card.Header>
                 <h5 className="mb-0">📸 Screenshots</h5>
               </Card.Header>
@@ -872,6 +872,7 @@ function TyposquatUrlDetails() {
             currentNotes={url.notes || ''}
             apiUpdateFunction={typosquatAPI.updateUrlNotes}
             onNotesUpdate={handleNotesUpdate}
+            cardClassName="dashboard-panel"
           />
         </Col>
       </Row>
@@ -879,7 +880,7 @@ function TyposquatUrlDetails() {
       {/* Full URL JSON */}
       <Row>
         <Col>
-          <Card className="mb-4">
+          <Card className="dashboard-panel mb-4">
             <Card.Header className="d-flex justify-content-between align-items-center">
               <h6 className="mb-0">Full URL (JSON)</h6>
               <div>

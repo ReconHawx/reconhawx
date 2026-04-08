@@ -308,7 +308,7 @@ const NucleiFindingDetail = () => {
       <div className="row">
         {/* Main Details */}
         <div className="col-lg-8">
-          <div className="card">
+          <div className="card dashboard-panel">
             <div className="card-header">
               <h5 className="card-title mb-0">Finding Details</h5>
             </div>
@@ -406,7 +406,7 @@ const NucleiFindingDetail = () => {
 
           {/* Response/Output */}
           {(finding.response || finding.curl_command) && (
-            <div className="card mt-4">
+            <div className="card dashboard-panel mt-4">
               <div className="card-header">
                 <h5 className="card-title mb-0">Response Details</h5>
               </div>
@@ -446,7 +446,7 @@ const NucleiFindingDetail = () => {
 
           {/* Template Content */}
           {finding.template_path && (
-            <div className="card mt-4">
+            <div className="card dashboard-panel mt-4">
               <div className="card-header">
                 <h5 className="card-title mb-0">
                   <button
@@ -469,7 +469,7 @@ const NucleiFindingDetail = () => {
 
           {/* Extracted Data */}
           {finding.extracted && Object.keys(finding.extracted).length > 0 && (
-            <div className="card mt-4">
+            <div className="card dashboard-panel mt-4">
               <div className="card-header">
                 <h5 className="card-title mb-0">Extracted Data</h5>
               </div>
@@ -483,7 +483,7 @@ const NucleiFindingDetail = () => {
         {/* Sidebar */}
         <div className="col-lg-4">
           {/* Metadata */}
-          <div className="card">
+          <div className="card dashboard-panel">
             <div className="card-header">
               <h5 className="card-title mb-0">Metadata</h5>
             </div>
@@ -508,7 +508,7 @@ const NucleiFindingDetail = () => {
           </div>
 
           {/* Related Assets */}
-          <div className="card mt-4">
+          <div className="card dashboard-panel mt-4">
             <div className="card-header">
               <h5 className="card-title mb-0">Related Assets</h5>
             </div>
@@ -593,11 +593,12 @@ const NucleiFindingDetail = () => {
               currentNotes={finding.notes || ''}
               apiUpdateFunction={api.findings.nuclei.updateNotes}
               onNotesUpdate={handleNotesUpdate}
+              cardClassName="dashboard-panel"
             />
           </div>
 
           {/* Template Documentation */}
-          <div className="card mt-4">
+          <div className="card dashboard-panel mt-4">
             <div className="card-header">
               <h5 className="card-title mb-0">Template Information</h5>
             </div>
