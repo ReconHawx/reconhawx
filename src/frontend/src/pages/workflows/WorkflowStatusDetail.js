@@ -330,7 +330,7 @@ function WorkflowStatusDetail() {
         const testRegex = new RegExp(`^${escapedSearch}$`, 'i');
         if (testRegex.test(part)) {
           return (
-            <mark key={index} style={{ backgroundColor: '#ffeb3b', padding: '0', color: '#000' }}>
+            <mark key={index} style={{ backgroundColor: 'var(--rh-mark-bg)', padding: '0', color: 'var(--rh-mark-color)' }}>
               {part}
             </mark>
           );

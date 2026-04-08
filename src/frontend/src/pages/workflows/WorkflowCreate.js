@@ -331,7 +331,7 @@ function WorkflowCreate() {
           </Row>
         </Card.Header>
         <Card.Body className="p-2">
-            <div style={{ height: 'calc(100vh - 300px)', border: '1px solid #dee2e6', borderRadius: '0.375rem' }}>
+            <div style={{ height: 'calc(100vh - 300px)', border: '1px solid var(--bs-border-color)', borderRadius: '0.375rem' }}>
               <VisualWorkflowBuilder
                 workflowName={workflowName}
                 setWorkflowName={setWorkflowName}

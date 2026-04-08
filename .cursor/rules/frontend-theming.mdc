@@ -1,0 +1,95 @@
+---
+description: Light/dark theming for the React frontend (Bootstrap + CSS variables)
+globs: ["src/frontend/**", ".cursor/rules/frontend-*.mdc"]
+---
+
+# Frontend theming (light / dark)
+
+The UI is **Bootstrap 5 + react-bootstrap**, not MUI or Tailwind. Theme switching is **not** `theme.palette` / `sx`.
+
+## How theme works
+
+1. **Source of truth:** [`src/frontend/src/index.css`](../../src/frontend/src/index.css) — `:root` (light) and `[data-theme="dark"]` redefine `--bs-*`, `--rh-*`, and Recon aliases.
+2. **React hook:** [`ThemeContext.js`](../../src/frontend/src/contexts/ThemeContext.js) sets `document.body.setAttribute('data-theme', 'light' | 'dark')` and `localStorage['recon-theme']`.
+3. **Selector rule:** Any CSS that targets dark mode must use **`[data-theme="dark"]`** (variables are on `body`, inherited by the tree). Do **not** use `:root[data-theme=…]` unless you also set `data-theme` on `<html>` (this app does not).
+
+## Decision tree: “How do I color this?”
+
+1. **Default:** Use **semantic Bootstrap** (`Card`, `Button`, `text-muted`, `border`, `bg-*` overrides already wired in `index.css`).
+2. **Surfaces / borders / text in inline styles:** Use **`var(--bs-body-color)`**, **`var(--bs-border-color)`**, **`var(--bs-card-bg)`**, **`var(--bs-text-muted)`**, etc. — never raw `#…` for neutrals.
+3. **Plain CSS / `.css` files next to components:** Use **`var(--bs-*)`** / **`var(--rh-*)`** only. Do not duplicate parallel light/dark hex palettes; rely on the global variable flip.
+4. **Binary UI that CSS cannot express:** `useTheme()` → `isLight` / `isDark` (navbar `variant`, hero image swap). Keep this **narrow**.
+5. **SVG / canvas / chart strokes** where you need a JS object: import **[`chartTheme.js`](../../src/frontend/src/utils/chartTheme.js)** or follow the same `var(--bs-*)` strings as inline SVG attributes (supported in modern browsers).
+6. **Workflow canvas nodes (React Flow):** Use **`workflowNodeTheme.js`** shared tokens and **`var(--bs-*)`** in inline `style` gradients — avoid `isDark ? '#…' : '#…'` for layout chrome.
+
+## Token reference (most-used)
+
+| Token | Use |
+|-------|-----|
+| `--bs-body-bg`, `--bs-body-color` | Page background, primary text |
+| `--bs-card-bg`, `--bs-card-border-color` | Cards, panels |
+| `--bs-border-color` | Dividers, 1px borders |
+| `--bs-text-muted` | Secondary / helper text |
+| `--bs-link-color`, `--bs-link-hover-color` | Links, link-like hover |
+| `--bs-primary`, `--bs-primary-rgb` | Brand accent (with `rgba(var(--bs-primary-rgb), α)`) |
+| `--bs-success`, `--bs-danger`, `--bs-warning` (+ `-rgb`) | Semantic states, charts |
+| `--bs-table-hover-bg`, `--bs-subtle-hover-bg` | Row / list hover |
+| `--bs-pre-bg`, `--bs-pre-color` | Code / pre blocks |
+| `--bs-input-bg`, `--bs-input-border-color` | Form fields |
+| `--bs-secondary-bg`, `--bs-tertiary-bg` | Subtle strips, table headers |
+| `--rh-cyan`, `--rh-cyan-rgb`, `--rh-on-cyan` | Logo / neon accents |
+| `--rh-highlight-bg` | Soft “info” chip / highlight background |
+| `--rh-mark-bg`, `--rh-mark-color` | Search / text mark highlights |
+| `--rh-overlay-scrim`, `--rh-shadow-color` | Sidebars, overlays, elevation |
+| `--rh-code-bg`, `--rh-code-color` | Inline code where pre tokens differ |
+
+Add new **named** tokens in `index.css` (`:root` + `[data-theme="dark"]`) if a pattern repeats; do not scatter one-off hex.
+
+## Banned patterns
+
+- **Hex / rgb literals** in `style={{}}` for neutrals (`#f8f9fa`, `#dee2e6`, `#6c757d`, …).
+- **Copy-paste Bootstrap default blues** (`#0d6efd`, `#1976d2`) — the app brand is **cyan / purple** via `--bs-primary` and overrides.
+- **Parallel “light palette” + “dark palette”** blocks in component CSS with hardcoded grays — use variables only.
+- **Assuming `data-theme` on `:root`** for app theme (use `body` / descendants).
+
+## Correct examples
+
+**Inline surface + border**
+
+```jsx
+<div style={{ backgroundColor: 'var(--bs-card-bg)', border: '1px solid var(--bs-border-color)' }}>
+```
+
+**Hover via DOM (reset to inherit default)**
+
+```js
+el.style.color = 'var(--bs-link-color)';
+el.style.color = '';
+```
+
+**Component CSS**
+
+```css
+.panel-header {
+  background-color: var(--bs-secondary-bg);
+  color: var(--bs-body-color);
+  border-bottom: 1px solid var(--bs-border-color);
+}
+```
+
+**Bootstrap utilities:** `bg-light` / `bg-white` are overridden for dark mode in `index.css` — acceptable for markup; still avoid **inline** light-only hex.
+
+## Testing checklist (before merging UI)
+
+1. Toggle **light → dark → light** in the navbar; no white “holes,” invisible text, or wrong borders.
+2. Hit **workflow builder**, **screenshots** viewers, **admin** tables, and any page you touched.
+3. If you added **SVG**: confirm strokes/fills in both themes (try `var(--bs-*)` first).
+
+## Related utilities
+
+- [`src/frontend/src/utils/chartTheme.js`](../../src/frontend/src/utils/chartTheme.js) — line/bar chart SVG tokens
+- [`src/frontend/src/utils/workflowNodeTheme.js`](../../src/frontend/src/utils/workflowNodeTheme.js) — React Flow node shadows / step backgrounds
+
+## Doc hygiene
+
+When theming behavior or tokens change, update **this file** and the **Styling** section in [`frontend-architecture.mdc`](frontend-architecture.mdc).

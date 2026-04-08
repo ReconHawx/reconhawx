@@ -421,7 +421,7 @@ function Technologies() {
                   }}
                   onMouseEnter={(e) => {
                     const span = e.currentTarget.querySelector('span');
-                    if (span) span.style.color = '#0d6efd';
+                    if (span) span.style.color = 'var(--bs-link-color)';
                   }}
                   onMouseLeave={(e) => {
                     const span = e.currentTarget.querySelector('span');
@@ -458,7 +458,7 @@ function Technologies() {
                     transition: 'color 0.2s'
                   }}
                   onClick={() => handleSort('count')}
-                  onMouseEnter={(e) => e.currentTarget.style.color = '#0d6efd'}
+                  onMouseEnter={(e) => e.currentTarget.style.color = 'var(--bs-link-color)'}
                   onMouseLeave={(e) => e.currentTarget.style.color = ''}
                   className="fw-bold"
                 >

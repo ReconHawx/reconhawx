@@ -124,7 +124,7 @@ const JsonEditor = ({
             $blockScrolling: true
           }}
           style={{
-            border: `1px solid ${isValid ? '#dee2e6' : '#dc3545'}`,
+            border: `1px solid ${isValid ? 'var(--bs-border-color)' : 'var(--bs-danger)'}`,
             borderRadius: '0.375rem'
           }}
         />

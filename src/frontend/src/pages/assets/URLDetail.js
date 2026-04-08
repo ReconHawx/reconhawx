@@ -966,7 +966,7 @@ function URLDetail() {
                   style={{ 
                     maxWidth: '100%', 
                     maxHeight: '70vh',
-                    border: '1px solid #dee2e6',
+                    border: '1px solid var(--bs-border-color)',
                     borderRadius: '8px',
                     boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)'
                   }}

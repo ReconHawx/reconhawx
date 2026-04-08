@@ -1,34 +1,45 @@
 import React from 'react';
 import { Handle, Position } from 'reactflow';
-import { useTheme } from '../../contexts/ThemeContext';
+import {
+  workflowNodeShadowIdle,
+  workflowNodeShadowSelected,
+} from '../../utils/workflowNodeTheme';
 
-const WorkflowStartNode = ({ data, selected }) => {
-  const { isDark } = useTheme();
-
+const WorkflowStartNode = ({ selected }) => {
   return (
     <div
       style={{
         padding: '15px 20px',
         borderRadius: '8px',
-        background: isDark
-          ? 'linear-gradient(145deg, #142820 0%, #121c2f 100%)'
-          : 'linear-gradient(135deg, #e8f5e8 0%, #c8e6c9 100%)',
-        border: `2px solid ${selected ? (isDark ? '#00f2ff' : '#0d6efd') : isDark ? 'rgba(0, 200, 120, 0.55)' : '#4caf50'}`,
+        background:
+          'linear-gradient(135deg, rgba(var(--bs-success-rgb), 0.12) 0%, rgba(var(--bs-success-rgb), 0.2) 100%)',
+        border: `2px solid ${
+          selected
+            ? 'var(--bs-primary)'
+            : 'rgba(var(--bs-success-rgb), 0.65)'
+        }`,
         minWidth: '250px',
         fontSize: '14px',
-        boxShadow: selected
-          ? (isDark ? '0 4px 20px rgba(0, 242, 255, 0.15)' : '0 4px 12px rgba(0,0,0,0.15)')
-          : (isDark ? '0 2px 12px rgba(0,0,0,0.35)' : '0 2px 8px rgba(0,0,0,0.1)'),
+        boxShadow: selected ? workflowNodeShadowSelected : workflowNodeShadowIdle,
+        color: 'var(--bs-body-color)',
       }}
     >
       <div className="d-flex align-items-center mb-2">
-        <span className="me-2" style={{fontSize: '20px'}}>🚀</span>
-        <strong style={{ color: isDark ? '#f0fbff' : 'inherit' }}>Workflow Start</strong>
+        <span className="me-2" style={{ fontSize: '20px' }}>
+          🚀
+        </span>
+        <strong>Workflow Start</strong>
       </div>
-      <div style={{ fontSize: '12px', color: isDark ? '#9db4c4' : '#555', marginBottom: '10px' }}>
+      <div
+        style={{
+          fontSize: '12px',
+          color: 'var(--bs-text-muted)',
+          marginBottom: '10px',
+        }}
+      >
         <small>Configure inputs to start your workflow</small>
       </div>
-      
+
       {/* Invisible output handle - edges connect to node edge, no visual misalignment */}
       <Handle
         type="source"

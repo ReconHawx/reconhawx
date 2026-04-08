@@ -371,7 +371,7 @@ function NucleiTemplateSelector({
             )}
 
             {/* Tree Browser */}
-            <div style={{ maxHeight: '300px', overflowY: 'auto', border: '1px solid #dee2e6', borderRadius: '0.375rem', padding: '10px' }}>
+            <div style={{ maxHeight: '300px', overflowY: 'auto', border: '1px solid var(--bs-border-color)', borderRadius: '0.375rem', padding: '10px' }}>
               {treeLoading ? (
                 <div className="text-center py-4">
                   <Spinner animation="border" size="sm" />
@@ -396,7 +396,7 @@ function NucleiTemplateSelector({
         {/* Custom Templates Section */}
         <Form.Group className="mb-3">
           <Form.Label>Custom Templates</Form.Label>
-          <div style={{ maxHeight: '200px', overflowY: 'auto', border: '1px solid #dee2e6', borderRadius: '0.375rem' }}>
+          <div style={{ maxHeight: '200px', overflowY: 'auto', border: '1px solid var(--bs-border-color)', borderRadius: '0.375rem' }}>
             <ListGroup variant="flush">
               {nucleiTemplates.map(template => (
                 <ListGroup.Item key={template.id} className="d-flex justify-content-between align-items-center py-2">

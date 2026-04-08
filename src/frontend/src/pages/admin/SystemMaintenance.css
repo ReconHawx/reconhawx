@@ -7,15 +7,9 @@
 }
 
 .maintenance-drain-table thead th {
-  background-color: #f8f9fa;
+  background-color: var(--bs-secondary-bg);
   color: var(--bs-body-color);
   border-color: var(--bs-border-color);
-}
-
-[data-theme="dark"] .maintenance-drain-table thead th {
-  background-color: #2c2c2e;
-  color: #f2f2f7;
-  border-color: #3a3a3f;
 }
 
 .maintenance-drain-table tbody td {

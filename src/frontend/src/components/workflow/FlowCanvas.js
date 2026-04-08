@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { ReactFlow, Controls, MiniMap, Background, useReactFlow, useUpdateNodeInternals } from 'reactflow';
 import { useWorkflowStore } from '../../stores/workflowStore';
-import { useTheme } from '../../contexts/ThemeContext';
 import { TASK_TYPES } from './constants';
 import StepBackground from './StepBackground';
 import StepManagementPanel from './StepManagementPanel';
@@ -44,8 +43,6 @@ function FlowCanvas({ onDragOver, draggedTaskType, setDraggedTaskType }) {
     getStepForPosition,
   } = useWorkflowStore();
   const { screenToFlowPosition } = useReactFlow();
-  const { isDark } = useTheme();
-
   const calculateCanvasHeight = useMemo(() => {
     if (steps.length === 0) return 800;
     
@@ -170,7 +167,7 @@ function FlowCanvas({ onDragOver, draggedTaskType, setDraggedTaskType }) {
         preventScrolling={true}
         connectionRadius={12}
         connectionLineStyle={{
-          stroke: isDark ? 'rgba(0, 242, 255, 0.75)' : '#1976d2',
+          stroke: 'var(--bs-primary)',
           strokeWidth: 2,
           strokeDasharray: '5,5',
         }}
@@ -181,7 +178,7 @@ function FlowCanvas({ onDragOver, draggedTaskType, setDraggedTaskType }) {
           variant="dots"
           gap={25}
           size={1}
-          color={isDark ? 'rgba(0, 242, 255, 0.14)' : '#c5cfdd'}
+          color="var(--bs-border-color)"
         />
       </ReactFlow>
       <StepBackground steps={steps} canvasWidth={canvasWidth} />

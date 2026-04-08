@@ -242,7 +242,7 @@ export const DATA_TYPE_COLORS = {
   'screenshots': '#795548',
   'certificates': '#607D8B',
   'strings': '#FF5722',
-  'default': '#666666'
+  'default': 'var(--bs-text-muted)'
 };
 
 // Function to get color for a data type

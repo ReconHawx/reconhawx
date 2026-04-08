@@ -2,32 +2,18 @@ import React, { useMemo } from 'react';
 import { Handle, Position } from 'reactflow';
 import { Form, Button, Badge } from 'react-bootstrap';
 import { useWorkflowStore } from '../../stores/workflowStore';
-import { useTheme } from '../../contexts/ThemeContext';
 import { TASK_TYPES, TASK_CATEGORIES, getDataTypeColor } from './constants';
-
-const LIGHT_STEP_FILLS = [
-  '#e3f2fd', '#f3e5f5', '#e8f5e8', '#fff3e0', '#fce4ec',
-  '#e0f2f1', '#f1f8e9', '#fff8e1', '#e8eaf6', '#fafafa',
-];
-
-const DARK_STEP_FILLS = [
-  'linear-gradient(145deg, #121c2f 0%, #151d30 100%)',
-  'linear-gradient(145deg, #15182a 0%, #1a1530 100%)',
-  'linear-gradient(145deg, #142028 0%, #121c2f 100%)',
-  'linear-gradient(145deg, #1a1528 0%, #151d30 100%)',
-  'linear-gradient(145deg, #0f1828 0%, #142030 100%)',
-  'linear-gradient(145deg, #151d30 0%, #16162a 100%)',
-  'linear-gradient(145deg, #121c2f 0%, #181828 100%)',
-  'linear-gradient(145deg, #152028 0%, #15182a 100%)',
-  'linear-gradient(145deg, #141e30 0%, #122018 100%)',
-];
+import {
+  WORKFLOW_STEP_BACKGROUND_PATTERNS,
+  workflowNodeShadowIdle,
+  workflowNodeShadowSelected,
+} from '../../utils/workflowNodeTheme';
 
 const TaskNode = ({ data, selected, id }) => {
-  const { isDark } = useTheme();
   const { openTaskConfigModal, deleteNode, steps, getStepForPosition, updateNodeData } = useWorkflowStore();
   const taskType = TASK_TYPES[data.taskType];
   const category = taskType?.category || 'Other';
-  const categoryInfo = TASK_CATEGORIES[category] || { color: '#666', icon: '⚙️' };
+  const categoryInfo = TASK_CATEGORIES[category] || { color: 'var(--bs-text-muted)', icon: '⚙️' };
   
   const currentNode = useWorkflowStore(state => state.nodes.find(n => n.id === id));
   const currentStep = currentNode ? getStepForPosition(currentNode.position.y) : null;
@@ -35,23 +21,15 @@ const TaskNode = ({ data, selected, id }) => {
   
   const stepBackground = useMemo(() => {
     if (stepIndex < 0) {
-      return isDark
-        ? 'linear-gradient(145deg, #121c2f 0%, #0d1422 100%)'
-        : '#ffffff';
+      return 'linear-gradient(145deg, var(--bs-card-bg) 0%, var(--bs-pre-bg) 100%)';
     }
-    const palette = isDark ? DARK_STEP_FILLS : LIGHT_STEP_FILLS;
+    const palette = WORKFLOW_STEP_BACKGROUND_PATTERNS;
     return palette[stepIndex % palette.length];
-  }, [stepIndex, isDark]);
+  }, [stepIndex]);
 
-  const borderColor = selected
-    ? (isDark ? '#00f2ff' : '#1976d2')
-    : categoryInfo.color;
+  const borderColor = selected ? 'var(--bs-primary)' : categoryInfo.color;
 
-  const nodeShadow = selected
-    ? (isDark
-        ? '0 4px 20px rgba(0, 242, 255, 0.18)'
-        : '0 4px 12px rgba(0,0,0,0.15)')
-    : (isDark ? '0 2px 12px rgba(0,0,0,0.35)' : '0 2px 8px rgba(0,0,0,0.1)');
+  const nodeShadow = selected ? workflowNodeShadowSelected : workflowNodeShadowIdle;
 
   const handleForceChange = (e) => {
     e.stopPropagation();
@@ -73,7 +51,7 @@ const TaskNode = ({ data, selected, id }) => {
         fontSize: '14px',
         position: 'relative',
         margin: '10px',
-        color: isDark ? '#f0fbff' : '#212529',
+        color: 'var(--bs-body-color)',
       }}
     >
       {/* Invisible input handle - edges connect to node edge, no visual misalignment */}
@@ -94,7 +72,7 @@ const TaskNode = ({ data, selected, id }) => {
             <Badge 
               bg="light" 
               text="dark"
-              style={{ backgroundColor: categoryInfo.color, color: 'white' }}
+              style={{ backgroundColor: categoryInfo.color, color: 'var(--rh-on-cyan)' }}
             >
               {category}
             </Badge>
@@ -129,7 +107,7 @@ const TaskNode = ({ data, selected, id }) => {
         <div
           style={{
             fontSize: '12px',
-            color: isDark ? '#9db4c4' : '#666',
+            color: 'var(--bs-text-muted)',
             marginBottom: '10px',
             minHeight: '30px',
           }}
@@ -137,7 +115,7 @@ const TaskNode = ({ data, selected, id }) => {
           {taskType?.description}
         </div>
 
-        <div style={{ fontSize: '11px', color: isDark ? '#8eadbf' : '#888' }}>
+        <div style={{ fontSize: '11px', color: 'var(--bs-text-muted)' }}>
           {data.hasConfiguration && (
             <Badge bg="success" className="me-1">Configured</Badge>
           )}
@@ -158,7 +136,7 @@ const TaskNode = ({ data, selected, id }) => {
             style={{ fontSize: '11px' }}
             className="me-2"
           />
-          <small style={{ fontSize: '11px', color: isDark ? '#9db4c4' : '#666' }}>
+          <small style={{ fontSize: '11px', color: 'var(--bs-text-muted)' }}>
             Force execution (ignore cache)
           </small>
         </div>

@@ -248,7 +248,7 @@ function BrokenLinkDetail() {
                 <Card className="mb-3">
                   <Card.Header>Response Data</Card.Header>
                   <Card.Body>
-                    <pre style={{ maxHeight: '400px', overflow: 'auto', backgroundColor: '#f5f5f5', padding: '10px' }}>
+                    <pre style={{ maxHeight: '400px', overflow: 'auto', backgroundColor: 'var(--bs-tertiary-bg)', padding: '10px' }}>
                       {JSON.stringify(finding.response_data, null, 2)}
                     </pre>
                   </Card.Body>

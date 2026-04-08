@@ -119,32 +119,16 @@ const Dashboard = lazy(() => import('./pages/Dashboard'));
 
 ## Styling System
 
-### CSS Variables for Theming
+### Theming (light / dark)
 
-```css
-/* Light theme (default) */
-body {
-  --bg-primary: #ffffff;
-  --bg-secondary: #f8f9fa;
-  --text-primary: #212529;
-  --border-color: #dee2e6;
-  /* ... more variables */
-}
-
-/* Dark theme */
-body[data-theme="dark"] {
-  --bg-primary: #1a1a2e;
-  --bg-secondary: #16213e;
-  --text-primary: #e4e4e4;
-  --border-color: #2d3436;
-  /* ... more variables */
-}
-```
+- **Canonical tokens:** [`src/frontend/src/index.css`](../../src/frontend/src/index.css) — `:root` (light) and `[data-theme="dark"]` set `--bs-*` (Bootstrap-shaped) and `--rh-*` (Recon brand).
+- **Activation:** [`ThemeContext`](../../src/frontend/src/contexts/ThemeContext.js) sets `data-theme` on **`document.body`** and persists `recon-theme` in `localStorage`.
+- **Agent / contributor guide:** [`.cursor/rules/frontend-theming.mdc`](frontend-theming.mdc) — token list, decision tree, banned patterns (no raw hex in inline styles for neutrals), chart/workflow helpers.
 
 ### Bootstrap Integration
 
 - Uses React Bootstrap components (`Card`, `Badge`, `Button`, `Table`, etc.)
-- Custom CSS overrides for theme support
+- Global `index.css` overrides align Bootstrap with the token palette
 - Fluid containers with responsive grid
 
 ## Key Architectural Patterns
@@ -177,6 +161,6 @@ body[data-theme="dark"] {
 1. **Use existing contexts** - Don't create new state management patterns
 2. **Follow API patterns** - Use the established API service structure
 3. **Lazy load pages** - All new pages should use `React.lazy()`
-4. **Respect theme** - Use CSS variables, not hardcoded colors
+4. **Respect theme** - Follow [`frontend-theming.mdc`](frontend-theming.mdc): `var(--bs-*)` / `var(--rh-*)` in CSS and inline styles; `useTheme()` only for exceptions (e.g. navbar variant, images)
 5. **Filter by program** - Honor `selectedProgram` from context
 6. **Use formatDate utilities** - Don't create new date formatting functions
