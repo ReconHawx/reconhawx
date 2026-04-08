@@ -34,7 +34,7 @@
 }
 
 [data-theme="dark"] .workflow-node-handle-invisible {
-  border-color: rgba(0, 242, 255, 0.85) !important;
+  border-color: rgba(var(--rh-cyan-rgb), 0.55) !important;
   background: var(--bs-input-bg) !important;
 }
 
@@ -62,7 +62,7 @@
 }
 
 [data-theme="dark"] .react-flow__handle:hover {
-  box-shadow: 0 0 0 4px rgba(0, 242, 255, 0.22);
+  box-shadow: 0 0 0 4px rgba(var(--rh-cyan-rgb), 0.2);
 }
 
 .react-flow__handle-connecting {
@@ -88,7 +88,7 @@
 }
 
 [data-theme="dark"] .react-flow__edge:hover .react-flow__edge-path {
-  stroke: rgba(0, 242, 255, 0.8) !important;
+  stroke: rgba(var(--rh-cyan-rgb), 0.65) !important;
 }
 
 [data-theme="dark"] .react-flow__edge.selected .react-flow__edge-path {
@@ -136,7 +136,7 @@
 }
 
 [data-theme="dark"] .react-flow__connectionline {
-  stroke: rgba(0, 242, 255, 0.85);
+  stroke: rgba(var(--rh-cyan-rgb), 0.65);
 }
 
 @keyframes connectionPulse {
@@ -148,19 +148,20 @@
   }
 }
 
-/* Panel styling */
+/* Panel styling — match dashboard panels: no rim, layered shadow */
 .react-flow__panel {
   background: var(--bs-card-bg);
   backdrop-filter: blur(10px);
-  border: 1px solid var(--bs-border-color);
-  box-shadow: 0 4px 12px var(--rh-shadow-color);
+  border: none;
+  box-shadow: var(--rh-dashboard-panel-shadow);
 }
 
 /* Minimap styling */
 .react-flow__minimap {
   background: var(--bs-tertiary-bg);
-  border: 1px solid var(--bs-border-color);
+  border: none;
   border-radius: 8px;
+  box-shadow: var(--rh-dashboard-panel-shadow);
 }
 
 .react-flow__minimap-mask {
@@ -172,9 +173,9 @@
 /* Controls styling */
 .react-flow__controls {
   background: var(--bs-card-bg);
-  border: 1px solid var(--bs-border-color);
+  border: none;
   border-radius: 8px;
-  box-shadow: 0 4px 12px var(--rh-shadow-color);
+  box-shadow: var(--rh-dashboard-panel-shadow);
 }
 
 .react-flow__controls-button {
@@ -197,14 +198,176 @@
   background: linear-gradient(180deg, var(--bs-card-bg) 0%, var(--bs-body-bg) 100%);
 }
 
-/* Task library sidebar - theme-aware */
+/*
+ * Create/edit: single chrome surface (toolbar + name/description). Modal: metadata strip only.
+ * Library + canvas row is full width under chrome; fields use horizontal padding only.
+ */
+.workflow-builder-layout-root {
+  --workflow-builder-fields-pad-x: 16px;
+  --workflow-builder-gap: 14px;
+}
+
+/* Create/edit page: one card-header-height surface, inset dividers — not floating above canvas */
+.workflow-builder-editor-chrome {
+  --workflow-builder-fields-pad-x: 16px;
+  flex-shrink: 0;
+  background: var(--bs-card-bg);
+  border-bottom: 1px solid rgba(10, 15, 28, 0.12);
+}
+
+[data-theme="dark"] .workflow-builder-editor-chrome {
+  border-bottom-color: rgba(240, 251, 255, 0.1);
+}
+
+.workflow-builder-editor-chrome-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1.25rem;
+  align-items: flex-end;
+  justify-content: space-between;
+  padding: 0.875rem var(--workflow-builder-fields-pad-x);
+  border-bottom: 1px solid rgba(10, 15, 28, 0.08);
+}
+
+[data-theme="dark"] .workflow-builder-editor-chrome-toolbar {
+  border-bottom-color: rgba(240, 251, 255, 0.08);
+}
+
+.workflow-builder-editor-chrome-toolbar-main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  flex: 1 1 280px;
+  min-width: 0;
+}
+
+@media (min-width: 768px) {
+  .workflow-builder-editor-chrome-toolbar-main {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: flex-end;
+  }
+}
+
+.workflow-builder-editor-chrome .workflow-builder-metadata-fields {
+  padding: 1rem var(--workflow-builder-fields-pad-x) 0.875rem;
+}
+
+/* Modal / embedded builder: flat strip — no panel shadow or z-stacking over workspace */
+.workflow-builder-metadata-bar.workflow-info-section {
+  padding: 15px 0 0.875rem;
+  flex-shrink: 0;
+  background: var(--bs-body-bg);
+  border: none;
+  box-shadow: none;
+  border-bottom: 1px solid rgba(10, 15, 28, 0.12);
+}
+
+[data-theme="dark"] .workflow-builder-metadata-bar.workflow-info-section {
+  border-bottom-color: rgba(240, 251, 255, 0.1);
+  box-shadow: none;
+}
+
+/* Flex layout (not Bootstrap .row) so fields don’t bleed past padding via negative margins */
+.workflow-builder-metadata-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 0 var(--workflow-builder-fields-pad-x);
+}
+
+@media (min-width: 768px) {
+  .workflow-builder-metadata-fields {
+    flex-direction: row;
+    align-items: flex-start;
+  }
+
+  .workflow-builder-metadata-field {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+}
+
+.workflow-builder-inline-alert {
+  flex-shrink: 0;
+  margin-left: var(--workflow-builder-fields-pad-x);
+  margin-right: var(--workflow-builder-fields-pad-x);
+  margin-bottom: 12px;
+}
+
+/* Library + canvas: bounded row height so the library scrolls inside the shell, not the page */
+.workflow-builder-workspace {
+  gap: var(--workflow-builder-gap);
+  padding: 0 0 20px;
+  align-items: stretch;
+  align-content: stretch;
+  background: var(--bs-body-bg);
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+/* Create/edit page: elevated card without theme cyan outline */
+.workflow-builder-card-shell.card {
+  border: none !important;
+  box-shadow: var(--rh-dashboard-panel-shadow);
+}
+
+/* Main React Flow region — same elevation as dashboard cards (no inset edge line) */
+.workflow-canvas-shell {
+  min-width: 0;
+  min-height: 0;
+  border-radius: 12px;
+  background: var(--bs-card-bg);
+  box-shadow: var(--rh-dashboard-panel-shadow);
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+}
+
+/* Fills remaining column height so React Flow can use height: 100% */
+.workflow-canvas-flow-host {
+  flex: 1 1 0;
+  min-height: 0;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.workflow-canvas-flow-host .workflow-flow-canvas-root {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.workflow-canvas-flow-host .workflow-flow-canvas-root .react-flow {
+  flex: 1 1 0;
+  min-height: 0;
+  width: 100%;
+}
+
+/* Task library sidebar — matching radius + shadow peer to .workflow-canvas-shell */
 .task-library-sidebar {
   background: linear-gradient(135deg, var(--bs-secondary-bg) 0%, var(--bs-tertiary-bg) 100%);
-  border-right: 1px solid var(--bs-border-color);
+  border: none;
+  border-radius: 12px;
+  box-shadow: var(--rh-dashboard-panel-shadow);
+  position: relative;
+  align-self: stretch;
+  height: 100%;
+  max-height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
 }
 
 [data-theme="dark"] .task-library-sidebar {
   background: linear-gradient(180deg, var(--bs-card-bg) 0%, var(--bs-pre-bg) 100%);
+  box-shadow: var(--rh-dashboard-panel-shadow);
 }
 
 .task-library-header {
@@ -343,15 +506,19 @@
   }
 }
 
-/* Workflow info section - theme-aware */
+/* Workflow info section - theme-aware (padding when not using .workflow-builder-metadata-bar) */
 .workflow-info-section {
   background: var(--bs-body-bg);
-  border-bottom: 1px solid var(--bs-border-color);
-  box-shadow: 0 2px 4px var(--rh-shadow-color);
+  border: none;
+  box-shadow: var(--rh-dashboard-panel-shadow);
+}
+
+.workflow-info-section:not(.workflow-builder-metadata-bar) {
+  padding: 15px 20px;
 }
 
 [data-theme="dark"] .workflow-info-section {
-  box-shadow: 0 2px 4px var(--rh-shadow-color);
+  box-shadow: var(--rh-dashboard-panel-shadow);
 }
 
 /* Workflow action panel (Configure Inputs, etc.) - theme-aware */
@@ -360,12 +527,12 @@
   border-radius: 8px;
   margin-left: 10px;
   background: var(--bs-card-bg);
-  border: 1px solid var(--bs-border-color);
-  box-shadow: 0 2px 8px var(--rh-shadow-color);
+  border: none;
+  box-shadow: var(--rh-dashboard-panel-shadow);
 }
 
 [data-theme="dark"] .workflow-action-panel {
-  box-shadow: 0 2px 8px var(--rh-shadow-color);
+  box-shadow: var(--rh-dashboard-panel-shadow);
 }
 
 /* Dark mode support - uses data-theme for app theme toggle */
@@ -374,28 +541,31 @@
 }
 
 [data-theme="dark"] .react-flow__panel {
-  background: rgba(18, 28, 47, 0.94);
+  background: rgba(28, 45, 74, 0.94);
   color: var(--bs-body-color);
-  border-color: var(--bs-border-color);
+  border: none;
+  box-shadow: var(--rh-dashboard-panel-shadow);
 }
 
 [data-theme="dark"] .react-flow__controls {
-  background: rgba(18, 28, 47, 0.94);
-  border-color: var(--bs-border-color);
+  background: rgba(28, 45, 74, 0.94);
+  border: none;
+  box-shadow: var(--rh-dashboard-panel-shadow);
 }
 
 [data-theme="dark"] .react-flow__controls-button:hover {
-  background: rgba(0, 242, 255, 0.1);
+  background: rgba(var(--rh-cyan-rgb), 0.1);
 }
 
 [data-theme="dark"] .react-flow__minimap {
   background: var(--bs-card-bg);
-  border-color: var(--bs-border-color);
+  border: none;
+  box-shadow: var(--rh-dashboard-panel-shadow);
 }
 
 [data-theme="dark"] .react-flow__minimap-mask {
-  fill: rgba(0, 242, 255, 0.07);
-  stroke: rgba(0, 242, 255, 0.4);
+  fill: rgba(var(--rh-cyan-rgb), 0.07);
+  stroke: rgba(var(--rh-cyan-rgb), 0.32);
 }
 
 /* Fallback for prefers-color-scheme when no explicit theme */
@@ -448,41 +618,42 @@
 
 .step-area:nth-child(even) {
   background: linear-gradient(90deg, rgba(var(--bs-primary-rgb), 0.05) 0%, rgba(var(--bs-primary-rgb), 0.06) 100%);
-  border: 2px dashed rgba(var(--bs-primary-rgb), 0.3);
+  border: none;
+  box-shadow: var(--rh-dashboard-panel-shadow);
 }
 
 .step-area:nth-child(odd) {
   background: linear-gradient(90deg, rgba(var(--bs-success-rgb), 0.05) 0%, rgba(var(--bs-success-rgb), 0.06) 100%);
-  border: 2px dashed rgba(var(--bs-success-rgb), 0.3);
+  border: none;
+  box-shadow: var(--rh-dashboard-panel-shadow);
 }
 
 [data-theme="dark"] .step-area:nth-child(even) {
-  background: rgba(0, 242, 255, 0.04);
-  border-color: rgba(0, 242, 255, 0.24);
+  background: rgba(var(--rh-cyan-rgb), 0.04);
+  box-shadow: var(--rh-dashboard-panel-shadow);
 }
 
 [data-theme="dark"] .step-area:nth-child(odd) {
-  background: rgba(176, 38, 255, 0.055);
-  border-color: rgba(176, 38, 255, 0.26);
+  background: rgba(var(--rh-purple-rgb), 0.055);
+  box-shadow: var(--rh-dashboard-panel-shadow);
 }
 
 .step-label {
   background: var(--bs-card-bg);
   padding: 8px 16px;
   border-radius: 20px;
-  border: 1px solid var(--bs-border-color);
+  border: none;
   font-size: 14px;
   font-weight: bold;
   color: var(--bs-body-color);
-  box-shadow: 0 2px 4px var(--rh-shadow-color);
+  box-shadow: var(--rh-dashboard-panel-shadow);
   transition: all 0.2s ease;
 }
 
 [data-theme="dark"] .step-label {
   background: var(--bs-card-bg);
-  border-color: var(--bs-border-color);
   color: var(--bs-body-color);
-  box-shadow: 0 2px 4px var(--rh-shadow-color);
+  box-shadow: var(--rh-dashboard-panel-shadow);
 }
 
 .step-management-panel {
@@ -491,40 +662,40 @@
   top: 50%;
   transform: translateY(-50%);
   background: var(--bs-body-bg);
-  border: 1px solid var(--bs-border-color);
+  border: none;
   border-radius: 8px;
   padding: 15px;
   min-width: 200px;
   max-height: 70vh;
   overflow-y: auto;
-  box-shadow: 0 4px 12px var(--rh-shadow-color);
+  box-shadow: var(--rh-dashboard-panel-shadow);
   z-index: 1000;
 }
 
 [data-theme="dark"] .step-management-panel {
   background: var(--bs-card-bg);
-  box-shadow: 0 4px 12px var(--rh-shadow-color);
+  box-shadow: var(--rh-dashboard-panel-shadow);
 }
 
 /* Workflow steps panel (right side) - theme-aware */
 .workflow-steps-panel {
   background: var(--bs-card-bg);
-  border: 1px solid var(--bs-border-color);
-  box-shadow: 0 4px 12px var(--rh-shadow-color);
+  border: none;
+  box-shadow: var(--rh-dashboard-panel-shadow);
 }
 
 [data-theme="dark"] .workflow-steps-panel {
-  box-shadow: 0 4px 12px var(--rh-shadow-color);
+  box-shadow: var(--rh-dashboard-panel-shadow);
 }
 
 .workflow-step-item.step-even {
   background: var(--bs-subtle-hover-bg);
-  border: 1px solid var(--bs-border-color);
+  border: none;
 }
 
 .workflow-step-item.step-odd {
   background: rgba(var(--bs-success-rgb), 0.08);
-  border: 1px solid var(--bs-border-color);
+  border: none;
 }
 
 [data-theme="dark"] .workflow-step-item.step-even {
@@ -532,12 +703,12 @@
 }
 
 [data-theme="dark"] .workflow-step-item.step-odd {
-  background: rgba(176, 38, 255, 0.09);
+  background: rgba(var(--rh-purple-rgb), 0.09);
 }
 
 .step-item {
   padding: 10px;
-  border: 1px solid var(--bs-border-color);
+  border: none;
   border-radius: 6px;
   transition: all 0.2s ease;
 }
@@ -555,7 +726,7 @@
 }
 
 [data-theme="dark"] .step-item:nth-child(odd) {
-  background: rgba(176, 38, 255, 0.09);
+  background: rgba(var(--rh-purple-rgb), 0.09);
 }
 
 .step-item:hover {
@@ -593,13 +764,17 @@
 
 /* Drag and drop indicators */
 .step-area.drag-over {
-  border-color: var(--bs-primary);
-  border-width: 3px;
+  border: none;
+  box-shadow:
+    0 0 0 3px rgba(var(--bs-primary-rgb), 0.45),
+    var(--rh-dashboard-panel-shadow);
   background: rgba(var(--bs-primary-rgb), 0.1);
 }
 
 [data-theme="dark"] .step-area.drag-over {
-  border-color: var(--rh-cyan);
+  box-shadow:
+    0 0 0 3px rgba(var(--rh-cyan-rgb), 0.4),
+    var(--rh-dashboard-panel-shadow);
   background: rgba(var(--rh-cyan-rgb), 0.08);
 }
 
@@ -607,38 +782,38 @@
   background: var(--bs-primary);
   color: var(--rh-on-cyan);
   transform: scale(1.05);
+  box-shadow: var(--rh-dashboard-panel-shadow);
 }
 
 [data-theme="dark"] .step-area.drag-over .step-label {
   background: rgba(var(--rh-cyan-rgb), 0.2);
   color: var(--bs-body-color);
-  border-color: rgba(var(--rh-cyan-rgb), 0.35);
+  box-shadow: var(--rh-dashboard-panel-shadow);
 }
 
-/* Step area backgrounds (canvas) - subtle fill, no harsh stripes */
+/* Step area backgrounds (canvas) — elevation like dashboard; dashed rims removed */
 .step-area-bg {
-  border: 2px dashed;
+  border: none;
   opacity: 0.9;
+  box-shadow: var(--rh-dashboard-panel-shadow);
 }
 
 .step-area-bg.step-bg-even {
   background: rgba(59, 130, 246, 0.06);
-  border-color: rgba(59, 130, 246, 0.35);
 }
 
 .step-area-bg.step-bg-odd {
   background: rgba(16, 185, 129, 0.06);
-  border-color: rgba(16, 185, 129, 0.35);
 }
 
 [data-theme="dark"] .step-area-bg.step-bg-even {
-  background: rgba(0, 242, 255, 0.045);
-  border-color: rgba(0, 242, 255, 0.3);
+  background: rgba(var(--rh-cyan-rgb), 0.045);
+  box-shadow: var(--rh-dashboard-panel-shadow);
 }
 
 [data-theme="dark"] .step-area-bg.step-bg-odd {
-  background: rgba(176, 38, 255, 0.055);
-  border-color: rgba(176, 38, 255, 0.3);
+  background: rgba(var(--rh-purple-rgb), 0.055);
+  box-shadow: var(--rh-dashboard-panel-shadow);
 }
 
 .step-area-label {
@@ -652,16 +827,15 @@
   white-space: nowrap;
   backdrop-filter: blur(4px);
   background: var(--bs-card-bg);
-  border: 1px solid var(--bs-border-color);
+  border: none;
   color: var(--bs-body-color);
-  box-shadow: 0 2px 4px var(--rh-shadow-color);
+  box-shadow: var(--rh-dashboard-panel-shadow);
 }
 
 [data-theme="dark"] .step-area-label {
   background: var(--bs-card-bg);
-  border-color: var(--bs-border-color);
   color: var(--bs-body-color);
-  box-shadow: 0 2px 4px var(--rh-shadow-color);
+  box-shadow: var(--rh-dashboard-panel-shadow);
 }
 
 /* Workflow start node positioning */
@@ -684,10 +858,12 @@
   }
   
   .step-area {
-    border-width: 3px;
+    outline: 3px solid var(--bs-border-color);
+    outline-offset: 2px;
   }
   
   .step-label {
-    border-width: 2px;
+    outline: 2px solid var(--bs-border-color);
+    outline-offset: 1px;
   }
 } 

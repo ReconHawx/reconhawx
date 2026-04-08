@@ -1,13 +1,14 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { 
-  Container, Row, Col, Card, Form, Button, Alert, Spinner
+import {
+  Container, Row, Col, Card, Button, Alert, Spinner
 } from 'react-bootstrap';
 import { workflowAPI } from '../../services/api';
 import { useProgramFilter } from '../../contexts/ProgramFilterContext';
 import { useAuth } from '../../contexts/AuthContext';
 import VisualWorkflowBuilder from '../../components/VisualWorkflowBuilder';
+import WorkflowBuilderEditorChrome from '../../components/workflow/WorkflowBuilderEditorChrome';
 import { useWorkflowStore } from '../../stores/workflowStore';
 import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
 
@@ -259,86 +260,38 @@ function WorkflowCreate() {
         </Alert>
       )}
 
-      {/* Builder Card */}
-      <Card>
-        <Card.Header>
-          <Row>
-            <Col md={6}>
-              <Form.Group className="mb-2">
-                <Form.Check
-                  type="switch"
-                  id="global-workflow-switch"
-                  label="🌍 Global Workflow (visible to everyone)"
-                  checked={isGlobalWorkflow}
-                  onChange={(e) => handleGlobalToggle(e.target.checked)}
-                  disabled={!isSuperuser}
-                />
-                <Form.Text className="text-muted">
-                  {!isSuperuser 
-                    ? 'Only superusers can create global workflows' 
-                    : isGlobalWorkflow 
-                      ? 'This workflow will be visible to all users' 
-                      : 'This workflow will only be visible to users with program access'}
-                </Form.Text>
-              </Form.Group>
-              
-              {!isGlobalWorkflow && (
-                <Form.Group>
-                  <Form.Label className="mb-0"><small>Program Name *</small></Form.Label>
-                  <Form.Control
-                    as="select"
-                    size="sm"
-                    value={programName}
-                    onChange={(e) => setProgramName(e.target.value)}
-                    disabled={programsLoading}
-                  >
-                    <option value="">Select a program</option>
-                    {programs.map(program => {
-                      const name = typeof program === 'string' ? program : program.name;
-                      return (
-                        <option key={name} value={name}>
-                          {name}
-                        </option>
-                      );
-                    })}
-                  </Form.Control>
-                  {programsLoading && <Form.Text className="text-muted">Loading programs...</Form.Text>}
-                </Form.Group>
-              )}
-            </Col>
-            <Col md={6}>
-              <div className="d-flex justify-content-end align-items-end h-100">
-                <Button variant="outline-secondary" size="sm" className="me-2" onClick={() => navigate('/workflows/list')}>
-                  Cancel
-                </Button>
-                <Button
-                  size="sm"
-                  variant="primary"
-                  disabled={saving}
-                  onClick={handleSubmit}
-                >
-                  {saving ? (
-                    <>
-                      <Spinner animation="border" size="sm" className="me-2" />
-                      {isEdit ? 'Updating...' : 'Creating...'}
-                    </>
-                  ) : (
-                    <>{isEdit ? '💾 Update Workflow' : '✨ Create Workflow'}</>
-                  )}
-                </Button>
-              </div>
-            </Col>
-          </Row>
-        </Card.Header>
-        <Card.Body className="p-2">
-            <div style={{ height: 'calc(100vh - 300px)', border: '1px solid var(--bs-border-color)', borderRadius: '0.375rem' }}>
-              <VisualWorkflowBuilder
-                workflowName={workflowName}
-                setWorkflowName={setWorkflowName}
-                workflowDescription={workflowDescription}
-                setWorkflowDescription={setWorkflowDescription}
-              />
-            </div>
+      {/* Builder Card — borderless: theme card border reads as cyan lines in dark mode */}
+      <Card className="workflow-builder-card-shell border-0">
+        <Card.Body className="p-0 d-flex flex-column" style={{ height: 'calc(100vh - 300px)', minHeight: 0 }}>
+          <WorkflowBuilderEditorChrome
+            isSuperuser={isSuperuser}
+            isGlobalWorkflow={isGlobalWorkflow}
+            onGlobalToggle={handleGlobalToggle}
+            programName={programName}
+            onProgramChange={setProgramName}
+            programs={programs}
+            programsLoading={programsLoading}
+            isEdit={isEdit}
+            saving={saving}
+            onCancel={() => navigate('/workflows/list')}
+            onSave={handleSubmit}
+            workflowName={workflowName}
+            setWorkflowName={setWorkflowName}
+            workflowDescription={workflowDescription}
+            setWorkflowDescription={setWorkflowDescription}
+          />
+          <div
+            className="flex-grow-1 d-flex flex-column"
+            style={{ minHeight: 0 }}
+          >
+            <VisualWorkflowBuilder
+              showMetadataBar={false}
+              workflowName={workflowName}
+              setWorkflowName={setWorkflowName}
+              workflowDescription={workflowDescription}
+              setWorkflowDescription={setWorkflowDescription}
+            />
+          </div>
         </Card.Body>
       </Card>
     </Container>

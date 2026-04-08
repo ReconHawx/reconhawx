@@ -680,7 +680,7 @@ function WorkflowRun() {
                       </Col>
                     </Row>
 
-                    <div style={{ height: '70vh', border: '1px solid var(--bs-border-color)', borderRadius: '0.375rem', position: 'relative' }}>
+                    <div style={{ height: '70vh', position: 'relative' }}>
                       <VisualWorkflowBuilder
                         workflowName={visualWorkflowName}
                         setWorkflowName={setVisualWorkflowName}
