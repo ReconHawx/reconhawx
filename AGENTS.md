@@ -13,7 +13,7 @@ Use this file as a **first stop** for how the repo is laid out and how to run co
 | CT-Monitor | Certificate transparency log monitoring | [`src/ct-monitor/`](src/ct-monitor/) |
 | Event handler | Event consumers / handlers | [`src/event-handler/`](src/event-handler/) |
 | Migrations | PostgreSQL schema migrations (SQL + CLI) | [`src/migrations/`](src/migrations/) |
-| Kubernetes | Base manifests and Kueue (deploy with `kubectl apply -k kubernetes/base/`); upgrades: [`docs/update-reconhawx.md`](docs/update-reconhawx.md), `update-kubernetes.sh` / `update-minikube.sh` | [`kubernetes/`](kubernetes/) |
+| Kubernetes | Base manifests and Kueue (`kubectl apply -k kubernetes/base/`); user lifecycle: [`docs/install-on-kubernetes.md`](docs/install-on-kubernetes.md), [`docs/update-reconhawx.md`](docs/update-reconhawx.md), [`docs/uninstall-reconhawx.md`](docs/uninstall-reconhawx.md); scripts: [`.cursor/rules/k8s-cluster-lifecycle.mdc`](.cursor/rules/k8s-cluster-lifecycle.mdc) | [`kubernetes/`](kubernetes/) |
 
 ## Shell and devenv
 

@@ -1,5 +1,9 @@
 ---
-globs: ["kubernetes/**/kustomization.yaml", "kubernetes/overlays/**/*.yaml"]
+globs:
+  - "kubernetes/**/kustomization.yaml"
+  - "kubernetes/overlays/**/*.yaml"
+  - "kubernetes/base-update/**/*.yaml"
+  - "kubernetes/base-update/pre-apply.d/**"
 ---
 
 # Kustomize Patterns and Conventions
@@ -372,3 +376,22 @@ kustomize build kubernetes/overlays/dev | kubectl apply --validate=true --dry-ru
      - ...existing...
      - {service}
    ```
+
+## Pre-apply hooks (`base-update`)
+
+Shell scripts in **`kubernetes/base-update/pre-apply.d/`** run **before** `kubectl apply -k kubernetes/base-update/` when using **`update-kubernetes.sh`** / **`update-minikube.sh`**. They are **not** Kustomize resources; they exist because **`kubectl apply` does not delete** objects removed from newer manifests.
+
+**Exported by the update scripts for hooks:**
+
+| Variable | Purpose |
+|----------|---------|
+| `RECONHAWX_NS` | Target namespace (default `reconhawx`). |
+| `RECONHAWX_CLUSTER_VERSION` | In-cluster **`reconhawx-version`** / **`APP_VERSION`**, or empty if missing. |
+| `RECONHAWX_BUNDLE_VERSION` | Semver from the bundle being applied. |
+| `RECONHAWX_PRE_APPLY_LIB` | Generated **`reconhawx_kubectl`** helper (see **`kubernetes/base-update/pre-apply.d/README.md`**). |
+
+Hooks may use **`sort -V`** on **`RECONHAWX_CLUSTER_VERSION`** / **`RECONHAWX_BUNDLE_VERSION`** for semver-gated behavior (see that README).
+
+**Manual upgrades:** run the same scripts **in lexicographic order** before `kubectl apply -k kubernetes/base-update/`. If a hook depends on version env vars, export **`RECONHAWX_CLUSTER_VERSION`** and **`RECONHAWX_BUNDLE_VERSION`** accordingly—see **`kubernetes/base-update/pre-apply.d/README.md`**.
+
+Install/update/uninstall **script** behavior: **`.cursor/rules/k8s-cluster-lifecycle.mdc`**.

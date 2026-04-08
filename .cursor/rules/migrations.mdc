@@ -165,12 +165,40 @@ ADD CONSTRAINT fk_child_parent
 FOREIGN KEY (parent_id) REFERENCES parent_table(id) ON DELETE CASCADE;
 ```
 
+## Kubernetes runtime (API init container)
+
+Schema changes on cluster installs run **before** the API serves traffic:
+
+1. **`api` Deployment** init order: **`wait-for-postgresql`** (waits until **`pg_isready`** for the app DB so first-boot **`schema.sql`** finishes), then **`run-migrations`**.
+2. **`run-migrations`** uses the **`migrations`** image (`ghcr.io/<owner>/reconhawx/migrations`), built from **`src/migrations/`**.
+3. Connects via the **`postgresql`** Service using **`postgres-secret`** and **`database.name`** from **`service-config`**.
+
+**Default:** every pending **`V*__*.sql`** is **executed** (required when migrations contain DDL).
+
+**`MIGRATIONS_BASELINE_AUTOMARK=1`** (init-container env): use only when migration files are **bookkeeping** for a DB already fully created from **`kubernetes/base/postgresql/schema.sql`** and you intentionally do **not** want that SQL executed (dump-equivalent state). Leave **`0`** (Deployment default) for normal upgrades.
+
+If **`schema_migrations`** has rows for versions whose SQL never ran, fix by deleting those rows (e.g. `DELETE FROM schema_migrations WHERE version = '<version>';`) and restart the API Pod so **`run-migrations`** runs again.
+
+**Custom registry/tag:** keep aligned:
+
+- **`kubernetes/base/config/service-config.yaml`** — **`migrations.image`**
+- **`kubernetes/base/api/api-deployment.yaml`** — **`initContainers`** → **`run-migrations`** → **`image`**
+
+**Logs:**
+
+```bash
+kubectl logs -n reconhawx deploy/api -c run-migrations
+kubectl describe pod -n reconhawx -l app=api
+```
+
+**Off-cluster:** **`scripts/migrate.sh`** or **`python src/migrations/migrate.py`** with **`DATABASE_URL`**.
+
 ## References
 
 - Migration files: `src/migrations/V*.sql`
 - Migration CLI: `src/migrations/cli.py`
 - Migration runner: `src/migrations/migration_runner.py`
-- Kubernetes API init container: `src/migrations/k8s_entrypoint.py`, image `src/migrations/Dockerfile`, wired in `kubernetes/base/api/api-deployment.yaml` (optional `MIGRATIONS_BASELINE_AUTOMARK=1` only for dump-only bookkeeping; default runs all pending SQL)
+- Kubernetes API init container: `src/migrations/k8s_entrypoint.py`, image `src/migrations/Dockerfile`, wired in `kubernetes/base/api/api-deployment.yaml`
 - Shell wrapper: `scripts/migrate.sh`
 - SQLAlchemy models: `src/api/app/models/postgres.py`
 - Quick index (agents / contributors): `AGENTS.md` (repository root)

@@ -42,7 +42,7 @@ Use repo root **`update-kubernetes.sh`** or **`update-minikube.sh`**, or manuall
 
 Manifests run PostgreSQL as a **StatefulSet** with a **headless** Service (`postgresql-headless`) for pod identity and the existing **NodePort** Service `postgresql` for clients. If the cluster still has **`deployment.apps/postgresql`** from an older release, do **not** apply the StatefulSet while that Deployment is running: both select `app=postgresql`, so the Service could send traffic to two Postgres instances.
 
-**Preferred:** run **`./update-kubernetes.sh`** or **`./update-minikube.sh`** from the release you are upgrading to. Pre-apply hooks in [`base-update/pre-apply.d/`](base-update/pre-apply.d/) drop the legacy Deployment and wait for pods to exit before `kubectl apply`. See **[`docs/update-reconhawx.md`](../docs/update-reconhawx.md#pre-apply-hooks)**.
+**Preferred:** run **`./update-kubernetes.sh`** or **`./update-minikube.sh`** from the release you are upgrading to. Pre-apply hooks in [`base-update/pre-apply.d/`](base-update/pre-apply.d/) drop the legacy Deployment and wait for pods to exit before `kubectl apply`. See **[`docs/update-reconhawx.md`](../docs/update-reconhawx.md)** and [`base-update/pre-apply.d/README.md`](base-update/pre-apply.d/README.md).
 
 **Manual:** plan a short database downtime window, then:
 

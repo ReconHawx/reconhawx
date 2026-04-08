@@ -1,0 +1,48 @@
+---
+globs:
+  - "install-kubernetes.sh"
+  - "install-minikube.sh"
+  - "update-kubernetes.sh"
+  - "update-minikube.sh"
+  - "uninstall-kubernetes.sh"
+  - "reconhawx-k8s-common.sh"
+  - "reconhawx-kueue-quota-sync.py"
+---
+
+# Cluster install / update / uninstall (ReconHawx user scripts)
+
+User-facing summaries live under **`docs/`**. This rule holds implementation detail for agents working on the repo-root lifecycle scripts.
+
+## Install manifest resolution
+
+**`install-kubernetes.sh`** / **`install-minikube.sh`**:
+
+- **Preferred user path:** unpacked **release source tarball** — uses **`kubernetes/base` in place** (extract dir or **`/tmp/reconhawx-release.*`** after script download).
+- **Directory with a `.git` subdirectory:** copies **`kubernetes/base`** into **`INSTALL_STAGING_DIR`** (default **`/tmp/reconhawx`**), writes generated secrets there, applies from staging; **deletes** staging after **success** (failed runs leave it for inspection). User must confirm if staging path already exists.
+- **`--from-release`** / **`RECONHAWX_FROM_RELEASE=1`**: force latest GitHub **source** tarball for manifests (see **`RECONHAWX_GITHUB_REPO`**).
+- After **`kubectl apply`**, **`reconhawx-kueue-quota-sync.py`** adjusts **ClusterQueue** `nominalQuota` to match nodes labeled **`reconhawx.runner`** / **`reconhawx.worker`** (requires **`python3`**). Documented from a user angle in **`kubernetes/README.md`**.
+
+Install scripts **do not** run SQL migrations; the API Deployment’s **`run-migrations`** init container does (see **`migrations.mdc`**).
+
+## Update scripts
+
+**`update-kubernetes.sh`** / **`update-minikube.sh`** apply **`kubernetes/base-update/`** (not full **`base`**) so **jwt-secret** / **postgres-secret** from the repo are not reapplied. They run **`kubernetes/base-update/pre-apply.d/*.sh`** in order, then **`kubectl apply -k kubernetes/base-update/`**, then **`kubectl rollout restart`** on **api**, **frontend**, **event-handler**, **ct-monitor**. **`RECONHAWX_KUEUE_RESYNC_QUOTAS=1`** runs **`reconhawx-kueue-quota-sync.py`** after apply.
+
+Pre-apply hook environment contract: **`.cursor/rules/k8s-kustomize-patterns.mdc`** (Pre-apply hooks section).
+
+## Uninstall script (`uninstall-kubernetes.sh`)
+
+**User flow:** detect **Kueue**, **ingress-nginx**, **MetalLB** (`metallb-system`); prompt once each (if detected) whether to remove; summarize; user types **`reconhawx`** to delete namespace **`reconhawx`**; remove cluster-scoped Kueue **ClusterQueue** / **ResourceFlavor** matching **`kubernetes/base/kueue`** defaults; optional full removals below.
+
+**Full Kueue removal** (when user opts in and nothing else needs Kueue): delete **`kueue.x-k8s.io`** custom resources, visibility **APIService**, **`v0.11.1`** release manifests (same URLs as install), namespace **`kueue-system`**, leftover **`*.kueue.x-k8s.io` CRDs**, clear namespace finalizers (**`jq`** helps). Deleting only **`kueue-system`** often **hangs** if webhooks/CRDs remain.
+
+**Full ingress-nginx removal** (cloud static manifest path): remove **ValidatingWebhookConfiguration** / **MutatingWebhookConfiguration** first (they block namespace teardown), **`kubectl delete -f`** using **`INGRESS_NGINX_DEPLOY_URL`** (default **`controller-v1.14.2`** cloud deploy), **IngressClass nginx**, optional **`ingressclassparams.networking.k8s.io`** CRD, matching **ClusterRole**/**ClusterRoleBinding**, namespace **`ingress-nginx`** with finalizer cleanup.
+
+**MetalLB:** delete namespace **`metallb-system`**.
+
+**Overrides:** **`INGRESS_NGINX_DEPLOY_URL`**, **`KUEUE_VERSION`**, **`KUEUE_MANIFESTS_URL`**, **`KUEUE_VISIBILITY_URL`** must match what was installed.
+
+## Related
+
+- **`kubernetes/README.md`** — Quick Start, upgrading, PostgreSQL StatefulSet migration notes.
+- **`docs/install-on-kubernetes.md`**, **`docs/uninstall-reconhawx.md`** — user docs.

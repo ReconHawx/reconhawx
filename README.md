@@ -29,8 +29,12 @@ Supporting pieces include **PostgreSQL** for persistence, **NATS** (with JetStre
 
 ## Documentation and Setup
 
-- **[`docs/install-on-minikube.md`](docs/install-on-minikube.md)** — How to install on Minikube
-- **[`docs/install-on-kubernetes.md`](docs/install-on-kubernetes.md)** — How to install on a Kubernetes cluster
+Install and upgrade use manifests and scripts from a [**Source code** archive on GitHub Releases](https://github.com/ReconHawx/reconhawx/releases): download the archive for the version you want, extract it, and run the scripts from the top-level directory. See the install guides for details.
+
+- **[`docs/install-on-minikube.md`](docs/install-on-minikube.md)** — Install on Minikube
+- **[`docs/install-on-kubernetes.md`](docs/install-on-kubernetes.md)** — Install on a Kubernetes cluster
+- **[`docs/update-reconhawx.md`](docs/update-reconhawx.md)** — Upgrade an existing install
+- **[`docs/uninstall-reconhawx.md`](docs/uninstall-reconhawx.md)** — Remove ReconHawx from the cluster
 
 ## Credits
 
