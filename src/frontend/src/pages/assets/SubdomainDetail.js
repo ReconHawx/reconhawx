@@ -347,36 +347,6 @@ function SubdomainDetail() {
         </Col>
       </Row>
 
-      <Row>
-        <Col>
-          <Card>
-            <Card.Header>
-              <h5 className="mb-0">🔍 Additional Information</h5>
-            </Card.Header>
-            <Card.Body>
-              <Row>
-                <Col md={6}>
-                  <h6>Discovery Information</h6>
-                  <ul className="list-unstyled">
-                    <li><strong>Object ID:</strong> <code>{domain._id}</code></li>
-                                    <li><strong>First Discovered:</strong> {formatSubdomainDate(domain.created_at)}</li>
-                <li><strong>Last Seen:</strong> {formatSubdomainDate(domain.updated_at)}</li>
-                  </ul>
-                </Col>
-                <Col md={6}>
-                  <h6>Statistics</h6>
-                  <ul className="list-unstyled">
-                    <li><strong>IP Addresses Count:</strong> {domain.ip ? domain.ip.length : 0}</li>
-                    <li><strong>Has CNAME:</strong> {domain.cname_record ? 'Yes' : 'No'}</li>
-                    <li><strong>Wildcard Domain:</strong> {domain.is_wildcard ? 'Yes' : 'No'}</li>
-                  </ul>
-                </Col>
-              </Row>
-            </Card.Body>
-          </Card>
-        </Col>
-      </Row>
-
       {/* Full Domain JSON */}
       <Row>
         <Col>
