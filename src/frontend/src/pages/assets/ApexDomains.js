@@ -886,8 +886,7 @@ function ApexDomains() {
         <Col>
           <Card>
             <Card.Header className="d-flex justify-content-between align-items-center">
-              <h5 className="mb-0">Apex Domains</h5>
-              <div className="d-flex align-items-center">
+              <div className="d-flex align-items-center ms-auto">
                 <Badge bg="secondary" className="me-3">Total: {totalItems}</Badge>
                 <Button
                   variant="outline-primary"

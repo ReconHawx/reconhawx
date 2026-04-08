@@ -40,8 +40,23 @@ The UI is **Bootstrap 5 + react-bootstrap**, not MUI or Tailwind. Theme switchin
 | `--rh-cyan`, `--rh-cyan-rgb`, `--rh-on-cyan` | Logo / neon accents |
 | `--rh-highlight-bg` | Soft “info” chip / highlight background |
 | `--rh-mark-bg`, `--rh-mark-color` | Search / text mark highlights |
-| `--rh-overlay-scrim`, `--rh-shadow-color` | Sidebars, overlays, elevation |
+| `--rh-overlay-scrim`, `--rh-shadow-color` | Sidebars, overlays, soft elevation |
+| `--rh-dashboard-panel-shadow` | Dashboard cards (`.dashboard-panel`) and workflow builder section panels — borderless, same layered shadow in light/dark |
 | `--rh-code-bg`, `--rh-code-color` | Inline code where pre tokens differ |
+| `--rh-table-border-color` | Table **row** lines (and list-group); stronger in light — no inset “frame” around tables |
+| `--rh-table-header-bg` | `thead` band — set **explicit hex per theme** in `:root` / `[data-theme="dark"]`; do **not** define on `:root` as only `var(--bs-secondary-bg)` (it resolves with light `--bs-secondary-bg` and that **computed** value inherits into dark, gray-washing headers) |
+
+## Palette summary (index.css)
+
+Light (`:root`): body `#edf1f7`; card `#f7f9fc`; thead `#dce3ef` (`--rh-table-header-bg`); borders `rgba(0, 151, 167, 0.22–0.28)`; primary `#0097a7` / `rgb(0, 151, 167)`; shared brand `--rh-cyan` / `--rh-purple` unchanged.
+
+Dark (`[data-theme="dark"]`): body `#121d32`; card `#1c2d4a`; table surface `#18243d`; thead band `#223651` (`--rh-table-header-bg`); elevated `#233451`; `--rh-table-border-color` for row lines; card rim cyan ~`0.4` alpha; muted text `#9abdd0`; neon `--bs-primary` / `--bs-info` for fills and dark-nav chrome.
+
+Semantic **outlined cards** (`.card.border-*`): **light + dark** use one rim — `var(--bs-card-border-color)` (markup keeps `border-primary` / `border-danger` / … without rainbow rims). **Dashboard** uses `.dashboard-panel` instead of `border-*`: **borderless** with a soft **shadow** (light: `var(--rh-shadow-color)` stack; dark: deeper neutral shadow so panels lift off `#121d32`). Headers keep a thin `border-bottom` for separation.
+
+**Dark-mode links:** do not style every `a` with `!important` — that overrides `Button as={Link}` (`a.btn`); scope prose links with `:not(.btn)` (and other Bootstrap chrome) or set `a.btn` back to `var(--bs-btn-color)` / `var(--bs-btn-hover-color)`.
+
+**Tables:** prefer horizontal row lines only; do not add inset `box-shadow` “frames” around `.table` / `.table-responsive`.
 
 Add new **named** tokens in `index.css` (`:root` + `[data-theme="dark"]`) if a pattern repeats; do not scatter one-off hex.
 

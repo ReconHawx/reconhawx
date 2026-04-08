@@ -250,8 +250,7 @@ function ExternalLinks() {
         <Col>
           <Card>
             <Card.Header className="d-flex justify-content-between align-items-center">
-              <h5 className="mb-0">External Links</h5>
-              <div className="d-flex align-items-center">
+              <div className="d-flex align-items-center ms-auto">
                 <Button variant="link" size="sm" className="me-2 p-0" onClick={() => {
                   setLinkSearch('');
                   setDebouncedLinkSearch('');

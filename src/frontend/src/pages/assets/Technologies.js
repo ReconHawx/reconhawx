@@ -393,8 +393,7 @@ function Technologies() {
         <Col>
           <Card>
             <Card.Header className="d-flex justify-content-between align-items-center">
-              <h5 className="mb-0">Technology Assets</h5>
-              <div className="d-flex align-items-center gap-2">
+              <div className="d-flex align-items-center gap-2 ms-auto">
                 <Badge bg="secondary">
                   Showing {filteredTechnologies.length} of {pagination.total_items} technologies
                 </Badge>

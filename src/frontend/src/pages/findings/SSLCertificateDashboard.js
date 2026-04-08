@@ -1282,8 +1282,7 @@ const SSLCertificateDashboard = () => {
 
       {/* Critical SSL/TLS Security Findings */}
       <Card className="mb-4 border-danger">
-        <Card.Header className="bg-danger d-flex justify-content-between align-items-center">
-          <h5 className="mb-0">🚨 SSL/TLS Security Analysis</h5>
+        <Card.Header className="bg-danger d-flex justify-content-end align-items-center">
           <Link
             to={`/findings/nuclei${programParam}&finding_type=ssl`}
             className="btn btn-sm btn-outline-light"

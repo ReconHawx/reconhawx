@@ -541,24 +541,20 @@ const NucleiFindings = () => {
       <div className="row">
         <div className="col">
           <div className="card">
-            <div className="card-header d-flex justify-content-between align-items-center">
-              <h5 className="mb-0">
-                Findings {pagination.total_items ? `(${pagination.total_items} total)` : ''}
-                {Object.keys(severityDistribution).length > 0 && (
-                  <div className="d-flex align-items-center mt-2">
-                    {Object.entries(severityColors).map(([severity, color]) => {
-                      const count = severityDistribution[severity] || 0;
-                      if (count === 0) return null;
-                      return (
-                        <span key={severity} className={`badge bg-${color} me-2`}>
-                          {severity}: {count}
-                        </span>
-                      );
-                    })}
-                  </div>
-                )}
-              </h5>
-              <div className="d-flex align-items-center">
+            <div className="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+              <div className="d-flex flex-wrap align-items-center gap-2">
+                {Object.keys(severityDistribution).length > 0 &&
+                  Object.entries(severityColors).map(([severity, color]) => {
+                    const count = severityDistribution[severity] || 0;
+                    if (count === 0) return null;
+                    return (
+                      <span key={severity} className={`badge bg-${color}`}>
+                        {severity}: {count}
+                      </span>
+                    );
+                  })}
+              </div>
+              <div className="d-flex align-items-center ms-auto">
                 <Button variant="link" size="sm" className="me-2 p-0" onClick={clearFilters} aria-label="Reset all filters">Reset filters</Button>
                 <Button
                   variant="outline-primary"
