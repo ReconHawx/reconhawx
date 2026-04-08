@@ -375,35 +375,6 @@ function CertificateDetail() {
         </Col>
       </Row>
 
-      <Row>
-        <Col>
-          <Card className="dashboard-panel mb-4">
-            <Card.Header>
-              <h5 className="mb-0">🔍 Additional Information</h5>
-            </Card.Header>
-            <Card.Body>
-              <Row>
-                <Col md={6}>
-                  <h6>Certificate Details</h6>
-                  <ul className="list-unstyled">
-                    <li><strong>Object ID:</strong> <code>{certificate._id}</code></li>
-                    <li><strong>Has SAN Names:</strong> {certificate.subject_an && certificate.subject_an.length > 0 ? 'Yes' : 'No'}</li>
-                    <li><strong>SAN Count:</strong> {certificate.subject_an ? certificate.subject_an.length : 0}</li>
-                  </ul>
-                </Col>
-                <Col md={6}>
-                  <h6>Security Information</h6>
-                  <ul className="list-unstyled">
-                    <li><strong>Is Valid:</strong> {!isExpired(certificate.valid_until) ? 'Yes' : 'No'}</li>
-                    <li><strong>Expires Soon:</strong> {isExpiringSoon(certificate.valid_until) ? 'Yes' : 'No'}</li>
-                  </ul>
-                </Col>
-              </Row>
-            </Card.Body>
-          </Card>
-        </Col>
-      </Row>
-
       {/* Full Certificate JSON */}
       <Row>
         <Col>

@@ -1197,37 +1197,6 @@ function WorkflowStatusDetail() {
           </div>
         )}
 
-        {/* Additional Metadata */}
-        {(logs.workflow_id || logs.total_steps) && (
-          <div className="mb-4">
-            <h6 className="fw-bold text-primary mb-3">📋 Additional Information</h6>
-            <Row>
-              {logs.workflow_id && (
-                <Col md={4}>
-                  <div className="bg-light p-3 rounded">
-                    <div className="d-flex align-items-center mb-2">
-                      <span className="me-2">🔗</span>
-                      <strong>Workflow ID</strong>
-                    </div>
-                    <code className="text-break">{logs.workflow_id}</code>
-                  </div>
-                </Col>
-              )}
-              {logs.total_steps && (
-                <Col md={4}>
-                  <div className="bg-light p-3 rounded">
-                    <div className="d-flex align-items-center mb-2">
-                      <span className="me-2">📏</span>
-                      <strong>Total Steps</strong>
-                    </div>
-                    <Badge bg="info" className="fs-6">{logs.total_steps}</Badge>
-                  </div>
-                </Col>
-              )}
-            </Row>
-          </div>
-        )}
-
         {/* Raw Data Section */}
         {showRawData && (
           <div className="mt-4">

@@ -475,43 +475,6 @@ function ApexDomainDetail() {
         </Col>
       </Row>
 
-      <Row>
-        <Col>
-          <Card className="dashboard-panel mb-4">
-            <Card.Header>
-              <h5 className="mb-0">🔍 Additional Information</h5>
-            </Card.Header>
-            <Card.Body>
-              <Row>
-                <Col md={6}>
-                  <h6>Discovery Information</h6>
-                  <ul className="list-unstyled">
-                    <li><strong>Object ID:</strong> <code>{apexDomain._id}</code></li>
-                                    <li><strong>First Discovered:</strong> {formatApexDomainDate(apexDomain.created_at)}</li>
-                <li><strong>Last Seen:</strong> {formatApexDomainDate(apexDomain.updated_at)}</li>
-                  </ul>
-                </Col>
-                <Col md={6}>
-                  <h6>Statistics</h6>
-                  <ul className="list-unstyled">
-                    <li><strong>IP Addresses Count:</strong> {apexDomain.ip ? apexDomain.ip.length : 0}</li>
-                    <li><strong>Has CNAME:</strong> {apexDomain.cname ? 'Yes' : 'No'}</li>
-                    <li>
-                      <strong>WHOIS Data Available:</strong>{' '}
-                      {apexDomain.whois_data ||
-                      apexDomain.whois_status ||
-                      apexDomain.whois_registrar
-                        ? 'Yes'
-                        : 'No'}
-                    </li>
-                  </ul>
-                </Col>
-              </Row>
-            </Card.Body>
-          </Card>
-        </Col>
-      </Row>
-
       {/* Full Apex Domain JSON */}
       <Row>
         <Col>

@@ -401,36 +401,6 @@ function ServiceDetail() {
         </Col>
       </Row>
 
-      <Row>
-        <Col>
-          <Card className="dashboard-panel mb-4">
-            <Card.Header>
-              <h5 className="mb-0">🔍 Additional Information</h5>
-            </Card.Header>
-            <Card.Body>
-              <Row>
-                <Col md={6}>
-                  <h6>Discovery Information</h6>
-                  <ul className="list-unstyled">
-                    <li><strong>Object ID:</strong> <code>{service._id}</code></li>
-                                    <li><strong>First Discovered:</strong> {formatServiceDate(service.created_at)}</li>
-                <li><strong>Last Seen:</strong> {formatServiceDate(service.updated_at)}</li>
-                  </ul>
-                </Col>
-                <Col md={6}>
-                  <h6>Service Statistics</h6>
-                  <ul className="list-unstyled">
-                    <li><strong>Has Banner:</strong> {service.banner ? 'Yes' : 'No'}</li>
-                    <li><strong>Has Version Info:</strong> {service.version ? 'Yes' : 'No'}</li>
-                    <li><strong>Protocol Type:</strong> {service.protocol || 'Unknown'}</li>
-                  </ul>
-                </Col>
-              </Row>
-            </Card.Body>
-          </Card>
-        </Col>
-      </Row>
-
       {/* Full Service JSON */}
       <Row>
         <Col>
