@@ -477,7 +477,7 @@ function URLDetail() {
 
       <Row>
         <Col md={8}>
-          <Card className="mb-4">
+          <Card className="dashboard-panel mb-4">
             <Card.Header>
               <h5 className="mb-0">🌐 URL Information</h5>
             </Card.Header>
@@ -536,7 +536,7 @@ function URLDetail() {
         </Col>
 
         <Col md={4}>
-          <Card className="mb-4">
+          <Card className="dashboard-panel mb-4">
             <Card.Header>
               <h5 className="mb-0">📋 Basic Information</h5>
             </Card.Header>
@@ -594,7 +594,7 @@ function URLDetail() {
       {(url.certificate_id || (url.service_ids && url.service_ids.length > 0) || url.service_id || url.subdomain_id) && (
         <Row>
           <Col>
-            <Card className="mb-4">
+            <Card className="dashboard-panel mb-4">
               <Card.Header>
                 <h5 className="mb-0">🔗 Related Assets</h5>
               </Card.Header>
@@ -698,7 +698,7 @@ function URLDetail() {
       {url.technologies && url.technologies.length > 0 && (
         <Row>
           <Col>
-            <Card className="mb-4">
+            <Card className="dashboard-panel mb-4">
               <Card.Header>
                 <h5 className="mb-0">⚙️ Technologies</h5>
               </Card.Header>
@@ -719,7 +719,7 @@ function URLDetail() {
       {/* Redirect Chain Section */}
       <Row>
         <Col>
-          <Card className="mb-4">
+          <Card className="dashboard-panel mb-4">
             <Card.Header>
               <h5 className="mb-0">🔄 Redirect Chain</h5>
             </Card.Header>
@@ -733,7 +733,7 @@ function URLDetail() {
       {/* Screenshots Section */}
       <Row>
         <Col>
-          <Card className="mb-4">
+          <Card className="dashboard-panel mb-4">
             <Card.Header>
               <div className="d-flex justify-content-between align-items-center">
                 <h5 className="mb-0">📸 Screenshots</h5>
@@ -849,7 +849,7 @@ function URLDetail() {
       {/* Sitemap Section */}
       <Row>
         <Col>
-          <Card className="mb-4">
+          <Card className="dashboard-panel mb-4">
             <Card.Header>
               <h5 className="mb-0">🗺️ Sitemap</h5>
             </Card.Header>
@@ -877,13 +877,14 @@ function URLDetail() {
             currentNotes={url.notes || ''}
             apiUpdateFunction={urlAPI.updateNotes}
             onNotesUpdate={handleNotesUpdate}
+            cardClassName="dashboard-panel"
           />
         </Col>
       </Row>
 
       <Row>
         <Col>
-          <Card>
+          <Card className="dashboard-panel mb-4">
             <Card.Header>
               <h5 className="mb-0">🔍 Additional Information</h5>
             </Card.Header>
@@ -914,7 +915,7 @@ function URLDetail() {
       {/* Full URL JSON */}
       <Row>
         <Col>
-          <Card className="mb-4">
+          <Card className="dashboard-panel mb-4">
             <Card.Header className="d-flex justify-content-between align-items-center">
               <h6 className="mb-0">Full URL (JSON)</h6>
               <div>

@@ -219,7 +219,7 @@ function CertificateDetail() {
 
       <Row>
         <Col md={8}>
-          <Card className="mb-4">
+          <Card className="dashboard-panel mb-4">
             <Card.Header>
               <h5 className="mb-0">📜 Certificate Information</h5>
             </Card.Header>
@@ -263,7 +263,7 @@ function CertificateDetail() {
         </Col>
 
         <Col md={4}>
-          <Card className="mb-4">
+          <Card className="dashboard-panel mb-4">
             <Card.Header>
               <h5 className="mb-0">📋 Basic Information</h5>
             </Card.Header>
@@ -293,7 +293,7 @@ function CertificateDetail() {
 
       <Row>
         <Col md={6}>
-          <Card className="mb-4">
+          <Card className="dashboard-panel mb-4">
             <Card.Header>
               <h5 className="mb-0">📅 Validity Period</h5>
             </Card.Header>
@@ -320,7 +320,7 @@ function CertificateDetail() {
         </Col>
 
         <Col md={6}>
-          <Card className="mb-4">
+          <Card className="dashboard-panel mb-4">
             <Card.Header>
               <h5 className="mb-0">🕒 Discovery Information</h5>
             </Card.Header>
@@ -345,7 +345,7 @@ function CertificateDetail() {
       {certificate.subject_an && certificate.subject_an.length > 0 && (
         <Row>
           <Col>
-            <Card className="mb-4">
+            <Card className="dashboard-panel mb-4">
               <Card.Header>
                 <h5 className="mb-0">🌐 Subject Alternative Names (SAN)</h5>
               </Card.Header>
@@ -371,13 +371,14 @@ function CertificateDetail() {
             currentNotes={certificate.notes || ''}
             apiUpdateFunction={certificateAPI.updateNotes}
             onNotesUpdate={handleNotesUpdate}
+            cardClassName="dashboard-panel"
           />
         </Col>
       </Row>
 
       <Row>
         <Col>
-          <Card>
+          <Card className="dashboard-panel mb-4">
             <Card.Header>
               <h5 className="mb-0">🔍 Additional Information</h5>
             </Card.Header>
@@ -407,7 +408,7 @@ function CertificateDetail() {
       {/* Full Certificate JSON */}
       <Row>
         <Col>
-          <Card className="mb-4">
+          <Card className="dashboard-panel mb-4">
             <Card.Header className="d-flex justify-content-between align-items-center">
               <h6 className="mb-0">Full Certificate (JSON)</h6>
               <div>

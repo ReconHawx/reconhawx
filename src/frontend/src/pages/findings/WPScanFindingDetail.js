@@ -183,7 +183,7 @@ const WPScanFindingDetail = () => {
 
       <div className="row">
         <div className="col-lg-8">
-          <div className="card">
+          <div className="card dashboard-panel">
             <div className="card-header">
               <h5 className="card-title mb-0">Finding Details</h5>
             </div>
@@ -286,7 +286,7 @@ const WPScanFindingDetail = () => {
 
           {/* Vulnerability Information */}
           {(finding.cve_ids?.length > 0 || finding.references?.length > 0) && (
-            <div className="card mt-4">
+            <div className="card dashboard-panel mt-4">
               <div className="card-header">
                 <h5 className="card-title mb-0">Vulnerability Information</h5>
               </div>
@@ -337,7 +337,7 @@ const WPScanFindingDetail = () => {
 
           {/* Enumeration Data */}
           {finding.enumeration_data && Object.keys(finding.enumeration_data).length > 0 && (
-            <div className="card mt-4">
+            <div className="card dashboard-panel mt-4">
               <div className="card-header">
                 <h5 className="card-title mb-0">Enumeration Data</h5>
               </div>
@@ -411,7 +411,7 @@ const WPScanFindingDetail = () => {
         </div>
 
         <div className="col-lg-4">
-          <div className="card">
+          <div className="card dashboard-panel">
             <div className="card-header">
               <h5 className="card-title mb-0">Metadata</h5>
             </div>
@@ -459,7 +459,7 @@ const WPScanFindingDetail = () => {
             </div>
           </div>
 
-          <div className="card mt-4">
+          <div className="card dashboard-panel mt-4">
             <div className="card-header">
               <h5 className="card-title mb-0">Related Assets</h5>
             </div>
@@ -526,6 +526,7 @@ const WPScanFindingDetail = () => {
               currentNotes={finding.notes || ''}
               apiUpdateFunction={api.findings.wpscan.updateNotes}
               onNotesUpdate={handleNotesUpdate}
+              cardClassName="dashboard-panel"
             />
           </div>
         </div>

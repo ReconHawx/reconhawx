@@ -14,7 +14,6 @@ function BrokenLinkDetail() {
   const [finding, setFinding] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [updating, setUpdating] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [updateSuccess, setUpdateSuccess] = useState(false);
@@ -48,20 +47,11 @@ function BrokenLinkDetail() {
     }
   }, [findingId, fetchFinding]);
 
-  const handleUpdateNotes = async (notes) => {
-    setUpdating(true);
-    setUpdateSuccess(false);
-    try {
-      await brokenLinksAPI.update(findingId, { notes });
-      await fetchFinding();
-      setUpdateSuccess(true);
-      setTimeout(() => setUpdateSuccess(false), 3000);
-    } catch (err) {
-      setError(err.message || 'Failed to update notes');
-    } finally {
-      setUpdating(false);
-    }
-  };
+  const handleNotesSaved = useCallback(() => {
+    fetchFinding();
+    setUpdateSuccess(true);
+    setTimeout(() => setUpdateSuccess(false), 3000);
+  }, [fetchFinding]);
 
   const handleDelete = async () => {
     setDeleting(true);
@@ -135,7 +125,7 @@ function BrokenLinkDetail() {
 
   return (
     <Container fluid className="mt-4">
-      <Card>
+      <Card className="dashboard-panel mb-4">
         <Card.Header>
           <Row className="align-items-center">
             <Col>
@@ -245,7 +235,7 @@ function BrokenLinkDetail() {
             </Col>
             <Col md={6}>
               {finding.response_data && (
-                <Card className="mb-3">
+                <Card className="dashboard-panel mb-3">
                   <Card.Header>Response Data</Card.Header>
                   <Card.Body>
                     <pre style={{ maxHeight: '400px', overflow: 'auto', backgroundColor: 'var(--bs-tertiary-bg)', padding: '10px' }}>
@@ -260,10 +250,15 @@ function BrokenLinkDetail() {
           <Row>
             <Col>
               <NotesSection
-                notes={finding.notes || ''}
-                onUpdate={handleUpdateNotes}
-                updating={updating}
-                entityType="broken link"
+                assetType="broken link"
+                assetId={findingId}
+                currentNotes={finding.notes || ''}
+                apiUpdateFunction={async (id, notes) => {
+                  await brokenLinksAPI.update(id, { notes });
+                  return { status: 'success' };
+                }}
+                onNotesUpdate={handleNotesSaved}
+                cardClassName="dashboard-panel"
               />
             </Col>
           </Row>

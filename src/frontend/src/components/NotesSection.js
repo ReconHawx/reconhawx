@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { Card, Button, Form, Alert, Spinner } from 'react-bootstrap';
 
-const NotesSection = ({ 
-  assetType, 
-  assetId, 
-  currentNotes = '', 
+const NotesSection = ({
+  assetType,
+  assetId,
+  currentNotes = '',
   apiUpdateFunction,
-  onNotesUpdate = null 
+  onNotesUpdate = null,
+  cardClassName = '',
 }) => {
   const [notes, setNotes] = useState(currentNotes);
   const [originalNotes, setOriginalNotes] = useState(currentNotes);
@@ -60,7 +61,7 @@ const NotesSection = ({
   const hasChanges = notes.trim() !== originalNotes.trim();
 
   return (
-    <Card className="mb-4">
+    <Card className={['mb-4', cardClassName].filter(Boolean).join(' ')}>
       <Card.Header className="d-flex justify-content-between align-items-center">
         <h5 className="mb-0">📝 Investigation Notes</h5>
         <div>
