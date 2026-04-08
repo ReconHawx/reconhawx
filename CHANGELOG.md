@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.2](https://github.com/ReconHawx/reconhawx/compare/v0.12.1...v0.12.2) (2026-04-08)
+
+
+### Bug Fixes
+
+* **runner:** run port scan heredoc correctly under single-quoted job commands ([3e471ae](https://github.com/ReconHawx/reconhawx/commit/3e471ae81345f21e645a4e6f763617087f054c8d))
+
 ## [0.12.1](https://github.com/ReconHawx/reconhawx/compare/v0.12.0...v0.12.1) (2026-04-08)
 
 
