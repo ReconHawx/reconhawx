@@ -43,7 +43,7 @@ Set `DATABASE_URL` for your environment. The wrapper defaults to a local Postgre
 
 Equivalent CLI: `python src/migrations/migrate.py ...` (see [`src/migrations/migrate.py`](src/migrations/migrate.py)).
 
-**Conventions** (versioning, UP/DOWN SQL, model alignment): [`.cursor/rules/migrations.mdc`](.cursor/rules/migrations.mdc).
+**Conventions** (versioning, UP/DOWN SQL, model alignment): [`.cursor/rules/migrations.mdc`](.cursor/rules/migrations.mdc). **UP migrations must be idempotent**: re-running against a DB that already matches (for example after a restore from [`kubernetes/base/postgresql/schema.sql`](kubernetes/base/postgresql/schema.sql)) or after a partial run must not fail. Patterns: `IF NOT EXISTS` / `IF EXISTS`, conditional `DO` blocks, `duplicate_object` for constraints—see the migrations rule.
 
 **Kubernetes:** the API `Deployment` runs init containers before `uvicorn`: **`wait-for-postgresql`** (`postgres:15`, `pg_isready` against the `postgresql` Service and app database) then **`run-migrations`** (pending SQL). Image: **`run-migrations`** init container in [`kubernetes/base/api/api-deployment.yaml`](kubernetes/base/api/api-deployment.yaml) (semver tag aligned with [`kubernetes/base/config/reconhawx-version.yaml`](kubernetes/base/config/reconhawx-version.yaml) via [`kubernetes/base/components/pinned-releases`](kubernetes/base/components/pinned-releases/kustomization.yaml)). Logs: `kubectl logs -n reconhawx deploy/api -c run-migrations`. Entrypoint: [`src/migrations/k8s_entrypoint.py`](src/migrations/k8s_entrypoint.py). Optional env **`MIGRATIONS_BASELINE_AUTOMARK=1`** skips executing pending SQL when treating files as dump-only bookkeeping (default **`0`**: always run pending migrations). **In-cluster upgrades:** [`update-kubernetes.sh`](update-kubernetes.sh) / [`update-minikube.sh`](update-minikube.sh) apply [`kubernetes/base-update/`](kubernetes/base-update/kustomization.yaml) (no secret re-apply from git) and restart app deployments.
 
@@ -123,7 +123,7 @@ Agent skills are markdown guides under [`.cursor/skills/`](.cursor/skills/). Cur
 
 ## Agent workflow (minimal)
 
-1. **Schema changes**: Add a new migration under `src/migrations/`; do not rewrite applied migration files. Keep SQLAlchemy models in sync (see migrations rule). Verify with `status` / `run --dry-run` before applying.
+1. **Schema changes**: Add a new migration under `src/migrations/`; do not rewrite applied migration files. Keep SQLAlchemy models in sync (see migrations rule). Write **idempotent** UP SQL (same rule as above). Verify with `status` / `run --dry-run` before applying.
 2. **Deploy / Kueue**: Public users deploy directly from `kubernetes/base/` (see [`kubernetes/README.md`](kubernetes/README.md)). Internal environments use `scripts/deploy.py` with private overlays under `kubernetes/overlays/` (gitignored). Respect infrastructure and app ordering from the k8s deployment rule when applying manually.
 3. **Feature work**: Use the **Scoped Cursor rules** table above for the area you edit (API, frontend, runner, worker, event-handler, ct-monitor, k8s).
 

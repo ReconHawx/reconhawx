@@ -32,7 +32,7 @@ Python entrypoint (equivalent subcommands): `.devenv/state/venv/bin/python src/m
 
 ## Workflow for schema changes
 
-1. Add a new migration file under `src/migrations/` following `V{major}.{minor}.{patch}__{description}.sql` (see the migrations rule).
+1. Add a new migration file under `src/migrations/` following `V{major}.{minor}.{patch}__{description}.sql` (see the migrations rule). UP SQL must be **idempotent** (see **`.cursor/rules/migrations.mdc`**).
 2. Update SQLAlchemy models in `src/api/app/models/` as needed so code matches the schema.
 3. Never edit migration files that are already applied in shared environments.
 4. Prefer `run --dry-run` before applying.
