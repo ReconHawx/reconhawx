@@ -10,6 +10,7 @@ import {
 } from 'react-bootstrap';
 import { useWorkflowStore } from '../stores/workflowStore';
 import FlowCanvas from './workflow/FlowCanvas';
+import WorkflowBuilderMetadataBar from './workflow/WorkflowBuilderMetadataBar';
 import TaskLibrarySidebar from './workflow/TaskLibrarySidebar';
 import TaskParameterSelector from './workflow/TaskParameterSelector';
 import InputMappingSection from './workflow/InputMappingSection';
@@ -31,6 +32,7 @@ function VisualWorkflowBuilder({
   setWorkflowDescription,
   eventHandlerMode = false,
   eventHandlerEventType = '',
+  showMetadataBar = true,
 }) {
     const {
         nodes,
@@ -635,45 +637,18 @@ function VisualWorkflowBuilder({
 
   return (
     <ReactFlowProvider>
-      <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
-        {/* Workflow Information Section */}
-        <div className="workflow-info-section" style={{ 
-          padding: '15px 20px', 
-          flexShrink: 0
-        }}>
-          <div className="row">
-            <div className="col-md-6">
-              <Form.Group className="mb-2">
-                <Form.Label><small><strong>Workflow Name</strong></small></Form.Label>
-                <Form.Control
-                  size="sm"
-                  type="text"
-                  value={workflowName}
-                  onChange={(e) => setWorkflowName(e.target.value)}
-                  placeholder="Enter workflow name"
-                  style={{ fontSize: '14px' }}
-                />
-              </Form.Group>
-            </div>
-            <div className="col-md-6">
-              <Form.Group className="mb-2">
-                <Form.Label><small><strong>Description</strong></small></Form.Label>
-                <Form.Control
-                  size="sm"
-                  as="textarea"
-                  rows={1}
-                  value={workflowDescription}
-                  onChange={(e) => setWorkflowDescription(e.target.value)}
-                  placeholder="Enter workflow description"
-                  style={{ fontSize: '14px', resize: 'vertical' }}
-                />
-              </Form.Group>
-            </div>
-          </div>
-        </div>
+      <div className="workflow-builder-layout-root d-flex flex-column" style={{ height: '100%', minHeight: 0 }}>
+        {showMetadataBar && (
+          <WorkflowBuilderMetadataBar
+            workflowName={workflowName}
+            setWorkflowName={setWorkflowName}
+            workflowDescription={workflowDescription}
+            setWorkflowDescription={setWorkflowDescription}
+          />
+        )}
 
         {eventHandlerMode && (
-          <Alert variant="info" className="m-2 mb-0">
+          <Alert variant="info" className="workflow-builder-inline-alert mb-0">
             <small>
               <strong>Event handler workflow:</strong> This workflow receives data from the event. Configure inputs with template variables like {'{domain_list_array}'} for batched event data.
             </small>
@@ -706,12 +681,13 @@ function VisualWorkflowBuilder({
         )}
 
         <div
+          className="workflow-builder-workspace"
           style={{ flexGrow: 1, position: 'relative', display: 'flex', minHeight: 0 }}
         >
           <TaskLibrarySidebar setDraggedTaskType={setDraggedTaskType} />
 
-          {/* Main Canvas Area */}
-          <div style={{ flex: 1, position: 'relative', minHeight: 0, overflow: 'visible' }}>
+          {/* Main Canvas Area — elevated tile beside the library (not stacked under it) */}
+          <div className="workflow-canvas-shell" style={{ flex: 1, position: 'relative', minHeight: 0, overflow: 'hidden' }}>
             {/* Action Panel */}
             <Panel position="top-left" className="workflow-action-panel">
               <div className="d-flex gap-2 flex-wrap">
@@ -739,12 +715,14 @@ function VisualWorkflowBuilder({
               </div>
             </Panel>
 
-            {/* React Flow Canvas */}
-            <FlowCanvas
-              onDragOver={onDragOver}
-              draggedTaskType={draggedTaskType}
-              setDraggedTaskType={setDraggedTaskType}
-            />
+            {/* React Flow Canvas — flex child fills shell; pan/zoom for tall graphs */}
+            <div className="workflow-canvas-flow-host">
+              <FlowCanvas
+                onDragOver={onDragOver}
+                draggedTaskType={draggedTaskType}
+                setDraggedTaskType={setDraggedTaskType}
+              />
+            </div>
 
             {/* Input Configuration Sidebar - slides in from right */}
             <InputConfigSidebar

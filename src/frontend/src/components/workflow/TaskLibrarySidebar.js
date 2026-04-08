@@ -16,13 +16,14 @@ const TaskLibrarySidebar = ({ setDraggedTaskType }) => {
   }, []);
 
   return (
-    <div className="task-library-sidebar" style={{ 
-      width: '400px', 
-      transition: 'width 0.3s ease',
-      overflowY: 'auto',
-      overflowX: 'hidden',
-      flexShrink: 0
-    }}>
+    <div
+      className="task-library-sidebar"
+      style={{
+        width:400,
+        transition: 'width 0.3s ease',
+        flexShrink: 0,
+      }}
+    >
       <div className="p-3">
         <div className="d-flex justify-content-between align-items-center mb-3">
           <h6 className="mb-0">Task Library</h6>

@@ -43,21 +43,13 @@ function FlowCanvas({ onDragOver, draggedTaskType, setDraggedTaskType }) {
     getStepForPosition,
   } = useWorkflowStore();
   const { screenToFlowPosition } = useReactFlow();
-  const calculateCanvasHeight = useMemo(() => {
-    if (steps.length === 0) return 800;
-    
-    const lastStep = steps[steps.length - 1];
-    const bottomOfLastStep = lastStep.yPosition + lastStep.height;
-    const requiredHeight = bottomOfLastStep + 330;
-    
-    return Math.max(800, requiredHeight);
-  }, [steps]);
 
   const calculateCanvasWidth = useMemo(() => {
     const sidebarWidth = 400;
-    const padding = 40;
-    const availableWidth = window.innerWidth - sidebarWidth - padding;
-    
+    /* Library + canvas are full width; only --workflow-builder-gap between columns */
+    const workspaceHorizontalGutter = 14;
+    const availableWidth = window.innerWidth - sidebarWidth - workspaceHorizontalGutter;
+
     return Math.max(400, availableWidth);
   }, []);
 
@@ -75,8 +67,8 @@ function FlowCanvas({ onDragOver, draggedTaskType, setDraggedTaskType }) {
   useEffect(() => {
     const handleResize = () => {
       const sidebarWidth = 400;
-      const padding = 40;
-      const availableWidth = window.innerWidth - sidebarWidth - padding;
+      const workspaceHorizontalGutter = 14;
+      const availableWidth = window.innerWidth - sidebarWidth - workspaceHorizontalGutter;
       const newWidth = Math.max(400, availableWidth);
       setCanvasWidth(newWidth);
     };
@@ -138,7 +130,10 @@ function FlowCanvas({ onDragOver, draggedTaskType, setDraggedTaskType }) {
   );
 
   return (
-    <div style={{ position: 'relative', width: '100%', height: `${calculateCanvasHeight}px` }}>
+    <div
+      className="workflow-flow-canvas-root"
+      style={{ position: 'relative', width: '100%', height: '100%', minHeight: 0 }}
+    >
       <ReactFlow
         nodes={nodes}
         edges={edges}

@@ -18,6 +18,8 @@ src/frontend/src/
 │   └── workflow/
 │       ├── constants.js           # Task types, categories, colors
 │       ├── FlowCanvas.js          # React Flow canvas wrapper
+│       ├── WorkflowBuilderEditorChrome.js # Create/edit: toolbar + name/description (single surface)
+│       ├── WorkflowBuilderMetadataBar.js # Name + description (modal) or embedded in chrome
 │       ├── TaskNode.js            # Task node component
 │       ├── InputNode.js           # Input/source node component
 │       ├── StepBackground.js      # Visual step backgrounds
