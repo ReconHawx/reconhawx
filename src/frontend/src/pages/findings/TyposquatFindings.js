@@ -2067,14 +2067,13 @@ function TyposquatFindings() {
 
       {/* Results */}
       <Card>
-        <Card.Header className="d-flex justify-content-between align-items-center">
-          <h6 className="mb-0">Typosquat Findings</h6>
+        <Card.Header className="d-flex justify-content-between align-items-center flex-wrap gap-2">
           {totalCount > 0 && (
             <small className="text-muted">
               Showing {startItem}-{endItem} of {totalCount} findings
             </small>
           )}
-          <div className="ms-auto d-flex align-items-center">
+          <div className="d-flex align-items-center ms-auto">
             <Button variant="link" size="sm" className="me-2 p-0" onClick={() => {
               setTypoDomainInput('');
               setFilters({

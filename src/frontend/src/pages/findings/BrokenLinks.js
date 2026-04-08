@@ -175,25 +175,26 @@ function BrokenLinks() {
 
   return (
     <Container fluid className="mt-4">
+      <Row className="mb-4">
+        <Col>
+          <h1>Broken Links</h1>
+          <p className="text-muted">
+            Outbound links checked for reachability during reconnaissance
+          </p>
+        </Col>
+      </Row>
       <Card>
-        <Card.Header>
-          <Row className="align-items-center">
-            <Col>
-              <h4>Broken Links</h4>
-            </Col>
-            <Col xs="auto">
-              {selectedItems.size > 0 && (
-                <Button
-                  variant="outline-danger"
-                  size="sm"
-                  onClick={() => setShowDeleteModal(true)}
-                >
-                  <i className="bi bi-trash"></i> Delete Selected ({selectedItems.size})
-                </Button>
-              )}
-            </Col>
-          </Row>
-        </Card.Header>
+        {selectedItems.size > 0 && (
+          <Card.Header className="d-flex justify-content-end align-items-center">
+            <Button
+              variant="outline-danger"
+              size="sm"
+              onClick={() => setShowDeleteModal(true)}
+            >
+              <i className="bi bi-trash"></i> Delete Selected ({selectedItems.size})
+            </Button>
+          </Card.Header>
+        )}
         <Card.Body>
           {error && <Alert variant="danger">{error}</Alert>}
           

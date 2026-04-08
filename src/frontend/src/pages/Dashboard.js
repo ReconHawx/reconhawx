@@ -192,10 +192,11 @@ function Dashboard() {
   const getSeverityBadge = (severity) => {
     const severityColors = {
       critical: 'danger',
-      high: 'primary',
+      high: 'warning',
       medium: 'info',
       low: 'secondary',
-      info: 'primary'
+      info: 'primary',
+      unknown: 'dark',
     };
     return <Badge bg={severityColors[severity] || 'secondary'}>{severity}</Badge>;
   };
@@ -252,7 +253,7 @@ function Dashboard() {
       </div>
 
       {/* Quick Links */}
-      <Card className="border-primary mb-4">
+      <Card className="dashboard-panel mb-4">
         <Card.Header className="bg-primary">
           <h5 className="mb-0">⚡ Quick Links</h5>
         </Card.Header>
@@ -367,7 +368,7 @@ function Dashboard() {
       )}
 
       {/* Key Metrics Overview */}
-      <Card className="mb-4 border-primary">
+      <Card className="dashboard-panel mb-4">
         <Card.Header className="bg-primary">
           <h4 className="mb-0">📊 Key Metrics</h4>
         </Card.Header>
@@ -450,7 +451,7 @@ function Dashboard() {
       {/* Security Findings Overview */}
       <Row className="mb-4">
         <Col md={6}>
-          <Card className="h-100 border-danger">
+          <Card className="dashboard-panel h-100">
             <Card.Header className="bg-danger d-flex justify-content-between align-items-center">
               <h5 className="mb-0">🎯 Nuclei Findings</h5>
               <Link to={`/findings/nuclei${programParam}`} className="text-decoration-none">
@@ -467,7 +468,7 @@ function Dashboard() {
                     </Badge>
                   )}
                   {findingsDetails.nuclei.high > 0 && (
-                    <Badge bg="primary" className="px-2 py-1">
+                    <Badge bg="warning" className="px-2 py-1">
                       High: {findingsDetails.nuclei.high}
                     </Badge>
                   )}
@@ -488,7 +489,7 @@ function Dashboard() {
         </Col>
 
                   <Col md={6}>
-            <Card className="h-100 border-secondary">
+            <Card className="dashboard-panel h-100">
               <Card.Header className="bg-secondary d-flex justify-content-between align-items-center">
                 <h5 className="mb-0">🔍 Typosquat Findings</h5>
                 <Link to={`/findings/typosquat${programParam}`} className="text-decoration-none">
@@ -532,7 +533,7 @@ function Dashboard() {
         <Row>
           {/* Recent Subdomains */}
           <Col md={4} className="mb-3">
-            <Card className="h-100 border-primary">
+            <Card className="dashboard-panel h-100">
               <Card.Header className="bg-primary d-flex justify-content-between align-items-center">
                 <h6 className="mb-0">🌐 Recent Subdomains</h6>
                 <Link to={`/assets/subdomains${programParam}`} className="text-decoration-none">
@@ -572,7 +573,7 @@ function Dashboard() {
 
           {/* Recent URLs */}
           <Col md={4} className="mb-3">
-            <Card className="h-100 border-success">
+            <Card className="dashboard-panel h-100">
               <Card.Header className="bg-success d-flex justify-content-between align-items-center">
                 <h6 className="mb-0">🔗 Recent URLs</h6>
                 <Link to={`/assets/urls${programParam}`} className="text-decoration-none">
@@ -612,7 +613,7 @@ function Dashboard() {
 
           {/* Recent IP Addresses */}
           <Col md={4} className="mb-3">
-            <Card className="h-100 border-info">
+            <Card className="dashboard-panel h-100">
               <Card.Header className="bg-info d-flex justify-content-between align-items-center">
                 <h6 className="mb-0">🖥️ Recent IP Addresses</h6>
                 <Link to={`/assets/ips${programParam}`} className="text-decoration-none">
@@ -653,7 +654,7 @@ function Dashboard() {
         <Row>
           {/* Recent Nuclei Findings */}
           <Col md={6} className="mb-3">
-            <Card className="h-100 border-danger">
+            <Card className="dashboard-panel h-100">
               <Card.Header className="bg-danger d-flex justify-content-between align-items-center">
                 <h6 className="mb-0">🎯 Recent Nuclei Findings</h6>
                 <Link to={`/findings/nuclei${programParam}`} className="text-decoration-none">
@@ -691,7 +692,7 @@ function Dashboard() {
 
           {/* Recent Typosquat Findings */}
           <Col md={6} className="mb-3">
-            <Card className="h-100 border-secondary">
+            <Card className="dashboard-panel h-100">
               <Card.Header className="bg-secondary d-flex justify-content-between align-items-center">
                 <h6 className="mb-0">🔍 Recent Typosquat Findings</h6>
                 <Link to={`/findings/typosquat${programParam}`} className="text-decoration-none">

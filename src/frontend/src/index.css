@@ -14,19 +14,19 @@
   --rh-on-cyan: #0a0f1c;
 
   /* Light theme — off-white layers (less glare than pure #fff, still clearly light) */
-  --bs-body-bg: #e8ecf4;
+  --bs-body-bg: #edf1f7;
   /* Used by Bootstrap utilities such as .bg-body (they use -rgb + opacity) */
-  --bs-body-bg-rgb: 232, 236, 244;
+  --bs-body-bg-rgb: 237, 241, 247;
   --bs-body-color: #0a0f1c;
   /* Headings use var(--bs-heading-color) in Bootstrap — keep them in sync with body */
   --bs-heading-color: var(--bs-body-color);
-  --bs-border-color: #cdd6e4;
+  --bs-border-color: rgba(0, 151, 167, 0.22);
   --bs-card-bg: #f7f9fc;
-  --bs-card-border-color: #cfd8e6;
+  --bs-card-border-color: rgba(0, 151, 167, 0.28);
   --bs-table-bg: #f7f9fc;
   --bs-table-hover-bg: rgba(10, 15, 28, 0.055);
   --bs-input-bg: #fcfdff;
-  --bs-input-border-color: #b9c4d4;
+  --bs-input-border-color: #a4b8cc;
   --bs-nav-link-color: #4a5f72;
   --bs-nav-link-hover-color: #0a0f1c;
   --bs-text-muted: #5c6d80;
@@ -41,11 +41,11 @@
   --bs-secondary-bg: #dce3ef;
   --bs-secondary-color: rgba(10, 15, 28, 0.75);
 
-  /* Bootstrap semantic — slightly toned cyan on white for text/bg utilities */
-  --bs-primary: #00bdd4;
-  --bs-primary-rgb: 0, 189, 212;
-  --bs-info: #00a8c0;
-  --bs-info-rgb: 0, 168, 192;
+  /* Bootstrap semantic — darker teal on white for outline + text contrast */
+  --bs-primary: #0097a7;
+  --bs-primary-rgb: 0, 151, 167;
+  --bs-info: #0091a8;
+  --bs-info-rgb: 0, 145, 168;
   --bs-secondary: #9d22e8;
   --bs-secondary-rgb: 157, 34, 232;
 
@@ -54,40 +54,47 @@
   --rh-code-color: var(--bs-pre-color);
   --rh-overlay-scrim: rgba(10, 15, 28, 0.2);
   --rh-shadow-color: rgba(10, 15, 28, 0.1);
-  --rh-highlight-bg: rgba(0, 189, 212, 0.12);
+  /* Dashboard + elevated panels (workflow builder, etc.) */
+  --rh-dashboard-panel-shadow: 0 2px 12px var(--rh-shadow-color),
+    0 1px 3px rgba(10, 15, 28, 0.06);
+  --rh-highlight-bg: rgba(0, 151, 167, 0.12);
   --rh-mark-bg: #fff3cd;
   --rh-mark-color: #0a0f1c;
   --rh-text-subtle: var(--bs-text-muted);
+  /* Table row dividers only (no outer table frame — stronger lines in light mode) */
+  --rh-table-border-color: rgba(0, 151, 167, 0.5);
+  /* Thead band — distinct from page + tbody (explicit light hex; do not chain var(--bs-secondary-bg) on :root alone — that resolves to light gray and inherits into dark mode). */
+  --rh-table-header-bg: #dce3ef;
 }
 
 [data-theme="dark"] {
-  /* Dark theme — deep navy shell, cyan/purple highlights */
-  --rh-surface-elevated: #121c2f;
+  /* Dark theme — lifted navy shell (clearly brighter than legacy #0a0f1c), softer cyan accents */
+  --rh-surface-elevated: #233451;
 
-  --bs-body-bg: #0a0f1c;
-  --bs-body-bg-rgb: 10, 15, 28;
+  --bs-body-bg: #121d32;
+  --bs-body-bg-rgb: 18, 29, 50;
   --bs-body-color: #f0fbff;
   --bs-heading-color: var(--bs-body-color);
-  /* Match table / list dividers to IPs (and other data tables): light theme uses solid #cdd6e4 — keep cyan-tinted but readable */
-  --bs-border-color: rgba(0, 242, 255, 0.34);
-  --bs-card-bg: #121c2f;
+  /* Visible but non-neon dividers */
+  --bs-border-color: rgba(0, 242, 255, 0.2);
+  --bs-card-bg: #1c2d4a;
   --bs-card-border-color: rgba(0, 242, 255, 0.4);
-  --bs-table-bg: #121c2f;
+  --bs-table-bg: #18243d;
   --bs-table-hover-bg: rgba(0, 242, 255, 0.08);
-  --bs-input-bg: #151d30;
-  --bs-input-border-color: rgba(176, 38, 255, 0.2);
+  --bs-input-bg: #243152;
+  --bs-input-border-color: rgba(176, 38, 255, 0.32);
   --bs-nav-link-color: #9db4c4;
   --bs-nav-link-hover-color: #f0fbff;
-  --bs-text-muted: #8eadbf;
+  --bs-text-muted: #9abdd0;
   --bs-input-color: #f0fbff;
-  --bs-pre-bg: #0d1422;
+  --bs-pre-bg: #152238;
   --bs-pre-color: #e8f8fc;
   --bs-link-color: #5cefff;
   --bs-link-hover-color: #9df6ff;
   --bs-subtle-hover-bg: rgba(0, 242, 255, 0.06);
-  --bs-tertiary-bg: #0d1422;
+  --bs-tertiary-bg: #152238;
   --bs-tertiary-color: #f0fbff;
-  --bs-secondary-bg: #151d30;
+  --bs-secondary-bg: #243152;
   --bs-secondary-color: rgba(240, 251, 255, 0.78);
 
   --bs-primary: #00f2ff;
@@ -97,14 +104,19 @@
   --bs-secondary: #b026ff;
   --bs-secondary-rgb: 176, 38, 255;
 
-  --rh-code-bg: #151d30;
+  --rh-code-bg: #243152;
   --rh-code-color: #9df6ff;
   --rh-overlay-scrim: rgba(0, 0, 0, 0.35);
   --rh-shadow-color: rgba(0, 0, 0, 0.25);
+  --rh-dashboard-panel-shadow: 0 4px 22px rgba(0, 0, 0, 0.5),
+    0 2px 8px rgba(0, 0, 0, 0.32), 0 1px 2px rgba(0, 0, 0, 0.2);
   --rh-highlight-bg: rgba(0, 242, 255, 0.08);
   --rh-mark-bg: rgba(0, 242, 255, 0.18);
   --rh-mark-color: #f0fbff;
   --rh-text-subtle: var(--bs-text-muted);
+  --rh-table-border-color: rgba(165, 235, 248, 0.52);
+  /* Subtle dark thead strip — not Bootstrap “table-light” gray; sits above tbody #18243d */
+  --rh-table-header-bg: #223651;
 }
 
 /* Bootstrap’s compiled .btn-* uses hardcoded blues — align fills to brand cyan */
@@ -134,13 +146,13 @@
   --bs-btn-active-color: var(--rh-on-cyan);
   --bs-btn-active-bg: var(--rh-cyan);
   --bs-btn-active-border-color: var(--rh-cyan);
-  --bs-btn-disabled-color: rgba(0, 189, 212, 0.55);
+  --bs-btn-disabled-color: rgba(0, 151, 167, 0.55);
   --bs-btn-disabled-border-color: rgba(0, 242, 255, 0.35);
 }
 
 [data-theme="dark"] .btn-outline-primary {
   --bs-btn-color: var(--rh-cyan-muted);
-  --bs-btn-border-color: rgba(0, 242, 255, 0.55);
+  --bs-btn-border-color: rgba(0, 242, 255, 0.45);
   --bs-btn-disabled-color: rgba(92, 239, 255, 0.35);
 }
 
@@ -278,38 +290,74 @@ code {
 }
 
 /*
- * .card forces a single border-color — wash out semantic border-* on cards in dark mode.
- * Restore accented, visible rims (Dashboard, etc.); table rows still use --bs-border-color above.
+ * Dashboard sections: `border-primary` / `border-danger` / … stay in markup for intent;
+ * rim color is always the neutral card border (light + dark).
  */
-[data-theme="dark"] .card.border-primary {
-  border-color: rgba(var(--bs-primary-rgb), 0.58) !important;
-}
-[data-theme="dark"] .card.border-secondary {
-  border-color: rgba(var(--bs-secondary-rgb), 0.58) !important;
-}
-[data-theme="dark"] .card.border-success {
-  border-color: rgba(var(--bs-success-rgb), 0.58) !important;
-}
-[data-theme="dark"] .card.border-danger {
-  border-color: rgba(var(--bs-danger-rgb), 0.58) !important;
-}
-[data-theme="dark"] .card.border-warning {
-  border-color: rgba(var(--bs-warning-rgb), 0.72) !important;
-}
-[data-theme="dark"] .card.border-info {
-  border-color: rgba(var(--bs-info-rgb), 0.58) !important;
+.card.border-primary,
+.card.border-secondary,
+.card.border-success,
+.card.border-danger,
+.card.border-warning,
+.card.border-info {
+  border-color: var(--bs-card-border-color) !important;
 }
 
-/* Table theming */
+/* Dashboard: no card outline in light — colored headers carry section identity; soft shadow only */
+[data-theme="light"] .dashboard-panel.card {
+  border: none !important;
+  box-shadow: var(--rh-dashboard-panel-shadow);
+}
+
+[data-theme="light"] .dashboard-panel.card .card-header {
+  border-bottom: 1px solid var(--bs-border-color) !important;
+}
+
+/* Dashboard panels: same borderless + elevated treatment as light (deeper shadow on dark canvas) */
+[data-theme="dark"] .dashboard-panel.card {
+  border: none !important;
+  box-shadow: var(--rh-dashboard-panel-shadow);
+}
+
+[data-theme="dark"] .dashboard-panel.card .card-header {
+  border-bottom: 1px solid var(--bs-border-color) !important;
+}
+
+/* Tables: row lines via --rh-table-border-color; no outer inset/frame on the table block */
 .table {
   --bs-table-bg: var(--bs-table-bg);
   --bs-table-color: var(--bs-body-color);
+  --bs-table-border-color: var(--rh-table-border-color);
   color: var(--bs-body-color) !important;
 }
 
 .table-light {
-  --bs-table-bg: var(--bs-card-bg);
+  --bs-table-bg: var(--rh-table-header-bg);
   --bs-table-color: var(--bs-body-color);
+}
+
+.table thead th,
+.table thead td {
+  background-color: var(--rh-table-header-bg) !important;
+  border-bottom-color: var(--rh-table-border-color) !important;
+  /* Kill Bootstrap .table-light gray text on dark headers */
+  color: var(--bs-body-color) !important;
+}
+
+[data-theme="dark"] .table thead.table-light {
+  --bs-table-color: var(--bs-body-color);
+  --bs-table-bg: var(--rh-table-header-bg);
+}
+
+[data-theme="light"] .table > :not(caption) > * > * {
+  border-bottom-color: var(--rh-table-border-color) !important;
+}
+
+[data-theme="dark"] .table > :not(caption) > * > * {
+  border-bottom-color: var(--rh-table-border-color) !important;
+}
+
+.list-group-item {
+  border-color: var(--rh-table-border-color) !important;
 }
 
 /* Form theming */
@@ -329,8 +377,8 @@ code {
 
 [data-theme="light"] .form-control:focus,
 [data-theme="light"] .form-select:focus {
-  border-color: rgba(0, 189, 212, 0.85) !important;
-  box-shadow: 0 0 0 0.2rem rgba(0, 189, 212, 0.18) !important;
+  border-color: rgba(0, 151, 167, 0.85) !important;
+  box-shadow: 0 0 0 0.2rem rgba(0, 151, 167, 0.18) !important;
 }
 
 /* Text muted theming */
@@ -377,7 +425,7 @@ code {
 
 [data-theme="dark"] .alert-info {
   background-color: rgba(0, 242, 255, 0.07) !important;
-  border-color: rgba(0, 242, 255, 0.35) !important;
+  border-color: rgba(0, 242, 255, 0.25) !important;
   color: #9df6ff !important;
 }
 
@@ -391,6 +439,11 @@ code {
 
 [data-theme="dark"] .badge.bg-secondary:hover {
   background-color: #9915e8 !important;
+}
+
+/* Warning / high-severity badges — dark text on amber for legibility in both themes */
+.badge.bg-warning {
+  color: var(--rh-navy) !important;
 }
 
 /* Theme toggle button */
@@ -451,15 +504,15 @@ code {
 
 /* Code blocks theming */
 [data-theme="dark"] code {
-  background-color: #151d30 !important;
-  color: #9df6ff !important;
+  background-color: var(--rh-code-bg) !important;
+  color: var(--rh-code-color) !important;
   padding: 2px 4px;
   border-radius: 3px;
 }
 
 [data-theme="dark"] pre {
-  background-color: #0d1422 !important;
-  color: #e8f8fc !important;
+  background-color: var(--bs-pre-bg) !important;
+  color: var(--bs-pre-color) !important;
   border: 1px solid var(--bs-card-border-color) !important;
   border-radius: 6px;
   padding: 1rem;
@@ -501,14 +554,31 @@ code {
   overflow: visible !important;
 }
 
-/* Additional dark theme improvements for better readability */
-[data-theme="dark"] a {
+/*
+ * Dark mode: color prose links only. A global `a { color }` breaks
+ * <Button as={Link} variant="primary"> (anchor + .btn) — link cyan + !important hid button tokens.
+ */
+[data-theme="dark"] a:not(.btn):not(.dropdown-item):not(.list-group-item):not(.page-link):not(.nav-link):not(.navbar-brand) {
   color: var(--bs-link-color) !important;
 }
 
-[data-theme="dark"] a:hover {
+[data-theme="dark"] a:not(.btn):not(.dropdown-item):not(.list-group-item):not(.page-link):not(.nav-link):not(.navbar-brand):hover {
   color: var(--bs-link-color) !important;
   text-decoration: underline;
+}
+
+[data-theme="dark"] a.btn {
+  color: var(--bs-btn-color) !important;
+  text-decoration: none;
+}
+
+[data-theme="dark"] a.btn:hover {
+  color: var(--bs-btn-hover-color) !important;
+  text-decoration: none;
+}
+
+[data-theme="dark"] a.btn:focus-visible {
+  color: var(--bs-btn-color) !important;
 }
 
 [data-theme="dark"] .text-secondary {
@@ -604,8 +674,8 @@ code {
 /* Better contrast for disabled elements */
 [data-theme="dark"] .form-control:disabled,
 [data-theme="dark"] .form-select:disabled {
-  background-color: #2b2b2b !important;
-  color: #888888 !important;
+  background-color: var(--bs-tertiary-bg) !important;
+  color: #9aa8bc !important;
 }
 
 /* Placeholder text styling for dark mode */
@@ -613,7 +683,7 @@ code {
 [data-theme="dark"] .form-select::placeholder,
 [data-theme="dark"] input::placeholder,
 [data-theme="dark"] textarea::placeholder {
-  color: #b0b0b0 !important;
+  color: #a8c0d4 !important;
   opacity: 1 !important;
 }
 
@@ -621,7 +691,7 @@ code {
 [data-theme="dark"] .form-select::-webkit-input-placeholder,
 [data-theme="dark"] input::-webkit-input-placeholder,
 [data-theme="dark"] textarea::-webkit-input-placeholder {
-  color: #b0b0b0 !important;
+  color: #a8c0d4 !important;
   opacity: 1 !important;
 }
 
@@ -629,7 +699,7 @@ code {
 [data-theme="dark"] .form-select::-moz-placeholder,
 [data-theme="dark"] input::-moz-placeholder,
 [data-theme="dark"] textarea::-moz-placeholder {
-  color: #b0b0b0 !important;
+  color: #a8c0d4 !important;
   opacity: 1 !important;
 }
 
@@ -637,13 +707,13 @@ code {
 [data-theme="dark"] .form-select:-ms-input-placeholder,
 [data-theme="dark"] input:-ms-input-placeholder,
 [data-theme="dark"] textarea:-ms-input-placeholder {
-  color: #b0b0b0 !important;
+  color: #a8c0d4 !important;
   opacity: 1 !important;
 }
 
 /* Table text visibility improvements for dark mode */
 [data-theme="dark"] .table td {
-  color: #f0f0f0 !important;
+  color: var(--bs-body-color) !important;
 }
 
 [data-theme="dark"] .table td strong {
@@ -651,7 +721,7 @@ code {
 }
 
 [data-theme="dark"] .table th {
-  color: #f0f0f0 !important;
+  color: var(--bs-body-color) !important;
 }
 
 /* Highlight for search matches */
@@ -773,7 +843,7 @@ code {
 
 /* Horizontal Navigation Styles */
 .navbar-dark {
-  background: linear-gradient(165deg, #101a2e 0%, #0a0f1c 55%, #0d1528 100%) !important;
+  background: linear-gradient(165deg, #0e1526 0%, #121d32 55%, #152238 100%) !important;
   border-bottom: 1px solid rgba(0, 242, 255, 0.12);
   box-shadow: 0 2px 16px rgba(0, 0, 0, 0.35), 0 0 24px rgba(176, 38, 255, 0.06);
 }
@@ -814,13 +884,13 @@ code {
 
 .navbar-light .navbar-nav .nav-link:hover {
   color: var(--bs-nav-link-hover-color) !important;
-  background-color: rgba(0, 189, 212, 0.12);
+  background-color: rgba(0, 151, 167, 0.12);
 }
 
 .navbar-light .navbar-nav .nav-link.active {
   color: var(--rh-on-cyan) !important;
-  background-color: rgba(0, 189, 212, 0.38) !important;
-  box-shadow: 0 0 12px rgba(0, 189, 212, 0.2);
+  background-color: rgba(0, 151, 167, 0.38) !important;
+  box-shadow: 0 0 12px rgba(0, 151, 167, 0.2);
 }
 
 .navbar-light .dropdown-toggle {
@@ -836,13 +906,13 @@ code {
 .navbar-light .dropdown-toggle:hover,
 .navbar-light .dropdown-toggle:focus {
   color: var(--bs-nav-link-hover-color) !important;
-  background-color: rgba(0, 189, 212, 0.1) !important;
+  background-color: rgba(0, 151, 167, 0.1) !important;
   box-shadow: none !important;
 }
 
 .navbar-light .dropdown-toggle.show {
   color: var(--bs-nav-link-hover-color) !important;
-  background-color: rgba(0, 189, 212, 0.16) !important;
+  background-color: rgba(0, 151, 167, 0.16) !important;
 }
 
 .navbar-light .theme-toggle {
@@ -926,7 +996,7 @@ code {
 }
 
 .navbar-dark .form-select option {
-  background-color: #121c2f;
+  background-color: #1c2d4a;
   color: #f0fbff;
 }
 
