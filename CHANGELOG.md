@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.1](https://github.com/ReconHawx/reconhawx/compare/v0.12.0...v0.12.1) (2026-04-08)
+
+
+### Bug Fixes
+
+* **migrations:** make V0.0.4 idempotent for schema.sql bootstrap ([bd8986d](https://github.com/ReconHawx/reconhawx/commit/bd8986dca32a09b6a26b78a414c9237516e118f6))
+
 ## [0.12.0](https://github.com/ReconHawx/reconhawx/compare/v0.11.0...v0.12.0) (2026-04-07)
 
 
