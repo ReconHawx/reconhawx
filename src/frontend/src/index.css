@@ -446,6 +446,11 @@ code {
   color: var(--rh-navy) !important;
 }
 
+/* Table cells set body text with !important; badges inside cells need an explicit win */
+[data-theme="dark"] .table td .badge.bg-warning {
+  color: #000 !important;
+}
+
 /* Theme toggle button */
 .theme-toggle {
   transition: transform 0.2s ease;
