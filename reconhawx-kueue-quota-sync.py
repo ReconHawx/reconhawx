@@ -133,15 +133,16 @@ def main() -> None:
         epilog=_EPILOG,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
+    # REMAINDER (not "*"): prefix may include flags like "minikube -p NAME kubectl --",
+    # which argparse would otherwise treat as its own options.
     parser.add_argument(
         "kubectl",
-        nargs="*",
-        default=["kubectl"],
+        nargs=argparse.REMAINDER,
         metavar="ARG",
         help="kubectl invocation prefix (default: kubectl)",
     )
     args = parser.parse_args()
-    kubectl_cmd = args.kubectl
+    kubectl_cmd = args.kubectl if args.kubectl else ["kubectl"]
 
     runner_data = kubectl_json(kubectl_cmd, "get", "nodes", "-l", "reconhawx.runner=true", "-o", "json")
     worker_data = kubectl_json(kubectl_cmd, "get", "nodes", "-l", "reconhawx.worker=true", "-o", "json")
