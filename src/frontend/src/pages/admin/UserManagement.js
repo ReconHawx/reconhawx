@@ -318,7 +318,7 @@ function UserManagement() {
   return (
     <Container fluid className="mt-4">
       <Row>
-        <Col lg={8}>
+        <Col>
           <Card>
             <Card.Header className="d-flex justify-content-between align-items-center">
               <h4>👥 User Management</h4>
@@ -496,9 +496,9 @@ function UserManagement() {
           </Card>
         </Col>
         
-        <Col lg={4}>
+        {/* <Col lg={4}>
           <ApiTokenManagement />
-        </Col>
+        </Col> */}
       </Row>
 
       {/* Create User Modal */}
