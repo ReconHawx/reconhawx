@@ -1,52 +1,91 @@
-# Installation on minikube
+# Installation on Minikube
 
-There are **two ways** to install ReconHawx on Minikube:
+## What you need
 
-1. **Installer script** — run [`install-minikube.sh`](../install-minikube.sh) from the repo root. With **`kubernetes/base` and a `.git` directory** (git clone), it copies that tree to **`/tmp/reconhawx`** (**`INSTALL_STAGING_DIR`**) and removes it after a successful install. With **`kubernetes/base` but no `.git`** (typical unpacked release archive) or **without** a local tree, it uses manifests **in place** (your unpack dir or a downloaded extract under `/tmp/reconhawx-release.*`) — same rules as cluster [`install-kubernetes.sh`](../install-on-kubernetes.md). It generates secrets, starts or uses Minikube, applies the stack, runs **[`reconhawx-kueue-quota-sync.py`](../reconhawx-kueue-quota-sync.py)** to size **ClusterQueues** from labeled nodes (requires **`python3`**), and updates **`/etc/hosts`**. **It does not run SQL migrations**—the API Deployment’s **`run-migrations`** init container applies schema after Postgres is up (see [Database migrations (automated)](install-on-kubernetes.md#database-migrations-automated)). Piped installs (`curl … | bash`) read prompts from **`/dev/tty`**. Options: **`--from-release`**, **`--help`**, env **`RECONHAWX_FROM_RELEASE`**, **`RECONHAWX_GITHUB_REPO`**.
-2. **Manual installation** — run the commands yourself in order, starting at [Manual Installation](#manual-installation). You typically edit and apply `kubernetes/base` in your checkout (as in the snippets below).
+- **Minikube** installed.
+- The **source code archive** for a ReconHawx release from [GitHub Releases](https://github.com/ReconHawx/reconhawx/releases), extracted on the machine where you run the installer (preferred). The top-level folder must contain **`kubernetes/base`** and **`install-minikube.sh`**.
+- A machine where you can run shell scripts and edit **`/etc/hosts`** (the installer can set up your UI hostname; default **`reconhawx.local`**, or a **custom hostname** if you enter one).
 
-## Installer script
+Manifest and secret layout matches the generic install; see **[`kubernetes/README.md`](../kubernetes/README.md)** for reference.
 
-From the repo root:
+## Recommended install
+
+**Preferred:** download the **Source code** archive for the release you want from [GitHub Releases](https://github.com/ReconHawx/reconhawx/releases), extract it, `cd` into that top-level directory, and run:
 
 ```shell
 ./install-minikube.sh
 ```
 
-You are prompted for a **Minikube profile** name and secrets (JWT/refresh/Postgres). There is **no** separate “install root” prompt: **in-place** installs use the unpacked tree or `/tmp/reconhawx-release.*`; **git clone** installs stage under **`/tmp/reconhawx`** if needed, and you confirm before an existing staging path is replaced.
+You are prompted for a **Minikube profile** (default often **`reconhawx`**) and secrets. The script uses **`minikube … kubectl`** only (no separate **`kubectl`** binary required). It starts or reuses the profile, installs dependencies, applies manifests, syncs Kueue quotas (needs **`python3`**), and updates **`/etc/hosts`** as needed.
 
-The script uses **`minikube … kubectl` only** (no separate `kubectl` binary required). For troubleshooting migrations, use [`docs/install-on-kubernetes.md`](install-on-kubernetes.md#database-migrations-automated) or run [`scripts/migrate.sh`](../scripts/migrate.sh) locally with `DATABASE_URL` if you need to apply SQL outside the cluster.
+**Alternative:** run the installer script from GitHub (pin a **tag or SHA** for reproducibility). It can fetch the **latest release** tarball when you do not already have `kubernetes/base` locally.
 
-## Upgrade
+```shell
+curl -fsSL https://raw.githubusercontent.com/ReconHawx/reconhawx/main/install-minikube.sh | bash
+```
 
-See **[`docs/update-reconhawx.md`](update-reconhawx.md)** for the full procedure (versions, `base-update`, flags, troubleshooting).
+Piped installs read prompts from **`/dev/tty`**; for headless use, save the script and run `bash install-minikube.sh`.
 
-Quick path from the repo root: [`update-minikube.sh`](../update-minikube.sh) — applies **`kubernetes/base-update/`**, restarts app deployments, **`MINIKUBE_PROFILE`** default **`reconhawx`**. Options match [`update-kubernetes.sh`](../update-kubernetes.sh) / install (**`--from-release`**, **`RECONHAWX_FROM_RELEASE`**, etc.); overview: [Upgrade (existing cluster)](install-on-kubernetes.md#upgrade-existing-cluster).
+### Installer options
 
-## Manual Installation
+| Input | Meaning |
+|--------|---------|
+| **`--from-release`** | Always use the **latest** published release tarball for manifests, even if you already have a local `kubernetes/base` directory. |
+| **`--help`** | Show script usage. |
+| **`RECONHAWX_FROM_RELEASE`** | `1` = fetch release tarball; `0` = use the **`kubernetes/base`** next to the script; **unset** = use that directory when present, otherwise fetch a release. |
+| **`RECONHAWX_GITHUB_REPO`** | `owner/repo` for releases (default `ReconHawx/reconhawx`). |
 
-The sections below describe the **manual** procedure for reference or troubleshooting.
+## After install
+
+1. **Hostname** — The default UI hostname is **`reconhawx.local`**; the installer may prompt for a **custom hostname**. Ensure that name resolves (often via **`minikube ip`**); the script may have updated **`/etc/hosts`**.
+2. Wait for the API and frontend:
+
+   ```shell
+   minikube -p reconhawx kubectl -- wait deploy/frontend deploy/api -n reconhawx --for=condition=available --timeout=5m
+   ```
+
+   Use your profile name in place of **`reconhawx`** if different.
+
+3. **Admin password**:
+
+   ```shell
+   minikube -p reconhawx kubectl -- logs statefulset/postgresql -n reconhawx | grep -A2 "ADMIN USER CREATED"
+   ```
+
+4. In a browser, open **`http://reconhawx.local`** or the **custom hostname** you set during install, and sign in as **`admin`**.
+
+## Database migrations (automated)
+
+Same as on a full cluster: the API **`run-migrations`** init container applies schema before traffic. If the API stays not Ready:
+
+```shell
+minikube -p reconhawx kubectl -- logs -n reconhawx deploy/api -c run-migrations
+```
+
+See **[Database migrations (automated)](install-on-kubernetes.md#database-migrations-automated)** on the cluster install page.
+
+## Upgrades
+
+See **[`docs/update-reconhawx.md`](update-reconhawx.md)**. From the repo root:
+
+```shell
+./update-minikube.sh
+```
+
+Default profile is **`reconhawx`**. Override with **`MINIKUBE_PROFILE=my-profile`**.
+
+## Uninstall
+
+See **[`docs/uninstall-reconhawx.md`](uninstall-reconhawx.md)** (script or **`minikube delete -p …`**).
+
+## Manual install (advanced)
+
+Use this only if you are not using **`install-minikube.sh`**, typically from an **extracted release** directory so `kubernetes/base` paths match this documentation. Replace **`reconhawx`** with your Minikube profile name if different. After the steps below, run **[`reconhawx-kueue-quota-sync.py`](../reconhawx-kueue-quota-sync.py)** with **`python3`** unless you set ClusterQueues manually. For manifest context, see **[`kubernetes/README.md`](../kubernetes/README.md)**.
 
 ### Install and start minikube
 
 ```shell
 minikube -p reconhawx start --driver=docker --ports=80:80 --ports=443:443
-```
-```shell
-😄  [reconhawx] minikube v1.38.1 on Nixos 26.05
-    ▪ MINIKUBE_WANTUPDATENOTIFICATION=false
-✨  Automatically selected the docker driver. Other choices: kvm2, ssh
-❗  Starting v1.39.0, minikube will default to "containerd" container runtime. See #21973 for more info.
-📌  Using Docker driver with root privileges
-👍  Starting "reconhawx" primary control-plane node in "reconhawx" cluster
-🚜  Pulling base image v0.0.50 ...
-🔥  Creating docker container (CPUs=2, Memory=7900MB) ...
-🐳  Preparing Kubernetes v1.35.1 on Docker 29.2.1 ...
-🔗  Configuring bridge CNI (Container Networking Interface) ...
-🔎  Verifying Kubernetes components...
-    ▪ Using image gcr.io/k8s-minikube/storage-provisioner:v5
-🌟  Enabled addons: storage-provisioner, default-storageclass
-🏄  Done! kubectl is now configured to use "reconhawx" cluster and "default" namespace by default
 ```
 
 ### Set label on the minikube node
@@ -56,13 +95,15 @@ minikube -p reconhawx kubectl -- label node reconhawx reconhawx.runner=true
 minikube -p reconhawx kubectl -- label node reconhawx reconhawx.worker=true
 ```
 
+If your node name is not **`reconhawx`**, use the name from `minikube -p reconhawx kubectl -- get nodes`.
+
 ### Create a namespace for the reconhawx application
 
 ```shell
 minikube -p reconhawx kubectl -- create namespace reconhawx
 ```
 
-### Install kueue on the minikube cluster
+### Install Kueue on the minikube cluster
 
 ```shell
 minikube -p reconhawx kubectl -- apply --server-side -f https://github.com/kubernetes-sigs/kueue/releases/download/v0.11.1/manifests.yaml
@@ -78,13 +119,13 @@ minikube -p reconhawx kubectl -- wait deploy/ingress-nginx-controller -n ingress
 minikube -p reconhawx kubectl -- rollout status deployment/ingress-nginx-controller -n ingress-nginx --timeout=5m
 ```
 
-Before applying manifests that include an `Ingress`, ensure the validating webhook can be reached (`validate.nginx.ingress.kubernetes.io`). If `kubectl apply` fails with `connection refused` to `ingress-nginx-controller-admission`, wait until that Service has endpoints, then retry after a short pause (or run [`install-minikube.sh`](../install-minikube.sh), which waits and retries):
+Before applying manifests that include an `Ingress`, ensure the validating webhook can be reached. If `kubectl apply` fails with `connection refused` to `ingress-nginx-controller-admission`, wait until that Service has endpoints, then retry (or run [`install-minikube.sh`](../install-minikube.sh), which waits and retries):
 
 ```shell
 minikube -p reconhawx kubectl -- get endpoints ingress-nginx-controller-admission -n ingress-nginx
 ```
 
-### Create Secrets Manifests
+### Create Secrets manifests
 
 ```shell
 # Copy example files
@@ -96,7 +137,7 @@ sed -i "s/JWT_SECRET_PLACEHOLDER/`echo -n \"$(openssl rand -hex 32)\" | base64 -
 sed -i "s/REFRESH_SECRET_KEY_PLACEHOLDER/`echo -n \"$(openssl rand -hex 32)\" | base64 -w0`/" kubernetes/base/secrets/jwt-secret.yaml
 sed -i "s/POSTGRES_PASSWORD_PLACEHOLDER/`echo -n \"$(openssl rand -hex 32)\" | base64 -w0`/" kubernetes/base/secrets/postgres-secret.yaml
 
-# Set Postgres Username (Using default "reconhawx")
+# Set Postgres username (default "reconhawx")
 sed -i "s/POSTGRES_USERNAME_PLACEHOLDER/cmVjb25oYXd4/" kubernetes/base/secrets/postgres-secret.yaml
 ```
 
@@ -106,26 +147,28 @@ sed -i "s/POSTGRES_USERNAME_PLACEHOLDER/cmVjb25oYXd4/" kubernetes/base/secrets/p
 minikube -p reconhawx kubectl -- apply -k kubernetes/base/
 ```
 
-### Wait for the postgresql pod to be ready and get admin password from the postgresql pod
+### Wait for PostgreSQL and read the admin password
 
 ```shell
 minikube -p reconhawx kubectl -- rollout status statefulset/postgresql -n reconhawx --timeout=5m
 minikube -p reconhawx kubectl -- logs statefulset/postgresql -n reconhawx | grep -A2 "ADMIN USER CREATED"
 ```
 
-### Get Ingress IP and set hosts file
+### Get ingress IP and set hosts file
 
 ```shell
 echo "$(minikube -p reconhawx ip) reconhawx.local" | sudo tee -a /etc/hosts
 ```
 
-### Wait for API and Frontend healty status
+Use your **custom hostname** in place of **`reconhawx.local`** if you configured one in Ingress.
+
+### Wait for API and frontend
 
 ```shell
-minikube -p reconhawx kubectl -- wait deploy/frontend deploy/api -n reconhawx --for=condition=available --timeout=5
+minikube -p reconhawx kubectl -- wait deploy/frontend deploy/api -n reconhawx --for=condition=available --timeout=5m
 ```
 
 ### Test
 
-- Browse http://reconhawx.local
-- Login with "admin" using the password retrieved from the Postgres logs
+- Open **`http://reconhawx.local`** (or your custom hostname) in a browser.
+- Log in as **`admin`** using the password from the PostgreSQL logs.

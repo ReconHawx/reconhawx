@@ -8,7 +8,7 @@ Upgrades are different from install: they do **not** reinstall Kueue, ingress-ng
 
 | Requirement | Notes |
 |-------------|--------|
-| **Repository tree** | A **git clone** or an **extracted GitHub release source tarball** (full tree: `kubernetes/base`, `kubernetes/base-update`, `reconhawx-k8s-common.sh` at repo root). `curl \| bash` against only `install-kubernetes.sh` is **not** enough for updates—you need these files on disk. |
+| **Release tree on disk** | **Preferred:** extract the **Source code** archive from [GitHub Releases](https://github.com/ReconHawx/reconhawx/releases). You need `kubernetes/base`, `kubernetes/base-update`, and the update scripts at the **top level** (e.g. `update-kubernetes.sh`, `reconhawx-k8s-common.sh`). Running `curl \| bash` on the install script alone is **not** enough for updates—you need that tree on disk (or let the update script fetch a tarball—see flags below). |
 | **`kubectl`** (generic cluster) | Same kubeconfig / context you used for install. |
 | **`minikube`** (Minikube) | Update script uses `minikube … kubectl`; no standalone `kubectl` required. |
 | **`curl`** | Used to query GitHub `releases/latest` and to download release tarballs when you opt into the release path. |
@@ -32,7 +32,7 @@ If that ConfigMap does not exist yet, the cluster predates this mechanism; runni
 
 ## Recommended: helper scripts
 
-Run from the **repository root** (where `reconhawx-k8s-common.sh` and the update script live).
+Run from the **top-level directory of your extracted release** (where `reconhawx-k8s-common.sh` and the update script live).
 
 ### Generic Kubernetes
 
@@ -54,10 +54,10 @@ MINIKUBE_PROFILE=my-profile ./update-minikube.sh
 
 ### What the scripts do
 
-1. **Resolve manifests** — Either use **`kubernetes/base`** next to your clone (default when the directory exists) or download the **latest GitHub release** source tarball (same logic as install: see flags below).
+1. **Resolve manifests** — Use **`kubernetes/base`** next to the script when that directory exists, or download the **latest GitHub release** source tarball (same logic as install: see flags below).
 2. **Print version context** — Manifest **`APP_VERSION`**, GitHub **latest release tag**, and in-cluster **`reconhawx-version`** when present.
-3. **Pre-apply hooks** — Run shell scripts in **[`kubernetes/base-update/pre-apply.d/`](../kubernetes/base-update/pre-apply.d/)** (if any) **before** applying manifests. They perform idempotent cluster fixups—for example removing a workload replaced by a different controller kind. See [Pre-apply hooks](#pre-apply-hooks) below.
-4. **Apply** — `kubectl apply -k` on **[`kubernetes/base-update/`](../kubernetes/base-update/kustomization.yaml)** (not full `kubernetes/base/`). The **update** overlay applies the same workloads and config as `base` but **omits** `jwt-secret` and `postgres-secret` from the repo so a fresh clone does **not** overwrite live database or signing secrets. It includes **[`kubernetes/base/kueue/core`](../kubernetes/base/kueue/core/kustomization.yaml)** (flavors, local queues, RBAC) but **not** the **ClusterQueue** manifests under [`kubernetes/base/kueue/cluster-queues/`](../kubernetes/base/kueue/cluster-queues/kustomization.yaml), so upgrades **do not reset** cluster-sized `nominalQuota` values. To recompute quotas after scaling nodes, run **`RECONHAWX_KUEUE_RESYNC_QUOTAS=1 ./update-kubernetes.sh`** (or **`update-minikube.sh`**) from a tree that contains [`reconhawx-kueue-quota-sync.py`](../reconhawx-kueue-quota-sync.py), or invoke that script manually.
+3. **Pre-apply hooks** — Run shell scripts in **[`kubernetes/base-update/pre-apply.d/`](../kubernetes/base-update/pre-apply.d/)** (if any) **before** applying manifests. They perform idempotent cluster fixups—for example removing a workload replaced by a different controller kind. Authors: see [`kubernetes/base-update/pre-apply.d/README.md`](../kubernetes/base-update/pre-apply.d/README.md).
+4. **Apply** — `kubectl apply -k` on **[`kubernetes/base-update/`](../kubernetes/base-update/kustomization.yaml)** (not full `kubernetes/base/`). The **update** overlay applies the same workloads and config as `base` but **omits** `jwt-secret` and `postgres-secret` from the bundle so applying an **unpacked release** does **not** overwrite live database or signing secrets with example files. It includes **[`kubernetes/base/kueue/core`](../kubernetes/base/kueue/core/kustomization.yaml)** (flavors, local queues, RBAC) but **not** the **ClusterQueue** manifests under [`kubernetes/base/kueue/cluster-queues/`](../kubernetes/base/kueue/cluster-queues/kustomization.yaml), so upgrades **do not reset** cluster-sized `nominalQuota` values. To recompute quotas after scaling nodes, run **`RECONHAWX_KUEUE_RESYNC_QUOTAS=1 ./update-kubernetes.sh`** (or **`update-minikube.sh`**) from a directory that contains [`reconhawx-kueue-quota-sync.py`](../reconhawx-kueue-quota-sync.py), or invoke that script manually.
 5. **Roll out** — `kubectl rollout restart` for **api**, **frontend**, **event-handler**, and **ct-monitor**, then wait for rollouts to finish.
 
 Restarting **api** creates a new Pod: the **`run-migrations`** init container runs again with the **migrations** image for the target release, then the API container starts. If migrations fail, the API Pod will not become Ready until the issue is fixed—see [Database migrations (automated)](install-on-kubernetes.md#database-migrations-automated).
@@ -67,7 +67,7 @@ Restarting **api** creates a new Pod: the **`run-migrations`** init container ru
 | Input | Meaning |
 |--------|---------|
 | **`--from-release`** | Always use the latest published release tarball for manifests, even if you have a local `kubernetes/base`. |
-| **`RECONHAWX_FROM_RELEASE`** | `1` = force release tarball; `0` = force local `kubernetes/base`; **unset** = use local tree when `kubernetes/base` exists, otherwise download release. |
+| **`RECONHAWX_FROM_RELEASE`** | `1` = force release tarball; `0` = force local `kubernetes/base`; **unset** = use the directory next to the script when `kubernetes/base` exists, otherwise download release. |
 | **`RECONHAWX_GITHUB_REPO`** | `owner/repo` for releases API and tarball (default `ReconHawx/reconhawx`). Use your fork if images and releases live there. |
 | **`RECONHAWX_NS`** | Namespace (default `reconhawx`). |
 | **`RECONHAWX_KUEUE_RESYNC_QUOTAS`** | Set to **`1`** to run [`reconhawx-kueue-quota-sync.py`](../reconhawx-kueue-quota-sync.py) after a successful apply (needs **`python3`**). |
@@ -79,30 +79,13 @@ Script help:
 ./update-minikube.sh --help
 ```
 
-## Pre-apply hooks
-
-Scripts in [`kubernetes/base-update/pre-apply.d/`](../kubernetes/base-update/pre-apply.d/) run **automatically** (step 3 above) **before** `kubectl apply -k kubernetes/base-update/`. They are **not** part of Kustomize; they exist because **`kubectl apply` does not delete** API objects that were removed from newer manifests.
-
-The update scripts export:
-
-| Variable | Purpose |
-|----------|---------|
-| `RECONHAWX_NS` | Target namespace (default `reconhawx`). |
-| `RECONHAWX_CLUSTER_VERSION` | In-cluster `reconhawx-version` / `APP_VERSION`, or empty if missing. |
-| `RECONHAWX_BUNDLE_VERSION` | Semver from the bundle being applied. |
-| `RECONHAWX_PRE_APPLY_LIB` | Generated `reconhawx_kubectl` helper (see [`pre-apply.d/README.md`](../kubernetes/base-update/pre-apply.d/README.md)). |
-
-Hooks can use **`sort -V`** on those strings for semver-gated behavior (documented in that README).
-
-**Manual upgrades:** if you do not use `./update-kubernetes.sh` or `./update-minikube.sh`, run the same scripts **in lexicographic order** before applying manifests—see the manual example in [`pre-apply.d/README.md`](../kubernetes/base-update/pre-apply.d/README.md)—and export `RECONHAWX_CLUSTER_VERSION` / `RECONHAWX_BUNDLE_VERSION` when a hook relies on them.
-
 ## Manual upgrade (without scripts)
 
 Equivalent high-level steps:
 
-1. Obtain a tree whose **`kubernetes/base`** matches the release you want (checkout tag, or extract release tarball).
-2. Run **pre-apply hooks** (if present) in order—see [Pre-apply hooks](#pre-apply-hooks) and [`kubernetes/base-update/pre-apply.d/README.md`](../kubernetes/base-update/pre-apply.d/README.md).
-3. Apply the safe overlay (no secrets from git):
+1. Obtain an unpacked release whose **`kubernetes/base`** matches the version you want (download the **Source code** archive for that release from GitHub and extract it).
+2. Run **pre-apply hooks** (if present) in lexicographic order—see [`kubernetes/base-update/pre-apply.d/README.md`](../kubernetes/base-update/pre-apply.d/README.md).
+3. Apply the safe overlay (does not re-apply Secret manifests from the bundle):
 
    ```bash
    kubectl apply -k kubernetes/base-update/
@@ -120,11 +103,11 @@ You still need **`curl` / GitHub** only if you choose to fetch a tarball yoursel
 
 ## Why `base-update` instead of `base`?
 
-[`kubernetes/base/`](../kubernetes/base/kustomization.yaml) includes Secret manifests under **`kubernetes/base/secrets/`**. Those files in git are **examples or local dev** values. Running `kubectl apply -k kubernetes/base/` from a **new** clone can **replace** cluster Secrets and break login or database access.
+[`kubernetes/base/`](../kubernetes/base/kustomization.yaml) includes Secret manifests under **`kubernetes/base/secrets/`**. Those files ship as **examples** in the release tree. Running `kubectl apply -k kubernetes/base/` from a **fresh** unpacked release can **replace** cluster Secrets and break login or database access.
 
 [`kubernetes/base-update/`](../kubernetes/base-update/kustomization.yaml) applies the same ConfigMaps, Deployments, RBAC, Kueue flavors/local queues/RBAC, etc., but **does not** apply those Secret objects. Existing cluster Secrets are left unchanged. **ClusterQueue** objects are also **not** part of the update bundle (see step 4 above), so their quotas stay as last set by install or [`reconhawx-kueue-quota-sync.py`](../reconhawx-kueue-quota-sync.py).
 
-If you intentionally need to rotate Secrets from files, do that with a controlled process (e.g. `kubectl apply` specific Secret YAMLs you generated securely), not by blindly applying full `base` from an unchecked-in tree.
+If you intentionally need to rotate Secrets from files, do that with a controlled process (e.g. `kubectl apply` specific Secret YAMLs you generated securely), not by blindly applying full `base` from an unmodified release extract.
 
 ## Troubleshooting
 
@@ -147,7 +130,8 @@ Set `KUBECONFIG` and context; use `RECONHAWX_NS` if you deploy to a non-default 
 
 ## Related documentation
 
-- [Installation on Kubernetes](install-on-kubernetes.md) — first-time install, migrations, manual steps.
-- [Installation on Minikube](install-on-minikube.md) — Minikube install and profile notes.
+- [Installation on Kubernetes](install-on-kubernetes.md) — first-time install.
+- [Installation on Minikube](install-on-minikube.md) — Minikube install.
+- [Uninstalling ReconHawx](uninstall-reconhawx.md) — remove from cluster or Minikube.
 - [`kubernetes/README.md`](../kubernetes/README.md) — base layout, images, Kueue overview.
 - [`AGENTS.md`](../AGENTS.md) — repo map and operational pointers.

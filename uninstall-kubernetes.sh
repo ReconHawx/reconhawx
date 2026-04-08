@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Remove ReconHawx from a Kubernetes cluster (see docs/install-on-kubernetes.md).
+# Remove ReconHawx from a Kubernetes cluster (see docs/uninstall-reconhawx.md).
 # Deletes namespace reconhawx and cluster-scoped Kueue objects defined in kubernetes/base/kueue.
 # Optionally removes kueue-system, ingress-nginx, and metallb-system if you confirm (shared cluster).
 #
