@@ -35,35 +35,6 @@ Piped installs read prompts from **`/dev/tty`**; for headless use, save the scri
 | **`RECONHAWX_FROM_RELEASE`** | `1` = fetch release tarball; `0` = use the **`kubernetes/base`** next to the script; **unset** = use that directory when present, otherwise fetch a release. |
 | **`RECONHAWX_GITHUB_REPO`** | `owner/repo` for releases (default `ReconHawx/reconhawx`). |
 
-## After install
-
-1. **Hostname** — The default UI hostname is **`reconhawx.local`**; the installer may prompt for a **custom hostname**. Ensure that name resolves (often via **`minikube ip`**); the script may have updated **`/etc/hosts`**.
-2. Wait for the API and frontend:
-
-   ```shell
-   minikube -p reconhawx kubectl -- wait deploy/frontend deploy/api -n reconhawx --for=condition=available --timeout=5m
-   ```
-
-   Use your profile name in place of **`reconhawx`** if different.
-
-3. **Admin password**:
-
-   ```shell
-   minikube -p reconhawx kubectl -- logs statefulset/postgresql -n reconhawx | grep -A2 "ADMIN USER CREATED"
-   ```
-
-4. In a browser, open **`http://reconhawx.local`** or the **custom hostname** you set during install, and sign in as **`admin`**.
-
-## Database migrations (automated)
-
-Same as on a full cluster: the API **`run-migrations`** init container applies schema before traffic. If the API stays not Ready:
-
-```shell
-minikube -p reconhawx kubectl -- logs -n reconhawx deploy/api -c run-migrations
-```
-
-See **[Database migrations (automated)](install-on-kubernetes.md#database-migrations-automated)** on the cluster install page.
-
 ## Upgrades
 
 See **[`docs/update-reconhawx.md`](update-reconhawx.md)**. From the repo root:
