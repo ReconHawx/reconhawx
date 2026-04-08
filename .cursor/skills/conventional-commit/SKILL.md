@@ -2,9 +2,11 @@
 name: conventional-commit
 description: >-
   Prepares Conventional Commits messages for this repo (release-please), using git diffs and
-  agent transcript search for intent. Prefers split commits when changes span multiple concerns
-  or chat sessions; proposes commit groups and messages for user approval before git add/commit.
-  Use when the user asks to commit, prepare a commit, or write a conventional commit message.
+  agent transcript search for intent. Subjects are changelog-ready: short, outcome-focused
+  (what the feat/fix does), not implementation detail. Prefers split commits when changes span
+  multiple concerns or chat sessions; proposes commit groups and messages for user approval
+  before git add/commit. Use when the user asks to commit, prepare a commit, or write a
+  conventional commit message.
 ---
 
 # Conventional commits (ReconHawx)
@@ -20,7 +22,10 @@ Use this skill when the user wants to commit working-tree changes with messages 
 ```
 
 - **Subject:** imperative mood, no trailing period, aim for ~72 characters.
-- **Body:** explain *why* (intent, trade-offs), not a line-by-line recap of the diff.
+- **Changelog tone:** For types that appear in `CHANGELOG.md` (`feat`, `fix`, `perf` per release-please), write the subject as the **one-line release note** readers see under Features / Bug Fixes / Performance. State **what the change does** for users or operators (behavior, outcome), not how it is implemented. Keep it **short**—no stack of clauses, file paths, ticket dumps, or step-by-step detail; put nuance in the body.
+- **Body:** explain *why* (intent, trade-offs), not a line-by-line recap of the diff. Use the body for implementation detail, scope limits, and migration notes.
+
+**Subject quick test:** Would this sentence read naturally as a bullet in the published changelog next to other entries? If it sounds like an internal commit log (“refactor port_scan command builder”, “add optional timeout param to helper”) **narrow or rewrite** it to the outward effect (“cap concurrent naabu targets per scan”, “avoid hanging port scans on slow hosts”).
 
 **Types aligned with** [`release-please-config.json`](../../../release-please-config.json) `changelog-sections`:
 
@@ -75,7 +80,7 @@ Each `agent-transcripts/<uuid>/` directory is typically **one chat session**. Ma
 
 - Changes are a tight bundle (e.g. feature + tests + docs for that feature only; or a fix and its one-line follow-up in the same module from the same task).
 
-For each proposed commit: **one conventional type**, **one scope** when possible, **one clear subject**, body explains **why** for that slice only.
+For each proposed commit: **one conventional type**, **one scope** when possible, **one changelog-ready subject** (concise, describes the feature or fix outcome), body explains **why** for that slice only.
 
 ### 4. Present summary for approval (required)
 
@@ -114,7 +119,7 @@ EOF
 
 ## Example (proposed output to user)
 
-**Proposed commit**
+**Proposed commit** — subject is changelog-facing (what admins get), body carries how/why.
 
 ```
 feat(admin): add system status page with per-service version tracking
@@ -122,6 +127,8 @@ feat(admin): add system status page with per-service version tracking
 Bake APP_VERSION into images at build time; show running versions via
 cluster introspection so admins see what is actually deployed.
 ```
+
+**Avoid** overlong or implementation-heavy subjects, e.g. `feat(admin): add SystemStatus.js, admin route, and k8s version query in deployment list` — split the “what it does” into a short headline and move the rest to the body.
 
 **Files to stage**
 
