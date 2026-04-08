@@ -95,7 +95,11 @@ python src/migrations/migrate.py create "Add user preferences table"
 - ✅ Use descriptive names that explain the change
 - ✅ Include DOWN migration when possible for rollback capability
 - ✅ Test migrations on a copy of production data first
-- ✅ Keep migrations idempotent when possible (use `IF NOT EXISTS`, `IF EXISTS`)
+- ✅ **Always write idempotent UP migrations**: the same SQL may run against a database that already matches the end state (for example first boot from `kubernetes/base/postgresql/schema.sql` plus pending migrator versions) or after a failed/partial run. It must succeed without error and leave correct data.
+  - Prefer `ADD COLUMN IF NOT EXISTS`, `DROP … IF EXISTS`, `CREATE INDEX IF NOT EXISTS`, `DROP COLUMN IF EXISTS`.
+  - When referencing a legacy column that may already be gone, guard with `information_schema` / `pg_catalog` checks or run the statement via `EXECUTE` inside a conditional `DO $$ … $$` block so the planner does not require the dropped column.
+  - For named constraints without `IF NOT EXISTS`, use `DO $$ BEGIN … ALTER TABLE … ADD CONSTRAINT … EXCEPTION WHEN duplicate_object THEN NULL; END $$` or an existence check on `pg_constraint` before adding.
+  - For data backfills, restrict `UPDATE` rows that still need it (for example “only where new column is unset”) so repeats do not overwrite applied changes.
 - ✅ Add indexes on frequently queried columns
 - ✅ Use UUID for primary keys (consistent with existing models)
 - ✅ Include `created_at` and `updated_at` timestamps on new tables
