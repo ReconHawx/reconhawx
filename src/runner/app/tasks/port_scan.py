@@ -126,8 +126,9 @@ class PortScan(Task):
         # Build combined target list: IPs (port range) + IP:PORT (specific ports)
         targets = list(filtered_ips) + list(filtered_ip_ports)
         targets_text = '\n'.join(targets)
-        command = f"cat << 'EOF' | python3 /workspace/port_scan_wrapper.py\n{targets_text}\nEOF"
-        return [command]
+        # Unquoted EOF so outer single-quote wrapping in KubernetesJob (generate_job_crd) stays valid.
+        command = f"cat << EOF | python3 /workspace/port_scan_wrapper.py\n{targets_text}\nEOF"
+        return command
     
     def parse_output(self, output, params: Optional[Dict[Any, Any]] = None) -> Dict[AssetType, List[Any]]:
         """Parse output into Service assets. Supports JSON (port_scan_wrapper) and nmap XML (fallback)."""
