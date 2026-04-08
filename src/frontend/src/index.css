@@ -15,6 +15,8 @@
 
   /* Light theme — off-white layers (less glare than pure #fff, still clearly light) */
   --bs-body-bg: #e8ecf4;
+  /* Used by Bootstrap utilities such as .bg-body (they use -rgb + opacity) */
+  --bs-body-bg-rgb: 232, 236, 244;
   --bs-body-color: #0a0f1c;
   /* Headings use var(--bs-heading-color) in Bootstrap — keep them in sync with body */
   --bs-heading-color: var(--bs-body-color);
@@ -53,6 +55,7 @@
   --rh-surface-elevated: #121c2f;
 
   --bs-body-bg: #0a0f1c;
+  --bs-body-bg-rgb: 10, 15, 28;
   --bs-body-color: #f0fbff;
   --bs-heading-color: var(--bs-body-color);
   /* Match table / list dividers to IPs (and other data tables): light theme uses solid #cdd6e4 — keep cyan-tinted but readable */

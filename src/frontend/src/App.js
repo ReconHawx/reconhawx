@@ -9,6 +9,7 @@ import Login from './components/Login';
 import ProtectedRoute from './components/ProtectedRoute';
 import PublicHealthStatus from './components/PublicHealthStatus';
 import LoadingFallback from './components/LoadingFallback';
+import AppStatusBar from './components/AppStatusBar';
 
 // Lazy load all page components for better code splitting
 const Dashboard = lazy(() => import('./pages/Dashboard'));
@@ -80,7 +81,7 @@ function AppContent() {
     <Router>
       <div className="d-flex flex-column min-vh-100">
         <Navigation />
-        <main className="flex-grow-1" style={{ paddingTop: '20px' }}>
+        <main className="flex-grow-1" style={{ paddingTop: '20px', paddingBottom: '3.5rem' }}>
           <Container fluid>
             <Suspense fallback={<LoadingFallback />}>
               <Routes>
@@ -391,6 +392,7 @@ function AppContent() {
             </Suspense>
           </Container>
         </main>
+        <AppStatusBar />
       </div>
     </Router>
   );
