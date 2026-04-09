@@ -10,22 +10,18 @@
 resolve_domain:
   last_execution_threshold: 24
   timeout: 120
-  max_retries: 3
   chunk_size: 10
 whois_domain_check:
   last_execution_threshold: 24
   timeout: 600
-  max_retries: 3
   chunk_size: 1
 resolve_ip:
   last_execution_threshold: 24
   timeout: 120
-  max_retries: 3
   chunk_size: 10
 resolve_ip_cidr:
   last_execution_threshold: 1
   timeout: 300
-  max_retries: 3
   chunk_size: 1
   ip_limit: 500
   max_cidr_size: 65536
@@ -36,12 +32,10 @@ resolve_ip_cidr:
 subdomain_finder:
   last_execution_threshold: 24
   timeout: 300
-  max_retries: 3
   chunk_size: 10
 subdomain_permutations:
   last_execution_threshold: 24
   timeout: 300
-  max_retries: 3
   chunk_size: 100
   permutation_list: files/permutations.txt
   permutation_limit: null
@@ -49,19 +43,16 @@ subdomain_permutations:
 dns_bruteforce:
   last_execution_threshold: 24
   timeout: 600
-  max_retries: 3
   chunk_size: 10
   wordlist: /workspace/files/subdomains.txt
   batch_size: 5
 port_scan:
   last_execution_threshold: 24
   timeout: 900
-  max_retries: 3
   chunk_size: 5
 nuclei_scan:
   last_execution_threshold: 24
   timeout: 900
-  max_retries: 3
   chunk_size: 10
   template:
     official: []
@@ -70,19 +61,16 @@ nuclei_scan:
 wpscan:
   last_execution_threshold: 24
   timeout: 1800
-  max_retries: 3
   chunk_size: 5
   api_token: ''
   enumerate: []
 test_http:
   last_execution_threshold: 24
   timeout: 900
-  max_retries: 3
   chunk_size: 10
 typosquat_detection:
   last_execution_threshold: 1w
   timeout: 1800
-  max_retries: 3
   chunk_size: 20
   analyze_input_as_variations: false
   source: ''
@@ -100,35 +88,29 @@ typosquat_detection:
 detect_broken_links:
   last_execution_threshold: 24
   timeout: 900
-  max_retries: 3
   chunk_size: 10
 screenshot_website:
   last_execution_threshold: 24
   timeout: 60
-  max_retries: 3
   chunk_size: 10
 crawl_website:
   last_execution_threshold: 24
   timeout: 1800
-  max_retries: 3
   chunk_size: 1
   depth: 5
 fuzz_website:
   last_execution_threshold: 24
   timeout: 300
-  max_retries: 3
   chunk_size: 5
   wordlist: /workspace/files/webcontent_test.txt
 shell_command:
   last_execution_threshold: 24
   timeout: 300
-  max_retries: 3
   chunk_size: 10
   command: []
 # Debug / test task; hidden from System Settings (see RECON_TASKS_HIDDEN_FROM_ADMIN_CATALOG).
 asset_batch_generator:
   last_execution_threshold: 1
   timeout: 300
-  max_retries: 3
   chunk_size: 50
   batch_size: 100

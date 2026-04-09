@@ -58,10 +58,14 @@ RECON_TASKS_HIDDEN_FROM_ADMIN_CATALOG: FrozenSet[str] = frozenset({
     "asset_batch_generator",
 })
 
+# Keys removed from the recon-task contract; omitted from API responses even if still present in DB JSON.
+DEPRECATED_RECON_TASK_PARAMETER_KEYS: FrozenSet[str] = frozenset({
+    "max_retries",
+})
+
 GENERIC_BUILTIN_FALLBACK: Dict[str, Any] = {
     "last_execution_threshold": 24,
     "timeout": 300,
-    "max_retries": 3,
     "chunk_size": 10,
 }
 
@@ -98,9 +102,15 @@ def effective_parameters(
     Builtin defaults shallow-merged with optional DB-stored parameters (stored wins per key).
     Unknown task names use GENERIC_BUILTIN_FALLBACK only (no raise).
     """
-    merged = builtin_parameters(recon_task)
+    merged = dict(builtin_parameters(recon_task))
     if stored:
         merged = {**merged, **stored}
+    if DEPRECATED_RECON_TASK_PARAMETER_KEYS:
+        merged = {
+            k: v
+            for k, v in merged.items()
+            if k not in DEPRECATED_RECON_TASK_PARAMETER_KEYS
+        }
     return merged
 
 

@@ -383,20 +383,6 @@ function SystemSettings() {
               />
             </Form.Group>
           ) : null}
-          <Form.Group className={!hasChunkInTaskParams ? 'mb-3' : 'mb-0'}>
-            <Form.Label>Max retries</Form.Label>
-            <Form.Control
-              type="number"
-              min={0}
-              value={params.max_retries ?? 3}
-              onChange={(e) =>
-                setParams((prev) => ({
-                  ...prev,
-                  max_retries: parseInt(e.target.value, 10) ?? 0,
-                }))
-              }
-            />
-          </Form.Group>
           {!hasChunkInTaskParams ? (
             <Form.Group className="mb-0">
               <Form.Label>Chunk size</Form.Label>
@@ -1033,7 +1019,6 @@ function SystemSettings() {
                           <th>Source</th>
                           <th>Last execution threshold</th>
                           <th>Timeout (seconds)</th>
-                          <th>Max Retries</th>
                           <th>Chunk Size</th>
                           <th>Last Updated</th>
                           <th>Actions</th>
@@ -1061,11 +1046,6 @@ function SystemSettings() {
                             <td>
                               <Badge bg="secondary">
                                 {task.parameters.timeout ?? '—'}
-                              </Badge>
-                            </td>
-                            <td>
-                              <Badge bg="warning" text="dark">
-                                {task.parameters.max_retries ?? '—'}
                               </Badge>
                             </td>
                             <td>

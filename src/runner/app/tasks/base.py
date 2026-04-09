@@ -178,19 +178,6 @@ class TaskParameterManager:
         parameters = self.get_task_parameters(task_name)
         return parameters.get("timeout", 300)  # Default 5 minutes
     
-    def get_max_retries(self, task_name: str) -> int:
-        """
-        Get the max retries for a specific task
-        
-        Args:
-            task_name: Name of the recon task
-            
-        Returns:
-            Maximum number of retries
-        """
-        parameters = self.get_task_parameters(task_name)
-        return parameters.get("max_retries", 3)  # Default 3 retries
-    
     def get_chunk_size(self, task_name: str) -> int:
         """
         Get the chunk size for a specific task
@@ -490,11 +477,6 @@ class Task(ABC):
         
         # Fall back to database/API default
         return parameter_manager.get_timeout(self.name)
-    
-    def get_max_retries(self) -> int:
-        """Return the maximum number of retries for this task"""
-        #logger.debug(f"Task {self.name} requesting max_retries")
-        return parameter_manager.get_max_retries(self.name)
     
     def get_chunk_size(self, input_data: Any, params: Optional[Dict[Any, Any]] = None) -> int:
         """Return the chunk size for this task (params override, then API default)."""
