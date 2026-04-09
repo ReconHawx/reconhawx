@@ -4,8 +4,7 @@ Builtin recon-task parameters: loaded from YAML next to this module (or RECON_TA
 DB rows in recon_task_parameters shallow-merge on top; with no row, API returns these defaults only
 (stored_in_database=false). The API does not insert default rows into the database on startup.
 
-Keep runner offline fallback in src/runner/app/tasks/base.py aligned with the same values (or deploy
-the same YAML path to the runner if you add loading there later).
+Runner loads effective parameters from GET /admin/public/recon-tasks/effective-parameters at workflow startup.
 """
 from __future__ import annotations
 

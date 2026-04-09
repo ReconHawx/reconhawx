@@ -332,7 +332,11 @@ def parse_output(self, output, params=None):
 ## Task Parameter Management
 
 ### TaskParameterManager
-Parameters are fetched from the API and cached:
+Effective parameters come from a **single bootstrap request** per workflow run:
+
+- `GET {API_URL}/admin/public/recon-tasks/effective-parameters` (no auth) returns all known tasks’ merged params (same contract as the API YAML + DB overrides).
+- `run-workflow.py` calls `parameter_manager.load_all_from_api()` after env checks and **before** `TaskExecutor.initialize()`. Retries: `RUNNER_RECON_PARAMS_RETRIES` (default 5), `RUNNER_RECON_PARAMS_BACKOFF_SECONDS` (default 2). Failure → `RuntimeError` and workflow exits failed.
+- `get_task_parameters(name)` reads the in-memory manifest only (no per-task HTTP, no TTL cache).
 
 ```python
 # Global instance in base.py
@@ -340,10 +344,8 @@ parameter_manager = TaskParameterManager()
 
 # In Task class
 def get_timeout(self, input_data, params=None):
-    # Check workflow params first
     if params and params.get('timeout'):
         return int(params['timeout'])
-    # Fall back to API/default
     return parameter_manager.get_timeout(self.name)
 
 def get_chunk_size(self, input_data, params=None):
@@ -353,25 +355,7 @@ def get_last_execution_threshold(self):
     return parameter_manager.get_last_execution_threshold(self.name)
 ```
 
-### Default Parameters
-Defined in `_get_default_parameters()`:
-
-```python
-defaults = {
-    "resolve_domain": {
-        "last_execution_threshold": 24,  # hours
-        "timeout": 120,                   # seconds
-        "max_retries": 3,
-        "chunk_size": 10
-    },
-    "nuclei_scan": {
-        "last_execution_threshold": 24,
-        "timeout": 900,
-        "max_retries": 3,
-        "chunk_size": 10
-    }
-}
-```
+Source of truth for missing keys is **`recon_task_builtin_defaults.yaml`** on the API; the runner does not ship duplicate default dicts.
 
 ## Proxy Support (Optional)
 

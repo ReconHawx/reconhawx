@@ -5,8 +5,7 @@
 #
 # last_execution_threshold: plain number = hours (default). Optional suffix on a string: h, d (days), w (weeks).
 # Examples: 24 → 24h, 24h → 24h, 1d → 24h, 2d → 48h, 1w → 168h. No months/years.
-# shell_command: in this file for runner/public GET defaults; hidden from System Settings (admin list).
-# asset_batch_generator: not listed here (unknown to API); runner uses offline defaults only.
+# shell_command / asset_batch_generator: in this file for runner + public manifest; hidden from System Settings.
 
 resolve_domain:
   last_execution_threshold: 24
@@ -126,3 +125,10 @@ shell_command:
   max_retries: 3
   chunk_size: 10
   command: []
+# Debug / test task; hidden from System Settings (see RECON_TASKS_HIDDEN_FROM_ADMIN_CATALOG).
+asset_batch_generator:
+  last_execution_threshold: 1
+  timeout: 300
+  max_retries: 3
+  chunk_size: 50
+  batch_size: 100

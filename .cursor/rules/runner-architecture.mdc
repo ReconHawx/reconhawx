@@ -26,6 +26,14 @@ Workflow Runner (run-workflow.py)
     └── Finding models
 ```
 
+## Recon task parameters (runner bootstrap)
+
+Before executing steps, the runner loads the full effective-parameter manifest from the Data API:
+
+- **Endpoint:** `GET /admin/public/recon-tasks/effective-parameters` (public; optional `Authorization: Bearer` if your gateway requires it — same as per-task public GET).
+- **Env:** `RUNNER_RECON_PARAMS_RETRIES`, `RUNNER_RECON_PARAMS_BACKOFF_SECONDS` control retry on transient failures.
+- If loading fails after retries, the workflow process exits unsuccessfully (no offline fallback).
+
 ## Execution Flow
 
 ```mermaid

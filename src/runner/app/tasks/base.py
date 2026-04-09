@@ -7,7 +7,7 @@ import os
 import requests
 import asyncio
 import json
-from datetime import datetime
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -80,93 +80,74 @@ class CommandSpec:
 
 
 class TaskParameterManager:
-    """Centralized parameter management for tasks"""
-    
+    """Loads all recon task parameters from the API once per process (workflow run)."""
+
     def __init__(self):
         self.api_url = os.getenv("API_URL", "http://data-api:8000")
-        self.internal_api_key = os.getenv('INTERNAL_SERVICE_API_KEY', '')
-        
-        # Debug: Log TaskParameterManager initialization
-        logger.info("=== TaskParameterManager Debug ===")
+        self.internal_api_key = os.getenv("INTERNAL_SERVICE_API_KEY", "")
+        # Populated by load_all_from_api()
+        self._loaded: Optional[Dict[str, Dict[str, Any]]] = None
+
+        logger.info("=== TaskParameterManager ===")
         logger.info(f"API URL: {self.api_url}")
         logger.info(f"Internal API key present: {bool(self.internal_api_key)}")
+        logger.info("=== End TaskParameterManager ===")
+
+    def load_all_from_api(self) -> None:
+        """
+        Fetch effective parameters for all known tasks via public manifest endpoint.
+        Retries with backoff; raises RuntimeError if exhausted.
+        """
+        retries = max(1, int(os.getenv("RUNNER_RECON_PARAMS_RETRIES", "5")))
+        backoff = max(0.0, float(os.getenv("RUNNER_RECON_PARAMS_BACKOFF_SECONDS", "2")))
+        url = f"{self.api_url.rstrip('/')}/admin/public/recon-tasks/effective-parameters"
+        headers = {}
         if self.internal_api_key:
-            logger.info(f"Internal API key length: {len(self.internal_api_key)}")
-            logger.info(f"Internal API key first 10 chars: {self.internal_api_key[:10]}...")
-        logger.info("=== End TaskParameterManager Debug ===")
-        
-        self._parameter_cache = {}
-        self._cache_ttl = 300  # 5 minutes cache TTL
-        self._cache_timestamps = {}
-    
-    def _get_cached_parameters(self, task_name: str) -> Optional[Dict[str, Any]]:
-        """Get parameters from cache if still valid"""
-        if task_name in self._parameter_cache:
-            timestamp = self._cache_timestamps.get(task_name)
-            if timestamp and (datetime.now() - timestamp).total_seconds() < self._cache_ttl:
-                return self._parameter_cache[task_name]
-        return None
-    
-    def _set_cached_parameters(self, task_name: str, parameters: Dict[str, Any]):
-        """Cache parameters with timestamp"""
-        self._parameter_cache[task_name] = parameters
-        self._cache_timestamps[task_name] = datetime.now()
-    
-    def get_task_parameters(self, task_name: str) -> Dict[str, Any]:
-        """
-        Fetch task parameters from the API with caching
-        
-        Args:
-            task_name: Name of the recon task
-            
-        Returns:
-            Dictionary containing task parameters with defaults if not found
-        """
-        # Check cache first
-        cached_params = self._get_cached_parameters(task_name)
-        if cached_params:
-            return cached_params
-        
-        try:
-            # Fetch from API with internal service authentication
-            headers = {}
-            if self.internal_api_key:
-                headers['Authorization'] = f'Bearer {self.internal_api_key}'
-                #logger.debug(f"Using internal API key for task {task_name} (key length: {len(self.internal_api_key)})")
-            else:
-                logger.warning(f"No internal API key found for task {task_name}")
-            
-            #logger.debug(f"Making API request to: {self.api_url}/admin/public/recon-tasks/{task_name}/parameters")
-            #logger.debug(f"Request headers: {headers}")
-            
-            response = requests.get(
-                f"{self.api_url}/admin/public/recon-tasks/{task_name}/parameters",
-                headers=headers,
-                timeout=10
+            headers["Authorization"] = f"Bearer {self.internal_api_key}"
+
+        last_error: Optional[str] = None
+        for attempt in range(1, retries + 1):
+            try:
+                response = requests.get(url, headers=headers, timeout=30)
+                if response.status_code == 200:
+                    data = response.json()
+                    tasks = data.get("tasks")
+                    if not isinstance(tasks, dict) or not tasks:
+                        raise ValueError("manifest missing or empty 'tasks' object")
+                    self._loaded = {str(k): dict(v) for k, v in tasks.items()}
+                    logger.info(
+                        "Loaded recon task parameter manifest (%s tasks) from API",
+                        len(self._loaded),
+                    )
+                    return
+                last_error = f"HTTP {response.status_code}: {response.text[:200]}"
+            except Exception as e:
+                last_error = str(e)
+            logger.warning(
+                "Recon parameter manifest fetch failed (attempt %s/%s): %s",
+                attempt,
+                retries,
+                last_error,
             )
-            
-            #logger.debug(f"API response status: {response.status_code}")
-            #if response.status_code != 200:
-            #    logger.debug(f"API response text: {response.text[:200]}...")
-            
-            if response.status_code == 200:
-                data = response.json()
-                parameters = data.get("parameters", {})
-                self._set_cached_parameters(task_name, parameters)
-                logger.info(f"Fetched parameters for task {task_name}: {parameters}")
-                return parameters
-            elif response.status_code == 404:
-                # Task parameters not configured, use defaults
-                default_params = self._get_default_parameters(task_name)
-                logger.info(f"Using default parameters for task {task_name}: {default_params}")
-                return default_params
-            else:
-                logger.warning(f"Failed to fetch parameters for task {task_name}: {response.status_code}")
-                return self._get_default_parameters(task_name)
-                
-        except Exception as e:
-            logger.warning(f"Error fetching parameters for task {task_name}: {str(e)}")
-            return self._get_default_parameters(task_name)
+            if attempt < retries and backoff > 0:
+                time.sleep(backoff)
+
+        raise RuntimeError(
+            f"Failed to load recon task parameters from API after {retries} attempt(s). Last error: {last_error}"
+        )
+
+    def get_task_parameters(self, task_name: str) -> Dict[str, Any]:
+        """Return effective parameters loaded at startup; no per-task HTTP."""
+        if self._loaded is None:
+            raise RuntimeError(
+                "Task parameters not loaded; call parameter_manager.load_all_from_api() at workflow startup"
+            )
+        if task_name not in self._loaded:
+            raise KeyError(
+                f"No parameters in API manifest for task '{task_name}'. "
+                "If this task is valid, add it to recon_task_builtin_defaults.yaml on the API."
+            )
+        return self._loaded[task_name]
 
     def get_last_execution_threshold(self, task_name: str) -> int:
         """
@@ -222,161 +203,6 @@ class TaskParameterManager:
         """
         parameters = self.get_task_parameters(task_name)
         return parameters.get("chunk_size", 10)  # Default 10 items per chunk
-    
-    def _get_default_parameters(self, task_name: str) -> Dict[str, Any]:
-        """
-        Offline fallback when the API is unavailable or returns an error.
-
-        Must stay aligned with src/api/app/recon_task_builtin_defaults.yaml (loaded by recon_task_defaults.py).
-        """
-        defaults = {
-            "resolve_domain": {
-                "last_execution_threshold": 24,
-                "timeout": 120,
-                "max_retries": 3,
-                "chunk_size": 10,
-            },
-            "whois_domain_check": {
-                "last_execution_threshold": 24,
-                "timeout": 600,
-                "max_retries": 3,
-                "chunk_size": 1,
-            },
-            "resolve_ip": {
-                "last_execution_threshold": 24,
-                "timeout": 120,
-                "max_retries": 3,
-                "chunk_size": 10,
-            },
-            "resolve_ip_cidr": {
-                "last_execution_threshold": 1,
-                "timeout": 300,
-                "max_retries": 3,
-                "chunk_size": 1,
-                "ip_limit": 500,
-                "max_cidr_size": 65536,
-                "ips_per_worker": 50,
-                "enable_port_scan": True,
-                "port_scan_timeout": 300,
-                "force_ip": False,
-            },
-            "subdomain_finder": {
-                "last_execution_threshold": 24,
-                "timeout": 300,
-                "max_retries": 3,
-                "chunk_size": 10,
-            },
-            "subdomain_permutations": {
-                "last_execution_threshold": 24,
-                "timeout": 300,
-                "max_retries": 3,
-                "chunk_size": 100,
-                "permutation_list": "files/permutations.txt",
-                "permutation_limit": None,
-                "batch_size": 10,
-            },
-            "dns_bruteforce": {
-                "last_execution_threshold": 24,
-                "timeout": 600,
-                "max_retries": 3,
-                "chunk_size": 10,
-                "wordlist": "/workspace/files/subdomains.txt",
-                "batch_size": 5,
-            },
-            "port_scan": {
-                "last_execution_threshold": 24,
-                "timeout": 900,
-                "max_retries": 3,
-                "chunk_size": 5,
-            },
-            "nuclei_scan": {
-                "last_execution_threshold": 24,
-                "timeout": 900,
-                "max_retries": 3,
-                "chunk_size": 10,
-                "template": {"official": [], "custom": []},
-                "cmd_args": [],
-            },
-            "wpscan": {
-                "last_execution_threshold": 24,
-                "timeout": 1800,
-                "max_retries": 3,
-                "chunk_size": 5,
-                "api_token": "",
-                "enumerate": [],
-            },
-            "test_http": {
-                "last_execution_threshold": 24,
-                "timeout": 900,
-                "max_retries": 3,
-                "chunk_size": 10,
-            },
-            "typosquat_detection": {
-                "last_execution_threshold": "1w",
-                "timeout": 1800,
-                "max_retries": 3,
-                "chunk_size": 20,
-                "analyze_input_as_variations": False,
-                "source": "",
-                "max_variations": 100,
-                "max_workers": 5,
-                "domains_per_worker": 20,
-                "fuzzers": [],
-                "active_checks": True,
-                "geoip_checks": True,
-                "exclude_tested": True,
-                "include_subdomains": False,
-                "recalculate_risk": False,
-                "enable_fuzzing": False,
-                "fuzzer_wordlist": "/workspace/files/webcontent_test.txt",
-            },
-            "detect_broken_links": {
-                "last_execution_threshold": 24,
-                "timeout": 900,
-                "max_retries": 3,
-                "chunk_size": 10,
-            },
-            "screenshot_website": {
-                "last_execution_threshold": 24,
-                "timeout": 60,
-                "max_retries": 3,
-                "chunk_size": 10,
-            },
-            "crawl_website": {
-                "last_execution_threshold": 24,
-                "timeout": 1800,
-                "max_retries": 3,
-                "chunk_size": 1,
-                "depth": 5,
-            },
-            "fuzz_website": {
-                "last_execution_threshold": 24,
-                "timeout": 300,
-                "max_retries": 3,
-                "chunk_size": 5,
-                "wordlist": "/workspace/files/webcontent_test.txt",
-            },
-            "shell_command": {
-                "last_execution_threshold": 24,
-                "timeout": 300,
-                "max_retries": 3,
-                "chunk_size": 10,
-                "command": [],
-            },
-            "asset_batch_generator": {
-                "last_execution_threshold": 1,
-                "timeout": 300,
-                "max_retries": 3,
-                "chunk_size": 50,
-                "batch_size": 100,
-            },
-        }
-        return defaults.get(task_name, {
-            "last_execution_threshold": 24,
-            "timeout": 300,
-            "max_retries": 3,
-            "chunk_size": 10,
-        })
 
 # Global parameter manager instance
 parameter_manager = TaskParameterManager()

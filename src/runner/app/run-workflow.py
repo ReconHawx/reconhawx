@@ -13,6 +13,7 @@ from datetime import datetime
 # Import our task system
 from models.workflow import Workflow
 from task_executor import TaskExecutor
+from tasks.base import parameter_manager
 from data_api_client import DataAPIClient
 from services.kubernetes import KubernetesService
 
@@ -806,7 +807,13 @@ async def run_workflow(workflow_data):
         if not internal_api_key:
             logger.error("INTERNAL_SERVICE_API_KEY environment variable is not set")
             raise ValueError("INTERNAL_SERVICE_API_KEY environment variable is required")
-        
+
+        try:
+            parameter_manager.load_all_from_api()
+        except RuntimeError as e:
+            logger.error("%s", e)
+            raise
+
         # Create API client for unified progressive streaming
         api_client = DataAPIClient(api_url, internal_api_key)
         logger.debug(f"Initialized API client for {api_url}")

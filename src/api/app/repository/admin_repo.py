@@ -4,6 +4,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from db import get_db_session
 from models.postgres import ReconTaskParameters, AwsCredentials, SystemSetting
 from recon_task_defaults import (
+    KNOWN_RECON_TASKS,
     effective_parameters,
     recon_task_api_payload,
     recon_task_names_for_admin_list,
@@ -105,7 +106,29 @@ class AdminRepository:
         except Exception as e:
             logger.error(f"Error listing recon task parameters: {str(e)}")
             raise
-    
+
+    async def get_all_known_recon_task_parameters_manifest(self) -> Dict[str, Dict[str, Any]]:
+        """
+        Effective parameters for every KNOWN_RECON_TASK (built-in + DB row if any).
+        Used by the runner to bootstrap without per-task HTTP calls.
+        """
+        try:
+            async with get_db_session() as db:
+                results = db.query(ReconTaskParameters).all()
+                by_name = {r.recon_task: r.to_dict() for r in results}
+            tasks: Dict[str, Dict[str, Any]] = {}
+            for name in sorted(KNOWN_RECON_TASKS):
+                payload = recon_task_api_payload(name, by_name.get(name))
+                tasks[name] = payload["parameters"]
+            return tasks
+
+        except SQLAlchemyError as e:
+            logger.error(f"Database error building recon task manifest: {str(e)}")
+            raise
+        except Exception as e:
+            logger.error(f"Error building recon task manifest: {str(e)}")
+            raise
+
     async def delete_recon_task_parameters(self, recon_task: str) -> bool:
         """
         Delete parameters for a specific recon task

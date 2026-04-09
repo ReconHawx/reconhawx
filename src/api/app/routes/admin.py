@@ -70,6 +70,15 @@ class ReconTaskParametersListResponse(BaseModel):
     tasks: List[ReconTaskParametersResponse] = Field(..., description="List of recon task parameters")
     total: int = Field(..., description="Total number of tasks")
 
+
+class ReconTaskParametersManifestResponse(BaseModel):
+    """Public manifest: task name -> effective parameters (runner bootstrap)."""
+
+    tasks: Dict[str, Dict[str, Any]] = Field(
+        ...,
+        description="All known recon tasks and their effective parameter dicts",
+    )
+
 class LastExecutionThresholdRequest(BaseModel):
     """Request model for setting last execution threshold"""
 
@@ -193,6 +202,24 @@ async def get_recon_task_parameters(
     except Exception as e:
         logger.error(f"Error getting recon task parameters for {recon_task}: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.get(
+    "/public/recon-tasks/effective-parameters",
+    response_model=ReconTaskParametersManifestResponse,
+)
+async def get_recon_task_parameters_manifest_public():
+    """
+    Effective parameters for every known recon task (public, no auth).
+    Used by the runner once at workflow startup to avoid per-task requests.
+    """
+    try:
+        admin_repo = AdminRepository()
+        tasks = await admin_repo.get_all_known_recon_task_parameters_manifest()
+        return ReconTaskParametersManifestResponse(tasks=tasks)
+    except Exception as e:
+        logger.error(f"Error building public recon task manifest: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.get("/public/recon-tasks/{recon_task}/parameters", response_model=ReconTaskParametersResponse)
 async def get_recon_task_parameters_public(

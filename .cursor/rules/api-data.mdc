@@ -515,7 +515,7 @@ def init_database():
 
 - **Builtin defaults:** `src/api/app/recon_task_builtin_defaults.yaml`, loaded at API startup by `recon_task_defaults.py`. Override path with env **`RECON_TASK_DEFAULTS_PATH`**.
 - **`recon_task_parameters` table:** stores **admin overrides only**. If there is no row for a task, list/get endpoints still return effective parameters from YAML (`stored_in_database: false`). The API **does not** auto-insert default rows on `init_database()`.
-- **Runner:** offline fallback in `TaskParameterManager._get_default_parameters` (`src/runner/app/tasks/base.py`) should stay aligned when YAML changes.
+- **Runner bootstrap:** `GET /admin/public/recon-tasks/effective-parameters` returns `{ "tasks": { "<task_name>": { ...effective params... } } }` for every key in `KNOWN_RECON_TASKS`. The runner loads this once per workflow process (retries: `RUNNER_RECON_PARAMS_RETRIES`, `RUNNER_RECON_PARAMS_BACKOFF_SECONDS`); there is no second copy of defaults in the runner image.
 
 ## Best Practices
 
