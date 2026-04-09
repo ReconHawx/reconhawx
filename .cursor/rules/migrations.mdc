@@ -2,207 +2,118 @@
 globs: ["src/migrations/**", "src/api/app/models/**"]
 ---
 
-# Database Migrations
+# Database Migrations (Alembic)
 
-## When to Create Migrations
+## Stack
 
-**Always create a migration when:**
-- Adding, modifying, or removing database tables
-- Adding, modifying, or removing columns
-- Adding, modifying, or removing indexes
-- Adding, modifying, or removing constraints (foreign keys, unique, check)
-- Changing column types or default values
-- Any schema change that affects the database structure
+- **Tool:** [Alembic](https://alembic.sqlalchemy.org/) with SQLAlchemy models under `src/api/app/models/`.
+- **Revisions:** Python modules in [`src/migrations/alembic/versions/`](src/migrations/alembic/versions/).
+- **Config:** [`src/migrations/alembic.ini`](src/migrations/alembic.ini), environment in [`src/migrations/alembic/env.py`](src/migrations/alembic/env.py).
+- **Tracking table:** `alembic_version` (`version_num` PK). **Not** the legacy `schema_migrations` table (still detected for one-time transition).
 
-**Never modify the database schema without a migration.** All schema changes must be versioned and tracked.
+## When to Create a Migration
 
-## Migration File Format
+**Always create an Alembic revision when:**
 
-Migration files follow the naming convention: `V{major}.{minor}.{patch}__{description}.sql`
+- Adding, modifying, or removing tables, columns, indexes, constraints, or material changes to column types/defaults.
+- Any schema change required for production data.
 
-Examples:
-- `V2.33.0__Add_new_table.sql`
-- `V2.33.1__Add_column_to_existing_table.sql`
+**Never change production schema without a revision.** Do not edit applied revision files in shared environments—add a new revision instead.
 
-### File Structure
+## Creating Revisions
 
-```sql
--- Migration: Description of what this migration does
--- Version: X.Y.Z
--- Created: YYYY-MM-DDTHH:MM:SS
+### Autogenerate (typical local workflow)
 
--- UP MIGRATION
--- SQL statements to apply the migration
-CREATE TABLE example_table (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    name VARCHAR(255) NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- DOWN MIGRATION (optional but recommended)
--- SQL statements to rollback the migration
-DROP TABLE example_table;
-```
-
-## Version Numbering
-
-- Use semantic versioning: `major.minor.patch`
-- Increment **minor** version for new features (new tables, significant changes)
-- Increment **patch** version for small additions (new columns, indexes)
-- Check existing migrations in `src/migrations/` to determine the next version number
-
-## Creating Migrations
-
-### Using the CLI
+1. Update SQLAlchemy models in `src/api/app/models/` (and keep them aligned with the real DB you diff against).
+2. From repo root (devenv venv recommended so `alembic` is installed):
 
 ```bash
-# Create a new migration file with a template
-python src/migrations/migrate.py create "Add user preferences table"
-
-# Or use the wrapper script
-./scripts/migrate.sh create "Add user preferences table"
+./scripts/migrate.sh create "Short description of change"
 ```
 
-### Manual Creation
+This runs `alembic revision --autogenerate -m "..."`.
 
-1. Check the latest version in `src/migrations/`
-2. Create a new file with the next version number
-3. Follow the file structure above
+3. **Review** the generated file under `src/migrations/alembic/versions/`. Autogenerate is not perfect—especially for tables **not** mapped in ORM (see **Autogenerate exclusions** below).
+
+4. Apply locally: `./scripts/migrate.sh run`
+
+5. Regenerate the Kubernetes baseline dump and commit it with the revision:
+
+```bash
+./scripts/refresh_schema.sh
+# commits: kubernetes/base/postgresql/schema.sql + new alembic/versions/*.py
+```
+
+### Manual / `op.execute` revisions
+
+For complex PostgreSQL-only SQL (e.g. large `DO $$` blocks), add a revision with `op.execute(sa.text("""..."""))` and keep **UP** steps idempotent where possible (`IF NOT EXISTS`, `IF EXISTS`, `duplicate_object`, etc.)—see **Best practices**.
+
+## Naming
+
+- Prefer clear **revision ids** (e.g. `v005_add_widget_table`) in `revision = "..."` / `down_revision = "..."`.
+- File names: `0006_add_widget_table.py` (numeric prefix optional; keep ordering consistent with `down_revision` chain).
 
 ## Running Migrations
 
 ```bash
-# Check migration status
 ./scripts/migrate.sh status
-
-# Preview migrations (dry run)
-./scripts/migrate.sh run --dry-run
-
-# Apply pending migrations
+./scripts/migrate.sh run --dry-run    # SQL only
 ./scripts/migrate.sh run
-
-# Run with custom port
-./scripts/migrate.sh --port 5433 run
-
-# Validate migrations
-./scripts/migrate.sh validate
+./scripts/migrate.sh --port 5433 run # uses POSTGRES_PORT when DATABASE_URL unset
+./scripts/migrate.sh history
+./scripts/migrate.sh rollback base_baseline   # Alembic revision id (interactive confirm)
 ```
+
+Direct Alembic (same config):
+
+```bash
+python src/migrations/migrate.py current
+python -m alembic -c src/migrations/alembic.ini upgrade head
+```
+
+## Baseline snapshot (Kubernetes)
+
+1. **First boot:** Postgres runs [`kubernetes/base/postgresql/schema.sql`](kubernetes/base/postgresql/schema.sql) (full schema + empty `alembic_version`).
+2. **`run-migrations`** init container ([`src/migrations/k8s_entrypoint.py`](src/migrations/k8s_entrypoint.py)): if `alembic_version` has no row but the app schema is already loaded (or legacy `schema_migrations` has successful rows), it runs **`alembic stamp head`**, then **`alembic upgrade head`**.
+
+So fresh installs skip re-applying revision SQL that is already in the dump; upgrades only run **new** revisions.
+
+## Autogenerate exclusions
+
+[`alembic/env.py`](src/migrations/alembic/env.py) `include_object` skips tables that exist in the database but are **not** (fully) modeled—e.g. `action_logs`, `droopescan_findings`, legacy `schema_migrations`. **Do not** let autogenerate emit `DROP TABLE` for those without an explicit review.
 
 ## Best Practices
 
-### DO:
-- ✅ Create a migration for every schema change
-- ✅ Use descriptive names that explain the change
-- ✅ Include DOWN migration when possible for rollback capability
-- ✅ Test migrations on a copy of production data first
-- ✅ **Always write idempotent UP migrations**: the same SQL may run against a database that already matches the end state (for example first boot from `kubernetes/base/postgresql/schema.sql` plus pending migrator versions) or after a failed/partial run. It must succeed without error and leave correct data.
-  - Prefer `ADD COLUMN IF NOT EXISTS`, `DROP … IF EXISTS`, `CREATE INDEX IF NOT EXISTS`, `DROP COLUMN IF EXISTS`.
-  - When referencing a legacy column that may already be gone, guard with `information_schema` / `pg_catalog` checks or run the statement via `EXECUTE` inside a conditional `DO $$ … $$` block so the planner does not require the dropped column.
-  - For named constraints without `IF NOT EXISTS`, use `DO $$ BEGIN … ALTER TABLE … ADD CONSTRAINT … EXCEPTION WHEN duplicate_object THEN NULL; END $$` or an existence check on `pg_constraint` before adding.
-  - For data backfills, restrict `UPDATE` rows that still need it (for example “only where new column is unset”) so repeats do not overwrite applied changes.
-- ✅ Add indexes on frequently queried columns
-- ✅ Use UUID for primary keys (consistent with existing models)
-- ✅ Include `created_at` and `updated_at` timestamps on new tables
-- ✅ Use PostgreSQL-specific types: `UUID`, `INET`, `JSONB`, `ARRAY`
+### DO
 
-### DON'T:
-- ❌ Modify existing migration files after they've been applied
-- ❌ Skip version numbers
-- ❌ Make schema changes directly in the database
-- ❌ Create migrations that depend on application code
-- ❌ Include data migrations mixed with schema migrations (separate them)
+- Keep ORM models and schema in sync; use autogenerate, then fix up by hand when needed.
+- Make **UP** migrations safe to re-run on a DB that already matches the end state when feasible (`IF NOT EXISTS`, guarded `DO` blocks, etc.).
+- Add **`downgrade()`** when rollback is practical (ops may use `./scripts/migrate.sh rollback <rev>`).
+- After each schema change: `./scripts/migrate.sh run` locally, then `./scripts/refresh_schema.sh` and commit `schema.sql`.
 
-## Migration Tracking
+### DON'T
 
-The system tracks migrations in a `schema_migrations` table:
-- `version`: Migration version
-- `applied_at`: When applied
-- `checksum`: Hash for validation
-- `execution_time_ms`: Duration
-- `success`: Whether it succeeded
-- `error_message`: Error details if failed
+- Change revision files that are already deployed (add a new revision).
+- Rely on autogenerate alone for production—always read the diff.
+- Drop unmapped tables via autogenerate without intentional design.
 
-## Syncing Models with Migrations
+## Kubernetes runtime
 
-When creating a migration:
-1. Update the SQLAlchemy models in `src/api/app/models/postgres.py`
-2. Create the corresponding migration SQL
-3. Ensure the migration SQL matches the model changes exactly
-
-## Common Migration Patterns
-
-### Adding a New Table
-
-```sql
-CREATE TABLE new_table (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    name VARCHAR(255) NOT NULL,
-    program_id UUID NOT NULL REFERENCES programs(id) ON DELETE CASCADE,
-    data JSONB DEFAULT '{}',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE INDEX ix_new_table_program_id ON new_table(program_id);
-CREATE INDEX ix_new_table_name ON new_table(name);
-```
-
-### Adding a Column
-
-```sql
-ALTER TABLE existing_table ADD COLUMN new_column VARCHAR(255);
-ALTER TABLE existing_table ADD COLUMN new_column_with_default BOOLEAN DEFAULT false;
-```
-
-### Adding an Index
-
-```sql
-CREATE INDEX ix_table_column ON table_name(column_name);
-CREATE INDEX ix_table_composite ON table_name(column1, column2);
-```
-
-### Adding a Foreign Key
-
-```sql
-ALTER TABLE child_table 
-ADD CONSTRAINT fk_child_parent 
-FOREIGN KEY (parent_id) REFERENCES parent_table(id) ON DELETE CASCADE;
-```
-
-## Kubernetes runtime (API init container)
-
-Schema changes on cluster installs run **before** the API serves traffic:
-
-1. **`api` Deployment** init order: **`wait-for-postgresql`** (waits until **`pg_isready`** for the app DB so first-boot **`schema.sql`** finishes), then **`run-migrations`**.
-2. **`run-migrations`** uses the **`migrations`** image (`ghcr.io/<owner>/reconhawx/migrations`), built from **`src/migrations/`**.
-3. Connects via the **`postgresql`** Service using **`postgres-secret`** and **`database.name`** from **`service-config`**.
-
-**Default:** every pending **`V*__*.sql`** is **executed** (required when migrations contain DDL).
-
-**`MIGRATIONS_BASELINE_AUTOMARK=1`** (init-container env): use only when migration files are **bookkeeping** for a DB already fully created from **`kubernetes/base/postgresql/schema.sql`** and you intentionally do **not** want that SQL executed (dump-equivalent state). Leave **`0`** (Deployment default) for normal upgrades.
-
-If **`schema_migrations`** has rows for versions whose SQL never ran, fix by deleting those rows (e.g. `DELETE FROM schema_migrations WHERE version = '<version>';`) and restart the API Pod so **`run-migrations`** runs again.
-
-**Custom registry/tag:** keep aligned:
-
-- **`kubernetes/base/config/service-config.yaml`** — **`migrations.image`**
-- **`kubernetes/base/api/api-deployment.yaml`** — **`initContainers`** → **`run-migrations`** → **`image`**
+1. **`api` Deployment:** `wait-for-postgresql` → `run-migrations` → `api` container.
+2. **Image:** `ghcr.io/<owner>/reconhawx/migrations` from [`src/migrations/Dockerfile`](src/migrations/Dockerfile).
+3. **Env:** DB via `postgres-secret` + `database.name` in `service-config`. Optional **`MIGRATIONS_VERBOSE=1`**.
 
 **Logs:**
 
 ```bash
 kubectl logs -n reconhawx deploy/api -c run-migrations
-kubectl describe pod -n reconhawx -l app=api
 ```
-
-**Off-cluster:** **`scripts/migrate.sh`** or **`python src/migrations/migrate.py`** with **`DATABASE_URL`**.
 
 ## References
 
-- Migration files: `src/migrations/V*.sql`
-- Migration CLI: `src/migrations/cli.py`
-- Migration runner: `src/migrations/migration_runner.py`
-- Kubernetes API init container: `src/migrations/k8s_entrypoint.py`, image `src/migrations/Dockerfile`, wired in `kubernetes/base/api/api-deployment.yaml`
+- Revisions: `src/migrations/alembic/versions/`
+- K8s entrypoint: `src/migrations/k8s_entrypoint.py`
 - Shell wrapper: `scripts/migrate.sh`
-- SQLAlchemy models: `src/api/app/models/postgres.py`
-- Quick index (agents / contributors): `AGENTS.md` (repository root)
+- Schema refresh: `scripts/refresh_schema.sh`
+- SQLAlchemy models: `src/api/app/models/postgres.py`, `refresh_token.py`
+- Contributor hub: `AGENTS.md`

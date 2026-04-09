@@ -85,11 +85,7 @@ spec:
             secretKeyRef:
               name: postgres-secret
               key: postgres-root-password
-        - name: MIGRATIONS_DIR
-          value: "/app/src/migrations"
         - name: MIGRATIONS_VERBOSE
-          value: "0"
-        - name: MIGRATIONS_BASELINE_AUTOMARK
           value: "0"
         resources:
           requests:
