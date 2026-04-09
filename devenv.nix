@@ -35,6 +35,8 @@
     grype
     gh
     tesseract
+    katana
+    httpx
   ];
   env = {};
   processes = {};
