@@ -279,7 +279,7 @@ const TimeSeriesLineChart = ({ data, title, isHourly = true }) => {
 
 const StatusCard = ({ title, value, variant = 'primary', subtitle = null }) => {
   return (
-    <Card className="h-100">
+    <Card className="dashboard-panel h-100">
       <Card.Body className="text-center">
         <div className={`text-${variant} mb-2`}>
           <h2 className="mb-0">{value}</h2>
@@ -712,7 +712,7 @@ function TyposquatDashboard() {
       {/* Lifetime Totals */}
       <Row className="mb-4">
         <Col md={12}>
-          <Card className="bg-light">
+          <Card className="dashboard-panel bg-light">
             <Card.Header>
               <h5 className="mb-0 text-muted">📊 Lifetime Totals (All Time)</h5>
             </Card.Header>
@@ -769,7 +769,7 @@ function TyposquatDashboard() {
       {/* Period Activity */}
       <Row className="mb-4">
         <Col md={12}>
-          <Card className="bg-info-subtle">
+          <Card className="dashboard-panel bg-info-subtle">
             <Card.Header>
               <h5 className="mb-0 text-primary">
                 ⚡ Activity in {isSingleDay ? 'Selected Day' : 'Selected Period'}
@@ -836,7 +836,7 @@ function TyposquatDashboard() {
       {/* Charts and Tables */}
       <Row className="mb-4">
         <Col md={6}>
-          <Card className="h-100">
+          <Card className="dashboard-panel h-100">
             <Card.Header>
               <h5 className="mb-0">📋 Status Distribution</h5>
             </Card.Header>
@@ -849,7 +849,7 @@ function TyposquatDashboard() {
           </Card>
         </Col>
         <Col md={6}>
-          <Card className="h-100">
+          <Card className="dashboard-panel h-100">
             <Card.Header>
               <h5 className="mb-0">👥 Top Assignees</h5>
             </Card.Header>
@@ -865,7 +865,7 @@ function TyposquatDashboard() {
 
       <Row className="mb-4">
         <Col md={6}>
-          <Card className="h-100">
+          <Card className="dashboard-panel h-100">
             <Card.Header>
               <h5 className="mb-0">📈 Recent Activity</h5>
             </Card.Header>
@@ -875,7 +875,7 @@ function TyposquatDashboard() {
           </Card>
         </Col>
         <Col md={6}>
-          <Card className="h-100">
+          <Card className="dashboard-panel h-100">
             <Card.Header>
               <h5 className="mb-0">⚡ Resolution Actions</h5>
             </Card.Header>
@@ -902,7 +902,7 @@ function TyposquatDashboard() {
       {dashboardData?.time_series_data && dashboardData.time_series_data.length > 0 && (
         <Row className="mb-4">
           <Col md={12}>
-            <Card>
+            <Card className="dashboard-panel">
               <Card.Header>
                 <h5 className="mb-0">📊 {isSingleDay ? 'Hourly' : 'Daily'} Activity</h5>
               </Card.Header>
@@ -922,7 +922,7 @@ function TyposquatDashboard() {
       {!isSingleDay && dailyBreakdown.length > 0 && (
         <Row className="mb-4">
           <Col md={12}>
-            <Card>
+            <Card className="dashboard-panel">
               <Card.Header>
                 <h5 className="mb-0">📅 Daily Activity Breakdown</h5>
               </Card.Header>
@@ -938,7 +938,7 @@ function TyposquatDashboard() {
       {creationBreakdown.length > 0 && (
         <Row className="mb-4">
           <Col md={12}>
-            <Card>
+            <Card className="dashboard-panel">
               <Card.Header>
                 <h5 className="mb-0">🔍 Daily Creation Breakdown by Source</h5>
               </Card.Header>
@@ -954,7 +954,7 @@ function TyposquatDashboard() {
       {teamPerformance.length > 0 && (
         <Row className="mb-4">
           <Col md={12}>
-            <Card>
+            <Card className="dashboard-panel">
               <Card.Header>
                 <h5 className="mb-0">👥 Team Performance {isSingleDay ? '(Selected Day)' : '(Selected Period)'}</h5>
               </Card.Header>
@@ -969,7 +969,7 @@ function TyposquatDashboard() {
       {/* Additional Stats */}
       <Row>
         <Col md={12}>
-          <Card>
+          <Card className="dashboard-panel">
             <Card.Header>
               <h5 className="mb-0">📊 Statistics Summary</h5>
             </Card.Header>

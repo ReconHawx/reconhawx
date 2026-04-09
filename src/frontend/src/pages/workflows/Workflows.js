@@ -117,7 +117,7 @@ function Workflows() {
       {/* Stats Cards */}
       <Row className="mb-4">
         <Col md={4}>
-          <Card className="text-center">
+          <Card className="dashboard-panel text-center">
             <Card.Body>
               <h2 className="text-primary">{stats.totalWorkflows}</h2>
               <p className="mb-0">Saved Workflows</p>
@@ -125,7 +125,7 @@ function Workflows() {
           </Card>
         </Col>
         <Col md={4}>
-          <Card className="text-center">
+          <Card className="dashboard-panel text-center">
             <Card.Body>
               <h2 className="text-warning">{stats.runningExecutions}</h2>
               <p className="mb-0">Currently Running</p>
@@ -133,7 +133,7 @@ function Workflows() {
           </Card>
         </Col>
         <Col md={4}>
-          <Card className="text-center">
+          <Card className="dashboard-panel text-center">
             <Card.Body>
               <h2 className="text-success">{stats.completedToday}</h2>
               <p className="mb-0">Completed Today</p>
@@ -145,7 +145,7 @@ function Workflows() {
       {/* Quick Actions */}
       <Row className="mb-4">
         <Col>
-          <Card>
+          <Card className="dashboard-panel">
             <Card.Header>
               <h5 className="mb-0">Quick Actions</h5>
             </Card.Header>
@@ -179,7 +179,7 @@ function Workflows() {
       <Row>
         {/* Recent Workflows */}
         <Col md={6}>
-          <Card>
+          <Card className="dashboard-panel h-100">
             <Card.Header className="d-flex justify-content-between align-items-center">
               <h5 className="mb-0">Recent Workflows</h5>
               <Button as={Link} to="/workflows/list" variant="outline-primary" size="sm">
@@ -224,7 +224,7 @@ function Workflows() {
 
         {/* Recent Executions */}
         <Col md={6}>
-          <Card>
+          <Card className="dashboard-panel h-100">
             <Card.Header className="d-flex justify-content-between align-items-center">
               <h5 className="mb-0">Recent Executions</h5>
               <Button as={Link} to="/workflows/status" variant="outline-primary" size="sm">
