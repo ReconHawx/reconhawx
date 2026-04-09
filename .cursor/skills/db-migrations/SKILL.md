@@ -1,20 +1,21 @@
 ---
 name: db-migrations
 description: >-
-  Runs and authors PostgreSQL schema migrations for this repo using scripts/migrate.sh
-  or src/migrations/migrate.py. Use when the user or task involves database schema changes,
-  migration status, rollbacks, or alignment between SQL migrations and SQLAlchemy models.
+  Runs and authors PostgreSQL schema migrations for this repo using Alembic
+  (scripts/migrate.sh, src/migrations/alembic.ini). Use when the user or task
+  involves database schema changes, migration status, rollbacks, or alignment
+  between Alembic revisions and SQLAlchemy models.
 ---
 
 # Database migrations (Recon)
 
 ## Before you start
 
-Read **`AGENTS.md`** (repo root) for the one-line command index. Full SQL conventions and versioning live in **`.cursor/rules/migrations.mdc`**.
+Read **`AGENTS.md`** (repo root) for the command index. Conventions live in **`.cursor/rules/migrations.mdc`**.
 
-Set **`DATABASE_URL`** for the target database. The shell wrapper defaults to a local Postgres URL if unset—confirm before `run`.
+Set **`DATABASE_URL`** or **`POSTGRES_*`** for the target database. The shell wrapper builds a default local URL if **`DATABASE_URL`** is unset.
 
-**Interpreter:** `scripts/migrate.sh` uses **`.devenv/state/venv/bin/python`** when that path exists (devenv); otherwise **`python3`**. Use the same when invoking `migrate.py` directly so imports like `psycopg2` resolve.
+**Interpreter:** `scripts/migrate.sh` uses **`.devenv/state/venv/bin/python`** when present (devenv). Ensure **`alembic`** is installed—root **`requirements.txt`** and **`src/migrations/requirements.txt`** list it; sync the devenv venv if `import alembic` fails.
 
 ## Commands
 
@@ -26,19 +27,22 @@ From the repository root:
 ./scripts/migrate.sh run
 ./scripts/migrate.sh create "Short description"
 ./scripts/migrate.sh validate
+./scripts/migrate.sh history
 ```
 
-Python entrypoint (equivalent subcommands): `.devenv/state/venv/bin/python src/migrations/migrate.py …` or `python3 src/migrations/migrate.py …` (match the wrapper’s interpreter).
+`python src/migrations/migrate.py …` forwards to **`python -m alembic -c src/migrations/alembic.ini`**.
 
 ## Workflow for schema changes
 
-1. Add a new migration file under `src/migrations/` following `V{major}.{minor}.{patch}__{description}.sql` (see the migrations rule). UP SQL must be **idempotent** (see **`.cursor/rules/migrations.mdc`**).
-2. Update SQLAlchemy models in `src/api/app/models/` as needed so code matches the schema.
-3. Never edit migration files that are already applied in shared environments.
-4. Prefer `run --dry-run` before applying.
+1. Edit SQLAlchemy models under `src/api/app/models/` as needed.
+2. **`./scripts/migrate.sh create "…"`** (autogenerate). Review **`src/migrations/alembic/versions/`** output—especially around unmapped tables (see **`include_object`** in **`alembic/env.py`**).
+3. **`./scripts/migrate.sh run`** locally.
+4. **`./scripts/refresh_schema.sh`** then commit **`kubernetes/base/postgresql/schema.sql`** with the new revision.
+5. Never rewrite Alembic revision files that are already applied in shared environments—add a new revision.
 
 ## References
 
 - Wrapper: `scripts/migrate.sh`
-- CLI implementation: `src/migrations/cli.py`
-- Models (typical touchpoint): `src/api/app/models/postgres.py`
+- Revisions: `src/migrations/alembic/versions/`
+- K8s entrypoint: `src/migrations/k8s_entrypoint.py`
+- Models: `src/api/app/models/postgres.py`, `refresh_token.py`

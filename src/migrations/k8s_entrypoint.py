@@ -2,12 +2,9 @@
 Kubernetes API Deployment init container entrypoint.
 
 1. Build DATABASE_URL from POSTGRES_* env vars if DATABASE_URL is unset.
-2. Optional: If MIGRATIONS_BASELINE_AUTOMARK is enabled, and the DB looks like a fresh
-   install from postgresql/schema.sql (app tables exist, schema_migrations empty, pending
-   SQL files present), mark those files applied without executing SQL. **Default is off**
-   so real migrations always run; enable only for bookkeeping-only files that mirror
-   the bundled dump.
-3. Run pending migrations.
+2. Hybrid baseline snapshot: if the database already matches the bundled pg_dump
+   (fresh install) or was migrated by the legacy SQL tracker, stamp Alembic at head.
+3. Run ``alembic upgrade head`` so any new revisions apply on upgrades.
 """
 
 from __future__ import annotations
@@ -15,13 +12,22 @@ from __future__ import annotations
 import logging
 import os
 import sys
-import psycopg2
+from pathlib import Path
 
-from migrations.cli import get_db_url, get_migrations_dir, setup_logging
-from migrations.migration_manager import MigrationManager
-from migrations.migration_runner import MigrationRunner
+import psycopg2
+from alembic import command
+from alembic.config import Config
 
 logger = logging.getLogger(__name__)
+
+
+def setup_logging(verbose: bool = False) -> None:
+    level = logging.DEBUG if verbose else logging.INFO
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        handlers=[logging.StreamHandler(sys.stdout)],
+    )
 
 
 def ensure_database_url() -> None:
@@ -41,107 +47,99 @@ def ensure_database_url() -> None:
     )
 
 
-def _bootstrap_migration_manager(db_url: str, migrations_dir: str) -> MigrationManager:
-    """Create MigrationManager (ensures schema_migrations table exists)."""
-    return MigrationManager(migrations_dir, db_url)
+def get_database_url() -> str:
+    ensure_database_url()
+    url = os.getenv("DATABASE_URL")
+    if not url:
+        raise RuntimeError("DATABASE_URL is not set")
+    return url
 
 
-def _schema_migrations_total_rows(manager: MigrationManager) -> int:
-    table = manager.migrations_table
-    with psycopg2.connect(manager.db_url) as conn:
-        with conn.cursor() as cur:
-            cur.execute(f"SELECT COUNT(*) FROM {table}")
-            row = cur.fetchone()
-            return int(row[0]) if row else 0
+def _alembic_config() -> Config:
+    ini = Path(__file__).resolve().parent / "alembic.ini"
+    cfg = Config(str(ini))
+    cfg.set_main_option("sqlalchemy.url", get_database_url())
+    return cfg
 
 
-def _baseline_automark_enabled() -> bool:
-    """True when operator opts in (e.g. migration files only track baseline dump, no DDL)."""
-    v = (os.getenv("MIGRATIONS_BASELINE_AUTOMARK") or "").strip().lower()
-    return v in ("1", "true", "yes")
-
-
-def _public_app_table_count(db_url: str) -> int:
-    """Count user tables in public, excluding migration bookkeeping."""
-    with psycopg2.connect(db_url) as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT COUNT(*) FROM information_schema.tables
-                WHERE table_schema = 'public'
-                  AND table_type = 'BASE TABLE'
-                  AND table_name NOT IN ('schema_migrations')
-                """
-            )
-            row = cur.fetchone()
-            return int(row[0]) if row else 0
-
-
-def maybe_mark_baseline_migrations_applied() -> None:
-    """
-    Baseline from schema.sql: many tables exist, schema_migrations is still empty,
-    and we ship one or more V*.sql files. Mark those files applied without executing.
-
-    **Only runs when MIGRATIONS_BASELINE_AUTOMARK is set** — otherwise every pending
-    file is executed, which is required for real DDL after the bundled dump.
-
-    Skip if schema_migrations already has any row (success or failure) so we never
-    auto-mark over a partially migrated DB.
-    """
-    if not _baseline_automark_enabled():
-        logger.info(
-            "MIGRATIONS_BASELINE_AUTOMARK not enabled; skipping mark-as-applied for dump baseline"
+def _alembic_has_revision(cur) -> bool:
+    cur.execute(
+        """
+        SELECT EXISTS (
+            SELECT 1 FROM information_schema.tables
+            WHERE table_schema = 'public' AND table_name = 'alembic_version'
         )
-        return
-
-    db_url = get_db_url()
-    migrations_dir = get_migrations_dir()
-    manager = _bootstrap_migration_manager(db_url, migrations_dir)
-
-    if _schema_migrations_total_rows(manager) > 0:
-        logger.info("schema_migrations non-empty; skipping baseline mark-as-applied")
-        return
-
-    pending = manager.get_pending_migrations()
-    if not pending:
-        logger.info("No pending migration SQL files")
-        return
-
-    app_tables = _public_app_table_count(db_url)
-    if app_tables == 0:
-        logger.info("No application tables yet; will run SQL migrations normally")
-        return
-
-    logger.info(
-        "Baseline schema detected (%d app tables, %d pending version file(s)); "
-        "marking migration files as applied without executing SQL",
-        app_tables,
-        len(pending),
+        """
     )
-    for migration in pending:
-        manager.record_migration(
-            migration,
-            success=True,
-            execution_time_ms=0,
-            error_message=None,
+    if not cur.fetchone()[0]:
+        return False
+    cur.execute("SELECT version_num FROM alembic_version LIMIT 1")
+    return cur.fetchone() is not None
+
+
+def _legacy_schema_migrations_has_success(cur) -> bool:
+    cur.execute(
+        """
+        SELECT EXISTS (
+            SELECT 1 FROM information_schema.tables
+            WHERE table_schema = 'public' AND table_name = 'schema_migrations'
         )
+        """
+    )
+    if not cur.fetchone()[0]:
+        return False
+    cur.execute(
+        "SELECT 1 FROM schema_migrations WHERE success = true LIMIT 1"
+    )
+    return cur.fetchone() is not None
+
+
+def _users_table_exists(cur) -> bool:
+    cur.execute(
+        """
+        SELECT EXISTS (
+            SELECT 1 FROM information_schema.tables
+            WHERE table_schema = 'public' AND table_name = 'users'
+        )
+        """
+    )
+    return cur.fetchone()[0]
+
+
+def _should_stamp_head(cur) -> bool:
+    if _alembic_has_revision(cur):
+        return False
+    if _legacy_schema_migrations_has_success(cur):
+        logger.info("Legacy schema_migrations detected; will stamp Alembic head")
+        return True
+    if _users_table_exists(cur):
+        logger.info(
+            "Application schema present without Alembic revision; "
+            "assuming fresh install from schema.sql — stamping head"
+        )
+        return True
+    logger.info(
+        "Empty or non-standard database: skipping stamp; migrations will run from base"
+    )
+    return False
 
 
 def main() -> None:
     setup_logging(verbose=os.getenv("MIGRATIONS_VERBOSE") == "1")
     ensure_database_url()
-    maybe_mark_baseline_migrations_applied()
+    db_url = get_database_url()
 
-    runner = MigrationRunner(get_db_url(), get_migrations_dir())
-    result = runner.run_migrations(dry_run=False)
+    stamp = False
+    with psycopg2.connect(db_url) as conn:
+        with conn.cursor() as cur:
+            stamp = _should_stamp_head(cur)
+    if stamp:
+        logger.info("Running: alembic stamp head")
+        command.stamp(_alembic_config(), "head")
 
-    if result["success"]:
-        logger.info("Migrations complete (applied this run: %s)", result.get("migrations_run", 0))
-        return
-
-    for err in result.get("errors", []):
-        logger.error("%s", err)
-    sys.exit(1)
+    logger.info("Running: alembic upgrade head")
+    command.upgrade(_alembic_config(), "head")
+    logger.info("Migrations complete")
 
 
 if __name__ == "__main__":

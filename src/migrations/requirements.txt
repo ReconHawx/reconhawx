@@ -1,0 +1,4 @@
+# Runtime deps for migrations image and local Alembic CLI
+alembic==1.17.2
+sqlalchemy==2.0.48
+psycopg2-binary==2.9.11

@@ -2,7 +2,8 @@ FROM python:3.14-slim
 
 WORKDIR /app/src
 
-RUN pip install --no-cache-dir psycopg2-binary==2.9.11
+COPY requirements.txt /app/src/migrations-requirements.txt
+RUN pip install --no-cache-dir -r /app/src/migrations-requirements.txt
 
 COPY . /app/src/migrations/
 COPY entrypoint.sh /app/src/entrypoint.sh

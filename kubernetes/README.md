@@ -101,7 +101,7 @@ The API image ships **PostgreSQL 15 client tools** (`postgresql-client-15`). The
 | **NATS** | Message broker with JetStream (streams created on startup) |
 | **Redis** | Cache / pub-sub |
 | **Kueue** | Job queue CRDs, cluster queues, and resource flavors |
-| **API** | FastAPI backend (init container runs DB migrations before the app starts) |
+| **API** | FastAPI backend (init container runs **Alembic** migrations before the app starts) |
 | **Frontend** | React UI behind nginx |
 | **Event Handler** | NATS event consumer |
 | **CT Monitor** | Certificate Transparency log watcher |

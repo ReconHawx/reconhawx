@@ -2,12 +2,15 @@
 -- PostgreSQL database dump
 --
 
+\restrict pf5n8v8tnl1HSpoqLVWvdWmhKy9h1IxUcxyhgq1BPwMObTwaSUcrgKrrvK1EO2j
+
 -- Dumped from database version 15.15 (Debian 15.15-1.pgdg13+1)
--- Dumped by pg_dump version 17.8
+-- Dumped by pg_dump version 17.9
 
 SET statement_timeout = 0;
 SET lock_timeout = 0;
 SET idle_in_transaction_session_timeout = 0;
+SET transaction_timeout = 0;
 SET client_encoding = 'UTF8';
 SET standard_conforming_strings = on;
 SELECT pg_catalog.set_config('search_path', '', false);
@@ -15,6 +18,20 @@ SET check_function_bodies = false;
 SET xmloption = content;
 SET client_min_messages = warning;
 SET row_security = off;
+
+--
+-- Name: pgcrypto; Type: EXTENSION; Schema: -; Owner: -
+--
+
+CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA public;
+
+
+--
+-- Name: EXTENSION pgcrypto; Type: COMMENT; Schema: -; Owner: -
+--
+
+COMMENT ON EXTENSION pgcrypto IS 'cryptographic functions';
+
 
 --
 -- Name: update_aws_credentials_updated_at(); Type: FUNCTION; Schema: public; Owner: -
@@ -315,6 +332,15 @@ CREATE VIEW public.active_services AS
      JOIN public.ips i ON ((srv.ip_id = i.id)))
      JOIN public.programs p ON ((srv.program_id = p.id)))
   ORDER BY i.ip_address, srv.port;
+
+
+--
+-- Name: alembic_version; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.alembic_version (
+    version_num character varying(32) NOT NULL
+);
 
 
 --
@@ -995,7 +1021,7 @@ CREATE TABLE public.scheduled_jobs (
     updated_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
     workflow_variables jsonb DEFAULT '{}'::jsonb,
     program_ids uuid[] NOT NULL,
-    CONSTRAINT scheduled_jobs_program_ids_nonempty CHECK (cardinality(program_ids) >= 1)
+    CONSTRAINT scheduled_jobs_program_ids_nonempty CHECK ((cardinality(program_ids) >= 1))
 );
 
 
@@ -1214,14 +1240,14 @@ COMMENT ON COLUMN public.typosquat_domains.ai_analyzed_at IS 'Timestamp of last 
 -- Name: COLUMN typosquat_domains.closure_events; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.typosquat_domains.closure_events IS 'Append-only array of {to_status, closed_at, closed_by_user_id, source_action_log_id?} for resolved/dismissed transitions';
+COMMENT ON COLUMN public.typosquat_domains.closure_events IS 'Ordered array of closure events: to_status, closed_at, closed_by_user_id, optional source_action_log_id';
 
 
 --
 -- Name: COLUMN typosquat_domains.last_closure_at; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.typosquat_domains.last_closure_at IS 'UTC time of the most recent resolved/dismissed closure';
+COMMENT ON COLUMN public.typosquat_domains.last_closure_at IS 'UTC time of the most recent resolved/dismissed closure (matches last closure_events[].closed_at)';
 
 
 --
@@ -1728,6 +1754,14 @@ CREATE TABLE public.wpscan_findings (
 
 ALTER TABLE ONLY public.action_logs
     ADD CONSTRAINT action_logs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: alembic_version alembic_version_pkc; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.alembic_version
+    ADD CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num);
 
 
 --
@@ -3210,13 +3244,6 @@ CREATE INDEX ix_typosquat_domains_fixed_at ON public.typosquat_domains USING btr
 
 
 --
--- Name: ix_typosquat_domains_last_closure_at; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX ix_typosquat_domains_last_closure_at ON public.typosquat_domains USING btree (last_closure_at);
-
-
---
 -- Name: ix_typosquat_domains_geoip_country; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3228,6 +3255,13 @@ CREATE INDEX ix_typosquat_domains_geoip_country ON public.typosquat_domains USIN
 --
 
 CREATE INDEX ix_typosquat_domains_is_wildcard ON public.typosquat_domains USING btree (is_wildcard);
+
+
+--
+-- Name: ix_typosquat_domains_last_closure_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_typosquat_domains_last_closure_at ON public.typosquat_domains USING btree (last_closure_at);
 
 
 --
@@ -3973,4 +4007,6 @@ ALTER TABLE ONLY public.wpscan_findings
 --
 -- PostgreSQL database dump complete
 --
+
+\unrestrict pf5n8v8tnl1HSpoqLVWvdWmhKy9h1IxUcxyhgq1BPwMObTwaSUcrgKrrvK1EO2j
 
