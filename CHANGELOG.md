@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.13.0](https://github.com/ReconHawx/reconhawx/compare/v0.12.2...v0.13.0) (2026-04-09)
+
+
+### ⚠ BREAKING CHANGES
+
+* **runner:** The runner no longer falls back to offline defaults if the manifest cannot be loaded; the Data API must be reachable at workflow start.
+
+### Features
+
+* **admin:** YAML recon task defaults and flexible last-run cooldown ([f690b96](https://github.com/ReconHawx/reconhawx/commit/f690b96cbd0beda4ee2c69d98a9396caac03edc6))
+* **frontend:** show pinned footer with version and GitHub update hint ([f2ff136](https://github.com/ReconHawx/reconhawx/commit/f2ff136be6430ff4bc0e1d21f65fe66e777d6b27))
+* **migrations:** run schema changes with Alembic and stamped baselines ([3246bf9](https://github.com/ReconHawx/reconhawx/commit/3246bf9cbc020bc1b8f4e8e10e1b45951f1c8fc4))
+* **runner:** bootstrap recon task parameters from API manifest ([621a870](https://github.com/ReconHawx/reconhawx/commit/621a870f96e2a11e0f067490b0cca5dc67370f5d))
+
+
+### Bug Fixes
+
+* **runner:** respect ips_per_worker and timeout for CIDR child jobs ([4e48208](https://github.com/ReconHawx/reconhawx/commit/4e4820885fe020b6033dc2d8dcb95749c307b20b))
+
 ## [0.12.2](https://github.com/ReconHawx/reconhawx/compare/v0.12.1...v0.12.2) (2026-04-08)
 
 
