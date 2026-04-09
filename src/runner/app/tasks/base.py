@@ -167,20 +167,22 @@ class TaskParameterManager:
         except Exception as e:
             logger.warning(f"Error fetching parameters for task {task_name}: {str(e)}")
             return self._get_default_parameters(task_name)
-    
+
     def get_last_execution_threshold(self, task_name: str) -> int:
         """
         Get the last execution threshold for a specific task
-        
+
         Args:
             task_name: Name of the recon task
-            
+
         Returns:
-            Last execution threshold in hours
+            Last execution threshold in whole hours (API may store 1d, 1w, etc.)
         """
-        #logger.debug(f"TaskParameterManager.get_last_execution_threshold called for task: {task_name}")
+        from last_execution_threshold import last_execution_threshold_to_hours
+
         parameters = self.get_task_parameters(task_name)
-        return parameters.get("last_execution_threshold", 24)  # Default 24 hours
+        raw = parameters.get("last_execution_threshold", 24)
+        return last_execution_threshold_to_hours(raw, default_hours=24)
     
     def get_timeout(self, task_name: str) -> int:
         """
@@ -222,79 +224,17 @@ class TaskParameterManager:
         return parameters.get("chunk_size", 10)  # Default 10 items per chunk
     
     def _get_default_parameters(self, task_name: str) -> Dict[str, Any]:
-        """Get default parameters for a task if not configured in API"""
+        """
+        Offline fallback when the API is unavailable or returns an error.
+
+        Must stay aligned with src/api/app/recon_task_builtin_defaults.yaml (loaded by recon_task_defaults.py).
+        """
         defaults = {
             "resolve_domain": {
                 "last_execution_threshold": 24,
                 "timeout": 120,
                 "max_retries": 3,
-                "chunk_size": 10
-            },
-            "resolve_ip": {
-                "last_execution_threshold": 24,
-                "timeout": 120,
-                "max_retries": 3,
-                "chunk_size": 10
-            },
-            "port_scan": {
-                "last_execution_threshold": 24,
-                "timeout": 900,
-                "max_retries": 3,
-                "chunk_size": 5
-            },
-            "nuclei_scan": {
-                "last_execution_threshold": 24,
-                "timeout": 900,
-                "max_retries": 3,
-                "chunk_size": 10
-            },
-            "crawl_website": {
-                "last_execution_threshold": 24,
-                "timeout": 1800,
-                "max_retries": 3,
-                "chunk_size": 1
-            },
-            "screenshot_website": {
-                "last_execution_threshold": 24,
-                "timeout": 600,
-                "max_retries": 3,
-                "chunk_size": 10
-            },
-            "subdomain_finder": {
-                "last_execution_threshold": 24,
-                "timeout": 300,
-                "max_retries": 3,
-                "chunk_size": 10
-            },
-            "test_http": {
-                "last_execution_threshold": 24,
-                "timeout": 900,
-                "max_retries": 3,
-                "chunk_size": 10
-            },
-            "typosquat_detection": {
-                "last_execution_threshold": 168,  # 7 days
-                "timeout": 1800,
-                "max_retries": 3,
-                "chunk_size": 5
-            },
-            "resolve_ip_cidr": {
-                "last_execution_threshold": 1,
-                "timeout": 300,
-                "max_retries": 3,
-                "chunk_size": 1
-            },
-            "shell_command": {
-                "last_execution_threshold": 24,
-                "timeout": 300,
-                "max_retries": 3,
-                "chunk_size": 10
-            },
-            "asset_batch_generator": {
-                "last_execution_threshold": 1,  # Allow re-execution every hour for testing
-                "timeout": 300,
-                "max_retries": 3,
-                "chunk_size": 50  # Generate 50 assets per chunk by default
+                "chunk_size": 10,
             },
             "whois_domain_check": {
                 "last_execution_threshold": 24,
@@ -302,11 +242,140 @@ class TaskParameterManager:
                 "max_retries": 3,
                 "chunk_size": 1,
             },
+            "resolve_ip": {
+                "last_execution_threshold": 24,
+                "timeout": 120,
+                "max_retries": 3,
+                "chunk_size": 10,
+            },
+            "resolve_ip_cidr": {
+                "last_execution_threshold": 1,
+                "timeout": 300,
+                "max_retries": 3,
+                "chunk_size": 1,
+                "ip_limit": 500,
+                "max_cidr_size": 65536,
+                "ips_per_worker": 50,
+                "enable_port_scan": True,
+                "port_scan_timeout": 300,
+                "force_ip": False,
+            },
+            "subdomain_finder": {
+                "last_execution_threshold": 24,
+                "timeout": 300,
+                "max_retries": 3,
+                "chunk_size": 10,
+            },
+            "subdomain_permutations": {
+                "last_execution_threshold": 24,
+                "timeout": 300,
+                "max_retries": 3,
+                "chunk_size": 100,
+                "permutation_list": "files/permutations.txt",
+                "permutation_limit": None,
+                "batch_size": 10,
+            },
+            "dns_bruteforce": {
+                "last_execution_threshold": 24,
+                "timeout": 600,
+                "max_retries": 3,
+                "chunk_size": 10,
+                "wordlist": "/workspace/files/subdomains.txt",
+                "batch_size": 5,
+            },
+            "port_scan": {
+                "last_execution_threshold": 24,
+                "timeout": 900,
+                "max_retries": 3,
+                "chunk_size": 5,
+            },
+            "nuclei_scan": {
+                "last_execution_threshold": 24,
+                "timeout": 900,
+                "max_retries": 3,
+                "chunk_size": 10,
+                "template": {"official": [], "custom": []},
+                "cmd_args": [],
+            },
+            "wpscan": {
+                "last_execution_threshold": 24,
+                "timeout": 1800,
+                "max_retries": 3,
+                "chunk_size": 5,
+                "api_token": "",
+                "enumerate": [],
+            },
+            "test_http": {
+                "last_execution_threshold": 24,
+                "timeout": 900,
+                "max_retries": 3,
+                "chunk_size": 10,
+            },
+            "typosquat_detection": {
+                "last_execution_threshold": "1w",
+                "timeout": 1800,
+                "max_retries": 3,
+                "chunk_size": 20,
+                "analyze_input_as_variations": False,
+                "source": "",
+                "max_variations": 100,
+                "max_workers": 5,
+                "domains_per_worker": 20,
+                "fuzzers": [],
+                "active_checks": True,
+                "geoip_checks": True,
+                "exclude_tested": True,
+                "include_subdomains": False,
+                "recalculate_risk": False,
+                "enable_fuzzing": False,
+                "fuzzer_wordlist": "/workspace/files/webcontent_test.txt",
+            },
+            "detect_broken_links": {
+                "last_execution_threshold": 24,
+                "timeout": 900,
+                "max_retries": 3,
+                "chunk_size": 10,
+            },
+            "screenshot_website": {
+                "last_execution_threshold": 24,
+                "timeout": 60,
+                "max_retries": 3,
+                "chunk_size": 10,
+            },
+            "crawl_website": {
+                "last_execution_threshold": 24,
+                "timeout": 1800,
+                "max_retries": 3,
+                "chunk_size": 1,
+                "depth": 5,
+            },
+            "fuzz_website": {
+                "last_execution_threshold": 24,
+                "timeout": 300,
+                "max_retries": 3,
+                "chunk_size": 5,
+                "wordlist": "/workspace/files/webcontent_test.txt",
+            },
+            "shell_command": {
+                "last_execution_threshold": 24,
+                "timeout": 300,
+                "max_retries": 3,
+                "chunk_size": 10,
+                "command": [],
+            },
+            "asset_batch_generator": {
+                "last_execution_threshold": 1,
+                "timeout": 300,
+                "max_retries": 3,
+                "chunk_size": 50,
+                "batch_size": 100,
+            },
         }
         return defaults.get(task_name, {
             "last_execution_threshold": 24,
             "timeout": 300,
-            "max_retries": 3
+            "max_retries": 3,
+            "chunk_size": 10,
         })
 
 # Global parameter manager instance
@@ -602,8 +671,16 @@ class Task(ABC):
         return parameter_manager.get_max_retries(self.name)
     
     def get_chunk_size(self, input_data: Any, params: Optional[Dict[Any, Any]] = None) -> int:
-        """Return the chunk size for this task"""
-        #logger.debug(f"Task {self.name} requesting chunk_size")
+        """Return the chunk size for this task (params override, then API default)."""
+        if params and isinstance(params, dict):
+            cs = params.get("chunk_size")
+            if cs is not None:
+                try:
+                    n = int(cs)
+                    if n > 0:
+                        return n
+                except (TypeError, ValueError):
+                    pass
         return parameter_manager.get_chunk_size(self.name)
     
     async def wait_for_spawned_jobs(self, timeout: int = 3600, task_queue_client: Any = None) -> Dict[str, str]:

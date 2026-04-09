@@ -1,0 +1,128 @@
+# Recon task builtin defaults (API / runner contract).
+# Edit this file to change system defaults without code changes.
+# Optional: set RECON_TASK_DEFAULTS_PATH to an alternate file.
+# Shallow merge: DB row in recon_task_parameters overrides these keys per task.
+#
+# last_execution_threshold: plain number = hours (default). Optional suffix on a string: h, d (days), w (weeks).
+# Examples: 24 → 24h, 24h → 24h, 1d → 24h, 2d → 48h, 1w → 168h. No months/years.
+# shell_command: in this file for runner/public GET defaults; hidden from System Settings (admin list).
+# asset_batch_generator: not listed here (unknown to API); runner uses offline defaults only.
+
+resolve_domain:
+  last_execution_threshold: 24
+  timeout: 120
+  max_retries: 3
+  chunk_size: 10
+whois_domain_check:
+  last_execution_threshold: 24
+  timeout: 600
+  max_retries: 3
+  chunk_size: 1
+resolve_ip:
+  last_execution_threshold: 24
+  timeout: 120
+  max_retries: 3
+  chunk_size: 10
+resolve_ip_cidr:
+  last_execution_threshold: 1
+  timeout: 300
+  max_retries: 3
+  chunk_size: 1
+  ip_limit: 500
+  max_cidr_size: 65536
+  ips_per_worker: 50
+  enable_port_scan: true
+  port_scan_timeout: 300
+  force_ip: false
+subdomain_finder:
+  last_execution_threshold: 24
+  timeout: 300
+  max_retries: 3
+  chunk_size: 10
+subdomain_permutations:
+  last_execution_threshold: 24
+  timeout: 300
+  max_retries: 3
+  chunk_size: 100
+  permutation_list: files/permutations.txt
+  permutation_limit: null
+  batch_size: 10
+dns_bruteforce:
+  last_execution_threshold: 24
+  timeout: 600
+  max_retries: 3
+  chunk_size: 10
+  wordlist: /workspace/files/subdomains.txt
+  batch_size: 5
+port_scan:
+  last_execution_threshold: 24
+  timeout: 900
+  max_retries: 3
+  chunk_size: 5
+nuclei_scan:
+  last_execution_threshold: 24
+  timeout: 900
+  max_retries: 3
+  chunk_size: 10
+  template:
+    official: []
+    custom: []
+  cmd_args: []
+wpscan:
+  last_execution_threshold: 24
+  timeout: 1800
+  max_retries: 3
+  chunk_size: 5
+  api_token: ''
+  enumerate: []
+test_http:
+  last_execution_threshold: 24
+  timeout: 900
+  max_retries: 3
+  chunk_size: 10
+typosquat_detection:
+  last_execution_threshold: 1w
+  timeout: 1800
+  max_retries: 3
+  chunk_size: 20
+  analyze_input_as_variations: false
+  source: ''
+  max_variations: 100
+  max_workers: 5
+  domains_per_worker: 20
+  fuzzers: []
+  active_checks: true
+  geoip_checks: true
+  exclude_tested: true
+  include_subdomains: false
+  recalculate_risk: false
+  enable_fuzzing: false
+  fuzzer_wordlist: /workspace/files/webcontent_test.txt
+detect_broken_links:
+  last_execution_threshold: 24
+  timeout: 900
+  max_retries: 3
+  chunk_size: 10
+screenshot_website:
+  last_execution_threshold: 24
+  timeout: 60
+  max_retries: 3
+  chunk_size: 10
+crawl_website:
+  last_execution_threshold: 24
+  timeout: 1800
+  max_retries: 3
+  chunk_size: 1
+  depth: 5
+fuzz_website:
+  last_execution_threshold: 24
+  timeout: 300
+  max_retries: 3
+  chunk_size: 5
+  wordlist: /workspace/files/webcontent_test.txt
+shell_command:
+  last_execution_threshold: 24
+  timeout: 300
+  max_retries: 3
+  chunk_size: 10
+  command: []

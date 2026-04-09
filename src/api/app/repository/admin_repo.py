@@ -3,6 +3,11 @@ from datetime import datetime
 from sqlalchemy.exc import SQLAlchemyError
 from db import get_db_session
 from models.postgres import ReconTaskParameters, AwsCredentials, SystemSetting
+from recon_task_defaults import (
+    effective_parameters,
+    recon_task_api_payload,
+    recon_task_names_for_admin_list,
+)
 import logging
 
 logger = logging.getLogger(__name__)
@@ -83,15 +88,16 @@ class AdminRepository:
     
     async def list_recon_task_parameters(self) -> List[Dict[str, Any]]:
         """
-        List all recon task parameters
-        
-        Returns:
-            List of all recon task parameter documents
+        List all known recon tasks with effective parameters (built-in + DB row if any).
         """
         try:
             async with get_db_session() as db:
                 results = db.query(ReconTaskParameters).all()
-                return [result.to_dict() for result in results]
+                by_name = {r.recon_task: r.to_dict() for r in results}
+            out: List[Dict[str, Any]] = []
+            for name in recon_task_names_for_admin_list():
+                out.append(recon_task_api_payload(name, by_name.get(name)))
+            return out
                 
         except SQLAlchemyError as e:
             logger.error(f"Database error listing recon task parameters: {str(e)}")
@@ -130,23 +136,21 @@ class AdminRepository:
             logger.error(f"Error deleting recon task parameters for {recon_task}: {str(e)}")
             raise
     
-    async def get_last_execution_threshold(self, recon_task: str) -> Optional[int]:
+    async def get_last_execution_threshold(self, recon_task: str) -> Optional[Any]:
         """
         Get the last execution threshold for a specific recon task
-        
+
         Args:
             recon_task: Name of the recon task
-            
+
         Returns:
-            Last execution threshold in hours, or None if not set
+            Stored threshold (int hours and/or str with d/w suffix), or None if missing
         """
         try:
             task_params = await self.get_recon_task_parameters(recon_task)
-            
-            if task_params and "parameters" in task_params:
-                return task_params["parameters"].get("last_execution_threshold")
-            
-            return None
+            stored = task_params.get("parameters") if task_params else None
+            eff = effective_parameters(recon_task, stored)
+            return eff.get("last_execution_threshold")
             
         except Exception as e:
             logger.error(f"Error getting last execution threshold for {recon_task}: {str(e)}")
@@ -160,15 +164,14 @@ class AdminRepository:
             recon_task: Name of the recon task
 
         Returns:
-            Chunk size, or None if not set
+            Chunk size (includes built-in default if no DB row)
         """
         try:
             task_params = await self.get_recon_task_parameters(recon_task)
-
-            if task_params and "parameters" in task_params:
-                return task_params["parameters"].get("chunk_size")
-
-            return None
+            stored = task_params.get("parameters") if task_params else None
+            eff = effective_parameters(recon_task, stored)
+            v = eff.get("chunk_size")
+            return int(v) if v is not None else None
 
         except Exception as e:
             logger.error(f"Error getting chunk size for {recon_task}: {str(e)}")

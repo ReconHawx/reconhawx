@@ -6,7 +6,7 @@ from typing import Dict, List, Any, Optional, Union
 from kubernetes import client
 import os
 from tasks import TaskRegistry
-from tasks.base import Task, AssetType, FindingType, CommandSpec
+from tasks.base import Task, AssetType, FindingType, CommandSpec, parameter_manager
 from models.assets import Ip, Service as AssetService
 from models.workflow import TaskDefinition, AssetStore
 from task_queue_client import TaskQueueClient
@@ -484,7 +484,24 @@ class TaskExecutor:
             for input_name, input_def in workflow.inputs.items():
                 logger.debug(f"  Input '{input_name}': type={input_def.type}, values={input_def.values}")
 
-        
+    def _apply_task_param_defaults(self, task_def: TaskDefinition, task_type: str) -> None:
+        """Shallow merge: system (API effective) then workflow task_def.params (workflow wins per key)."""
+        workflow_params = dict(task_def.params) if task_def.params else {}
+        system_params = parameter_manager.get_task_parameters(task_type)
+        task_def.params = {**system_params, **workflow_params}
+
+    def _resolved_last_execution_threshold_hours(self, task: Task, task_def: TaskDefinition) -> int:
+        """Prefer merged task_def.params after _apply_task_param_defaults; fall back to API manager."""
+        from last_execution_threshold import try_last_execution_threshold_to_hours
+
+        params = task_def.params or {}
+        raw = params.get("last_execution_threshold")
+        if raw is not None:
+            t = try_last_execution_threshold_to_hours(raw)
+            if t is not None and t > 0:
+                return t
+        return task.get_last_execution_threshold()
+
     async def execute_task(self, step_num: int, step_name: str, task_def: TaskDefinition, program_name: str) -> Dict[AssetType, List[Any]]:
         """Execute a task via the task queue and return its output assets - now decomposed for better maintainability"""
         # Debug: Check task_def at entry point
@@ -518,7 +535,16 @@ class TaskExecutor:
         
         logger.info(f"Executing task {task_def.name} (type: {task_type})")
         task_instance = task_class()
-        
+
+        workflow_output_mode = getattr(task_def, "output_mode", None)
+        # Merge: system (API/builtins + DB) then workflow params (workflow wins per key)
+        self._apply_task_param_defaults(task_def, task_type)
+        # output_mode usually lives on the task def; allow system/reserved params when workflow omitted it
+        if workflow_output_mode in (None, "") and task_def.params:
+            om = task_def.params.get("output_mode")
+            if om:
+                task_def.output_mode = om
+
         # Set task_queue_client reference for tasks that need to spawn additional jobs
         if hasattr(task_instance, 'task_queue_client'):
             task_instance.task_queue_client = self.task_queue_client
@@ -2417,7 +2443,7 @@ class TaskExecutor:
             hash_to_execution_time = {}
         
         # Filter targets based on fetched execution times
-        threshold_hours = task.get_last_execution_threshold()
+        threshold_hours = self._resolved_last_execution_threshold_hours(task, task_def)
         current_time = datetime.now()
         skipped_targets = []
         for target in input_data:

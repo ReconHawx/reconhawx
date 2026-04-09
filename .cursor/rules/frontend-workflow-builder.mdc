@@ -95,7 +95,9 @@ export const TASK_TYPES = {
 | `screenshot_website` | Discovery | urls | screenshots | Website screenshots |
 | `crawl_website` | Discovery | urls | urls | Katana crawling |
 | `fuzz_website` | Discovery | urls | urls | Path fuzzing |
-| `shell_command` | Utility | strings | strings | Custom commands |
+| `shell_command` | Utility | strings | strings | Custom commands (omitted from System Settings; configure via workflow) |
+
+`asset_batch_generator` is runner-only (not in `TASK_TYPES` or System Settings).
 
 ### Data Type Colors
 

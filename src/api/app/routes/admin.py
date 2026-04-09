@@ -1,8 +1,19 @@
 from fastapi import APIRouter, HTTPException, Depends, Path, Body, Query
-from typing import Dict, Any, List, Optional, Literal
+from typing import Any, Dict, List, Literal, Optional, Union
 from pydantic import BaseModel, Field, field_validator
 from repository import AdminRepository
 from auth.dependencies import require_superuser, require_admin_or_manager
+from last_execution_threshold import (
+    LastExecutionThresholdError,
+    coerce_stored_last_execution_threshold,
+    normalize_recon_parameters_dict,
+)
+from recon_task_defaults import (
+    effective_parameters,
+    is_known_recon_task,
+    is_recon_task_admin_configurable,
+    recon_task_api_payload,
+)
 from models.user_postgres import UserResponse
 from datetime import datetime
 import logging
@@ -11,6 +22,30 @@ import httpx
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+def _normalize_task_parameters_or_400(parameters: Dict[str, Any]) -> Dict[str, Any]:
+    try:
+        return normalize_recon_parameters_dict(parameters)
+    except LastExecutionThresholdError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+def _raise_if_recon_task_not_admin_configurable(recon_task: str) -> None:
+    if not is_known_recon_task(recon_task):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown recon task '{recon_task}'",
+        )
+    if not is_recon_task_admin_configurable(recon_task):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Recon task '{recon_task}' is not configurable via System Settings "
+                "(debug or workflow-only; use YAML/workflow params)."
+            ),
+        )
+
 
 # Pydantic models for request/response
 class ReconTaskParametersRequest(BaseModel):
@@ -24,6 +59,10 @@ class ReconTaskParametersResponse(BaseModel):
     parameters: Dict[str, Any] = Field(..., description="Task parameters")
     created_at: Optional[str] = Field(None, description="Creation timestamp")
     updated_at: Optional[str] = Field(None, description="Last update timestamp")
+    stored_in_database: bool = Field(
+        False,
+        description="False when shown from built-in defaults only (no recon_task_parameters row)",
+    )
 
 class ReconTaskParametersListResponse(BaseModel):
     """Response model for listing recon task parameters"""
@@ -33,12 +72,43 @@ class ReconTaskParametersListResponse(BaseModel):
 
 class LastExecutionThresholdRequest(BaseModel):
     """Request model for setting last execution threshold"""
-    last_execution_threshold: int = Field(..., ge=1, description="Last execution threshold in hours")
+
+    last_execution_threshold: Union[int, str] = Field(
+        ...,
+        description=(
+            "Cooldown before re-running the same target: plain number = hours (default), "
+            "or a string with suffix h, d (days), or w (weeks), e.g. 24, 24h, 1d, 2w"
+        ),
+    )
+
+    @field_validator("last_execution_threshold", mode="before")
+    @classmethod
+    def _reject_bool_and_coerce_float(cls, v: Any) -> Any:
+        if isinstance(v, bool):
+            raise ValueError("boolean is not a valid threshold")
+        if isinstance(v, float):
+            if v < 1 or int(v) != v:
+                raise ValueError("threshold must be a whole number of hours when numeric")
+            return int(v)
+        return v
+
+    @field_validator("last_execution_threshold", mode="after")
+    @classmethod
+    def _coerce_store(cls, v: Any) -> Union[int, str]:
+        try:
+            return coerce_stored_last_execution_threshold(v)
+        except LastExecutionThresholdError as e:
+            raise ValueError(str(e)) from e
+
 
 class LastExecutionThresholdResponse(BaseModel):
     """Response model for last execution threshold"""
+
     recon_task: str = Field(..., description="Name of the recon task")
-    last_execution_threshold: int = Field(..., description="Last execution threshold in hours")
+    last_execution_threshold: Union[int, str] = Field(
+        ...,
+        description="Stored value: integer hours and/or string with d/w suffix",
+    )
 
 class ChunkSizeRequest(BaseModel):
     """Request model for setting chunk size"""
@@ -109,16 +179,14 @@ async def get_recon_task_parameters(
     Get parameters for a specific recon task (superuser only)
     """
     try:
-        admin_repo = AdminRepository()
-        task_params = await admin_repo.get_recon_task_parameters(recon_task)
-        
-        if not task_params:
+        if not is_known_recon_task(recon_task):
             raise HTTPException(
                 status_code=404,
-                detail=f"Parameters for recon task '{recon_task}' not found"
+                detail=f"Unknown recon task '{recon_task}'",
             )
-        
-        return ReconTaskParametersResponse(**task_params)
+        admin_repo = AdminRepository()
+        row = await admin_repo.get_recon_task_parameters(recon_task)
+        return ReconTaskParametersResponse(**recon_task_api_payload(recon_task, row))
         
     except HTTPException:
         raise
@@ -135,16 +203,14 @@ async def get_recon_task_parameters_public(
     This endpoint is used by the runner to fetch task parameters.
     """
     try:
-        admin_repo = AdminRepository()
-        task_params = await admin_repo.get_recon_task_parameters(recon_task)
-        
-        if not task_params:
+        if not is_known_recon_task(recon_task):
             raise HTTPException(
                 status_code=404,
-                detail=f"Parameters for recon task '{recon_task}' not found"
+                detail=f"Unknown recon task '{recon_task}'",
             )
-        
-        return ReconTaskParametersResponse(**task_params)
+        admin_repo = AdminRepository()
+        row = await admin_repo.get_recon_task_parameters(recon_task)
+        return ReconTaskParametersResponse(**recon_task_api_payload(recon_task, row))
         
     except HTTPException:
         raise
@@ -162,6 +228,7 @@ async def create_recon_task_parameters(
     Create parameters for a specific recon task (superuser only)
     """
     try:
+        _raise_if_recon_task_not_admin_configurable(recon_task)
         admin_repo = AdminRepository()
         
         # Check if parameters already exist
@@ -173,12 +240,15 @@ async def create_recon_task_parameters(
             )
         
         # Create new parameters
-        task_params = await admin_repo.set_recon_task_parameters(recon_task, request.parameters)
+        task_params = await admin_repo.set_recon_task_parameters(
+            recon_task,
+            _normalize_task_parameters_or_400(request.parameters),
+        )
         
         if not task_params:
             raise HTTPException(status_code=500, detail="Failed to create recon task parameters")
         
-        return ReconTaskParametersResponse(**task_params)
+        return ReconTaskParametersResponse(**recon_task_api_payload(recon_task, task_params))
         
     except HTTPException:
         raise
@@ -196,15 +266,19 @@ async def update_recon_task_parameters(
     Update parameters for a specific recon task (superuser only)
     """
     try:
+        _raise_if_recon_task_not_admin_configurable(recon_task)
         admin_repo = AdminRepository()
         
         # Update parameters
-        task_params = await admin_repo.set_recon_task_parameters(recon_task, request.parameters)
+        task_params = await admin_repo.set_recon_task_parameters(
+            recon_task,
+            _normalize_task_parameters_or_400(request.parameters),
+        )
         
         if not task_params:
             raise HTTPException(status_code=500, detail="Failed to update recon task parameters")
         
-        return ReconTaskParametersResponse(**task_params)
+        return ReconTaskParametersResponse(**recon_task_api_payload(recon_task, task_params))
         
     except HTTPException:
         raise
@@ -221,6 +295,19 @@ async def delete_recon_task_parameters(
     Delete parameters for a specific recon task (superuser only)
     """
     try:
+        if not is_known_recon_task(recon_task):
+            raise HTTPException(
+                status_code=404,
+                detail=f"Unknown recon task '{recon_task}'",
+            )
+        if not is_recon_task_admin_configurable(recon_task):
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Recon task '{recon_task}' is not configurable via System Settings "
+                    "(debug or workflow-only; use YAML/workflow params)."
+                ),
+            )
         admin_repo = AdminRepository()
         
         # Check if parameters exist
@@ -228,7 +315,7 @@ async def delete_recon_task_parameters(
         if not existing:
             raise HTTPException(
                 status_code=404,
-                detail=f"Parameters for recon task '{recon_task}' not found"
+                detail=f"No stored parameters for recon task '{recon_task}' (nothing to delete)"
             )
         
         # Delete parameters
@@ -257,6 +344,11 @@ async def get_last_execution_threshold(
     Get the last execution threshold for a specific recon task (superuser only)
     """
     try:
+        if not is_known_recon_task(recon_task):
+            raise HTTPException(
+                status_code=404,
+                detail=f"Unknown recon task '{recon_task}'",
+            )
         admin_repo = AdminRepository()
         threshold = await admin_repo.get_last_execution_threshold(recon_task)
         
@@ -287,27 +379,34 @@ async def set_last_execution_threshold(
     Set the last execution threshold for a specific recon task (superuser only)
     """
     try:
+        if not is_known_recon_task(recon_task):
+            raise HTTPException(
+                status_code=404,
+                detail=f"Unknown recon task '{recon_task}'",
+            )
+        if not is_recon_task_admin_configurable(recon_task):
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Recon task '{recon_task}' is not configurable via System Settings "
+                    "(debug or workflow-only; use YAML/workflow params)."
+                ),
+            )
         admin_repo = AdminRepository()
         
-        # Get existing parameters or create new ones
         existing_params = await admin_repo.get_recon_task_parameters(recon_task)
-        if existing_params:
-            parameters = existing_params.get("parameters", {})
-        else:
-            parameters = {}
-        
-        # Update the last execution threshold
+        stored = existing_params.get("parameters") if existing_params else None
+        parameters = dict(effective_parameters(recon_task, stored))
         parameters["last_execution_threshold"] = request.last_execution_threshold
-        
-        # Save the updated parameters
+
         task_params = await admin_repo.set_recon_task_parameters(recon_task, parameters)
-        
+
         if not task_params:
             raise HTTPException(status_code=500, detail="Failed to set last execution threshold")
-        
+
         return LastExecutionThresholdResponse(
             recon_task=recon_task,
-            last_execution_threshold=request.last_execution_threshold
+            last_execution_threshold=parameters["last_execution_threshold"],
         )
         
     except HTTPException:
@@ -325,6 +424,11 @@ async def get_chunk_size(
     Get the chunk size for a specific recon task (superuser only)
     """
     try:
+        if not is_known_recon_task(recon_task):
+            raise HTTPException(
+                status_code=404,
+                detail=f"Unknown recon task '{recon_task}'",
+            )
         admin_repo = AdminRepository()
         chunk_size = await admin_repo.get_chunk_size(recon_task)
         
@@ -355,19 +459,26 @@ async def set_chunk_size(
     Set the chunk size for a specific recon task (superuser only)
     """
     try:
+        if not is_known_recon_task(recon_task):
+            raise HTTPException(
+                status_code=404,
+                detail=f"Unknown recon task '{recon_task}'",
+            )
+        if not is_recon_task_admin_configurable(recon_task):
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Recon task '{recon_task}' is not configurable via System Settings "
+                    "(debug or workflow-only; use YAML/workflow params)."
+                ),
+            )
         admin_repo = AdminRepository()
         
-        # Get existing parameters or create new ones
         existing_params = await admin_repo.get_recon_task_parameters(recon_task)
-        if existing_params:
-            parameters = existing_params.get("parameters", {})
-        else:
-            parameters = {}
-        
-        # Update the chunk size
+        stored = existing_params.get("parameters") if existing_params else None
+        parameters = dict(effective_parameters(recon_task, stored))
         parameters["chunk_size"] = request.chunk_size
         
-        # Save the updated parameters
         task_params = await admin_repo.set_recon_task_parameters(recon_task, parameters)
         
         if not task_params:

@@ -44,9 +44,11 @@ export const TASK_TYPES = {
     params: {
       ip_limit: { type: 'number', default: 500, description: 'Maximum IPs to process from CIDR blocks' },
       max_cidr_size: { type: 'number', default: 65536, description: 'Maximum CIDR size to process (safety limit)' },
-      ips_per_worker: { type: 'number', default: 50, description: 'Number of IPs per worker for parallel processing' },
-      timeout: { type: 'number', default: 300, description: 'Optional timeout override in seconds (uses system default if not specified)' },
-      force_ip: { type: 'boolean', default: false, description: 'Force IP resolution' }
+      ips_per_worker: { type: 'number', default: 50, description: 'IPs per spawned resolve_ip / port_scan worker job' },
+      timeout: { type: 'number', default: 300, description: 'Per resolve_ip worker job timeout in seconds (Kubernetes deadline for each chunk; leave empty for runner default)' },
+      enable_port_scan: { type: 'boolean', default: true, description: 'Spawn port_scan jobs for eligible IPs alongside reverse-DNS (resolve_ip)' },
+      port_scan_timeout: { type: 'number', default: 300, description: 'Per port_scan worker job timeout in seconds (passed to child port_scan tasks)' },
+      force_ip: { type: 'boolean', default: false, description: 'Force IP resolution (skip last-run / service checks where applicable)' }
     }
   },
   subdomain_finder: {
@@ -125,7 +127,7 @@ export const TASK_TYPES = {
     outputs: ['findings'],
     params: {
       api_token: { type: 'string', default: '', description: 'WPScan API token (optional, improves vulnerability detection)' },
-      enumerate: { type: 'array', default: [], description: 'Enumeration options (one per line, e.g., vp, vt, u, p, t, tt, u1-10). Default: vp,vt,u (vulnerable plugins, vulnerable themes, users)' }
+      enumerate: { type: 'array', default: [], description: 'WPScan --enumerate tokens, one per line (e.g. vp, vt, u, ap, at). If empty, the runner uses ap,at,u (aggressive plugins, aggressive themes, users)' }
     }
   },
   test_http: {
@@ -157,7 +159,9 @@ export const TASK_TYPES = {
       geoip_checks: { type: 'boolean', default: true, description: 'Enable GeoIP lookups' },
       exclude_tested: { type: 'boolean', default: true, description: 'Exclude already tested domains' },
       include_subdomains: { type: 'boolean', default: false, description: 'Include subdomain discovery' },
-      recalculate_risk: { type: 'boolean', default: false, description: 'Recalculate risk scores' }
+      recalculate_risk: { type: 'boolean', default: false, description: 'Recalculate risk scores' },
+      enable_fuzzing: { type: 'boolean', default: false, description: 'Enable post-detection URL fuzzing (wfuzz) when workflows support it' },
+      fuzzer_wordlist: { type: 'string', default: '/workspace/files/webcontent_test.txt', description: 'Wordlist path/ID for optional fuzzing stage' }
     }
   },
   detect_broken_links: {
@@ -177,7 +181,7 @@ export const TASK_TYPES = {
     inputs: ['urls'],
     outputs: ['screenshots'],
     params: {
-      timeout: { type: 'number', default: 60, description: 'Optional timeout override per URL in seconds (uses system default if not specified)' }
+      timeout: { type: 'number', default: 60, description: 'Worker job timeout in seconds (Kubernetes active deadline for the whole screenshot batch; not passed per-URL to gowitness)' }
     }
   },
   crawl_website: {

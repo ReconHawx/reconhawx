@@ -56,10 +56,6 @@ class AssetBatchGenerator(Task):
                 return 120  # 2 minutes for smaller batches
         return 120
 
-    def get_last_execution_threshold(self) -> int:
-        """Allow re-execution every hour for testing"""
-        return 1
-
     def get_timestamp_hash(self, target: Any, params: Optional[Dict[Any, Any]] = None) -> str:
         """Generate hash based on program name and batch size"""
         batch_size = params.get('batch_size', 100) if params else 100

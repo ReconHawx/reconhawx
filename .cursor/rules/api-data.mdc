@@ -511,34 +511,11 @@ def init_database():
     _initialize_default_data()
 ```
 
-### Default Data
+### Recon task parameters (defaults vs DB)
 
-```python
-def _initialize_default_recon_task_parameters():
-    """Initialize default recon task parameters"""
-    db = SessionLocal()
-    
-    default_parameters = {
-        "resolve_domain": {"last_execution_threshold": 24, "timeout": 120},
-        "port_scan": {"last_execution_threshold": 24, "timeout": 900},
-        # ...
-    }
-    
-    for task_name, parameters in default_parameters.items():
-        existing = db.query(ReconTaskParameters).filter(
-            ReconTaskParameters.recon_task == task_name
-        ).first()
-        
-        if not existing:
-            task_params = ReconTaskParameters(
-                recon_task=task_name,
-                parameters=parameters
-            )
-            db.add(task_params)
-    
-    db.commit()
-    db.close()
-```
+- **Builtin defaults:** `src/api/app/recon_task_builtin_defaults.yaml`, loaded at API startup by `recon_task_defaults.py`. Override path with env **`RECON_TASK_DEFAULTS_PATH`**.
+- **`recon_task_parameters` table:** stores **admin overrides only**. If there is no row for a task, list/get endpoints still return effective parameters from YAML (`stored_in_database: false`). The API **does not** auto-insert default rows on `init_database()`.
+- **Runner:** offline fallback in `TaskParameterManager._get_default_parameters` (`src/runner/app/tasks/base.py`) should stay aligned when YAML changes.
 
 ## Best Practices
 

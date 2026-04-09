@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
-from models.postgres import Base, ReconTaskParameters
+from models.postgres import Base
 
 # Load environment variables
 load_dotenv()
@@ -84,131 +84,12 @@ def init_database():
         logger.debug("Creating database tables...")
         Base.metadata.create_all(bind=engine)
         logger.debug("Database tables created successfully")
-        
-        # Initialize default data
-        _initialize_default_recon_task_parameters()
-        
+        # Recon task defaults: loaded from recon_task_builtin_defaults.yaml (see recon_task_defaults).
+        # Admin overrides live in recon_task_parameters only when a row exists (no auto-seed).
         logger.debug("Database initialization completed")
         
     except Exception as e:
         logger.error(f"Error initializing database: {str(e)}")
-        raise
-
-def _initialize_default_recon_task_parameters():
-    """Initialize default recon task parameters in the database if they don't exist"""
-    try:
-        db = SessionLocal()
-        
-        # Default parameters for all recon tasks
-        default_parameters = {
-            "resolve_domain": {
-                "last_execution_threshold": 24,
-                "timeout": 120,
-                "max_retries": 3,
-                "chunk_size": 10
-            },
-            "resolve_ip": {
-                "last_execution_threshold": 24,
-                "timeout": 120,
-                "max_retries": 3,
-                "chunk_size": 10
-            },
-            "port_scan": {
-                "last_execution_threshold": 24,
-                "timeout": 900,
-                "max_retries": 3,
-                "chunk_size": 5
-            },
-            "nuclei_scan": {
-                "last_execution_threshold": 24,
-                "timeout": 900,
-                "max_retries": 3,
-                "chunk_size": 10
-            },
-            "crawl_website": {
-                "last_execution_threshold": 24,
-                "timeout": 1800,
-                "max_retries": 3,
-                "chunk_size": 1
-            },
-            "screenshot_website": {
-                "last_execution_threshold": 24,
-                "timeout": 600,
-                "max_retries": 3,
-                "chunk_size": 10
-            },
-            "subdomain_finder": {
-                "last_execution_threshold": 24,
-                "timeout": 300,
-                "max_retries": 3,
-                "chunk_size": 10
-            },
-            "test_http": {
-                "last_execution_threshold": 24,
-                "timeout": 900,
-                "max_retries": 3,
-                "chunk_size": 10
-            },
-            "typosquat_detection": {
-                "last_execution_threshold": 168,  # 7 days
-                "timeout": 1800,
-                "max_retries": 3,
-                "chunk_size": 20
-            },
-            "resolve_ip_cidr": {
-                "last_execution_threshold": 1,  # 1 hour
-                "timeout": 300,  # 5 minutes
-                "max_retries": 3,
-                "chunk_size": 1
-            },
-            "shell_command": {
-                "last_execution_threshold": 24,
-                "timeout": 300,  # 5 minutes
-                "max_retries": 3,
-                "chunk_size": 10
-            },
-            "fuzz_website": {
-                "last_execution_threshold": 24,
-                "timeout": 300,  # 5 minutes
-                "max_retries": 3,
-                "chunk_size": 5
-            },
-            "whois_domain_check": {
-                "last_execution_threshold": 24,
-                "timeout": 600,
-                "max_retries": 3,
-                "chunk_size": 1,
-            },
-        }
-        
-        # Check which tasks already have parameters stored
-        existing_tasks = set()
-        for task in db.query(ReconTaskParameters).all():
-            existing_tasks.add(task.recon_task)
-        
-        # Insert default parameters for tasks that don't have them
-        inserted_count = 0
-        for task_name, parameters in default_parameters.items():
-            if task_name not in existing_tasks:
-                task_params = ReconTaskParameters(
-                    recon_task=task_name,
-                    parameters=parameters
-                )
-                
-                db.add(task_params)
-                inserted_count += 1
-                logger.debug(f"Initialized default parameters for recon task: {task_name}")
-        
-        if inserted_count > 0:
-            db.commit()
-            logger.debug(f"Initialized default parameters for {inserted_count} recon tasks")
-        else:
-            logger.debug("All recon task parameters already exist in database")
-            
-        db.close()
-            
-    except Exception as e:
-        logger.error(f"Error initializing default recon task parameters: {str(e)}")
         raise
 
 def test_connection():

@@ -333,10 +333,6 @@ class TyposquatDetection(Task):
             # Fall back to calculated timeout
             return min(1800, 60 * chunk_size)  # 1 minute per domain, max 30 minutes
 
-    def get_last_execution_threshold(self) -> int:
-        """Re-run typosquat detection weekly"""
-        return 0  # 7 days * 24 hours
-
     def get_timestamp_hash(self, target: Any, params: Optional[Dict[Any, Any]] = None) -> str:
         """Generate timestamp hash for caching"""
         hash_dict = {

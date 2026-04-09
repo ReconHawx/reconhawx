@@ -240,7 +240,8 @@ function VisualWorkflowBuilder({
     }
 
     // Add use_proxy at task level (not in params) for tasks that support it
-    if (selectedNode.data.taskType === 'fuzz_website' || selectedNode.data.taskType === 'nuclei_scan') {
+    if (selectedNode.data.taskType === 'fuzz_website' || selectedNode.data.taskType === 'nuclei_scan' ||
+        selectedNode.data.taskType === 'crawl_website') {
       dataToUpdate.use_proxy = useProxy;
     }
 
@@ -854,7 +855,7 @@ function VisualWorkflowBuilder({
                 </Alert>
 
                 {/* Proxy Option - Show for tasks that support proxying */}
-                {selectedNode && (selectedNode.data.taskType === 'fuzz_website' || selectedNode.data.taskType === 'nuclei_scan') && (
+                {selectedNode && (selectedNode.data.taskType === 'fuzz_website' || selectedNode.data.taskType === 'nuclei_scan' || selectedNode.data.taskType === 'crawl_website') && (
                   <Form.Group className="mb-3">
                     <Form.Check
                       type="checkbox"
@@ -864,7 +865,7 @@ function VisualWorkflowBuilder({
                       onChange={(e) => setUseProxy(e.target.checked)}
                     />
                     <Form.Text className="text-muted">
-                      Route {selectedNode.data.taskType === 'fuzz_website' ? 'fuzzing' : 'scanning'} requests through AWS API Gateway proxies to mask reconnaissance traffic
+                      Route {selectedNode.data.taskType === 'fuzz_website' ? 'fuzzing' : selectedNode.data.taskType === 'nuclei_scan' ? 'scanning' : 'crawling'} requests through AWS API Gateway proxies to mask reconnaissance traffic
                     </Form.Text>
                   </Form.Group>
                 )}

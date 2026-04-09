@@ -10,9 +10,6 @@ class ShellCommand(Task):
     def get_timeout(self, input_data: Any, params: Optional[Dict[Any, Any]] = None) -> int:
         return 300
 
-    def get_last_execution_threshold(self) -> int:
-        return 24
-    
     def get_timestamp_hash(self, input_data: Any, params: Optional[Dict[Any, Any]] = None) -> Optional[str]:
         return None
 

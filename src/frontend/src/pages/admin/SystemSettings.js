@@ -20,6 +20,8 @@ import { formatDate } from '../../utils/dateUtils';
 import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
 import { EventHandlerConfigInner } from './EventHandlerConfig';
 import { SocialMediaCredentialsInner } from './SocialMediaCredentials';
+import { TASK_TYPES } from '../../components/workflow/constants';
+import TaskParameterSelector from '../../components/workflow/TaskParameterSelector';
 
 const VALID_SETTINGS_TABS = ['recon', 'aws', 'workflow', 'ctmonitor', 'ai', 'event-handlers', 'social-media'];
 
@@ -90,21 +92,16 @@ function SystemSettings() {
   const [showAwsCreateModal, setShowAwsCreateModal] = useState(false);
   const [selectedAwsCredential, setSelectedAwsCredential] = useState(null);
 
-  // Form states
-  const [editForm, setEditForm] = useState({
-    last_execution_threshold: 24,
-    timeout: 300,
-    max_retries: 3,
-    chunk_size: 10
-  });
-
-  const [createForm, setCreateForm] = useState({
-    recon_task: '',
-    last_execution_threshold: 24,
-    timeout: 300,
-    max_retries: 3,
-    chunk_size: 10
-  });
+  // Recon task parameter modals (full params + TaskParameterSelector aux state)
+  const [reconEditParams, setReconEditParams] = useState({});
+  const [reconCreateParams, setReconCreateParams] = useState({});
+  const [createReconTaskName, setCreateReconTaskName] = useState('');
+  const [reconOfficialTemplates, setReconOfficialTemplates] = useState(() => new Set());
+  const [reconCustomTemplates, setReconCustomTemplates] = useState([]);
+  const [reconSelectedWordlist, setReconSelectedWordlist] = useState(null);
+  const [reconCustomWordlistUrl, setReconCustomWordlistUrl] = useState('');
+  const [reconWordlistInputType, setReconWordlistInputType] = useState('database');
+  const [reconOutputMode, setReconOutputMode] = useState('');
 
   // AWS Credentials form states
   const [awsEditForm, setAwsEditForm] = useState({
@@ -205,6 +202,220 @@ function SystemSettings() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const resetReconAux = useCallback(() => {
+    setReconOfficialTemplates(new Set());
+    setReconCustomTemplates([]);
+    setReconSelectedWordlist(null);
+    setReconCustomWordlistUrl('');
+    setReconWordlistInputType('database');
+    setReconOutputMode('');
+  }, []);
+
+  const initReconAuxFromParams = useCallback((taskKey, params) => {
+    const p = params || {};
+    if (taskKey === 'nuclei_scan') {
+      const t = p.template || { official: [], custom: [] };
+      setReconOfficialTemplates(new Set(t.official || []));
+      setReconCustomTemplates(Array.isArray(t.custom) ? [...t.custom] : []);
+    } else {
+      setReconOfficialTemplates(new Set());
+      setReconCustomTemplates([]);
+    }
+
+    const usesWordlist =
+      taskKey === 'fuzz_website' || taskKey === 'dns_bruteforce' || taskKey === 'subdomain_permutations';
+    if (usesWordlist) {
+      const w = taskKey === 'subdomain_permutations' ? p.permutation_list : p.wordlist;
+      if (w && typeof w === 'string' && (w.startsWith('http://') || w.startsWith('https://'))) {
+        setReconWordlistInputType('url');
+        setReconCustomWordlistUrl(w);
+        setReconSelectedWordlist(null);
+      } else {
+        setReconWordlistInputType('database');
+        setReconCustomWordlistUrl('');
+        setReconSelectedWordlist(null);
+      }
+    } else {
+      setReconSelectedWordlist(null);
+      setReconCustomWordlistUrl('');
+      setReconWordlistInputType('database');
+    }
+
+    setReconOutputMode(p.output_mode || '');
+  }, []);
+
+  const buildReconParametersPayload = useCallback(
+    (taskKey, rawParams) => {
+      const finalParams = { ...(rawParams || {}) };
+      if (finalParams.timeout === undefined || finalParams.timeout === null || finalParams.timeout === '') {
+        delete finalParams.timeout;
+      }
+
+      const letRaw = finalParams.last_execution_threshold;
+      if (letRaw === undefined || letRaw === null || letRaw === '') {
+        delete finalParams.last_execution_threshold;
+      } else if (typeof letRaw === 'string') {
+        const t = letRaw.trim();
+        if (t === '') {
+          delete finalParams.last_execution_threshold;
+        } else if (/^\d+$/.test(t)) {
+          finalParams.last_execution_threshold = parseInt(t, 10);
+        } else {
+          finalParams.last_execution_threshold = t;
+        }
+      }
+
+      if (taskKey === 'nuclei_scan') {
+        finalParams.template = {
+          official: Array.from(reconOfficialTemplates),
+          custom: reconCustomTemplates,
+        };
+      }
+
+      if (taskKey === 'fuzz_website') {
+        if (reconWordlistInputType === 'url') {
+          finalParams.wordlist = reconCustomWordlistUrl;
+        } else if (reconSelectedWordlist) {
+          finalParams.wordlist = reconSelectedWordlist.id;
+        } else if (!finalParams.wordlist) {
+          finalParams.wordlist = '/workspace/files/webcontent_test.txt';
+        }
+        if (reconOutputMode) {
+          finalParams.output_mode = reconOutputMode;
+        } else {
+          delete finalParams.output_mode;
+        }
+      }
+
+      if (taskKey === 'dns_bruteforce') {
+        if (reconWordlistInputType === 'url') {
+          finalParams.wordlist = reconCustomWordlistUrl;
+        } else if (reconSelectedWordlist) {
+          finalParams.wordlist = reconSelectedWordlist.id;
+        } else if (!finalParams.wordlist) {
+          finalParams.wordlist = '/workspace/files/subdomains.txt';
+        }
+        if (reconOutputMode) {
+          finalParams.output_mode = reconOutputMode;
+        } else {
+          delete finalParams.output_mode;
+        }
+      }
+
+      if (taskKey === 'subdomain_permutations') {
+        if (reconWordlistInputType === 'url') {
+          finalParams.permutation_list = reconCustomWordlistUrl;
+        } else if (reconSelectedWordlist) {
+          finalParams.permutation_list = reconSelectedWordlist.id;
+        } else if (!finalParams.permutation_list) {
+          finalParams.permutation_list = 'files/permutations.txt';
+        }
+      }
+
+      return finalParams;
+    },
+    [
+      reconOfficialTemplates,
+      reconCustomTemplates,
+      reconSelectedWordlist,
+      reconCustomWordlistUrl,
+      reconWordlistInputType,
+      reconOutputMode,
+    ]
+  );
+
+  /** Runner execution fields; timeout omitted when TASK_TYPES already exposes it in TaskParameterSelector */
+  const renderReconExecutionFields = (taskKey, params, setParams) => {
+    const cfg = TASK_TYPES[taskKey];
+    const hasTimeoutInTaskParams = Boolean(cfg?.params && Object.prototype.hasOwnProperty.call(cfg.params, 'timeout'));
+    const hasChunkInTaskParams = Boolean(cfg?.params && Object.prototype.hasOwnProperty.call(cfg.params, 'chunk_size'));
+    return (
+      <Card className="mt-3">
+        <Card.Header className="py-2">Execution timing</Card.Header>
+        <Card.Body>
+          <Form.Group className="mb-3">
+            <Form.Label>Last execution threshold</Form.Label>
+            <Form.Text className="text-muted d-block mb-2">
+              Cooldown before re-running the same target. A plain number means <strong>hours</strong> (default).
+              You can also use suffixes: <code>h</code> (hours), <code>d</code> (days), <code>w</code> (weeks). Examples:{' '}
+              <code>24</code> (24h), <code>1d</code> (24h), <code>2d</code> (48h), <code>1w</code> (168h). Months and years
+              are not supported.
+            </Form.Text>
+            <Form.Control
+              type="text"
+              value={
+                params.last_execution_threshold === undefined || params.last_execution_threshold === null
+                  ? '24'
+                  : String(params.last_execution_threshold)
+              }
+              onChange={(e) =>
+                setParams((prev) => ({
+                  ...prev,
+                  last_execution_threshold: e.target.value,
+                }))
+              }
+              placeholder="e.g. 24, 1d, 2w"
+            />
+          </Form.Group>
+          {!hasTimeoutInTaskParams ? (
+            <Form.Group className="mb-3">
+              <Form.Label>Timeout (seconds)</Form.Label>
+              <Form.Control
+                type="number"
+                min={1}
+                value={
+                  params.timeout === undefined || params.timeout === null || params.timeout === ''
+                    ? ''
+                    : params.timeout
+                }
+                onChange={(e) => {
+                  const v = e.target.value.trim();
+                  setParams((prev) => {
+                    const next = { ...prev };
+                    if (v === '') delete next.timeout;
+                    else next.timeout = parseInt(v, 10);
+                    return next;
+                  });
+                }}
+                placeholder="Optional — uses effective default if empty"
+              />
+            </Form.Group>
+          ) : null}
+          <Form.Group className={!hasChunkInTaskParams ? 'mb-3' : 'mb-0'}>
+            <Form.Label>Max retries</Form.Label>
+            <Form.Control
+              type="number"
+              min={0}
+              value={params.max_retries ?? 3}
+              onChange={(e) =>
+                setParams((prev) => ({
+                  ...prev,
+                  max_retries: parseInt(e.target.value, 10) ?? 0,
+                }))
+              }
+            />
+          </Form.Group>
+          {!hasChunkInTaskParams ? (
+            <Form.Group className="mb-0">
+              <Form.Label>Chunk size</Form.Label>
+              <Form.Control
+                type="number"
+                min={1}
+                value={params.chunk_size ?? 10}
+                onChange={(e) =>
+                  setParams((prev) => ({
+                    ...prev,
+                    chunk_size: parseInt(e.target.value, 10) || 1,
+                  }))
+                }
+              />
+            </Form.Group>
+          ) : null}
+        </Card.Body>
+      </Card>
+    );
   };
 
   const loadAwsCredentials = async () => {
@@ -520,32 +731,29 @@ function SystemSettings() {
 
   const handleCreateTask = async (e) => {
     e.preventDefault();
-    
-    if (!createForm.recon_task.trim()) {
+
+    if (!createReconTaskName.trim()) {
       setError('Recon task name is required');
       return;
     }
-    
+    const existing = reconTasks.find((t) => t.recon_task === createReconTaskName.trim());
+    if (existing?.stored_in_database) {
+      setError('This task already has a database override; use Edit on that row instead.');
+      return;
+    }
+
     try {
       setActionLoading(true);
       setError('');
-      
-      const parameters = {
-        last_execution_threshold: createForm.last_execution_threshold,
-        timeout: createForm.timeout,
-        max_retries: createForm.max_retries,
-        chunk_size: createForm.chunk_size
-      };
-      
-      await adminAPI.createReconTaskParameters(createForm.recon_task, parameters);
+
+      const parameters = buildReconParametersPayload(createReconTaskName.trim(), reconCreateParams);
+
+      await adminAPI.createReconTaskParameters(createReconTaskName.trim(), parameters);
       setSuccess('Recon task parameters created successfully');
       setShowCreateModal(false);
-      setCreateForm({
-        recon_task: '',
-        last_execution_threshold: 24,
-        timeout: 300,
-        max_retries: 3
-      });
+      setCreateReconTaskName('');
+      setReconCreateParams({});
+      resetReconAux();
       loadReconTasks();
     } catch (err) {
       setError('Failed to create recon task parameters: ' + (err.response?.data?.detail || err.message));
@@ -556,24 +764,25 @@ function SystemSettings() {
 
   const handleEditTask = async (e) => {
     e.preventDefault();
-    
+
     if (!selectedTask) return;
-    
+
     try {
       setActionLoading(true);
       setError('');
-      
-      const parameters = {
-        last_execution_threshold: editForm.last_execution_threshold,
-        timeout: editForm.timeout,
-        max_retries: editForm.max_retries,
-        chunk_size: editForm.chunk_size
-      };
-      
+
+      const parameters = buildReconParametersPayload(selectedTask.recon_task, reconEditParams);
+
       await adminAPI.updateReconTaskParameters(selectedTask.recon_task, parameters);
-      setSuccess('Recon task parameters updated successfully');
+      setSuccess(
+        selectedTask.stored_in_database
+          ? 'Recon task parameters updated successfully'
+          : 'Database override created successfully'
+      );
       setShowEditModal(false);
       setSelectedTask(null);
+      setReconEditParams({});
+      resetReconAux();
       loadReconTasks();
     } catch (err) {
       setError('Failed to update recon task parameters: ' + (err.response?.data?.detail || err.message));
@@ -583,7 +792,11 @@ function SystemSettings() {
   };
 
   const handleDeleteTask = async (task) => {
-    if (!window.confirm(`Are you sure you want to delete parameters for "${task.recon_task}"? This action cannot be undone.`)) {
+    if (!task.stored_in_database && !task.id) {
+      setError('No database row to delete; this task already uses system defaults only.');
+      return;
+    }
+    if (!window.confirm(`Remove stored overrides for "${task.recon_task}"? The task will continue to use built-in defaults.`)) {
       return;
     }
     
@@ -592,7 +805,7 @@ function SystemSettings() {
       setError('');
       
       await adminAPI.deleteReconTaskParameters(task.recon_task);
-      setSuccess('Recon task parameters deleted successfully');
+      setSuccess('Stored overrides removed; effective values now follow system defaults.');
       loadReconTasks();
     } catch (err) {
       setError('Failed to delete recon task parameters: ' + (err.response?.data?.detail || err.message));
@@ -603,24 +816,24 @@ function SystemSettings() {
 
   const openEditModal = (task) => {
     setSelectedTask(task);
-    setEditForm({
-      last_execution_threshold: task.parameters.last_execution_threshold || 24,
-      timeout: task.parameters.timeout || 300,
-      max_retries: task.parameters.max_retries || 3,
-      chunk_size: task.parameters.chunk_size || 10
-    });
+    setReconEditParams(JSON.parse(JSON.stringify(task.parameters || {})));
+    initReconAuxFromParams(task.recon_task, task.parameters);
     setShowEditModal(true);
   };
 
   const openCreateModal = () => {
-    setCreateForm({
-      recon_task: '',
-      last_execution_threshold: 24,
-      timeout: 300,
-      max_retries: 3,
-      chunk_size: 10
-    });
+    setCreateReconTaskName('');
+    setReconCreateParams({});
+    resetReconAux();
     setShowCreateModal(true);
+  };
+
+  const prefillCreateFromTaskName = (reconTaskName) => {
+    setCreateReconTaskName(reconTaskName);
+    const row = reconTasks.find((t) => t.recon_task === reconTaskName);
+    const p = row?.parameters ? JSON.parse(JSON.stringify(row.parameters)) : {};
+    setReconCreateParams(p);
+    initReconAuxFromParams(reconTaskName, p);
   };
 
   // AWS Credentials Handlers
@@ -805,17 +1018,20 @@ function SystemSettings() {
                 <Card.Body>
                   {reconTasks.length === 0 ? (
                     <div className="text-center py-4">
-                      <p className="text-muted">No recon task parameters configured yet.</p>
-                      <Button variant="outline-primary" onClick={openCreateModal}>
-                        Add first task parameters
-                      </Button>
+                      <p className="text-muted">No recon tasks in catalog (unexpected). Refresh or check API connectivity.</p>
                     </div>
                   ) : (
-                    <Table responsive striped hover>
+                    <>
+                      <p className="text-muted small mb-3">
+                        Values shown are <strong>effective</strong> (built-in defaults merged with any database row).
+                        Save changes on a task without a stored row to create an override; delete removes only the stored row.
+                      </p>
+                      <Table responsive striped hover>
                       <thead>
                         <tr>
                           <th>Task Name</th>
-                          <th>Last Execution Threshold (hours)</th>
+                          <th>Source</th>
+                          <th>Last execution threshold</th>
                           <th>Timeout (seconds)</th>
                           <th>Max Retries</th>
                           <th>Chunk Size</th>
@@ -825,29 +1041,39 @@ function SystemSettings() {
                       </thead>
                       <tbody>
                         {reconTasks.map((task) => (
-                          <tr key={task.id}>
+                          <tr
+                            key={task.recon_task}
+                            className={task.stored_in_database ? undefined : 'text-muted'}
+                          >
                             <td>{getTaskBadge(task.recon_task)}</td>
                             <td>
+                              {task.stored_in_database ? (
+                                <Badge bg="primary">Database override</Badge>
+                              ) : (
+                                <Badge bg="light" text="dark">System default</Badge>
+                              )}
+                            </td>
+                            <td>
                               <Badge bg="info">
-                                {task.parameters.last_execution_threshold || 'Not set'}
+                                {task.parameters.last_execution_threshold ?? '—'}
                               </Badge>
                             </td>
                             <td>
                               <Badge bg="secondary">
-                                {task.parameters.timeout || 'Not set'}
+                                {task.parameters.timeout ?? '—'}
                               </Badge>
                             </td>
                             <td>
-                              <Badge bg="warning">
-                                {task.parameters.max_retries || 'Not set'}
+                              <Badge bg="warning" text="dark">
+                                {task.parameters.max_retries ?? '—'}
                               </Badge>
                             </td>
                             <td>
                               <Badge bg="success">
-                                {task.parameters.chunk_size || 'Not set'}
+                                {task.parameters.chunk_size ?? '—'}
                               </Badge>
                             </td>
-                            <td>{formatDateLocal(task.updated_at)}</td>
+                            <td>{task.updated_at ? formatDateLocal(task.updated_at) : '—'}</td>
                             <td>
                               <div className="btn-group" role="group">
                                 <Button
@@ -855,7 +1081,7 @@ function SystemSettings() {
                                   size="sm"
                                   onClick={() => openEditModal(task)}
                                   disabled={actionLoading}
-                                  title="Edit Parameters"
+                                  title={task.stored_in_database ? 'Edit stored parameters' : 'Save a database override'}
                                 >
                                   ✏️
                                 </Button>
@@ -863,8 +1089,12 @@ function SystemSettings() {
                                   variant="outline-danger"
                                   size="sm"
                                   onClick={() => handleDeleteTask(task)}
-                                  disabled={actionLoading}
-                                  title="Delete Parameters"
+                                  disabled={actionLoading || !task.stored_in_database}
+                                  title={
+                                    task.stored_in_database
+                                      ? 'Remove stored override'
+                                      : 'No stored row to delete'
+                                  }
                                 >
                                   🗑️
                                 </Button>
@@ -874,6 +1104,7 @@ function SystemSettings() {
                         ))}
                       </tbody>
                     </Table>
+                    </>
                   )}
                 </Card.Body>
               </Card>
@@ -1539,94 +1770,100 @@ function SystemSettings() {
       </Row>
 
       {/* Create Modal */}
-      <Modal show={showCreateModal} onHide={() => setShowCreateModal(false)}>
+      <Modal
+        show={showCreateModal}
+        onHide={() => {
+          setShowCreateModal(false);
+          setCreateReconTaskName('');
+          setReconCreateParams({});
+          resetReconAux();
+        }}
+        size="lg"
+        scrollable
+      >
         <Modal.Header closeButton>
-          <Modal.Title>Add Recon Task Parameters</Modal.Title>
+          <Modal.Title>Add database override</Modal.Title>
         </Modal.Header>
         <Form onSubmit={handleCreateTask}>
           <Modal.Body>
             <Form.Group className="mb-3">
-              <Form.Label>Recon Task Name</Form.Label>
-              <Form.Control
-                type="text"
-                value={createForm.recon_task}
-                onChange={(e) => setCreateForm({...createForm, recon_task: e.target.value})}
-                placeholder="e.g., resolve_domain"
+              <Form.Label>Recon task</Form.Label>
+              <Form.Select
+                value={createReconTaskName}
+                onChange={(e) => prefillCreateFromTaskName(e.target.value)}
                 required
-              />
+              >
+                <option value="" disabled>
+                  Select task…
+                </option>
+                {[...reconTasks]
+                  .sort((a, b) => String(a.recon_task).localeCompare(String(b.recon_task)))
+                  .map((t) => (
+                    <option key={t.recon_task} value={t.recon_task}>
+                      {t.recon_task}
+                      {t.stored_in_database ? ' (already has override)' : ''}
+                    </option>
+                  ))}
+              </Form.Select>
               <Form.Text className="text-muted">
-                Enter the name of the recon task (e.g., resolve_domain, port_scan, nuclei_scan)
+                Fields match the workflow builder; values start from effective defaults for the task.
               </Form.Text>
             </Form.Group>
 
-            <Form.Group className="mb-3">
-              <Form.Label>Last Execution Threshold (hours)</Form.Label>
-              <Form.Control
-                type="number"
-                min="1"
-                value={createForm.last_execution_threshold}
-                onChange={(e) => setCreateForm({...createForm, last_execution_threshold: parseInt(e.target.value)})}
-                required
-              />
-              <Form.Text className="text-muted">
-                Minimum hours to wait before re-executing this task on the same target
-              </Form.Text>
-            </Form.Group>
-
-            <Form.Group className="mb-3">
-              <Form.Label>Timeout (seconds)</Form.Label>
-              <Form.Control
-                type="number"
-                min="1"
-                value={createForm.timeout}
-                onChange={(e) => setCreateForm({...createForm, timeout: parseInt(e.target.value)})}
-                required
-              />
-              <Form.Text className="text-muted">
-                Maximum time to wait for task completion
-              </Form.Text>
-            </Form.Group>
-
-            <Form.Group className="mb-3">
-              <Form.Label>Max Retries</Form.Label>
-              <Form.Control
-                type="number"
-                min="0"
-                value={createForm.max_retries}
-                onChange={(e) => setCreateForm({...createForm, max_retries: parseInt(e.target.value)})}
-                required
-              />
-              <Form.Text className="text-muted">
-                Maximum number of retry attempts for failed tasks
-              </Form.Text>
-            </Form.Group>
-
-            <Form.Group className="mb-3">
-              <Form.Label>Chunk Size</Form.Label>
-              <Form.Control
-                type="number"
-                min="1"
-                value={createForm.chunk_size}
-                onChange={(e) => setCreateForm({...createForm, chunk_size: parseInt(e.target.value)})}
-                required
-              />
-              <Form.Text className="text-muted">
-                Number of items to process in each chunk (affects parallelization)
-              </Form.Text>
-            </Form.Group>
+            {createReconTaskName &&
+              (() => {
+                const cfg = TASK_TYPES[createReconTaskName];
+                const hasParams = cfg?.params && Object.keys(cfg.params).length > 0;
+                return (
+                  <>
+                    {hasParams ? (
+                      <TaskParameterSelector
+                        taskType={createReconTaskName}
+                        taskParams={reconCreateParams}
+                        onParameterChange={setReconCreateParams}
+                        selectedOfficialTemplates={reconOfficialTemplates}
+                        selectedCustomTemplates={reconCustomTemplates}
+                        onOfficialTemplatesChange={setReconOfficialTemplates}
+                        onCustomTemplatesChange={setReconCustomTemplates}
+                        selectedWordlist={reconSelectedWordlist}
+                        customWordlistUrl={reconCustomWordlistUrl}
+                        wordlistInputType={reconWordlistInputType}
+                        onWordlistChange={setReconSelectedWordlist}
+                        onCustomUrlChange={setReconCustomWordlistUrl}
+                        onInputTypeChange={setReconWordlistInputType}
+                        outputMode={reconOutputMode}
+                        onOutputModeChange={setReconOutputMode}
+                      />
+                    ) : (
+                      <p className="text-muted small">
+                        No extra task fields beyond execution timing (same as workflow UI).
+                      </p>
+                    )}
+                    {renderReconExecutionFields(createReconTaskName, reconCreateParams, setReconCreateParams)}
+                  </>
+                );
+              })()}
           </Modal.Body>
           <Modal.Footer>
-            <Button variant="secondary" onClick={() => setShowCreateModal(false)}>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setShowCreateModal(false);
+                setCreateReconTaskName('');
+                setReconCreateParams({});
+                resetReconAux();
+              }}
+            >
               Cancel
             </Button>
-            <Button variant="primary" type="submit" disabled={actionLoading}>
+            <Button variant="primary" type="submit" disabled={actionLoading || !createReconTaskName}>
               {actionLoading ? (
                 <>
                   <Spinner animation="border" size="sm" className="me-2" />
                   Creating...
                 </>
               ) : (
-                'Create Parameters'
+                'Create override'
               )}
             </Button>
           </Modal.Footer>
@@ -1634,9 +1871,21 @@ function SystemSettings() {
       </Modal>
 
       {/* Edit Modal */}
-      <Modal show={showEditModal} onHide={() => setShowEditModal(false)}>
+      <Modal
+        show={showEditModal}
+        onHide={() => {
+          setShowEditModal(false);
+          setSelectedTask(null);
+          setReconEditParams({});
+          resetReconAux();
+        }}
+        size="lg"
+        scrollable
+      >
         <Modal.Header closeButton>
-          <Modal.Title>Edit Recon Task Parameters</Modal.Title>
+          <Modal.Title>
+            {selectedTask?.stored_in_database ? 'Edit recon task parameters' : 'Create database override'}
+          </Modal.Title>
         </Modal.Header>
         <Form onSubmit={handleEditTask}>
           <Modal.Body>
@@ -1649,65 +1898,57 @@ function SystemSettings() {
                 className="bg-light"
               />
             </Form.Group>
+            {!selectedTask?.stored_in_database && (
+              <p className="text-muted small">
+                This task currently uses system defaults only. Saving will create a stored override with the values below.
+              </p>
+            )}
 
-            <Form.Group className="mb-3">
-              <Form.Label>Last Execution Threshold (hours)</Form.Label>
-              <Form.Control
-                type="number"
-                min="1"
-                value={editForm.last_execution_threshold}
-                onChange={(e) => setEditForm({...editForm, last_execution_threshold: parseInt(e.target.value)})}
-                required
-              />
-              <Form.Text className="text-muted">
-                Minimum hours to wait before re-executing this task on the same target
-              </Form.Text>
-            </Form.Group>
-
-            <Form.Group className="mb-3">
-              <Form.Label>Timeout (seconds)</Form.Label>
-              <Form.Control
-                type="number"
-                min="1"
-                value={editForm.timeout}
-                onChange={(e) => setEditForm({...editForm, timeout: parseInt(e.target.value)})}
-                required
-              />
-              <Form.Text className="text-muted">
-                Maximum time to wait for task completion
-              </Form.Text>
-            </Form.Group>
-
-            <Form.Group className="mb-3">
-              <Form.Label>Max Retries</Form.Label>
-              <Form.Control
-                type="number"
-                min="0"
-                value={editForm.max_retries}
-                onChange={(e) => setEditForm({...editForm, max_retries: parseInt(e.target.value)})}
-                required
-              />
-              <Form.Text className="text-muted">
-                Maximum number of retry attempts for failed tasks
-              </Form.Text>
-            </Form.Group>
-
-            <Form.Group className="mb-3">
-              <Form.Label>Chunk Size</Form.Label>
-              <Form.Control
-                type="number"
-                min="1"
-                value={editForm.chunk_size}
-                onChange={(e) => setEditForm({...editForm, chunk_size: parseInt(e.target.value)})}
-                required
-              />
-              <Form.Text className="text-muted">
-                Number of items to process in each chunk (affects parallelization)
-              </Form.Text>
-            </Form.Group>
+            {selectedTask &&
+              (() => {
+                const tk = selectedTask.recon_task;
+                const cfg = TASK_TYPES[tk];
+                const hasParams = cfg?.params && Object.keys(cfg.params).length > 0;
+                return (
+                  <>
+                    {hasParams ? (
+                      <TaskParameterSelector
+                        taskType={tk}
+                        taskParams={reconEditParams}
+                        onParameterChange={setReconEditParams}
+                        selectedOfficialTemplates={reconOfficialTemplates}
+                        selectedCustomTemplates={reconCustomTemplates}
+                        onOfficialTemplatesChange={setReconOfficialTemplates}
+                        onCustomTemplatesChange={setReconCustomTemplates}
+                        selectedWordlist={reconSelectedWordlist}
+                        customWordlistUrl={reconCustomWordlistUrl}
+                        wordlistInputType={reconWordlistInputType}
+                        onWordlistChange={setReconSelectedWordlist}
+                        onCustomUrlChange={setReconCustomWordlistUrl}
+                        onInputTypeChange={setReconWordlistInputType}
+                        outputMode={reconOutputMode}
+                        onOutputModeChange={setReconOutputMode}
+                      />
+                    ) : (
+                      <p className="text-muted small">
+                        No extra task fields beyond execution timing (same as workflow UI).
+                      </p>
+                    )}
+                    {renderReconExecutionFields(tk, reconEditParams, setReconEditParams)}
+                  </>
+                );
+              })()}
           </Modal.Body>
           <Modal.Footer>
-            <Button variant="secondary" onClick={() => setShowEditModal(false)}>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setShowEditModal(false);
+                setSelectedTask(null);
+                setReconEditParams({});
+                resetReconAux();
+              }}
+            >
               Cancel
             </Button>
             <Button variant="primary" type="submit" disabled={actionLoading}>
@@ -1717,7 +1958,7 @@ function SystemSettings() {
                   Updating...
                 </>
               ) : (
-                'Update Parameters'
+                'Save parameters'
               )}
             </Button>
           </Modal.Footer>

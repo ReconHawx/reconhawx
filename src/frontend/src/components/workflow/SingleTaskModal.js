@@ -66,7 +66,8 @@ function SingleTaskModal({ show, onHide, onSuccess }) {
   const inputTypeOptions = [
     { value: 'domains', label: 'Domains' },
     { value: 'urls', label: 'URLs' },
-    { value: 'ips', label: 'IP Addresses' }
+    { value: 'ips', label: 'IP Addresses' },
+    { value: 'cidrs', label: 'CIDR blocks' }
   ];
 
   // Helper to extract program name from string or object
@@ -149,6 +150,8 @@ function SingleTaskModal({ show, onHide, onSuccess }) {
         setInputType('urls');
       } else if (primaryInput === 'ips') {
         setInputType('ips');
+      } else if (primaryInput === 'cidrs') {
+        setInputType('cidrs');
       }
     }
   };
@@ -530,7 +533,7 @@ function SingleTaskModal({ show, onHide, onSuccess }) {
                     <Form.Control
                       as="textarea"
                       rows={6}
-                      placeholder={`Enter ${inputType} (one per line):${inputType === 'domains' ? '\nexample.com\nsubdomain.example.com' : inputType === 'urls' ? '\nhttps://example.com\nhttp://test.com' : '\n192.168.1.1\n10.0.0.1'}`}
+                      placeholder={`Enter ${inputType} (one per line):${inputType === 'domains' ? '\nexample.com\nsubdomain.example.com' : inputType === 'urls' ? '\nhttps://example.com\nhttp://test.com' : inputType === 'cidrs' ? '\n192.168.0.0/24\n10.0.0.0/16' : '\n192.168.1.1\n10.0.0.1'}`}
                       value={inputValues}
                       onChange={(e) => setInputValues(e.target.value)}
                       required
