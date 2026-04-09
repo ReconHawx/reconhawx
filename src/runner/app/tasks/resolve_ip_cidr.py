@@ -19,9 +19,11 @@ class ResolveIPCIDR(Task):
 
     # Task parameters:
     # - force_ip (bool): Skip last execution check for individual IPs (default: False)
-    #   When True, all IPs from CIDR expansion will be processed regardless of recent execution history
+    # - ip_limit, max_cidr_size: CIDR expansion limits
+    # - ips_per_worker (int): IPs per spawned resolve_ip / port_scan job (default: env CIDR_CHUNK_SIZE)
+    # - timeout (int): Per spawned resolve_ip worker job deadline (seconds); falls back to job_timeout env
     # - enable_port_scan (bool): Enable port scanning alongside DNS resolution (default: True)
-    # - port_scan_timeout (int): Timeout for port scan jobs in seconds (default: 300)
+    # - port_scan_timeout (int): Timeout for port scan child jobs in seconds (default: 300)
 
     def __init__(self):
         super().__init__()
@@ -172,6 +174,24 @@ class ResolveIPCIDR(Task):
             enable_port_scan = task_def.params.get('enable_port_scan', enable_port_scan)
             port_scan_timeout = task_def.params.get('port_scan_timeout', port_scan_timeout)
 
+        chunk_size = self.chunk_size
+        ips_per_worker = params.get('ips_per_worker')
+        if ips_per_worker is not None:
+            try:
+                chunk_size = max(1, int(ips_per_worker))
+            except (TypeError, ValueError):
+                chunk_size = self.chunk_size
+
+        resolve_job_timeout = self.job_timeout
+        to_raw = params.get('timeout')
+        if to_raw is not None:
+            try:
+                to_int = int(to_raw)
+                if to_int > 0:
+                    resolve_job_timeout = to_int
+            except (TypeError, ValueError):
+                pass
+
         all_ips = self._prepare_ip_chunks_from_cidrs(
             cidrs_to_process, force_ip, program_name, ip_limit, max_cidr_size
         )
@@ -179,12 +199,12 @@ class ResolveIPCIDR(Task):
             return []
 
         resolve_ip_chunks = [
-            self.resolve_ip_candidates[i:i + self.chunk_size]
-            for i in range(0, len(self.resolve_ip_candidates), self.chunk_size)
+            self.resolve_ip_candidates[i:i + chunk_size]
+            for i in range(0, len(self.resolve_ip_candidates), chunk_size)
         ]
         port_scan_chunks = [
-            self.port_scan_candidates[i:i + self.chunk_size]
-            for i in range(0, len(self.port_scan_candidates), self.chunk_size)
+            self.port_scan_candidates[i:i + chunk_size]
+            for i in range(0, len(self.port_scan_candidates), chunk_size)
         ]
 
         from .resolve_ip import ResolveIP
@@ -192,7 +212,7 @@ class ResolveIPCIDR(Task):
         resolve_ip_task = ResolveIP()
         port_scan_task = PortScan()
 
-        resolve_params = {**params, 'timeout': self.job_timeout}
+        resolve_params = {**params, 'timeout': resolve_job_timeout}
         port_scan_params = {**params, 'timeout': port_scan_timeout}
 
         command_specs = []
