@@ -123,7 +123,7 @@ const Dashboard = lazy(() => import('./pages/Dashboard'));
 
 - **Canonical tokens:** [`src/frontend/src/index.css`](../../src/frontend/src/index.css) — `:root` (light) and `[data-theme="dark"]` set `--bs-*` (Bootstrap-shaped) and `--rh-*` (Recon brand).
 - **Activation:** [`ThemeContext`](../../src/frontend/src/contexts/ThemeContext.js) sets `data-theme` on **`document.body`** and persists `recon-theme` in `localStorage`.
-- **Agent / contributor guide:** [`.cursor/rules/frontend-theming.mdc`](frontend-theming.mdc) — token list, decision tree, banned patterns (no raw hex in inline styles for neutrals), chart/workflow helpers.
+- **Agent / contributor guide:** [`.cursor/rules/frontend-theming.mdc`](frontend-theming.mdc) — token list, **`rh-card-header-table`** (section titles vs list toolbars), decision tree, banned patterns (no raw hex in inline styles for neutrals), chart/workflow helpers.
 
 ### Bootstrap Integration
 

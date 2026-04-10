@@ -289,6 +289,29 @@ code {
   border-bottom-color: var(--bs-card-border-color) !important;
 }
 
+/* `.card-header` forces card bg above — restore utility fills for section titles (Bootstrap bg-*). */
+.card-header.bg-primary {
+  background-color: var(--bs-primary) !important;
+}
+.card-header.bg-secondary {
+  background-color: var(--bs-secondary) !important;
+}
+.card-header.bg-success {
+  background-color: var(--bs-success) !important;
+}
+.card-header.bg-danger {
+  background-color: var(--bs-danger) !important;
+}
+.card-header.bg-warning {
+  background-color: var(--bs-warning) !important;
+}
+.card-header.bg-info {
+  background-color: var(--bs-info) !important;
+}
+.card-header.bg-dark {
+  background-color: var(--bs-dark) !important;
+}
+
 /*
  * Dashboard sections: `border-primary` / `border-danger` / … stay in markup for intent;
  * rim color is always the neutral card border (light + dark).
@@ -341,6 +364,18 @@ code {
   border-bottom-color: var(--rh-table-border-color) !important;
   /* Kill Bootstrap .table-light gray text on dark headers */
   color: var(--bs-body-color) !important;
+}
+
+/* Section title strip — same colors as .table thead. Do not use on filter/tool Card.Headers above tables. */
+.card-header.rh-card-header-table {
+  background-color: var(--rh-table-header-bg) !important;
+  border-bottom: 1px solid var(--rh-table-border-color) !important;
+  color: var(--bs-body-color) !important;
+}
+
+[data-theme="light"] .dashboard-panel.card .card-header.rh-card-header-table,
+[data-theme="dark"] .dashboard-panel.card .card-header.rh-card-header-table {
+  border-bottom: 1px solid var(--rh-table-border-color) !important;
 }
 
 [data-theme="dark"] .table thead.table-light {

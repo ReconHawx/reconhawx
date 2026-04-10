@@ -21,8 +21,9 @@ The UI is **Bootstrap 5 + react-bootstrap**, not MUI or Tailwind. Theme switchin
 4. **Binary UI that CSS cannot express:** `useTheme()` → `isLight` / `isDark` (navbar `variant`, hero image swap). Keep this **narrow**.
 5. **SVG / canvas / chart strokes** where you need a JS object: import **[`chartTheme.js`](../../src/frontend/src/utils/chartTheme.js)** or follow the same `var(--bs-*)` strings as inline SVG attributes (supported in modern browsers).
 6. **Workflow canvas nodes (React Flow):** Use **`workflowNodeTheme.js`** shared tokens and **`var(--bs-*)`** in inline `style` gradients — avoid `isDark ? '#…' : '#…'` for layout chrome.
+7. **Card `Card.Header`:** **Section title** on an elevated card → optional **`rh-card-header-table`** (matches `thead` band). **Toolbar** above a table (filters, Total, Export) → **default** header only—see utility row below.
 
-## Token reference (most-used)
+## Token reference (most-used) and card-header utility
 
 | Token | Use |
 |-------|-----|
@@ -46,13 +47,19 @@ The UI is **Bootstrap 5 + react-bootstrap**, not MUI or Tailwind. Theme switchin
 | `--rh-table-border-color` | Table **row** lines (and list-group); stronger in light — no inset “frame” around tables |
 | `--rh-table-header-bg` | `thead` band — set **explicit hex per theme** in `:root` / `[data-theme="dark"]`; do **not** define on `:root` as only `var(--bs-secondary-bg)` (it resolves with light `--bs-secondary-bg` and that **computed** value inherits into dark, gray-washing headers) |
 
+| Utility class | Use |
+|---------------|-----|
+| **`rh-card-header-table`** (on `Card.Header`) | **`index.css`:** same background, bottom border, and text as **`.table thead th` / `td`** (`--rh-table-header-bg`, `--rh-table-border-color`, `--bs-body-color`). Use for **named section titles** on cards (e.g. Dashboard panels, System maintenance sections). **Do not** put it on **filter / action toolbars** above a data table (Total / Reset / Export / Import rows)—those stay the **default** `Card.Header` (`--bs-card-bg`) so they don’t look like a second `thead`. List pages: **one** table header row in `<thead>` only. |
+
 ## Palette summary (index.css)
 
 Light (`:root`): body `#edf1f7`; card `#f7f9fc`; thead `#dce3ef` (`--rh-table-header-bg`); borders `rgba(0, 151, 167, 0.22–0.28)`; primary `#0097a7` / `rgb(0, 151, 167)`; shared brand `--rh-cyan` / `--rh-purple` unchanged.
 
 Dark (`[data-theme="dark"]`): body `#121d32`; card `#1c2d4a`; table surface `#18243d`; thead band `#223651` (`--rh-table-header-bg`); elevated `#233451`; `--rh-table-border-color` for row lines; card rim cyan ~`0.4` alpha; muted text `#9abdd0`; neon `--bs-primary` / `--bs-info` for fills and dark-nav chrome.
 
-Semantic **outlined cards** (`.card.border-*`): **light + dark** use one rim — `var(--bs-card-border-color)` (markup keeps `border-primary` / `border-danger` / … without rainbow rims). **Dashboard** uses `.dashboard-panel` instead of `border-*`: **borderless** with a soft **shadow** (light: `var(--rh-shadow-color)` stack; dark: deeper neutral shadow so panels lift off `#121d32`). Headers keep a thin `border-bottom` for separation.
+Semantic **outlined cards** (`.card.border-*`): **light + dark** use one rim — `var(--bs-card-border-color)` (markup keeps `border-primary` / `border-danger` / … without rainbow rims). **Dashboard** uses `.dashboard-panel` instead of `border-*`: **borderless** with a soft **shadow** (light: `var(--rh-shadow-color)` stack; dark: deeper neutral shadow so panels lift off `#121d32`). Plain section headers use `border-bottom: var(--bs-border-color)`; **`rh-card-header-table`** overrides that bottom edge to **`var(--rh-table-border-color)`** so the title strip aligns with real table heads.
+
+**System maintenance** elevated cards (`.system-maintenance-page .maintenance-section-card`) mirror dashboard shadow; **`index.css`** + **`SystemMaintenance.css`** ensure `rh-card-header-table` dividers use **`--rh-table-border-color`** (not the generic card-header rule there).
 
 **Dark-mode links:** do not style every `a` with `!important` — that overrides `Button as={Link}` (`a.btn`); scope prose links with `:not(.btn)` (and other Bootstrap chrome) or set `a.btn` back to `var(--bs-btn-color)` / `var(--bs-btn-hover-color)`.
 
@@ -97,8 +104,9 @@ el.style.color = '';
 ## Testing checklist (before merging UI)
 
 1. Toggle **light → dark → light** in the navbar; no white “holes,” invisible text, or wrong borders.
-2. Hit **workflow builder**, **screenshots** viewers, **admin** tables, and any page you touched.
-3. If you added **SVG**: confirm strokes/fills in both themes (try `var(--bs-*)` first).
+2. On **asset / findings list** pages: toolbar `Card.Header` should **not** use `rh-card-header-table`; only `<thead>` should use the table-header band.
+3. Hit **workflow builder**, **screenshots** viewers, **admin** tables, and any page you touched.
+4. If you added **SVG**: confirm strokes/fills in both themes (try `var(--bs-*)` first).
 
 ## Related utilities
 

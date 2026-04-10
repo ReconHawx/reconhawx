@@ -538,7 +538,7 @@ function SystemMaintenance() {
   );
 
   return (
-    <Container className="mt-4">
+    <Container className="mt-4 system-maintenance-page">
       <Row className="mb-3 align-items-center">
         <Col>
           <h4 className="mb-0">System maintenance</h4>
@@ -571,8 +571,8 @@ function SystemMaintenance() {
         </div>
       ) : (
         <>
-          <Card className="mb-4">
-            <Card.Header>Status</Card.Header>
+          <Card className="mb-4 maintenance-section-card">
+            <Card.Header className="rh-card-header-table">Status</Card.Header>
             <Card.Body className="p-0">
               <Table borderless responsive className="mb-0 small">
                 <tbody>
@@ -633,8 +633,10 @@ function SystemMaintenance() {
             </Card.Body>
           </Card>
 
-          <Card className="mb-4">
-            <Card.Header>System maintenance (Kueue + API)</Card.Header>
+          <Card className="mb-4 maintenance-section-card">
+            <Card.Header className="rh-card-header-table">
+              System maintenance (Kueue + API)
+            </Card.Header>
             <Card.Body>
               <p className="small text-muted mb-3">
                 <strong>Activate</strong> applies Kueue <code>Hold</code> to all ClusterQueues, waits until
@@ -734,8 +736,8 @@ function SystemMaintenance() {
             </Modal.Footer>
           </Modal>
 
-          <Card className="mb-4">
-            <Card.Header>Kueue (Hold)</Card.Header>
+          <Card className="mb-4 maintenance-section-card">
+            <Card.Header className="rh-card-header-table">Kueue (Hold)</Card.Header>
             <Card.Body>
               <p className="small text-muted">
                 Applies Kueue <strong>Hold</strong> on all four ClusterQueues: new work is not admitted; workloads already
@@ -845,8 +847,10 @@ function SystemMaintenance() {
             </Card.Body>
           </Card>
 
-          <Card className="mb-4 border-primary">
-            <Card.Header>Cluster restore (Kubernetes Job)</Card.Header>
+          <Card className="mb-4 maintenance-section-card">
+            <Card.Header className="rh-card-header-table">
+              Cluster restore (Kubernetes Job)
+            </Card.Header>
             <Card.Body>
               <p className="small text-muted">
                 Stage a custom-format dump, then create a Job that pulls it with cluster credentials and
@@ -944,8 +948,8 @@ function SystemMaintenance() {
             </Card.Body>
           </Card>
 
-          <Card className="mb-4">
-            <Card.Header>Backup</Card.Header>
+          <Card className="mb-4 maintenance-section-card">
+            <Card.Header className="rh-card-header-table">Backup</Card.Header>
             <Card.Body>
               <p className="small text-muted">
                 Downloads a logical dump of the application database. Use <strong>custom</strong> format for{' '}
