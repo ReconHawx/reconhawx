@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.13.1](https://github.com/ReconHawx/reconhawx/compare/v0.13.0...v0.13.1) (2026-04-10)
+
+
+### Bug Fixes
+
+* **api:** stop unified bulk asset processing from freezing the API ([b26483c](https://github.com/ReconHawx/reconhawx/commit/b26483cdc964bbe1ea4accb9023db90b92ff0dd7))
+* **runner:** stop progressive asset merges from stalling batch completion ([3d5b9bb](https://github.com/ReconHawx/reconhawx/commit/3d5b9bb76064e4b019d1c429c99d72732865a6e2))
+
 ## [0.13.0](https://github.com/ReconHawx/reconhawx/compare/v0.12.2...v0.13.0) (2026-04-09)
 
 
