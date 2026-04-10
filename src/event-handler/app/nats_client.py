@@ -108,10 +108,19 @@ class EventsSubscriber:
             logger.error("Failed to connect to NATS: %s", e)
             raise
 
-    async def run(self, handler: Callable[[str, dict], Awaitable[bool]]):
+    async def run(
+        self,
+        handler: Callable[[str, dict], Awaitable[bool]],
+        *,
+        is_paused: Optional[Callable[[], bool]] = None,
+    ):
         """Run the event processing loop. Messages in each fetch batch are processed
         concurrently up to max_concurrent_messages (config); each message is ack/nak'd
-        only after its handler completes."""
+        only after its handler completes.
+
+        If ``is_paused`` is set and returns True, the loop does not fetch new messages
+        (JetStream pending builds up until resume).
+        """
         if not self.subscription:
             raise RuntimeError("Subscriber not initialized")
 
@@ -126,6 +135,10 @@ class EventsSubscriber:
 
         while True:
             try:
+                if is_paused is not None and is_paused():
+                    await asyncio.sleep(0.25)
+                    continue
+
                 msgs = await self.subscription.fetch(200, timeout=0.5)
 
                 if not msgs:

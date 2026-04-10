@@ -3,6 +3,7 @@ kind: Kustomization
 
 resources:
   - event-handler-deployment.yaml
+  - event-handler-service.yaml
 
 labels:
 - pairs:

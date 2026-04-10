@@ -213,6 +213,30 @@ class TestRunConcurrent:
         msg_nak.nak.assert_awaited_once()
 
 
+class TestRunPaused:
+    """When is_paused returns True, fetch is not called."""
+
+    @pytest.mark.asyncio
+    async def test_paused_skips_fetch(self):
+        cfg = NotifierConfig()
+        subscriber = EventsSubscriber(cfg)
+        subscriber.subscription = MagicMock()
+        subscriber.subscription.fetch = AsyncMock(return_value=[])
+
+        handler = AsyncMock(return_value=True)
+
+        task = asyncio.create_task(
+            subscriber.run(handler, is_paused=lambda: True),
+        )
+        await asyncio.sleep(0.4)
+        subscriber.subscription.fetch.assert_not_called()
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+
 class TestRunRequiresSubscription:
     """Tests for run() preconditions."""
 

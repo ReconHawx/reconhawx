@@ -12,7 +12,7 @@ The event-handler (notifier) service processes events from NATS JetStream and ex
 
 ```
 Event-Handler Service (SimpleNotifierApp)
-├── HTTP API (http_api.py) — uvicorn on EVENTHANDLER_HTTP_HOST:PORT (default :8080); GET /status; room for pause/start later
+├── HTTP API (http_api.py) — uvicorn on EVENTHANDLER_HTTP_HOST:PORT (default :8000); GET /status; POST /control/pause|resume|flush-batches|clear-batches (Bearer INTERNAL_SERVICE_API_KEY). Paused: no JetStream fetch, batch recovery idle; queue retains messages. flush-batches runs pending Redis notify:batch:* actions; clear-batches deletes those queues without running actions.
 ├── EventsSubscriber (nats_client.py)
 │   ├── NATS JetStream connection
 │   ├── Durable consumer management

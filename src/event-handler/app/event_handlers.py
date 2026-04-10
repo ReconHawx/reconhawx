@@ -1031,6 +1031,111 @@ class SimpleBatchManager:
 
         return expired
 
+    def list_pending_batches_with_items(self) -> List[tuple]:
+        """Batches with at least one queued item: (handler_id, program_name, age_seconds).
+
+        Used for admin-triggered flush (not limited by max_delay expiry).
+        """
+        pending: List[tuple] = []
+        current_time = int(time.time())
+
+        try:
+            for key in self.redis.scan_iter(match="notify:batch:*:meta"):
+                try:
+                    key_str = key.decode("utf-8") if isinstance(key, bytes) else key
+
+                    parts = key_str.split(":")
+                    if len(parts) < 5:
+                        continue
+
+                    handler_id = parts[2]
+                    program_name = ":".join(parts[3:-1])
+
+                    meta = self.redis.hgetall(key)
+                    if not meta:
+                        continue
+
+                    first_ts_raw = meta.get(b"first_ts", meta.get("first_ts"))
+                    if not first_ts_raw:
+                        continue
+
+                    first_ts = int(
+                        first_ts_raw.decode("utf-8")
+                        if isinstance(first_ts_raw, bytes)
+                        else first_ts_raw
+                    )
+                    age = current_time - first_ts
+
+                    items_key = f"notify:batch:{handler_id}:{program_name}:items"
+                    item_count = self.redis.llen(items_key)
+
+                    if item_count and item_count > 0:
+                        pending.append((handler_id, program_name, age))
+
+                except Exception as e:
+                    logger.debug(f"Error processing batch key {key}: {e}")
+                    continue
+
+        except Exception as e:
+            logger.error(f"Error scanning for pending batches: {e}")
+
+        return pending
+
+    def delete_all_pending_batches(self) -> Dict[str, Any]:
+        """Remove all queued batch data from Redis without running handler actions."""
+        batches_cleared = 0
+        events_discarded = 0
+        errors: List[Dict[str, Any]] = []
+
+        try:
+            for meta_key in self.redis.scan_iter(match="notify:batch:*:meta"):
+                try:
+                    key_str = meta_key.decode("utf-8") if isinstance(meta_key, bytes) else meta_key
+
+                    parts = key_str.split(":")
+                    if len(parts) < 5:
+                        continue
+
+                    handler_id = parts[2]
+                    program_name = ":".join(parts[3:-1])
+                    items_key = f"notify:batch:{handler_id}:{program_name}:items"
+                    n = int(self.redis.llen(items_key))
+                    if n <= 0:
+                        continue
+
+                    pipe = self.redis.pipeline(transaction=True)
+                    pipe.delete(items_key)
+                    pipe.delete(key_str)
+                    pipe.execute()
+                    batches_cleared += 1
+                    events_discarded += n
+                    logger.warning(
+                        "Admin clear: dropped batch %s:%s (%s events)",
+                        handler_id,
+                        program_name,
+                        n,
+                    )
+                except Exception as e:
+                    logger.error("Error clearing batch key %s: %s", meta_key, e)
+                    errors.append({"key": repr(meta_key), "error": str(e)})
+
+        except Exception as e:
+            logger.error(f"Error scanning batches for delete: {e}")
+            return {
+                "status": "error",
+                "detail": str(e),
+                "batches_cleared": batches_cleared,
+                "events_discarded": events_discarded,
+                "errors": errors,
+            }
+
+        return {
+            "status": "ok",
+            "batches_cleared": batches_cleared,
+            "events_discarded": events_discarded,
+            "errors": errors,
+        }
+
 
 class SimpleHandlerRegistry:
     """Simple registry for event handlers"""

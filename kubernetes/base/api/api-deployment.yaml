@@ -199,6 +199,12 @@ spec:
             configMapKeyRef:
               name: service-config
               key: api.url
+        
+        - name: EVENT_HANDLER_URL
+          valueFrom:
+            configMapKeyRef:
+              name: service-config
+              key: event-handler.url
 
         - name: API_INTERNAL_URL
           valueFrom:

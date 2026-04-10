@@ -242,6 +242,31 @@ export const adminAPI = {
     return response.data;
   },
 
+  flushEventBatches: async () => {
+    const response = await api.post('/admin/events/batches/flush');
+    return response.data;
+  },
+
+  clearEventBatches: async () => {
+    const response = await api.post('/admin/events/batches/clear');
+    return response.data;
+  },
+
+  getEventHandlerStatus: async () => {
+    const response = await api.get('/admin/event-handler/status');
+    return response.data;
+  },
+
+  pauseEventHandler: async () => {
+    const response = await api.post('/admin/event-handler/pause');
+    return response.data;
+  },
+
+  resumeEventHandler: async () => {
+    const response = await api.post('/admin/event-handler/resume');
+    return response.data;
+  },
+
   // Event Handler Config (superuser)
   getEventHandlerConfig: async () => {
     const response = await api.get('/admin/event-handler-configs');

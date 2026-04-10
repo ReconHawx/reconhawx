@@ -973,6 +973,124 @@ async def get_events_batches(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/events/batches/flush", response_model=Dict[str, Any])
+async def post_events_batches_flush(
+    current_user: UserResponse = Depends(require_admin_or_manager),
+):
+    """
+    Flush all pending event-handler Redis batches immediately via the event-handler service
+    (admin or manager). Executes configured batch actions (webhooks, etc.); does not affect NATS.
+    """
+    if not (os.getenv("INTERNAL_SERVICE_API_KEY", "") or "").strip():
+        raise HTTPException(
+            status_code=503,
+            detail="INTERNAL_SERVICE_API_KEY is not configured on API; cannot control event-handler",
+        )
+    logger.warning(
+        "event-handler flush batches requested by user id=%s email=%s",
+        getattr(current_user, "id", None),
+        getattr(current_user, "email", None),
+    )
+    base = _event_handler_base_url()
+    try:
+        async with httpx.AsyncClient(timeout=300.0) as client:
+            response = await client.post(
+                f"{base}/control/flush-batches",
+                headers=_event_handler_auth_headers(),
+            )
+            response.raise_for_status()
+            return response.json()
+    except httpx.TimeoutException:
+        logger.error("Timeout flushing event-handler batches")
+        raise HTTPException(
+            status_code=503,
+            detail="event-handler flush timed out (batches may still be processing)",
+        )
+    except httpx.ConnectError:
+        logger.error("Failed to connect to event-handler at %s", base)
+        raise HTTPException(
+            status_code=503,
+            detail="event-handler service is unavailable",
+        )
+    except httpx.HTTPStatusError as e:
+        logger.error(
+            "event-handler flush-batches returned %s", e.response.status_code,
+        )
+        if e.response.status_code == 404:
+            raise HTTPException(
+                status_code=502,
+                detail=_event_handler_control_not_found_detail(),
+            )
+        detail: Any = e.response.text
+        try:
+            detail = e.response.json()
+        except Exception:
+            pass
+        raise HTTPException(status_code=e.response.status_code, detail=detail)
+    except Exception as e:
+        logger.error("Error flushing event-handler batches: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/events/batches/clear", response_model=Dict[str, Any])
+async def post_events_batches_clear(
+    current_user: UserResponse = Depends(require_admin_or_manager),
+):
+    """
+    Delete all pending event-handler Redis batches without running actions (admin or manager).
+    Discards queued events; use POST .../batches/flush to execute batch handlers instead.
+    """
+    if not (os.getenv("INTERNAL_SERVICE_API_KEY", "") or "").strip():
+        raise HTTPException(
+            status_code=503,
+            detail="INTERNAL_SERVICE_API_KEY is not configured on API; cannot control event-handler",
+        )
+    logger.warning(
+        "event-handler clear batches requested by user id=%s email=%s",
+        getattr(current_user, "id", None),
+        getattr(current_user, "email", None),
+    )
+    base = _event_handler_base_url()
+    try:
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            response = await client.post(
+                f"{base}/control/clear-batches",
+                headers=_event_handler_auth_headers(),
+            )
+            response.raise_for_status()
+            return response.json()
+    except httpx.TimeoutException:
+        logger.error("Timeout clearing event-handler batches")
+        raise HTTPException(
+            status_code=503,
+            detail="event-handler clear timed out",
+        )
+    except httpx.ConnectError:
+        logger.error("Failed to connect to event-handler at %s", base)
+        raise HTTPException(
+            status_code=503,
+            detail="event-handler service is unavailable",
+        )
+    except httpx.HTTPStatusError as e:
+        logger.error(
+            "event-handler clear-batches returned %s", e.response.status_code,
+        )
+        if e.response.status_code == 404:
+            raise HTTPException(
+                status_code=502,
+                detail=_event_handler_control_not_found_detail(),
+            )
+        detail: Any = e.response.text
+        try:
+            detail = e.response.json()
+        except Exception:
+            pass
+        raise HTTPException(status_code=e.response.status_code, detail=detail)
+    except Exception as e:
+        logger.error("Error clearing event-handler batches: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/events/pending", response_model=Dict[str, Any])
 async def get_events_pending(
     limit: int = 50,
@@ -1046,6 +1164,178 @@ async def post_events_messages_delete(
         return await delete_event_messages_by_seq(body.sequences)
     except Exception as e:
         logger.error(f"Error deleting EVENTS messages: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# Event-handler control (proxy to service HTTP API)
+
+
+def _event_handler_base_url() -> str:
+    return (os.getenv("EVENT_HANDLER_URL", "http://event-handler:8000") or "").strip().rstrip(
+        "/"
+    )
+
+
+def _event_handler_control_not_found_detail() -> str:
+    return (
+        "event-handler returned 404 for the control endpoint. The running service is likely an "
+        "older image without POST /control/pause, /control/resume, /control/flush-batches, or "
+        "/control/clear-batches. "
+        "Rebuild the event-handler image, load it into your cluster (e.g. minikube), and rollout "
+        "restart deploy/event-handler."
+    )
+
+
+def _event_handler_auth_headers() -> Dict[str, str]:
+    key = (os.getenv("INTERNAL_SERVICE_API_KEY", "") or "").strip()
+    return {"Authorization": f"Bearer {key}"}
+
+
+@router.get("/event-handler/status", response_model=Dict[str, Any])
+async def get_event_handler_status(
+    current_user: UserResponse = Depends(require_admin_or_manager),
+):
+    """event-handler health and processing state (admin or manager)."""
+    base = _event_handler_base_url()
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(f"{base}/status")
+            response.raise_for_status()
+            return response.json()
+    except httpx.TimeoutException:
+        logger.error("Timeout connecting to event-handler service")
+        raise HTTPException(
+            status_code=503,
+            detail="event-handler service is not responding",
+        )
+    except httpx.ConnectError:
+        logger.error("Failed to connect to event-handler at %s", base)
+        raise HTTPException(
+            status_code=503,
+            detail="event-handler service is unavailable",
+        )
+    except httpx.HTTPStatusError as e:
+        logger.error(
+            "event-handler /status returned %s", e.response.status_code,
+        )
+        raise HTTPException(
+            status_code=e.response.status_code,
+            detail=e.response.text or "event-handler error",
+        )
+    except Exception as e:
+        logger.error("Error getting event-handler status: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/event-handler/pause", response_model=Dict[str, Any])
+async def post_event_handler_pause(
+    current_user: UserResponse = Depends(require_admin_or_manager),
+):
+    """Pause NATS consumption and batch recovery in event-handler (admin or manager)."""
+    if not (os.getenv("INTERNAL_SERVICE_API_KEY", "") or "").strip():
+        raise HTTPException(
+            status_code=503,
+            detail="INTERNAL_SERVICE_API_KEY is not configured on API; cannot control event-handler",
+        )
+    logger.warning(
+        "event-handler pause requested by user id=%s email=%s",
+        getattr(current_user, "id", None),
+        getattr(current_user, "email", None),
+    )
+    base = _event_handler_base_url()
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                f"{base}/control/pause",
+                headers=_event_handler_auth_headers(),
+            )
+            response.raise_for_status()
+            return response.json()
+    except httpx.TimeoutException:
+        logger.error("Timeout pausing event-handler")
+        raise HTTPException(
+            status_code=503,
+            detail="event-handler service is not responding",
+        )
+    except httpx.ConnectError:
+        logger.error("Failed to connect to event-handler at %s", base)
+        raise HTTPException(
+            status_code=503,
+            detail="event-handler service is unavailable",
+        )
+    except httpx.HTTPStatusError as e:
+        logger.error(
+            "event-handler pause returned %s", e.response.status_code,
+        )
+        if e.response.status_code == 404:
+            raise HTTPException(
+                status_code=502,
+                detail=_event_handler_control_not_found_detail(),
+            )
+        detail: Any = e.response.text
+        try:
+            detail = e.response.json()
+        except Exception:
+            pass
+        raise HTTPException(status_code=e.response.status_code, detail=detail)
+    except Exception as e:
+        logger.error("Error pausing event-handler: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/event-handler/resume", response_model=Dict[str, Any])
+async def post_event_handler_resume(
+    current_user: UserResponse = Depends(require_admin_or_manager),
+):
+    """Resume event-handler processing (admin or manager)."""
+    if not (os.getenv("INTERNAL_SERVICE_API_KEY", "") or "").strip():
+        raise HTTPException(
+            status_code=503,
+            detail="INTERNAL_SERVICE_API_KEY is not configured on API; cannot control event-handler",
+        )
+    logger.warning(
+        "event-handler resume requested by user id=%s email=%s",
+        getattr(current_user, "id", None),
+        getattr(current_user, "email", None),
+    )
+    base = _event_handler_base_url()
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                f"{base}/control/resume",
+                headers=_event_handler_auth_headers(),
+            )
+            response.raise_for_status()
+            return response.json()
+    except httpx.TimeoutException:
+        logger.error("Timeout resuming event-handler")
+        raise HTTPException(
+            status_code=503,
+            detail="event-handler service is not responding",
+        )
+    except httpx.ConnectError:
+        logger.error("Failed to connect to event-handler at %s", base)
+        raise HTTPException(
+            status_code=503,
+            detail="event-handler service is unavailable",
+        )
+    except httpx.HTTPStatusError as e:
+        logger.error(
+            "event-handler resume returned %s", e.response.status_code,
+        )
+        if e.response.status_code == 404:
+            raise HTTPException(
+                status_code=502,
+                detail=_event_handler_control_not_found_detail(),
+            )
+        detail: Any = e.response.text
+        try:
+            detail = e.response.json()
+        except Exception:
+            pass
+        raise HTTPException(status_code=e.response.status_code, detail=detail)
+    except Exception as e:
+        logger.error("Error resuming event-handler: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
 
 

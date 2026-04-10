@@ -34,6 +34,10 @@ export function EventStatsInner({ embedded = false }) {
   const [showPurgeModal, setShowPurgeModal] = useState(false);
   const [purgeConfirmText, setPurgeConfirmText] = useState('');
   const [batches, setBatches] = useState(null);
+  const [handlerStatus, setHandlerStatus] = useState(null);
+  const [handlerCtlLoading, setHandlerCtlLoading] = useState(false);
+  const [batchFlushLoading, setBatchFlushLoading] = useState(false);
+  const [batchClearLoading, setBatchClearLoading] = useState(false);
 
   useEffect(() => {
     loadStats();
@@ -57,12 +61,14 @@ export function EventStatsInner({ embedded = false }) {
         setLoading(true);
       }
       setError('');
-      const [statsResponse, batchesResponse] = await Promise.all([
+      const [statsResponse, batchesResponse, ehStatusResponse] = await Promise.all([
         adminAPI.getEventStats(),
         adminAPI.getEventBatches().catch(() => ({ connected: false, batches: [], error: 'Failed to load' })),
+        adminAPI.getEventHandlerStatus().catch(() => null),
       ]);
       setStats(statsResponse);
       setBatches(batchesResponse);
+      setHandlerStatus(ehStatusResponse);
     } catch (err) {
       setError('Failed to load event stats: ' + (err.response?.data?.detail || err.message));
       setStats(null);
@@ -70,6 +76,116 @@ export function EventStatsInner({ embedded = false }) {
       if (showLoading) {
         setLoading(false);
       }
+    }
+  };
+
+  const pauseEventHandlerService = async () => {
+    try {
+      setHandlerCtlLoading(true);
+      setError('');
+      await adminAPI.pauseEventHandler();
+      await loadStats(false);
+    } catch (err) {
+      const d = err.response?.data?.detail;
+      setError(
+        'Failed to pause event-handler: ' +
+          (typeof d === 'string' ? d : d ? JSON.stringify(d) : err.message)
+      );
+    } finally {
+      setHandlerCtlLoading(false);
+    }
+  };
+
+  const resumeEventHandlerService = async () => {
+    try {
+      setHandlerCtlLoading(true);
+      setError('');
+      await adminAPI.resumeEventHandler();
+      await loadStats(false);
+    } catch (err) {
+      const d = err.response?.data?.detail;
+      setError(
+        'Failed to resume event-handler: ' +
+          (typeof d === 'string' ? d : d ? JSON.stringify(d) : err.message)
+      );
+    } finally {
+      setHandlerCtlLoading(false);
+    }
+  };
+
+  const flushPendingBatches = async () => {
+    if (
+      !window.confirm(
+        'Flush all pending Redis batches now? This runs the event-handler batch actions (e.g. webhooks) immediately for every queued batch.'
+      )
+    ) {
+      return;
+    }
+    try {
+      setBatchFlushLoading(true);
+      setError('');
+      const result = await adminAPI.flushEventBatches();
+      await loadStats(false);
+      const flushed = result?.flushed ?? 0;
+      const orphans = result?.orphans_cleared ?? 0;
+      const errList = result?.errors;
+      if (Array.isArray(errList) && errList.length > 0) {
+        setError(
+          `Flush completed with issues: flushed ${flushed}, orphans cleared ${orphans}. ` +
+            errList
+              .slice(0, 5)
+              .map((e) => `${e.handler_id}/${e.program_name}: ${e.error}`)
+              .join('; ')
+        );
+      }
+    } catch (err) {
+      const d = err.response?.data?.detail;
+      setError(
+        'Failed to flush batches: ' +
+          (typeof d === 'string' ? d : d ? JSON.stringify(d) : err.message)
+      );
+    } finally {
+      setBatchFlushLoading(false);
+    }
+  };
+
+  const clearPendingBatches = async () => {
+    if (
+      !window.confirm(
+        'Delete ALL pending Redis batches without running webhooks or other actions? Queued events will be lost. This cannot be undone.'
+      )
+    ) {
+      return;
+    }
+    try {
+      setBatchClearLoading(true);
+      setError('');
+      const result = await adminAPI.clearEventBatches();
+      await loadStats(false);
+      if (result?.status === 'error') {
+        setError(
+          'Clear batches failed: ' + (result?.detail || JSON.stringify(result))
+        );
+        return;
+      }
+      const errList = result?.errors;
+      if (Array.isArray(errList) && errList.length > 0) {
+        setError(
+          `Clear completed with Redis errors: ` +
+            errList
+              .slice(0, 5)
+              .map((e) => `${e.key}: ${e.error}`)
+              .join('; ')
+        );
+      }
+    } catch (err) {
+      const d = err.response?.data?.detail;
+      setError(
+        'Failed to clear batches: ' +
+          (typeof d === 'string' ? d : d ? JSON.stringify(d) : err.message)
+      );
+    } finally {
+      setBatchClearLoading(false);
     }
   };
 
@@ -287,6 +403,56 @@ export function EventStatsInner({ embedded = false }) {
             </Col>
           </Row>
 
+          <Row className="mb-4">
+            <Col>
+              <Card>
+                <Card.Header className="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                  <h5 className="mb-0">Event-handler processing</h5>
+                  <div className="d-flex align-items-center flex-wrap gap-2">
+                    {handlerStatus && (
+                      <Badge bg={handlerStatus.processing_paused ? 'warning' : 'success'}>
+                        {handlerStatus.processing_paused ? 'Paused' : 'Running'}
+                      </Badge>
+                    )}
+                    {!handlerStatus && (
+                      <Badge bg="secondary">Status unavailable</Badge>
+                    )}
+                    <Button
+                      variant="warning"
+                      size="sm"
+                      disabled={
+                        !handlerStatus ||
+                        handlerStatus.processing_paused === true ||
+                        handlerCtlLoading ||
+                        handlerStatus.status === 'unhealthy'
+                      }
+                      onClick={pauseEventHandlerService}
+                    >
+                      Pause
+                    </Button>
+                    <Button
+                      variant="success"
+                      size="sm"
+                      disabled={
+                        !handlerStatus ||
+                        handlerStatus.processing_paused !== true ||
+                        handlerCtlLoading ||
+                        handlerStatus.status === 'unhealthy'
+                      }
+                      onClick={resumeEventHandlerService}
+                    >
+                      Resume
+                    </Button>
+                  </div>
+                </Card.Header>
+                <Card.Body className="py-2 small text-muted mb-0">
+                  When paused, the handler stops pulling new messages from JetStream (queue depth increases until
+                  resume). In-process batch flush from Redis is paused as well.
+                </Card.Body>
+              </Card>
+            </Col>
+          </Row>
+
           {/* Stream Statistics */}
           {stats.stream && (
             <Row className="mb-4">
@@ -405,12 +571,41 @@ export function EventStatsInner({ embedded = false }) {
           <Row className="mb-4">
             <Col>
               <Card>
-                <Card.Header>
+                <Card.Header className="d-flex flex-wrap justify-content-between align-items-center gap-2">
                   <h5 className="mb-0">Event-Handler Batches</h5>
+                  <div className="d-flex flex-wrap gap-2">
+                    <Button
+                      variant="outline-primary"
+                      size="sm"
+                      disabled={
+                        batchFlushLoading ||
+                        batchClearLoading ||
+                        !batches?.connected ||
+                        (batches?.batches?.length ?? 0) === 0
+                      }
+                      onClick={flushPendingBatches}
+                    >
+                      Flush pending batches
+                    </Button>
+                    <Button
+                      variant="outline-danger"
+                      size="sm"
+                      disabled={
+                        batchFlushLoading ||
+                        batchClearLoading ||
+                        !batches?.connected ||
+                        (batches?.batches?.length ?? 0) === 0
+                      }
+                      onClick={clearPendingBatches}
+                    >
+                      Discard pending batches
+                    </Button>
+                  </div>
                 </Card.Header>
                 <Card.Body>
                   <p className="text-muted small mb-3">
-                    Batches accumulated by the event-handler, waiting to be flushed when <code>max_events</code> or <code>max_delay</code> is reached.
+                    Batches accumulated by the event-handler, waiting to be flushed when <code>max_events</code> or <code>max_delay</code> is reached.{' '}
+                    <strong>Flush</strong> runs actions now; <strong>Discard</strong> deletes queued events from Redis without notifications.
                   </p>
                   {batches?.error && !batches?.connected && (
                     <Alert variant="warning">Redis: {batches.error}</Alert>

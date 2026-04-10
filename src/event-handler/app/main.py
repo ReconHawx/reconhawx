@@ -9,7 +9,10 @@ Loads handler definitions from the API (per-program).
 import asyncio
 import logging
 import time
-from typing import Any, Dict
+from typing import TYPE_CHECKING, Any, Dict, List
+
+if TYPE_CHECKING:
+    from .event_handlers import SimpleEventHandler
 
 import redis
 import uvicorn
@@ -18,7 +21,7 @@ from .config import NotifierConfig
 from .http_api import create_http_app
 from .nats_client import EventsSubscriber
 from .program_settings import ProgramSettingsProvider
-from .event_handlers import SimpleBatchManager, close_http_client
+from .event_handlers import ActionResult, SimpleBatchManager, close_http_client
 from .routing import normalize_event_data, should_skip_event
 from .handler_config import HandlerSet
 from .api_config_provider import ApiConfigProvider
@@ -59,7 +62,22 @@ class SimpleNotifierApp:
             logger.info("Event handler system disabled")
 
         self._uvicorn_server: uvicorn.Server | None = None
-    
+        self._processing_paused = False
+        self._pause_lock = asyncio.Lock()
+
+    def is_processing_paused(self) -> bool:
+        return self._processing_paused
+
+    async def pause_processing(self) -> None:
+        async with self._pause_lock:
+            self._processing_paused = True
+            logger.info("Event processing paused (NATS fetch and batch recovery idle)")
+
+    async def resume_processing(self) -> None:
+        async with self._pause_lock:
+            self._processing_paused = False
+            logger.info("Event processing resumed")
+
     async def start(self):
         """Start the notifier application"""
         logger.info("Starting simplified notifier application")
@@ -81,13 +99,15 @@ class SimpleNotifierApp:
         self._uvicorn_server = uvicorn.Server(uvicorn_config)
         http_task = asyncio.create_task(self._uvicorn_server.serve())
         logger.info(
-            "HTTP API listening on %s:%s (GET /status)",
+            "HTTP API listening on %s:%s (GET /status, POST /control/pause|resume|flush-batches|clear-batches)",
             self.cfg.http_host,
             self.cfg.http_port,
         )
 
         try:
-            await self.subscriber.run(self.handle_event)
+            await self.subscriber.run(
+                self.handle_event, is_paused=self.is_processing_paused
+            )
         finally:
             if self._uvicorn_server is not None:
                 self._uvicorn_server.should_exit = True
@@ -218,6 +238,9 @@ class SimpleNotifierApp:
 
         while True:
             try:
+                if self.is_processing_paused():
+                    await asyncio.sleep(15)
+                    continue
                 processed = await self._process_expired_batches_api_mode()
                 if processed > 0:
                     logger.info(f"Processed {processed} expired batches")
@@ -229,6 +252,29 @@ class SimpleNotifierApp:
                 import traceback
                 logger.error(f"Traceback: {traceback.format_exc()}")
                 await asyncio.sleep(30)
+
+    async def _deliver_batched_events(
+        self,
+        handler: "SimpleEventHandler",
+        program_name: str,
+        batch_age: int,
+        batched_events: List[Dict[str, Any]],
+    ) -> List[ActionResult]:
+        """Run batch actions for events already removed from Redis."""
+        first_event = batched_events[0] if batched_events else {}
+        program_settings = self.settings_provider.get_program_settings(program_name)
+        trigger_event = {
+            "program_name": program_name,
+            "expired_batch": True,
+            "batch_age": batch_age,
+            "event_type": handler.event_type,
+            "event_family": handler.event_type,
+            "api_base_url": first_event.get("api_base_url", "http://api:8000"),
+            "internal_api_key": first_event.get("internal_api_key", ""),
+            **first_event,
+        }
+        trigger_event["program_settings"] = program_settings or {}
+        return await handler._execute_batch_actions(batched_events, trigger_event)
 
     async def _process_expired_batches_api_mode(self) -> int:
         """Process expired batches when using API config (per-program handler sets)."""
@@ -246,32 +292,115 @@ class SimpleNotifierApp:
                 batched_events = self.batch_manager.get_and_clear_batch(handler_id, program_name)
                 if not batched_events:
                     continue
-                logger.info(f"Processing expired batch: {handler_id}:{program_name} with {len(batched_events)} events (age: {age}s)")
-                first_event = batched_events[0] if batched_events else {}
-                # Refetch program_settings so we have fresh notify_webhook_* keys for template resolution.
-                # Stored events may have empty/stale settings (e.g. API was down when event was batched).
-                program_settings = self.settings_provider.get_program_settings(program_name)
-                trigger_event = {
-                    'program_name': program_name,
-                    'expired_batch': True,
-                    'batch_age': age,
-                    'event_type': handler.event_type,
-                    'event_family': handler.event_type,
-                    'api_base_url': first_event.get('api_base_url', 'http://api:8000'),
-                    'internal_api_key': first_event.get('internal_api_key', ''),
-                    **first_event
-                }
-                trigger_event['program_settings'] = program_settings or {}
-                results = await handler._execute_batch_actions(batched_events, trigger_event)
+                logger.info(
+                    f"Processing expired batch: {handler_id}:{program_name} with {len(batched_events)} events (age: {age}s)"
+                )
+                results = await self._deliver_batched_events(handler, program_name, age, batched_events)
                 successful = [r for r in results if r.success]
-                logger.info(f"Processed expired batch {handler_id}:{program_name} - {len(batched_events)} events, {len(successful)}/{len(results)} successful actions")
+                logger.info(
+                    f"Processed expired batch {handler_id}:{program_name} - {len(batched_events)} events, {len(successful)}/{len(results)} successful actions"
+                )
                 processed += 1
             except Exception as e:
                 logger.error(f"Error processing expired batch {handler_id}:{program_name}: {e}")
                 import traceback
                 logger.error(traceback.format_exc())
         return processed
-    
+
+    async def flush_pending_batches(self) -> Dict[str, Any]:
+        """Process all Redis-backed batches that have items (admin flush), regardless of age."""
+        if not self.batch_manager:
+            return {
+                "status": "skipped",
+                "reason": "event handlers / batch manager disabled",
+                "flushed": 0,
+                "orphans_cleared": 0,
+                "errors": [],
+                "pending_seen": 0,
+            }
+
+        pending = self.batch_manager.list_pending_batches_with_items()
+        flushed = 0
+        orphans_cleared = 0
+        errors: List[Dict[str, Any]] = []
+
+        for handler_id, program_name, age in pending:
+            try:
+                handler_set = self._get_handler_set(program_name)
+                handler = handler_set.get_handler_by_id(handler_id)
+                batched_events = self.batch_manager.get_and_clear_batch(handler_id, program_name)
+                if not batched_events:
+                    continue
+                if not handler:
+                    logger.warning(
+                        "Flush: handler %s not found for program %s; discarding %s batched events",
+                        handler_id,
+                        program_name,
+                        len(batched_events),
+                    )
+                    orphans_cleared += 1
+                    errors.append(
+                        {
+                            "handler_id": handler_id,
+                            "program_name": program_name,
+                            "error": "handler not found; batch discarded",
+                        }
+                    )
+                    continue
+                logger.info(
+                    "Flush batch %s:%s with %s events (age %ss)",
+                    handler_id,
+                    program_name,
+                    len(batched_events),
+                    age,
+                )
+                results = await self._deliver_batched_events(
+                    handler, program_name, age, batched_events
+                )
+                successful = [r for r in results if r.success]
+                logger.info(
+                    "Flushed batch %s:%s — %s/%s actions succeeded",
+                    handler_id,
+                    program_name,
+                    len(successful),
+                    len(results),
+                )
+                flushed += 1
+            except Exception as e:
+                logger.error(
+                    "Error flushing batch %s:%s: %s", handler_id, program_name, e
+                )
+                import traceback
+
+                logger.error(traceback.format_exc())
+                errors.append(
+                    {
+                        "handler_id": handler_id,
+                        "program_name": program_name,
+                        "error": str(e),
+                    }
+                )
+
+        return {
+            "status": "ok",
+            "flushed": flushed,
+            "orphans_cleared": orphans_cleared,
+            "errors": errors,
+            "pending_seen": len(pending),
+        }
+
+    async def clear_pending_batches(self) -> Dict[str, Any]:
+        """Delete all Redis-backed batch queues without executing actions."""
+        if not self.batch_manager:
+            return {
+                "status": "skipped",
+                "reason": "event handlers / batch manager disabled",
+                "batches_cleared": 0,
+                "events_discarded": 0,
+                "errors": [],
+            }
+        return await asyncio.to_thread(self.batch_manager.delete_all_pending_batches)
+
     async def shutdown(self):
         """Graceful shutdown"""
         logger.info("Shutting down notifier application")
