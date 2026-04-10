@@ -294,12 +294,6 @@ async def _extract_asset_data(data: Dict[str, Any]) -> Dict[str, List]:
 
     return asset_data
 
-
-
-
-
-
-
 def _extract_asset_name(asset_type: str, asset: Dict[str, Any]) -> str:
     """Extract the appropriate name field based on asset type"""
     if asset_type in ["subdomain", "apex_domain"]:
