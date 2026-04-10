@@ -371,6 +371,11 @@ export const adminAPI = {
     return response.data;
   },
 
+  kueueFlushBatchJobs: async () => {
+    const response = await api.post('/admin/database/maintenance/kueue/flush-batch-jobs');
+    return response.data;
+  },
+
   stageDatabaseRestore: async (file) => {
     const formData = new FormData();
     formData.append('file', file);

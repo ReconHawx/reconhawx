@@ -1451,6 +1451,58 @@ class KubernetesService:
                 running.append(jn)
         return len(running), running
 
+    def delete_all_batch_jobs_flush_kueue(
+        self,
+        *,
+        name_prefix_exclude: str = "db-restore-",
+        name_cap: int = 100,
+    ) -> Dict[str, Any]:
+        """Delete all Batch Jobs in the app namespace (except restore Jobs).
+
+        Uses Background propagation so Pods are cleaned up. Intended for maintenance
+        flush when ClusterQueues are on Hold.
+        """
+        namespace = os.getenv("KUBERNETES_NAMESPACE", "reconhawx")
+        deleted_sample: List[str] = []
+        errors: List[str] = []
+        skipped_restore = 0
+        deleted_count = 0
+
+        try:
+            jobs = self.batch_v1.list_namespaced_job(namespace=namespace)
+        except ApiException as e:
+            logger.error("list jobs (flush): %s", e)
+            raise
+
+        for job in jobs.items or []:
+            jn = job.metadata.name or ""
+            if not jn:
+                continue
+            if jn.startswith(name_prefix_exclude):
+                skipped_restore += 1
+                continue
+            try:
+                self.batch_v1.delete_namespaced_job(
+                    name=jn,
+                    namespace=namespace,
+                    propagation_policy="Background",
+                )
+                deleted_count += 1
+                if len(deleted_sample) < name_cap:
+                    deleted_sample.append(jn)
+            except ApiException as e:
+                msg = f"{jn}: {e.reason or e}"
+                logger.warning("delete job (flush) %s", msg)
+                errors.append(msg)
+
+        return {
+            "namespace": namespace,
+            "deleted_count": deleted_count,
+            "skipped_restore_count": skipped_restore,
+            "deleted_job_names": deleted_sample,
+            "errors": errors,
+        }
+
     def create_database_restore_job(
         self,
         job_name: str,

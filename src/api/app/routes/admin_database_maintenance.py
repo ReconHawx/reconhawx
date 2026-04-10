@@ -162,6 +162,57 @@ async def kueue_drain_status(
     }
 
 
+def _all_cluster_queues_on_hold(k8s: KubernetesService, policies: Dict[str, Any]) -> bool:
+    for name in k8s.KUEUE_CLUSTER_QUEUE_NAMES:
+        if policies.get(name) != "Hold":
+            return False
+    return True
+
+
+@router.post("/database/maintenance/kueue/flush-batch-jobs")
+async def kueue_flush_batch_jobs(
+    current_user: UserResponse = Depends(require_superuser),
+):
+    """Delete all Batch Jobs in the app namespace (except db-restore-*), only when all ClusterQueues are on Hold."""
+    k8s = KubernetesService()
+    try:
+        policies = k8s.get_cluster_queue_stop_policies()
+    except ApiException as e:
+        logger.error("flush batch jobs (policies): %s", e)
+        raise HTTPException(status_code=502, detail=f"Kubernetes: {e.reason or e}") from e
+
+    if not _all_cluster_queues_on_hold(k8s, policies):
+        raise HTTPException(
+            status_code=409,
+            detail="All ClusterQueues must be on Kueue Hold before flushing workloads.",
+        )
+
+    try:
+        result = k8s.delete_all_batch_jobs_flush_kueue()
+    except ApiException as e:
+        logger.error("flush batch jobs: %s", e)
+        raise HTTPException(status_code=502, detail=f"Kubernetes: {e.reason or e}") from e
+
+    await ActionLogRepository.log_action(
+        entity_type="system",
+        entity_id="kueue",
+        action_type="kueue_flush_batch_jobs",
+        user_id=str(current_user.id),
+        metadata={
+            "namespace": result.get("namespace"),
+            "deleted_count": result.get("deleted_count"),
+            "skipped_restore_count": result.get("skipped_restore_count"),
+            "deleted_job_names_sample": result.get("deleted_job_names"),
+            "delete_errors": result.get("errors"),
+        },
+    )
+
+    return {
+        "status": "success",
+        **result,
+    }
+
+
 @router.post("/database/maintenance/restore/stage")
 async def maintenance_restore_stage(
     file: UploadFile = File(...),

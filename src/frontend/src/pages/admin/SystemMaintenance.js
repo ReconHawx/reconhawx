@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   Container,
   Row,
@@ -10,7 +10,9 @@ import {
   Form,
   Badge,
   Table,
-  Modal
+  Modal,
+  Overlay,
+  Popover
 } from 'react-bootstrap';
 import { adminAPI } from '../../services/api';
 import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
@@ -183,6 +185,11 @@ function SystemMaintenance() {
 
   const [drainStatus, setDrainStatus] = useState(null);
   const [drainLoading, setDrainLoading] = useState(false);
+
+  const [showFlushModal, setShowFlushModal] = useState(false);
+  const [flushLoading, setFlushLoading] = useState(false);
+  const flushHoldHintRef = useRef(null);
+  const [showFlushHoldPopover, setShowFlushHoldPopover] = useState(false);
 
   const [jobStageFile, setJobStageFile] = useState(null);
   const [jobStagingId, setJobStagingId] = useState('');
@@ -411,6 +418,28 @@ function SystemMaintenance() {
     } catch (err) {
       const detail = err?.response?.data?.detail;
       setError(typeof detail === 'string' ? detail : 'Clear stop policy failed');
+    }
+  };
+
+  const confirmFlushBatchJobs = async () => {
+    setFlushLoading(true);
+    setError('');
+    try {
+      const res = await adminAPI.kueueFlushBatchJobs();
+      setShowFlushModal(false);
+      const errExtra =
+        Array.isArray(res.errors) && res.errors.length > 0
+          ? ` Some deletes failed (${res.errors.length}); see API response or logs.`
+          : '';
+      setSuccess(
+        `Flushed workloads: deleted ${res.deleted_count ?? 0} Job(s); skipped ${res.skipped_restore_count ?? 0} restore Job(s).${errExtra}`
+      );
+      await refreshDrain();
+    } catch (err) {
+      const detail = err?.response?.data?.detail;
+      setError(typeof detail === 'string' ? detail : detail ? JSON.stringify(detail) : 'Flush failed');
+    } finally {
+      setFlushLoading(false);
     }
   };
 
@@ -724,10 +753,90 @@ function SystemMaintenance() {
                     Clear stop policy
                   </Button>
                 )}
+                {kueueAllHold ? (
+                  <Button
+                    size="sm"
+                    variant="outline-danger"
+                    onClick={() => setShowFlushModal(true)}
+                  >
+                    Flush workloads (delete Jobs)
+                  </Button>
+                ) : (
+                  <>
+                    <Overlay
+                      show={showFlushHoldPopover}
+                      target={flushHoldHintRef}
+                      placement="top"
+                      rootClose
+                      flip
+                      onHide={() => setShowFlushHoldPopover(false)}
+                    >
+                      {(overlayProps) => (
+                        <Popover
+                          {...overlayProps}
+                          id="flush-kueue-hold-required-popover"
+                          className="shadow"
+                          style={{
+                            ...overlayProps.style,
+                            maxWidth: 'min(320px, 92vw)',
+                            pointerEvents: 'none'
+                          }}
+                        >
+                          <Popover.Body className="small py-2 px-3">
+                            All ClusterQueues must be on Hold before flushing workloads.
+                          </Popover.Body>
+                        </Popover>
+                      )}
+                    </Overlay>
+                    <span
+                      ref={flushHoldHintRef}
+                      className="d-inline-block"
+                      onMouseEnter={() => setShowFlushHoldPopover(true)}
+                      onMouseLeave={() => setShowFlushHoldPopover(false)}
+                    >
+                      <Button size="sm" variant="outline-danger" disabled>
+                        Flush workloads (delete Jobs)
+                      </Button>
+                    </span>
+                  </>
+                )}
                 <Button size="sm" variant="outline-secondary" onClick={refreshDrain} disabled={drainLoading}>
                   {drainLoading ? <Spinner animation="border" size="sm" /> : 'Refresh drain status'}
                 </Button>
               </div>
+              <Modal
+                show={showFlushModal}
+                onHide={() => !flushLoading && setShowFlushModal(false)}
+                backdrop={flushLoading ? 'static' : true}
+                keyboard={!flushLoading}
+                centered
+              >
+                <Modal.Header closeButton>
+                  <Modal.Title>Flush Kueue workloads?</Modal.Title>
+                </Modal.Header>
+                <Modal.Body>
+                  <p className="small mb-0">
+                    This deletes <strong>all</strong> Batch Jobs in the application namespace (except{' '}
+                    <code className="small">db-restore-*</code>), which terminates runner/worker/AI jobs and clears
+                    associated Kueue workloads. Use only while queues are on <code>Hold</code> so new work is not admitted.
+                  </p>
+                </Modal.Body>
+                <Modal.Footer>
+                  <Button variant="secondary" onClick={() => setShowFlushModal(false)} disabled={flushLoading}>
+                    Cancel
+                  </Button>
+                  <Button variant="danger" onClick={confirmFlushBatchJobs} disabled={flushLoading}>
+                    {flushLoading ? (
+                      <>
+                        <Spinner animation="border" size="sm" className="me-2" />
+                        Flushing…
+                      </>
+                    ) : (
+                      'Flush workloads'
+                    )}
+                  </Button>
+                </Modal.Footer>
+              </Modal>
               {drainStatus ? (
                 <div className="maintenance-drain-panel p-2 rounded border">
                   <DrainStatusPanel drainStatus={drainStatus} />
