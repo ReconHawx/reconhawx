@@ -1239,6 +1239,102 @@ class TaskExecutor:
             return str(asset.get("name") or asset)
         return str(getattr(asset, "name", asset))
 
+    def _merge_batch_into_aggregated_assets(
+        self,
+        aggregated_assets: Dict[Any, List[Any]],
+        batch_assets: Dict[Any, List[Any]],
+        *,
+        ip_field: str = "ip",
+        service_extend: bool = True,
+    ) -> None:
+        """Merge batch_assets into aggregated_assets with O(total assets) deduplication per type."""
+        for at, assets in batch_assets.items():
+            if not assets:
+                continue
+            if at == AssetType.SUBDOMAIN:
+                target = aggregated_assets.setdefault(at, [])
+                seen = {getattr(x, "name", str(x)) for x in target}
+                for a in assets:
+                    key = getattr(a, "name", str(a))
+                    if key not in seen:
+                        seen.add(key)
+                        target.append(a)
+            elif at == AssetType.IP:
+                target = aggregated_assets.setdefault(at, [])
+                seen = {getattr(x, ip_field, str(x)) for x in target}
+                for a in assets:
+                    key = getattr(a, ip_field, str(a))
+                    if key not in seen:
+                        seen.add(key)
+                        target.append(a)
+            elif at == AssetType.APEX_DOMAIN:
+                target = aggregated_assets.setdefault(at, [])
+                seen = {self._apex_domain_asset_name(x) for x in target}
+                for a in assets:
+                    key = self._apex_domain_asset_name(a)
+                    if key not in seen:
+                        seen.add(key)
+                        target.append(a)
+            elif at == AssetType.URL:
+                target = aggregated_assets.setdefault(at, [])
+                seen = {getattr(x, "url", str(x)) for x in target}
+                for a in assets:
+                    key = getattr(a, "url", str(a))
+                    if key not in seen:
+                        seen.add(key)
+                        target.append(a)
+            elif at == AssetType.SERVICE and service_extend:
+                aggregated_assets.setdefault(at, []).extend(assets)
+            else:
+                target = aggregated_assets.setdefault(at, [])
+                seen = {str(x) for x in target}
+                for a in assets:
+                    key = str(a)
+                    if key not in seen:
+                        seen.add(key)
+                        target.append(a)
+
+    def _extend_batch_bucket_unique(
+        self,
+        batch_assets: Dict[Any, List[Any]],
+        asset_type: Any,
+        assets: List[Any],
+        *,
+        ip_field: str,
+    ) -> None:
+        """Append parsed assets into batch_assets[bucket] with O(len(bucket)+len(assets)) deduplication."""
+        if not assets:
+            return
+        bucket = batch_assets.setdefault(asset_type, [])
+        if asset_type.value == "subdomain":
+            seen = {getattr(x, "name", str(x)) for x in bucket}
+            for asset in assets:
+                key = getattr(asset, "name", str(asset))
+                if key not in seen:
+                    seen.add(key)
+                    bucket.append(asset)
+        elif asset_type.value == "ip":
+            seen = {getattr(x, ip_field, str(x)) for x in bucket}
+            for asset in assets:
+                key = getattr(asset, ip_field, str(asset))
+                if key not in seen:
+                    seen.add(key)
+                    bucket.append(asset)
+        elif asset_type.value == "url":
+            seen = {getattr(x, "url", str(x)) for x in bucket}
+            for asset in assets:
+                key = getattr(asset, "url", str(asset))
+                if key not in seen:
+                    seen.add(key)
+                    bucket.append(asset)
+        else:
+            seen = {str(x) for x in bucket}
+            for asset in assets:
+                key = str(asset)
+                if key not in seen:
+                    seen.add(key)
+                    bucket.append(asset)
+
     def _resolve_step_output(self, step_name: str, task_name: str, output_type: str) -> List[str]:
         """Resolve step output to actual data"""
         logger.debug(f"Resolving step output: {step_name}.{task_name}.{output_type}")
@@ -3349,29 +3445,9 @@ class TaskExecutor:
                                 batch_assets, program_name, step_name, task_id
                             )
                             progressive_assets_sent_count[0] += sent
-                        for at, assets in batch_assets.items():
-                            aggregated_assets.setdefault(at, [])
-                            for a in assets:
-                                if at == AssetType.SUBDOMAIN and not any(
-                                    getattr(x, "name", str(x)) == getattr(a, "name", str(a))
-                                    for x in aggregated_assets[at]
-                                ):
-                                    aggregated_assets[at].append(a)
-                                elif at == AssetType.IP and not any(
-                                    getattr(x, "ip", str(x)) == getattr(a, "ip", str(a))
-                                    for x in aggregated_assets[at]
-                                ):
-                                    aggregated_assets[at].append(a)
-                                elif at == AssetType.APEX_DOMAIN and not any(
-                                    self._apex_domain_asset_name(x) == self._apex_domain_asset_name(a)
-                                    for x in aggregated_assets[at]
-                                ):
-                                    aggregated_assets[at].append(a)
-                                elif at == AssetType.SERVICE:
-                                    aggregated_assets[at].append(a)
-                                else:
-                                    if str(a) not in [str(x) for x in aggregated_assets[at]]:
-                                        aggregated_assets[at].append(a)
+                        self._merge_batch_into_aggregated_assets(
+                            aggregated_assets, batch_assets, ip_field="ip"
+                        )
 
                     def process(outputs: Dict[str, Any], batch_num: int):
                         try:
@@ -3600,31 +3676,10 @@ class TaskExecutor:
                             if asset_type not in batch_assets:
                                 batch_assets[asset_type] = []
 
-                            # Track count before deduplication for progressive streaming
-                            initial_count = len(batch_assets[asset_type])
-
-                            # Deduplicate assets based on their identifying attribute
-                            for asset in assets:
-                                if asset_type.value == 'subdomain':
-                                    # For subdomains, deduplicate by name
-                                    asset_name = getattr(asset, 'name', str(asset))
-                                    if not any(getattr(existing, 'name', str(existing)) == asset_name for existing in batch_assets[asset_type]):
-                                        batch_assets[asset_type].append(asset)
-                                elif asset_type.value == 'ip':
-                                    # For IPs, deduplicate by ip_address
-                                    asset_ip = getattr(asset, 'ip_address', str(asset))
-                                    if not any(getattr(existing, 'ip_address', str(existing)) == asset_ip for existing in batch_assets[asset_type]):
-                                        batch_assets[asset_type].append(asset)
-                                elif asset_type.value == 'url':
-                                    # For URLs, deduplicate by url
-                                    asset_url = getattr(asset, 'url', str(asset))
-                                    if not any(getattr(existing, 'url', str(existing)) == asset_url for existing in batch_assets[asset_type]):
-                                        batch_assets[asset_type].append(asset)
-                                else:
-                                    # For other asset types, use string representation for deduplication
-                                    asset_str = str(asset)
-                                    if asset_str not in [str(existing) for existing in batch_assets[asset_type]]:
-                                        batch_assets[asset_type].append(asset)
+                            initial_bucket_len = len(batch_assets[asset_type])
+                            self._extend_batch_bucket_unique(
+                                batch_assets, asset_type, assets, ip_field="ip_address"
+                            )
 
                             # Track counts for progressive streaming (count only newly added deduplicated assets)
                             if self.progressive_streaming_enabled:
@@ -3632,8 +3687,7 @@ class TaskExecutor:
                                 asset_type_key = asset_type.value if hasattr(asset_type, 'value') else str(asset_type)
                                 if asset_type_key not in progressive_asset_counts:
                                     progressive_asset_counts[asset_type_key] = 0
-                                # Add only the new deduplicated assets added in this batch
-                                new_assets_added = len(batch_assets[asset_type]) - initial_count
+                                new_assets_added = len(batch_assets[asset_type]) - initial_bucket_len
                                 progressive_asset_counts[asset_type_key] += new_assets_added
 
                     except Exception as e:
@@ -3655,33 +3709,12 @@ class TaskExecutor:
                     progressive_assets_sent_count[0] += assets_sent
                     logger.info(f"Sent {assets_sent} assets for task {task_id}")
 
-                    # Accumulate the batch assets into aggregated_assets for workflow dependency purposes (with deduplication)
-                    for asset_type, assets in batch_assets.items():
-                        if asset_type not in aggregated_assets:
-                            aggregated_assets[asset_type] = []
-
-                        # Deduplicate when accumulating across batches
-                        for asset in assets:
-                            if asset_type.value == 'subdomain':
-                                # For subdomains, deduplicate by name
-                                asset_name = getattr(asset, 'name', str(asset))
-                                if not any(getattr(existing, 'name', str(existing)) == asset_name for existing in aggregated_assets[asset_type]):
-                                    aggregated_assets[asset_type].append(asset)
-                            elif asset_type.value == 'ip':
-                                # For IPs, deduplicate by ip_address
-                                asset_ip = getattr(asset, 'ip_address', str(asset))
-                                if not any(getattr(existing, 'ip_address', str(existing)) == asset_ip for existing in aggregated_assets[asset_type]):
-                                    aggregated_assets[asset_type].append(asset)
-                            elif asset_type.value == 'url':
-                                # For URLs, deduplicate by url
-                                asset_url = getattr(asset, 'url', str(asset))
-                                if not any(getattr(existing, 'url', str(existing)) == asset_url for existing in aggregated_assets[asset_type]):
-                                    aggregated_assets[asset_type].append(asset)
-                            else:
-                                # For other asset types, use string representation for deduplication
-                                asset_str = str(asset)
-                                if asset_str not in [str(existing) for existing in aggregated_assets[asset_type]]:
-                                    aggregated_assets[asset_type].append(asset)
+                    self._merge_batch_into_aggregated_assets(
+                        aggregated_assets,
+                        batch_assets,
+                        ip_field="ip_address",
+                        service_extend=False,
+                    )
 
             # Create synchronous wrapper for WorkerJobManager compatibility
             def process_batch_results(outputs: Dict[str, Any], batch_num: int):
@@ -4503,7 +4536,7 @@ class TaskExecutor:
 
 
         # Process all collected assets holistically to determine final actions
-        logger.debug(f"Detailed counts: {detailed_counts}")
+        #logger.debug(f"Detailed counts: {detailed_counts}")
         for asset_type, counts in detailed_counts.items():
             # Process all assets with precedence: created > updated > skipped > failed
             all_assets = {}
