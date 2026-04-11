@@ -209,6 +209,13 @@ function Navigation() {
                       <Dropdown.Item as={Link} to="/admin/system-maintenance">
                         🔧 System maintenance
                       </Dropdown.Item>
+                      <Dropdown.Item
+                        href="/headlamp/"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        ☸️ Cluster Admin (Headlamp)
+                      </Dropdown.Item>
                     </>
                   )}
                 </Dropdown.Menu>

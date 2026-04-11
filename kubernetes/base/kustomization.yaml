@@ -17,6 +17,7 @@ resources:
   - kueue
   - api
   - frontend
+  - headlamp
   - event-handler
   - ct-monitor
   - runner

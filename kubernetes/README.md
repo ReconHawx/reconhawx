@@ -103,6 +103,7 @@ The API image ships **PostgreSQL 15 client tools** (`postgresql-client-15`). The
 | **Kueue** | Job queue CRDs, cluster queues, and resource flavors |
 | **API** | FastAPI backend (init container runs **Alembic** migrations before the app starts) |
 | **Frontend** | React UI behind nginx |
+| **Headlamp** | In-cluster [Headlamp](https://headlamp.dev/) Kubernetes UI (`ghcr.io/headlamp-k8s/headlamp`); reached at **`/headlamp/`** on the same host as the frontend (nginx proxies to the `headlamp` Service). The pod loads a kubeconfig from the `headlamp-kubeconfig` ConfigMap that uses **`tokenFile`** pointed at the mounted **`headlamp-admin`** ServiceAccount token, so the UI does not require pasting a token for normal use. The optional **`headlamp-admin`** legacy token Secret remains for break-glass / tooling; see [in-cluster access](https://headlamp.dev/docs/latest/installation/in-cluster/). |
 | **Event Handler** | NATS event consumer |
 | **CT Monitor** | Certificate Transparency log watcher |
 | **Runner** | RBAC for workflow runner jobs (pods created dynamically by the API) |

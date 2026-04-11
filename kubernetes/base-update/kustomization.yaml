@@ -16,6 +16,7 @@ resources:
   - ../base/kueue/core
   - ../base/api
   - ../base/frontend
+  - ../base/headlamp
   - ../base/event-handler
   - ../base/ct-monitor
   - ../base/runner

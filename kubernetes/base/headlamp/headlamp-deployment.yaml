@@ -1,0 +1,63 @@
+# Headlamp UI (https://headlamp.dev/). Image tag aligned with charts/headlamp Chart appVersion.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: headlamp
+  labels:
+    app: headlamp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: headlamp
+  template:
+    metadata:
+      labels:
+        app: headlamp
+    spec:
+      serviceAccountName: headlamp-admin
+      automountServiceAccountToken: true
+      nodeSelector:
+        reconhawx.runner: "true"
+      volumes:
+        - name: headlamp-kubeconfig
+          configMap:
+            name: headlamp-kubeconfig
+            defaultMode: 0444
+      containers:
+        - name: headlamp
+          image: ghcr.io/headlamp-k8s/headlamp:v0.41.0
+          imagePullPolicy: IfNotPresent
+          args:
+            # Do not use -in-cluster: that path builds a context with empty AuthInfo and the UI prompts for a token.
+            # A kubeconfig with tokenFile uses the pod SA for API calls (same RBAC as ClusterRoleBinding).
+            - "-kubeconfig=/etc/headlamp/kubeconfig"
+            - "-plugins-dir=/headlamp/plugins"
+            - "-base-url=/headlamp"
+          volumeMounts:
+            - name: headlamp-kubeconfig
+              mountPath: /etc/headlamp/kubeconfig
+              subPath: kubeconfig
+              readOnly: true
+          ports:
+            - containerPort: 4466
+              name: http
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              scheme: HTTP
+              path: /headlamp/
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              scheme: HTTP
+              path: /headlamp/
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
