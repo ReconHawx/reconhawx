@@ -5,6 +5,18 @@ Provides efficient bulk database operations for asset processing.
 Uses threaded chunk processing so synchronous SQLAlchemy calls do not
 block the main asyncio event loop (which must stay responsive for
 health-check probes and concurrent requests).
+
+PostgreSQL bulk upserts (chunked ``INSERT … ON CONFLICT``) are the default per
+asset type. Set ``ASSET_BULK_SQL_<TYPE>=false`` / ``0`` / ``off`` / ``no`` to
+disable bulk SQL for that type and use threaded ORM ingestion instead.
+
+- ``ASSET_BULK_SQL_SUBDOMAINS``, ``ASSET_BULK_SQL_IPS``,
+  ``ASSET_BULK_SQL_APEX_DOMAINS``, ``ASSET_BULK_SQL_SERVICES``,
+  ``ASSET_BULK_SQL_CERTIFICATES``, ``ASSET_BULK_SQL_URLS``
+- ``ASSET_BULK_SQL_CHUNK_SIZE`` — rows per SQL chunk (default 1000, min 50).
+
+URL bulk path is skipped automatically when any row includes ``technologies`` or
+``extracted_links`` (full ORM path is used for that batch).
 """
 
 import asyncio
@@ -17,6 +29,20 @@ from repository.service_assets_repo import ServiceAssetsRepository
 from repository.url_assets_repo import UrlAssetsRepository
 from repository.certificate_assets_repo import CertificateAssetsRepository
 from repository.apexdomain_assets_repo import ApexDomainAssetsRepository
+from repository.bulk_sql import (
+    bulk_sql_apex_domains_enabled,
+    bulk_sql_certificates_enabled,
+    bulk_sql_ips_enabled,
+    bulk_sql_services_enabled,
+    bulk_sql_subdomains_enabled,
+    bulk_sql_urls_enabled,
+)
+from repository.bulk_sql import apex_domains as bulk_apex
+from repository.bulk_sql import certificates as bulk_certificates
+from repository.bulk_sql import ips as bulk_ips
+from repository.bulk_sql import services as bulk_services
+from repository.bulk_sql import subdomains as bulk_subdomains
+from repository.bulk_sql import urls as bulk_urls
 
 logger = logging.getLogger(__name__)
 
@@ -112,6 +138,11 @@ class BatchRepository:
         skipped_assets: List[Dict] = []
         implicit_apex_created_events: List[Dict] = []
 
+        if bulk_sql_subdomains_enabled():
+            return await bulk_subdomains.bulk_create_or_update_subdomains_all(
+                subdomains, program_name
+            )
+
         chunk_results = await _process_items_in_thread_chunks(
             subdomains,
             program_name,
@@ -138,6 +169,17 @@ class BatchRepository:
             if apex_created_event is not None:
                 implicit_apex_created_events.append(apex_created_event)
 
+            if action == "out_of_scope":
+                out_of_scope_count += 1
+                skipped_assets.append(
+                    {
+                        "name": item_data.get("name"),
+                        "program_name": program_name,
+                        "reason": "out_of_scope",
+                    }
+                )
+                continue
+
             if record_id:
                 success_count += 1
                 if action == "created":
@@ -156,15 +198,6 @@ class BatchRepository:
                             "name": item_data.get("name"),
                             "program_name": program_name,
                             "reason": "duplicate",
-                        }
-                    )
-                elif action == "out_of_scope":
-                    out_of_scope_count += 1
-                    skipped_assets.append(
-                        {
-                            "name": item_data.get("name"),
-                            "program_name": program_name,
-                            "reason": "out_of_scope",
                         }
                     )
             else:
@@ -221,6 +254,9 @@ class BatchRepository:
         updated_assets: List[Dict] = []
         skipped_assets: List[Dict] = []
 
+        if bulk_sql_ips_enabled():
+            return await bulk_ips.bulk_create_or_update_ips_all(ips, program_name)
+
         chunk_results = await _process_items_in_thread_chunks(
             ips,
             program_name,
@@ -258,7 +294,9 @@ class BatchRepository:
                         "reason": "out_of_scope",
                     }
                 )
-            elif record_id:
+                continue
+
+            if record_id:
                 success_count += 1
                 if action == "created":
                     created_count += 1
@@ -323,6 +361,11 @@ class BatchRepository:
         created_assets: List[Dict] = []
         updated_assets: List[Dict] = []
         skipped_assets: List[Dict] = []
+
+        if bulk_sql_services_enabled():
+            return await bulk_services.bulk_create_or_update_services_all(
+                services, program_name
+            )
 
         chunk_results = await _process_items_in_thread_chunks(
             services,
@@ -444,6 +487,9 @@ class BatchRepository:
         updated_assets: List[Dict] = []
         skipped_assets: List[Dict] = []
 
+        if bulk_sql_urls_enabled() and not bulk_urls.urls_require_full_orm(urls):
+            return await bulk_urls.bulk_create_or_update_urls_all(urls, program_name)
+
         chunk_results = await _process_items_in_thread_chunks(
             urls,
             program_name,
@@ -562,6 +608,11 @@ class BatchRepository:
         updated_assets: List[Dict] = []
         skipped_assets: List[Dict] = []
 
+        if bulk_sql_certificates_enabled():
+            return await bulk_certificates.bulk_create_or_update_certificates_all(
+                certificates, program_name
+            )
+
         chunk_results = await _process_items_in_thread_chunks(
             certificates,
             program_name,
@@ -679,6 +730,11 @@ class BatchRepository:
         created_assets: List[Dict] = []
         updated_assets: List[Dict] = []
         skipped_assets: List[Dict] = []
+
+        if bulk_sql_apex_domains_enabled():
+            return await bulk_apex.bulk_create_or_update_apex_domains_all(
+                apex_domains, program_name
+            )
 
         chunk_results = await _process_items_in_thread_chunks(
             apex_domains,

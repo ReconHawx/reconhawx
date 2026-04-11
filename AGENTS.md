@@ -15,6 +15,10 @@ Use this file as a **first stop** for how the repo is laid out and how to run co
 | Migrations | PostgreSQL schema migrations (SQL + CLI) | [`src/migrations/`](src/migrations/) |
 | Kubernetes | Base manifests and Kueue (`kubectl apply -k kubernetes/base/`); user lifecycle: [`docs/install-on-kubernetes.md`](docs/install-on-kubernetes.md), [`docs/update-reconhawx.md`](docs/update-reconhawx.md), [`docs/uninstall-reconhawx.md`](docs/uninstall-reconhawx.md); scripts: [`.cursor/rules/k8s-cluster-lifecycle.mdc`](.cursor/rules/k8s-cluster-lifecycle.mdc) | [`kubernetes/`](kubernetes/) |
 
+### API asset bulk SQL (optional)
+
+Large `POST /assets` batches use chunked PostgreSQL `INSERT … ON CONFLICT` via [`src/api/app/repository/bulk_sql/`](src/api/app/repository/bulk_sql/) by default instead of per-row ORM. Per-asset opt-out: set `ASSET_BULK_SQL_SUBDOMAINS`, `ASSET_BULK_SQL_IPS`, `ASSET_BULK_SQL_APEX_DOMAINS`, `ASSET_BULK_SQL_SERVICES`, `ASSET_BULK_SQL_CERTIFICATES`, or `ASSET_BULK_SQL_URLS` to `false` / `0` / `off` / `no`. Chunk size: `ASSET_BULK_SQL_CHUNK_SIZE` (default 1000, minimum 50). The URL fast path is not used when any row includes `technologies` or `extracted_links` (full ORM path for that request list).
+
 ## Shell and devenv
 
 Many dev tools live only on `PATH` after [devenv](https://devenv.sh/) loads (see [`devenv.nix`](devenv.nix): e.g. `kubectl`, `helm`, `docker`, `grype`, `node`/`npm`, Postgres client binaries, `k9s`, and others). **Agent and CI subshells often skip direnv**, so a bare command can fail with “not found” even though your interactive shell works.
