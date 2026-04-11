@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.15.0](https://github.com/ReconHawx/reconhawx/compare/v0.14.0...v0.15.0) (2026-04-11)
+
+
+### Features
+
+* **k8s:** add Headlamp dashboard at /headlamp behind the frontend ([9cc807d](https://github.com/ReconHawx/reconhawx/commit/9cc807dbd712a645240c10cddeaa156e7400ecdc))
+
+
+### Bug Fixes
+
+* **api:** fix slow bulk asset ingestion with chunked PostgreSQL upserts ([a848293](https://github.com/ReconHawx/reconhawx/commit/a848293dc85dc4708c6a16e9f412fe88d8478d21))
+
 ## [0.14.0](https://github.com/ReconHawx/reconhawx/compare/v0.13.1...v0.14.0) (2026-04-11)
 
 
