@@ -26,7 +26,7 @@
     docker
     docker-compose
     lsof
-    postgresql
+    postgresql_15
     openssl
     process-compose
     k9s
