@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.14.0](https://github.com/ReconHawx/reconhawx/compare/v0.13.1...v0.14.0) (2026-04-11)
+
+
+### Features
+
+* **admin:** flush Kueue workloads from system maintenance ([f6989b9](https://github.com/ReconHawx/reconhawx/commit/f6989b9ad2ed54a26335f7dfea2fdbf7361ebfc7))
+* **admin:** pause event-handler and flush or discard Redis batches from event queue ([ecf9fca](https://github.com/ReconHawx/reconhawx/commit/ecf9fca91a37a2da55baa983b98257bc69cdcbdd))
+
+
+### Bug Fixes
+
+* **k8s:** fixed incompatible schema on postgres:15 ([3735d39](https://github.com/ReconHawx/reconhawx/commit/3735d39d762b2ed49aa43d1af94126460d2d9299))
+
 ## [0.13.1](https://github.com/ReconHawx/reconhawx/compare/v0.13.0...v0.13.1) (2026-04-10)
 
 

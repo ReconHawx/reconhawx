@@ -7,4 +7,4 @@ metadata:
     app: reconhawx
     component: version
 data:
-  APP_VERSION: "0.13.1" # x-release-please-version
+  APP_VERSION: "0.14.0" # x-release-please-version
