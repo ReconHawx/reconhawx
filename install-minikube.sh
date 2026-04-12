@@ -575,6 +575,7 @@ main() {
   require_cmd minikube
   require_cmd openssl
   require_cmd python3
+  require_cmd docker
 
   ui_banner
 

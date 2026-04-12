@@ -3,6 +3,7 @@
 ## What you need
 
 - **Minikube** installed.
+- **Docker** installed. Current user must have permission to use Docker (be a member of the **docker** group)
 - The **source code archive** for a ReconHawx release from [GitHub Releases](https://github.com/ReconHawx/reconhawx/releases), extracted on the machine where you run the installer (preferred). The top-level folder must contain **`kubernetes/base`** and **`install-minikube.sh`**.
 - A machine where you can run shell scripts and edit **`/etc/hosts`** (the installer can set up your UI hostname; default **`reconhawx.local`**, or a **custom hostname** if you enter one).
 
