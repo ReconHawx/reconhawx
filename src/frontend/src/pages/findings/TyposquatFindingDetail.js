@@ -1554,11 +1554,14 @@ function TyposquatFindingDetail() {
       {Array.isArray(finding?.closure_events) && finding.closure_events.length > 0 && (
         <Card className="dashboard-panel mb-4">
           <Card.Header>
-            <h6 className="mb-0">Closure history</h6>
+            <h6 className="mb-0">
+              <i className="bi bi-clock-history me-2" aria-hidden="true" />
+              Closure history
+            </h6>
           </Card.Header>
-          <Card.Body className="p-0">
+          <Card.Body>
             <Table responsive hover className="mb-0" size="sm">
-              <thead className="table-light">
+              <thead>
                 <tr>
                   <th>Closed at</th>
                   <th>Outcome</th>
@@ -1614,13 +1617,13 @@ function TyposquatFindingDetail() {
                 const isLatest = index === 0; // First item is the most recent
 
                 return (
-                  <div key={log.id} className={`${isLatest ? 'mb-3 pb-2' : 'mb-2 pb-1'} ${isLatest ? 'border-bottom border-2' : 'border-bottom'} ${!isLatest ? 'opacity-60' : ''}`}>
+                  <div key={log.id} className={`${isLatest ? 'mb-3 pb-2' : 'mb-2 pb-1'} ${isLatest ? 'border-bottom border-2' : 'border-bottom'}`}>
                     <div className="d-flex justify-content-between align-items-center mb-1">
-                      <span className={`${isLatest ? 'fw-bold h6 mb-0' : 'fw-normal small'} text-body`}>
+                      <span className={`${isLatest ? 'fw-semibold text-body mb-0' : 'fw-normal small text-body'}`}>
                         {formatActionType(log.action_type)}
                         {isLatest && <Badge bg="primary" className="ms-2 small">Latest</Badge>}
                       </span>
-                      <small className={`${isLatest ? 'text-body' : 'text-muted'} ${!isLatest ? 'small' : ''}`}>
+                      <small className={`text-muted ${!isLatest ? 'small' : ''}`}>
                         {formatDate(log.created_at)} by {log.user?.username || 'Unknown User'}
                       </small>
                     </div>
@@ -1673,10 +1676,12 @@ function TyposquatFindingDetail() {
                         {/* Comment */}
                         {metadata?.comment && (
                           <div className={`mb-2 ${!isLatest ? 'small' : ''}`}>
-                            <div className={`${isLatest ? 'bg-primary-subtle border-start border-primary border-3 p-2' : 'bg-body-tertiary p-1'} rounded`}>
+                            <div
+                              className={`${isLatest ? 'bg-body-tertiary border-start border-primary border-3 p-2' : 'bg-body-tertiary p-1'} rounded`}
+                            >
                               <i className={`bi bi-chat-text ${isLatest ? 'text-primary' : 'text-muted'} me-1`}></i>
                               <small className="text-muted me-1">Comment:</small>
-                              <span className={`${isLatest ? 'fw-medium' : ''} ${!isLatest ? 'small' : ''}`}>{metadata.comment}</span>
+                              <span className={`text-body ${isLatest ? 'fw-medium' : ''} ${!isLatest ? 'small' : ''}`}>{metadata.comment}</span>
                             </div>
                           </div>
                         )}
@@ -1785,10 +1790,12 @@ function TyposquatFindingDetail() {
                         {/* Comment for assignment change */}
                         {metadata?.comment && (
                           <div className={`mb-2 ${!isLatest ? 'small' : ''}`}>
-                            <div className={`${isLatest ? 'bg-info-subtle border-start border-info border-3 p-2' : 'bg-body-tertiary p-1'} rounded`}>
+                            <div
+                              className={`${isLatest ? 'bg-body-tertiary border-start border-info border-3 p-2' : 'bg-body-tertiary p-1'} rounded`}
+                            >
                               <i className={`bi bi-chat-text ${isLatest ? 'text-info' : 'text-muted'} me-1`}></i>
                               <small className="text-muted me-1">Comment:</small>
-                              <span className={`${isLatest ? 'fw-medium' : ''} ${!isLatest ? 'small' : ''}`}>{metadata.comment}</span>
+                              <span className={`text-body ${isLatest ? 'fw-medium' : ''} ${!isLatest ? 'small' : ''}`}>{metadata.comment}</span>
                             </div>
                           </div>
                         )}
@@ -1823,10 +1830,12 @@ function TyposquatFindingDetail() {
                         {/* Comment for PhishLabs incident */}
                         {metadata?.comment && (
                           <div className={`mb-2 ${!isLatest ? 'small' : ''}`}>
-                            <div className={`${isLatest ? 'bg-success-subtle border-start border-success border-3 p-2' : 'bg-body-tertiary p-1'} rounded`}>
+                            <div
+                              className={`${isLatest ? 'bg-body-tertiary border-start border-success border-3 p-2' : 'bg-body-tertiary p-1'} rounded`}
+                            >
                               <i className={`bi bi-chat-text ${isLatest ? 'text-success' : 'text-muted'} me-1`}></i>
                               <small className="text-muted me-1">Comment:</small>
-                              <span className={`${isLatest ? 'fw-medium' : ''} ${!isLatest ? 'small' : ''}`}>{metadata.comment}</span>
+                              <span className={`text-body ${isLatest ? 'fw-medium' : ''} ${!isLatest ? 'small' : ''}`}>{metadata.comment}</span>
                             </div>
                           </div>
                         )}
@@ -1854,10 +1863,12 @@ function TyposquatFindingDetail() {
                         {/* Comment for GSB report */}
                         {metadata?.comment && (
                           <div className={`mb-2 ${!isLatest ? 'small' : ''}`}>
-                            <div className={`${isLatest ? 'bg-info-subtle border-start border-info border-3 p-2' : 'bg-body-tertiary p-1'} rounded`}>
+                            <div
+                              className={`${isLatest ? 'bg-body-tertiary border-start border-info border-3 p-2' : 'bg-body-tertiary p-1'} rounded`}
+                            >
                               <i className={`bi bi-chat-text ${isLatest ? 'text-info' : 'text-muted'} me-1`}></i>
                               <small className="text-muted me-1">Comment:</small>
-                              <span className={`${isLatest ? 'fw-medium' : ''} ${!isLatest ? 'small' : ''}`}>{metadata.comment}</span>
+                              <span className={`text-body ${isLatest ? 'fw-medium' : ''} ${!isLatest ? 'small' : ''}`}>{metadata.comment}</span>
                             </div>
                           </div>
                         )}

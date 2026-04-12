@@ -18,6 +18,8 @@
   /* Used by Bootstrap utilities such as .bg-body (they use -rgb + opacity) */
   --bs-body-bg-rgb: 237, 241, 247;
   --bs-body-color: #0a0f1c;
+  /* Required for Bootstrap `.text-body` (uses rgba(var(--bs-body-color-rgb), …)), not `--bs-body-color` alone */
+  --bs-body-color-rgb: 10, 15, 28;
   /* Headings use var(--bs-heading-color) in Bootstrap — keep them in sync with body */
   --bs-heading-color: var(--bs-body-color);
   --bs-border-color: rgba(0, 151, 167, 0.22);
@@ -74,6 +76,7 @@
   --bs-body-bg: #121d32;
   --bs-body-bg-rgb: 18, 29, 50;
   --bs-body-color: #f0fbff;
+  --bs-body-color-rgb: 240, 251, 255;
   --bs-heading-color: var(--bs-body-color);
   /* Visible but non-neon dividers */
   --bs-border-color: rgba(0, 242, 255, 0.2);

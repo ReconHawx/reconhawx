@@ -28,6 +28,7 @@ The UI is **Bootstrap 5 + react-bootstrap**, not MUI or Tailwind. Theme switchin
 | Token | Use |
 |-------|-----|
 | `--bs-body-bg`, `--bs-body-color` | Page background, primary text |
+| `--bs-body-color-rgb` | Must track `--bs-body-color` hex — Bootstrap’s **`.text-body`** uses `rgba(var(--bs-body-color-rgb), …)` only (not the hex variable) |
 | `--bs-card-bg`, `--bs-card-border-color` | Cards, panels |
 | `--bs-border-color` | Dividers, 1px borders |
 | `--bs-text-muted` | Secondary / helper text |
