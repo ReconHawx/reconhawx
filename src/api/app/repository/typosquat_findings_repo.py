@@ -965,9 +965,11 @@ class TyposquatFindingsRepository(ProgramAccessMixin):
                 typosquat, assigned_to_username = result
                 _whois = TyposquatFindingsRepository._whois_public_fields_from_apex(typosquat)
 
+                apex_rel = getattr(typosquat, "typosquat_apex", None)
                 return {
                     'id': str(typosquat.id),
                     'typo_domain': typosquat.typo_domain,
+                    'typosquat_apex_domain': apex_rel.apex_domain if apex_rel else None,
                     'fuzzers': typosquat.fuzzer_types,
                     'info': {},  # info_data column removed
                     'timestamp': typosquat.detected_at.isoformat() if typosquat.detected_at else None,
@@ -1181,10 +1183,12 @@ class TyposquatFindingsRepository(ProgramAccessMixin):
                 for typosquat in typosquats:
                     logger.info(f"Typosquat: {typosquat}")
                     _w = TyposquatFindingsRepository._whois_public_fields_from_apex(typosquat)
+                    apex_rel = getattr(typosquat, "typosquat_apex", None)
                     result.append({
                         'id': str(typosquat.id),
                         'apex_domain_id': typosquat.apex_typosquat_domain_id,
                         'typo_domain': typosquat.typo_domain,
+                        'typosquat_apex_domain': apex_rel.apex_domain if apex_rel else None,
                         'fuzzers': typosquat.fuzzer_types,
                         'info': {},  # info_data column removed
                         'timestamp': typosquat.detected_at.isoformat() if typosquat.detected_at else None,
@@ -2380,6 +2384,10 @@ class TyposquatFindingsRepository(ProgramAccessMixin):
                 # Client must not overwrite append-only closure history
                 update_data.pop("closure_events", None)
                 update_data.pop("last_closure_at", None)
+                _CLOSURE_BY_MISSING = object()
+                closure_closed_by_override = update_data.pop(
+                    "_closure_closed_by_user_id", _CLOSURE_BY_MISSING
+                )
                 if whois_payload:
                     apex_name = extract_apex_domain(typosquat.typo_domain)
                     apex = TyposquatFindingsRepository.find_or_create_typosquat_apex_in_session(
@@ -2526,10 +2534,14 @@ class TyposquatFindingsRepository(ProgramAccessMixin):
                         existing_ev = typosquat.closure_events
                         if existing_ev is None or not isinstance(existing_ev, list):
                             existing_ev = []
+                        if closure_closed_by_override is not _CLOSURE_BY_MISSING:
+                            ev_closed_by = closure_closed_by_override
+                        else:
+                            ev_closed_by = typosquat.assigned_to or None
                         ev: Dict[str, Any] = {
                             "to_status": ns,
                             "closed_at": closed_at_str,
-                            "closed_by_user_id": typosquat.assigned_to or None,
+                            "closed_by_user_id": ev_closed_by,
                         }
                         typosquat.closure_events = list(existing_ev) + [ev]
                         typosquat.last_closure_at = closed_at_naive
@@ -2615,6 +2627,97 @@ class TyposquatFindingsRepository(ProgramAccessMixin):
                 db.rollback()
                 logger.error(f"Error updating typosquat domain {domain_id}: {str(e)}")
                 raise
+
+    @staticmethod
+    async def dismiss_typosquat_domains_for_whitelisted_apexes(
+        program_id: str,
+        apex_domains: List[str],
+        *,
+        closed_by_user_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Dismiss non-terminal typosquat findings whose typosquat apex matches one of
+        ``apex_domains`` (registrable apex strings, lowercase). Appends an explanatory
+        note and sets status to dismissed.
+        """
+        from uuid import UUID
+        from repository.action_log_repo import ActionLogRepository
+
+        apex_lower = {a.strip().lower() for a in (apex_domains or []) if a and str(a).strip()}
+        if not apex_lower:
+            return {"dismissed_count": 0, "finding_ids": []}
+
+        try:
+            prog_uuid = UUID(str(program_id))
+        except ValueError:
+            logger.warning(f"dismiss_typosquat_domains_for_whitelisted_apexes: invalid program_id {program_id}")
+            return {"dismissed_count": 0, "finding_ids": []}
+
+        targets: List[tuple] = []
+        async with get_db_session() as db:
+            rows = (
+                db.query(
+                    TyposquatDomain.id,
+                    TyposquatDomain.notes,
+                    TyposquatDomain.status,
+                    func.lower(TyposquatApexDomain.apex_domain).label("apex_l"),
+                )
+                .join(
+                    TyposquatApexDomain,
+                    TyposquatDomain.apex_typosquat_domain_id == TyposquatApexDomain.id,
+                )
+                .filter(
+                    TyposquatDomain.program_id == prog_uuid,
+                    func.lower(TyposquatApexDomain.apex_domain).in_(list(apex_lower)),
+                    TyposquatDomain.status.notin_(["dismissed", "resolved"]),
+                )
+                .all()
+            )
+            for row in rows:
+                targets.append((str(row[0]), row[1] or "", row[2] or "new", row[3]))
+
+        dismissed_ids: List[str] = []
+        comment_base = (
+            "Auto-dismissed: registrable apex added to typosquat whitelist"
+        )
+        for fid, old_notes, old_status, apex_l in targets:
+            comment = f"{comment_base} ({apex_l})."
+            note_line = f"[{comment}]"
+            merged_notes = (
+                (old_notes.rstrip() + "\n\n" + note_line).strip() if old_notes else note_line
+            )
+            ok = await TyposquatFindingsRepository.update_typosquat_domain(
+                fid,
+                {
+                    "status": "dismissed",
+                    "comment": comment,
+                    "notes": merged_notes,
+                    "_closure_closed_by_user_id": closed_by_user_id,
+                },
+            )
+            if ok:
+                dismissed_ids.append(fid)
+                if closed_by_user_id:
+                    try:
+                        await ActionLogRepository.log_action(
+                            entity_type="typosquat_finding",
+                            entity_id=fid,
+                            action_type="status_change",
+                            user_id=str(closed_by_user_id),
+                            old_value={"status": old_status},
+                            new_value={"status": "dismissed"},
+                            metadata={"comment": comment, "reason": "typosquat_apex_whitelist"},
+                        )
+                    except Exception as log_err:
+                        logger.warning(
+                            f"Action log failed for whitelist dismiss {fid}: {log_err}"
+                        )
+
+        logger.info(
+            f"Whitelist dismiss: program_id={program_id} apexes={sorted(apex_lower)} "
+            f"dismissed={len(dismissed_ids)}"
+        )
+        return {"dismissed_count": len(dismissed_ids), "finding_ids": dismissed_ids}
     
     @staticmethod
     async def _update_recordedfuture_alert_status(typosquat: TyposquatDomain, new_status: str, log_entry: Optional[str] = None, added_actions_taken: Optional[List[str]] = None, user_rf_uhash: Optional[str] = None) -> None:

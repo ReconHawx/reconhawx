@@ -4,7 +4,7 @@ similarity to protected domains and protected keyword matching.
 """
 
 import logging
-from typing import Dict, List, Any, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from services.protected_domain_similarity_service import (
     _extract_apex_domain,
@@ -15,6 +15,30 @@ logger = logging.getLogger(__name__)
 
 
 class TyposquatFilteringService:
+
+    @staticmethod
+    def normalize_whitelisted_apex_domains(entries: Any) -> List[str]:
+        """
+        Normalize analyst-supplied whitelist entries to registrable apex strings
+        (lowercase, trimmed, deduplicated, order preserved).
+        """
+        if not entries:
+            return []
+        if not isinstance(entries, list):
+            return []
+        out: List[str] = []
+        seen: set = set()
+        for raw in entries:
+            if not isinstance(raw, str):
+                continue
+            s = raw.strip().lower()
+            if not s:
+                continue
+            apex = _extract_apex_domain(s).lower()
+            if apex and apex not in seen:
+                seen.add(apex)
+                out.append(apex)
+        return out
 
     @staticmethod
     def should_insert_domain(
@@ -38,14 +62,17 @@ class TyposquatFilteringService:
         min_similarity = filtering_settings.get("min_similarity_percent", 0.0)
         max_sim = 0.0  # Used in final return when similarity check ran
 
-        # --- Check 0: exact apex match with protected domain or asset apex → filter out ---
+        typo_apex_lower: Optional[str] = None
         if typo_domain:
-            typo_apex = _extract_apex_domain(typo_domain).lower()
+            typo_apex_lower = _extract_apex_domain(typo_domain).lower()
+
+        # --- Check 0: exact apex match with protected domain or asset apex → filter out ---
+        if typo_apex_lower:
             protected_apexes = {_extract_apex_domain(p).lower() for p in (protected_domains or [])}
             asset_apexes = {a.lower() for a in (asset_apex_domains or [])}
             blocked_apexes = protected_apexes | asset_apexes
-            if typo_apex in blocked_apexes:
-                if typo_apex in protected_apexes:
+            if typo_apex_lower in blocked_apexes:
+                if typo_apex_lower in protected_apexes:
                     logger.info(
                         f"Domain {typo_domain} filtered out: exact apex match with protected domain"
                     )
@@ -55,6 +82,18 @@ class TyposquatFilteringService:
                         f"Domain {typo_domain} filtered out: exact apex match with asset apex domain"
                     )
                     return False, "exact_apex_match:asset"
+
+        # --- Whitelist: legitimate third-party apexes → do not insert typosquat findings ---
+        whitelist_apexes = TyposquatFilteringService.normalize_whitelisted_apex_domains(
+            filtering_settings.get("whitelisted_apex_domains")
+        )
+        if typo_apex_lower and whitelist_apexes:
+            whitelist_set = set(whitelist_apexes)
+            if typo_apex_lower in whitelist_set:
+                logger.info(
+                    f"Domain {typo_domain} filtered out: apex on typosquat whitelist ({typo_apex_lower})"
+                )
+                return False, f"whitelisted_apex:{typo_apex_lower}"
 
         # --- Check 1: keyword matching (protected_subdomain_prefixes acts as keyword list) ---
         if protected_subdomain_prefixes and typo_domain:

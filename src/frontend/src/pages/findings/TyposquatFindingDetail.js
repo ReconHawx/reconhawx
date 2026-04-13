@@ -14,7 +14,7 @@ import {
   Collapse,
   Modal
 } from 'react-bootstrap';
-import api, { userManagementAPI } from '../../services/api';
+import api, { userManagementAPI, programAPI } from '../../services/api';
 import NotesSection from '../../components/NotesSection';
 import RelatedScreenshotsViewer from '../../components/RelatedScreenshotsViewer';
 import { formatDate, formatLocalDate } from '../../utils/dateUtils';
@@ -77,7 +77,7 @@ function TyposquatFindingDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, isAdmin } = useAuth();
+  const { user, isAdmin, hasProgramPermission } = useAuth();
   
   // Initialize user cache with current user
   React.useEffect(() => {
@@ -117,6 +117,9 @@ function TyposquatFindingDetail() {
 
   const [recalculatingSimilarities, setRecalculatingSimilarities] = useState(false);
   const [similarityRecalcMessage, setSimilarityRecalcMessage] = useState({ text: '', type: '' });
+
+  const [whitelistApexLoading, setWhitelistApexLoading] = useState(false);
+  const [whitelistApexMessage, setWhitelistApexMessage] = useState({ text: '', type: '' });
 
   // AI analysis state
   const [aiAnalyzing, setAiAnalyzing] = useState(false);
@@ -351,6 +354,54 @@ function TyposquatFindingDetail() {
       });
     } finally {
       setRecalculatingSimilarities(false);
+    }
+  };
+
+  const handleWhitelistApexFromDetail = async () => {
+    if (!finding?.program_name) return;
+    const programName = finding.program_name;
+    if (!hasProgramPermission(programName, 'manager')) {
+      setWhitelistApexMessage({
+        text: 'Manager access is required to update the typosquat whitelist.',
+        type: 'warning'
+      });
+      return;
+    }
+    const apexRaw = (finding.typosquat_apex_domain || finding.typo_domain || '').trim().toLowerCase();
+    if (!apexRaw) {
+      setWhitelistApexMessage({ text: 'No apex available for this finding.', type: 'warning' });
+      return;
+    }
+    try {
+      setWhitelistApexLoading(true);
+      setWhitelistApexMessage({ text: '', type: '' });
+      setError(null);
+      const prog = await programAPI.getByName(programName);
+      const fs = { ...(prog.typosquat_filtering_settings || {}) };
+      const existing = Array.isArray(fs.whitelisted_apex_domains)
+        ? fs.whitelisted_apex_domains.map((e) => String(e))
+        : [];
+      const lower = new Set(existing.map((e) => e.trim().toLowerCase()).filter(Boolean));
+      if (!lower.has(apexRaw)) {
+        existing.push(apexRaw);
+      }
+      fs.whitelisted_apex_domains = existing;
+      await programAPI.update(programName, { typosquat_filtering_settings: fs }, true);
+      setWhitelistApexMessage({
+        text:
+          `Registrable apex was added to the typosquat whitelist for ${programName}. ` +
+          'Matching open findings were auto-dismissed with an explanatory note.',
+        type: 'success'
+      });
+      await refreshFindingAfterSimilarityRecalc();
+      setTimeout(() => setWhitelistApexMessage({ text: '', type: '' }), 10000);
+    } catch (err) {
+      setWhitelistApexMessage({
+        text: err.response?.data?.detail || err.message || 'Failed to update whitelist',
+        type: 'danger'
+      });
+    } finally {
+      setWhitelistApexLoading(false);
     }
   };
 
@@ -1233,6 +1284,26 @@ function TyposquatFindingDetail() {
                     </>
                   )}
                 </Button>
+          {finding.program_name && hasProgramPermission(finding.program_name, 'manager') && (
+            <Button
+              variant="outline-secondary"
+              onClick={handleWhitelistApexFromDetail}
+              disabled={whitelistApexLoading}
+              className="me-2"
+              title="Add this finding’s registrable apex to the program typosquat whitelist and auto-dismiss open findings on that apex"
+            >
+              {whitelistApexLoading ? (
+                <>
+                  <Spinner animation="border" size="sm" className="me-2" />
+                  Saving...
+                </>
+              ) : (
+                <>
+                  <i className="bi bi-patch-check"></i> Whitelist apex
+                </>
+              )}
+            </Button>
+          )}
           <Button 
             variant="outline-danger" 
             onClick={() => setShowDeleteModal(true)}
@@ -1245,6 +1316,12 @@ function TyposquatFindingDetail() {
           </Button>
         </div>
       </div>
+
+      {whitelistApexMessage.text && (
+        <Alert variant={whitelistApexMessage.type} className="mb-4">
+          {whitelistApexMessage.text}
+        </Alert>
+      )}
 
       {/* Basic Information */}
       <Card className="dashboard-panel mb-4">

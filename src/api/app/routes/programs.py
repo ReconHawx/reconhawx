@@ -293,6 +293,20 @@ async def update_program(
         # Remove id field if present to avoid immutable field error
         update_data.pop('id', None)
 
+        from services.typosquat_filtering_service import TyposquatFilteringService
+
+        if "typosquat_filtering_settings" in update_data and isinstance(
+            update_data["typosquat_filtering_settings"], dict
+        ):
+            fs = dict(update_data["typosquat_filtering_settings"])
+            if "whitelisted_apex_domains" in fs:
+                fs["whitelisted_apex_domains"] = (
+                    TyposquatFilteringService.normalize_whitelisted_apex_domains(
+                        fs.get("whitelisted_apex_domains")
+                    )
+                )
+            update_data["typosquat_filtering_settings"] = fs
+
         # For PostgreSQL, we need to handle list fields differently
         # If overwrite is True, we replace the entire list
         # If overwrite is False, we merge the lists (add unique values)
@@ -324,10 +338,51 @@ async def update_program(
                             existing_list.append(dict(item))
                     update_data[field] = existing_list
         
+        from repository.typosquat_findings_repo import TyposquatFindingsRepository
+
+        old_fs = existing_program.get("typosquat_filtering_settings") or {}
+        old_wl_set = set(
+            TyposquatFilteringService.normalize_whitelisted_apex_domains(
+                old_fs.get("whitelisted_apex_domains")
+            )
+        )
+        added_whitelist_apexes: List[str] = []
+        if (
+            "typosquat_filtering_settings" in update_data
+            and isinstance(update_data["typosquat_filtering_settings"], dict)
+        ):
+            new_wl_set = set(
+                TyposquatFilteringService.normalize_whitelisted_apex_domains(
+                    update_data["typosquat_filtering_settings"].get("whitelisted_apex_domains")
+                )
+            )
+            added_whitelist_apexes = sorted(new_wl_set - old_wl_set)
+
         success = await ProgramRepository.update_program(existing_program["id"], update_data)
         
         if not success:
             raise HTTPException(status_code=500, detail="Failed to update program")
+
+        if added_whitelist_apexes:
+            closed_by: Optional[str] = None
+            uid = getattr(current_user, "id", None)
+            if uid is not None and not str(uid).startswith("internal-service-"):
+                closed_by = str(uid)
+            try:
+                dismiss_result = await TyposquatFindingsRepository.dismiss_typosquat_domains_for_whitelisted_apexes(
+                    existing_program["id"],
+                    added_whitelist_apexes,
+                    closed_by_user_id=closed_by,
+                )
+                logger.info(
+                    f"Typosquat whitelist auto-dismiss program={program_name}: "
+                    f"added_apexes={added_whitelist_apexes} "
+                    f"dismissed={dismiss_result.get('dismissed_count')}"
+                )
+            except Exception as dismiss_err:
+                logger.exception(
+                    f"Typosquat whitelist auto-dismiss failed for program={program_name}: {dismiss_err}"
+                )
         
         # Sync notification handlers when notification_settings changed
         if "notification_settings" in update_data:

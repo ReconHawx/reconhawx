@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { 
   Container, 
   Card, 
@@ -19,7 +19,7 @@ import {
 import { useNavigate, useSearchParams, useLocation, Link } from 'react-router-dom';
 import { useProgramFilter } from '../../contexts/ProgramFilterContext';
 import { useAuth } from '../../contexts/AuthContext';
-import api, { jobAPI, userManagementAPI } from '../../services/api';
+import api, { jobAPI, userManagementAPI, programAPI } from '../../services/api';
 import { formatDate } from '../../utils/dateUtils';
 import { initializeUserCache } from '../../utils/userUtils';
 import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
@@ -97,7 +97,7 @@ function TyposquatFindings() {
     return null; // No validation error
   };
   const { selectedProgram, programs } = useProgramFilter();
-  const { user, isAdmin } = useAuth();
+  const { user, isAdmin, hasProgramPermission } = useAuth();
   
   // Initialize user cache with current user
   React.useEffect(() => {
@@ -226,6 +226,9 @@ function TyposquatFindings() {
   const [aiDefaultModel, setAiDefaultModel] = useState('');
   const [aiModelsLoading, setAiModelsLoading] = useState(false);
   const [aiAnalysisBatchMessage, setAiAnalysisBatchMessage] = useState({ text: '', type: '' });
+
+  const [whitelistApexLoading, setWhitelistApexLoading] = useState(false);
+  const [whitelistApexMessage, setWhitelistApexMessage] = useState({ text: '', type: '' });
   
   // Fallback programs state if context doesn't have them
   const [localPrograms, setLocalPrograms] = useState([]);
@@ -1311,6 +1314,80 @@ function TyposquatFindings() {
     }
   }, []);
 
+  const whitelistApexFromSelection = useMemo(() => {
+    if (selectedItems.size === 0) {
+      return { showButton: false, programName: null };
+    }
+    const selected = findings.filter((f) => selectedItems.has(f.id));
+    const programNames = [...new Set(selected.map((f) => f.program_name).filter(Boolean))];
+    if (programNames.length !== 1) {
+      return { showButton: false, programName: null };
+    }
+    const programName = programNames[0];
+    if (!hasProgramPermission(programName, 'manager')) {
+      return { showButton: false, programName: null };
+    }
+    return { showButton: true, programName };
+  }, [findings, selectedItems, hasProgramPermission]);
+
+  const handleWhitelistSelectedApexes = useCallback(async () => {
+    const selected = findings.filter((f) => selectedItems.has(f.id));
+    if (selected.length === 0) return;
+    const programNames = [...new Set(selected.map((f) => f.program_name).filter(Boolean))];
+    if (programNames.length !== 1) {
+      setWhitelistApexMessage({ text: 'Select findings from a single program.', type: 'warning' });
+      return;
+    }
+    const programName = programNames[0];
+    if (!hasProgramPermission(programName, 'manager')) {
+      setWhitelistApexMessage({
+        text: 'Manager access is required to update the typosquat whitelist.',
+        type: 'warning',
+      });
+      return;
+    }
+    const apexSet = new Set();
+    for (const f of selected) {
+      const raw = (f.typosquat_apex_domain || f.typo_domain || '').trim().toLowerCase();
+      if (raw) apexSet.add(raw);
+    }
+    if (apexSet.size === 0) {
+      setWhitelistApexMessage({ text: 'No apex could be derived from the selection.', type: 'warning' });
+      return;
+    }
+    try {
+      setWhitelistApexLoading(true);
+      setWhitelistApexMessage({ text: '', type: '' });
+      setError('');
+      const prog = await programAPI.getByName(programName);
+      const fs = { ...(prog.typosquat_filtering_settings || {}) };
+      const existing = Array.isArray(fs.whitelisted_apex_domains)
+        ? fs.whitelisted_apex_domains.map((e) => String(e))
+        : [];
+      const lower = new Set(existing.map((e) => e.trim().toLowerCase()).filter(Boolean));
+      for (const a of apexSet) {
+        if (!lower.has(a)) {
+          existing.push(a);
+          lower.add(a);
+        }
+      }
+      fs.whitelisted_apex_domains = existing;
+      await programAPI.update(programName, { typosquat_filtering_settings: fs }, true);
+      setWhitelistApexMessage({
+        text: `Added ${apexSet.size} apex domain(s) to the typosquat whitelist for ${programName}. Open findings on those apexes were auto-dismissed with a note; new findings are discarded when typosquat filtering is enabled.`,
+        type: 'success',
+      });
+      setSelectedItems(new Set());
+    } catch (err) {
+      setWhitelistApexMessage({
+        text: err.response?.data?.detail || err.message || 'Failed to update whitelist',
+        type: 'danger',
+      });
+    } finally {
+      setWhitelistApexLoading(false);
+    }
+  }, [findings, selectedItems, hasProgramPermission]);
+
   const handleOpenAiAnalysisBatchModal = () => {
     if (!isAdmin() || selectedItems.size === 0) return;
     setBatchAiForce(false);
@@ -1663,6 +1740,27 @@ function TyposquatFindings() {
               )}
             </Button>
           )}
+          {whitelistApexFromSelection.showButton && (
+            <Button
+              variant="outline-secondary"
+              size="sm"
+              onClick={handleWhitelistSelectedApexes}
+              disabled={whitelistApexLoading}
+              className="me-2"
+              title="Append registrable apex of selected findings to the program typosquat whitelist (manager only)"
+            >
+              {whitelistApexLoading ? (
+                <>
+                  <Spinner animation="border" size="sm" className="me-2" />
+                  Saving...
+                </>
+              ) : (
+                <>
+                  <i className="bi bi-patch-check"></i> Whitelist apex ({selectedItems.size})
+                </>
+              )}
+            </Button>
+          )}
           <Button
             variant="outline-success"
             size="sm"
@@ -1704,6 +1802,12 @@ function TyposquatFindings() {
       {typosquatBatchMessage.text && (
         <Alert variant={typosquatBatchMessage.type} className="mb-4">
           {typosquatBatchMessage.text}
+        </Alert>
+      )}
+
+      {whitelistApexMessage.text && (
+        <Alert variant={whitelistApexMessage.type} className="mb-4">
+          {whitelistApexMessage.text}
         </Alert>
       )}
 
