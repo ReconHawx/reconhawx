@@ -2638,10 +2638,12 @@ class TyposquatFindingsRepository(ProgramAccessMixin):
         """
         Dismiss non-terminal typosquat findings whose typosquat apex matches one of
         ``apex_domains`` (registrable apex strings, lowercase). Appends an explanatory
-        note and sets status to dismissed.
+        note and sets status to dismissed. When ``closed_by_user_id`` is set, findings
+        are assigned to that user (the editor who added the whitelist entry).
         """
         from uuid import UUID
         from repository.action_log_repo import ActionLogRepository
+        from repository.auth_repo import AuthRepository
 
         apex_lower = {a.strip().lower() for a in (apex_domains or []) if a and str(a).strip()}
         if not apex_lower:
@@ -2680,20 +2682,39 @@ class TyposquatFindingsRepository(ProgramAccessMixin):
         comment_base = (
             "Auto-dismissed: registrable apex added to typosquat whitelist"
         )
+        rf_uhash_for_assignee: Optional[str] = None
+        if closed_by_user_id:
+            try:
+                auth_repo = AuthRepository()
+                user_data = await auth_repo.get_user_by_id(user_id=str(closed_by_user_id))
+                if user_data:
+                    rf_uhash_for_assignee = user_data.get("rf_uhash")
+            except Exception as rf_err:
+                logger.warning(
+                    f"Could not load user/rf_uhash for whitelist dismiss assignee "
+                    f"{closed_by_user_id}: {rf_err}"
+                )
+
         for fid, old_notes, old_status, apex_l in targets:
             comment = f"{comment_base} ({apex_l})."
             note_line = f"[{comment}]"
             merged_notes = (
                 (old_notes.rstrip() + "\n\n" + note_line).strip() if old_notes else note_line
             )
+            update_payload: Dict[str, Any] = {
+                "status": "dismissed",
+                "comment": comment,
+                "notes": merged_notes,
+                "_closure_closed_by_user_id": closed_by_user_id,
+            }
+            if closed_by_user_id:
+                update_payload["assigned_to"] = str(closed_by_user_id)
+                if rf_uhash_for_assignee is not None:
+                    update_payload["user_rf_uhash"] = rf_uhash_for_assignee
+
             ok = await TyposquatFindingsRepository.update_typosquat_domain(
                 fid,
-                {
-                    "status": "dismissed",
-                    "comment": comment,
-                    "notes": merged_notes,
-                    "_closure_closed_by_user_id": closed_by_user_id,
-                },
+                update_payload,
             )
             if ok:
                 dismissed_ids.append(fid)
