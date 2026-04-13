@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { 
   Container, 
   Row, 
@@ -53,6 +53,8 @@ function Programs() {
   // Form states
   const [formData, setFormData] = useState({
     name: '',
+    scope_domains: [],
+    out_of_scope_domains: [],
     domain_regex: [],
     out_of_scope_regex: [],
     cidr_list: [],
@@ -206,6 +208,8 @@ function Programs() {
   const resetForm = () => {
     setFormData({
       name: '',
+      scope_domains: [],
+      out_of_scope_domains: [],
       domain_regex: [],
       out_of_scope_regex: [],
       cidr_list: [],
@@ -280,6 +284,8 @@ function Programs() {
       
       const programData = {
         name: formData.name.trim(),
+        scope_domains: [],
+        out_of_scope_domains: [],
         domain_regex: parseListInput(domainRegexInput),
         out_of_scope_regex: parseListInput(outOfScopeRegexInput),
         cidr_list: parseListInput(cidrListInput),
@@ -811,7 +817,7 @@ function Programs() {
                       <th style={{ cursor: 'pointer' }} onClick={() => handleSort('name')}>
                         Name {getSortIcon('name')}
                       </th>
-                      <th>Domain Regex</th>
+                      <th>In-scope patterns</th>
                       <th>CIDR List</th>
                       <th>Safe Registrar</th>
                       <th>Safe SSL Issuer</th>
@@ -825,99 +831,52 @@ function Programs() {
                     </tr>
                   </thead>
                   <tbody>
-                    {programs.map((program) => (
+                    {programs.map((program) => {
+                      const inScopeTotal =
+                        (Array.isArray(program.scope_domains) ? program.scope_domains.length : 0) +
+                        (Array.isArray(program.domain_regex) ? program.domain_regex.length : 0);
+                      return (
                       <tr key={program._id || program.name} style={{ minHeight: '60px' }}>
                         <td>
-                          <strong>{program.name}</strong>
+                          <Link
+                            to={`/programs/${encodeURIComponent(program.name)}`}
+                            className="link-primary fw-semibold text-decoration-none"
+                          >
+                            {program.name}
+                          </Link>
                         </td>
                         <td>
-                          {program.domain_regex && program.domain_regex.length > 0 ? (
-                            <div>
-                              <Badge bg="info" className="me-1">
-                                {program.domain_regex.length} pattern{program.domain_regex.length !== 1 ? 's' : ''}
-                              </Badge>
-                              <div style={{ fontSize: '0.8em', maxWidth: '200px' }}>
-                                {program.domain_regex.slice(0, 2).map((regex, idx) => (
-                                  <div key={idx} className="text-muted">
-                                    <code>{regex}</code>
-                                  </div>
-                                ))}
-                                {program.domain_regex.length > 2 && (
-                                  <div className="text-muted">
-                                    ... and {program.domain_regex.length - 2} more
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          ) : (
+                          {inScopeTotal === 0 ? (
                             <span className="text-muted">None</span>
+                          ) : (
+                            <Badge bg="info" className="fw-normal">
+                              {inScopeTotal} pattern{inScopeTotal !== 1 ? 's' : ''}
+                            </Badge>
                           )}
                         </td>
                         <td>
                           {program.cidr_list && program.cidr_list.length > 0 ? (
-                            <div>
-                              <Badge bg="secondary" className="me-1">
-                                {program.cidr_list.length} CIDR{program.cidr_list.length !== 1 ? 's' : ''}
-                              </Badge>
-                              <div style={{ fontSize: '0.8em', maxWidth: '150px' }}>
-                                {program.cidr_list.slice(0, 2).map((cidr, idx) => (
-                                  <div key={idx} className="text-muted">
-                                    <code>{cidr}</code>
-                                  </div>
-                                ))}
-                                {program.cidr_list.length > 2 && (
-                                  <div className="text-muted">
-                                    ... and {program.cidr_list.length - 2} more
-                                  </div>
-                                )}
-                              </div>
-                            </div>
+                            <Badge bg="secondary" className="fw-normal">
+                              {program.cidr_list.length} CIDR{program.cidr_list.length !== 1 ? 's' : ''}
+                            </Badge>
                           ) : (
                             <span className="text-muted">None</span>
                           )}
                         </td>
                         <td>
                           {program.safe_registrar && program.safe_registrar.length > 0 ? (
-                            <div>
-                              <Badge bg="success" className="me-1">
-                                {program.safe_registrar.length} registrar{program.safe_registrar.length !== 1 ? 's' : ''}
-                              </Badge>
-                              <div style={{ fontSize: '0.8em', maxWidth: '150px' }}>
-                                {program.safe_registrar.slice(0, 2).map((registrar, idx) => (
-                                  <div key={idx} className="text-muted">
-                                    <code>{registrar}</code>
-                                  </div>
-                                ))}
-                                {program.safe_registrar.length > 2 && (
-                                  <div className="text-muted">
-                                    ... and {program.safe_registrar.length - 2} more
-                                  </div>
-                                )}
-                              </div>
-                            </div>
+                            <Badge bg="success" className="fw-normal">
+                              {program.safe_registrar.length} registrar{program.safe_registrar.length !== 1 ? 's' : ''}
+                            </Badge>
                           ) : (
                             <span className="text-muted">None</span>
                           )}
                         </td>
                         <td>
                           {program.safe_ssl_issuer && program.safe_ssl_issuer.length > 0 ? (
-                            <div>
-                              <Badge bg="warning" className="me-1">
-                                {program.safe_ssl_issuer.length} issuer{program.safe_ssl_issuer.length !== 1 ? 's' : ''}
-                              </Badge>
-                              <div style={{ fontSize: '0.8em', maxWidth: '150px' }}>
-                                {program.safe_ssl_issuer.slice(0, 2).map((issuer, idx) => (
-                                  <div key={idx} className="text-muted">
-                                    <code>{issuer}</code>
-                                  </div>
-                                ))}
-                                {program.safe_ssl_issuer.length > 2 && (
-                                  <div className="text-muted">
-                                    ... and {program.safe_ssl_issuer.length - 2} more
-                                  </div>
-                                )}
-                              </div>
-                            </div>
+                            <Badge bg="warning" className="fw-normal text-dark">
+                              {program.safe_ssl_issuer.length} issuer{program.safe_ssl_issuer.length !== 1 ? 's' : ''}
+                            </Badge>
                           ) : (
                             <span className="text-muted">None</span>
                           )}
@@ -933,43 +892,22 @@ function Programs() {
                           </small>
                         </td>
                         <td style={{ minHeight: '60px', verticalAlign: 'middle' }}>
-                          <div className="d-flex gap-1">
+                          {canManageProgram(program.name) && isSuperuser() ? (
                             <Button
-                              variant="outline-primary"
+                              variant="outline-danger"
                               size="sm"
-                              onClick={() => navigate(`/programs/${encodeURIComponent(program.name)}`)}
+                              onClick={() => openDeleteModal(program)}
                               disabled={submitting}
                             >
-                              👁️ View
+                              🗑️ Delete
                             </Button>
-                            
-                            {canManageProgram(program.name) && (
-                              <>
-                                <Button
-                                  variant="outline-secondary"
-                                  size="sm"
-                                  onClick={() => navigate(`/programs/${encodeURIComponent(program.name)}`)}
-                                  disabled={submitting}
-                                >
-                                  ✏️ Edit
-                                </Button>
-                                
-                                {isSuperuser() && (
-                                  <Button
-                                    variant="outline-danger"
-                                    size="sm"
-                                    onClick={() => openDeleteModal(program)}
-                                    disabled={submitting}
-                                  >
-                                    🗑️ Delete
-                                  </Button>
-                                )}
-                              </>
-                            )}
-                          </div>
+                          ) : (
+                            <span className="text-muted">—</span>
+                          )}
                         </td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </Table>
               )}

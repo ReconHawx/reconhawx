@@ -159,7 +159,73 @@ class HackerOneService:
         logger.info(f"Converted scope: {summary['in_scope']} in-scope, {summary['out_of_scope']} out-of-scope patterns")
         
         return in_scope_regexes, out_of_scope_regexes, summary
-    
+
+    def convert_scope_to_structured(
+        self, scopes: List[Dict[str, Any]]
+    ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], Dict[str, int]]:
+        """Convert HackerOne scope items to structured scope_domains / out_of_scope_domains rows."""
+        in_scope: List[Dict[str, Any]] = []
+        out_scope: List[Dict[str, Any]] = []
+        seen_in: set = set()
+        seen_out: set = set()
+
+        for scope in scopes:
+            try:
+                attrs = scope.get("attributes", {})
+                if not attrs.get("eligible_for_bounty", False):
+                    continue
+                asset_type = attrs.get("asset_type", "")
+                asset_identifier = attrs.get("asset_identifier", "")
+                eligible_for_submission = attrs.get("eligible_for_submission", True)
+                if asset_type not in ["URL", "WILDCARD"]:
+                    continue
+                identifiers = self._split_comma_separated_domains(asset_identifier)
+                for identifier in identifiers:
+                    if asset_type == "WILDCARD":
+                        pat = identifier.strip().lower().strip(".")
+                        wc = True
+                    elif asset_type == "URL":
+                        pat = self._plain_domain_from_url(identifier)
+                        wc = False
+                    else:
+                        continue
+                    if not pat:
+                        continue
+                    key = (pat, wc)
+                    if eligible_for_submission:
+                        if key not in seen_in:
+                            seen_in.add(key)
+                            in_scope.append({"pattern": pat, "wildcard": wc})
+                    else:
+                        if key not in seen_out:
+                            seen_out.add(key)
+                            out_scope.append({"pattern": pat, "wildcard": wc})
+            except Exception as e:
+                logger.warning(f"Failed to process scope item: {e}")
+                continue
+
+        summary = {"in_scope": len(in_scope), "out_of_scope": len(out_scope)}
+        logger.info(
+            "Converted structured scope: %s in-scope, %s out-of-scope",
+            summary["in_scope"],
+            summary["out_of_scope"],
+        )
+        return in_scope, out_scope, summary
+
+    def _plain_domain_from_url(self, url: str) -> str:
+        """Extract hostname from URL (lowercase), no regex."""
+        try:
+            if not url.startswith(("http://", "https://")):
+                url = "https://" + url
+            parsed = urlparse(url)
+            domain = parsed.netloc or ""
+            if ":" in domain:
+                domain = domain.split(":")[0]
+            return domain.lower().strip(".")
+        except Exception as e:
+            logger.warning(f"Failed to parse URL '{url}': {e}")
+            return ""
+
     def _split_comma_separated_domains(self, identifier: str) -> List[str]:
         """Split comma-separated domains into individual items
         

@@ -18,31 +18,13 @@ from pydantic import BaseModel
 import asyncio
 import base64
 from utils.utils import extract_apex_domain
+from scope_patterns import discovery_targets_from_scope
 
 
 logger = logging.getLogger('task_executor')
 
 API_URL = os.getenv('API_URL', 'http://dev-api:8000')
 
-
-def _extract_apex_domains_from_regex(domain_regex_list: List[str]) -> List[str]:
-    """Extract unique apex domains from domain_regex patterns (mirrors ProgramDetail.js getApexDomains)."""
-    if not domain_regex_list:
-        return []
-    apex_set = set()
-    two_level_tlds = ['co', 'com', 'org', 'net', 'ac', 'gov', 'edu']
-    for pattern in domain_regex_list:
-        domain = re.sub(r'\^|\$', '', pattern)
-        domain = re.sub(r'\.\*', '', domain)
-        domain = domain.replace('\\.', '.').replace('\\', '')
-        domain = re.sub(r'\(\?:', '', domain).replace(')', '')
-        domain = re.sub(r'\[.*?\]', '', domain).strip()
-        domain = re.sub(r'^\.+|\.+$', '', domain)
-        parts = [p for p in domain.split('.') if p]
-        if len(parts) >= 2 and '.' in domain:
-            apex = '.'.join(parts[-3:]) if len(parts) >= 3 and parts[-2] in two_level_tlds else '.'.join(parts[-2:])
-            apex_set.add(apex)
-    return sorted(apex_set)
 REDIS_URL = os.getenv('REDIS_URL', 'redis://dev-redis:6379/0')
 
 DEFAULT_CHUNK_SIZE = 10  # Number of inputs that triggers chunking
@@ -2304,7 +2286,7 @@ class TaskExecutor:
         return all_input_data
 
     async def _resolve_program_scope_domains_inputs_async(self, input_names: List[str]) -> List[str]:
-        """Resolve program scope domains inputs - extracts apex domains from domain_regex patterns"""
+        """Resolve program scope domains inputs from structured scope + legacy regex."""
         from task_components import AsyncDataApiClient
         all_input_data = []
 
@@ -2319,14 +2301,28 @@ class TaskExecutor:
                     logger.warning(f"Invalid program scope domains input definition: {input_name}")
                     continue
 
-                logger.info(f"Resolving program scope domains input: {input_name}")
+                sfilter = "all"
+                if hasattr(input_def, "scope_domains_filter"):
+                    sfilter = getattr(input_def, "scope_domains_filter", None) or "all"
+                elif isinstance(input_def, dict):
+                    sfilter = input_def.get("scope_domains_filter") or "all"
+                if sfilter not in ("all", "wildcard_only", "non_wildcard_only"):
+                    sfilter = "all"
+
+                logger.info(f"Resolving program scope domains input: {input_name} (filter={sfilter})")
                 try:
                     program_data = await async_client.get_program_metadata(self.program_name)
-                    domain_regex = program_data.get("domain_regex", []) or []
-                    if isinstance(domain_regex, list):
-                        scope_domains = _extract_apex_domains_from_regex(domain_regex)
-                        all_input_data.extend(scope_domains)
-                        logger.info(f"Extracted {len(scope_domains)} scope domains from domain_regex for program {self.program_name}")
+                    sd = program_data.get("scope_domains") or []
+                    dr = program_data.get("domain_regex") or []
+                    if not isinstance(sd, list):
+                        sd = []
+                    if not isinstance(dr, list):
+                        dr = []
+                    scope_list = discovery_targets_from_scope(sd, dr, sfilter)
+                    all_input_data.extend(scope_list)
+                    logger.info(
+                        f"Resolved {len(scope_list)} scope domain targets for program {self.program_name}"
+                    )
                 except Exception as e:
                     logger.error(f"Error resolving program scope domains input {input_name}: {str(e)}")
 

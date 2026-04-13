@@ -286,7 +286,8 @@ def _serialize_workflow_definition(workflow) -> Dict[str, Any]:
                 'filter_type': getattr(input_def, 'filter_type', None),
                 'limit': getattr(input_def, 'limit', None),
                 'min_similarity_percent': getattr(input_def, 'min_similarity_percent', None),
-                'similarity_protected_domain': getattr(input_def, 'similarity_protected_domain', None)
+                'similarity_protected_domain': getattr(input_def, 'similarity_protected_domain', None),
+                'scope_domains_filter': getattr(input_def, 'scope_domains_filter', None),
             }
     
     # Serialize inputs

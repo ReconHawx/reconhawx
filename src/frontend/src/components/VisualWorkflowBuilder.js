@@ -453,6 +453,7 @@ function VisualWorkflowBuilder({
           delete updatedInput.filter;
           delete updatedInput.filter_type;
           delete updatedInput.limit;
+          updatedInput.scope_domains_filter = updatedInput.scope_domains_filter || 'all';
         }
       }
 
@@ -505,6 +506,7 @@ function VisualWorkflowBuilder({
       delete cleanedConfig.filter;
       delete cleanedConfig.filter_type;
       delete cleanedConfig.limit;
+      if (!cleanedConfig.scope_domains_filter) cleanedConfig.scope_domains_filter = 'all';
     }
     
     // Check for name uniqueness

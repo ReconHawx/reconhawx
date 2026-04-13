@@ -224,7 +224,95 @@ class IntigritiService:
         logger.info(f"Converted scope: {summary['in_scope']} in-scope, {summary['out_of_scope']} out-of-scope patterns, {summary['ip_ranges']} IP ranges")
         
         return in_scope_regexes, out_of_scope_regexes, ip_list, summary
-    
+
+    def convert_scopes_to_structured(
+        self, domains_data: Dict[str, Any]
+    ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[str], Dict[str, int]]:
+        """Structured scope rows plus IP list (same shape as convert_scopes_to_regex summary)."""
+        in_scope: List[Dict[str, Any]] = []
+        out_scope: List[Dict[str, Any]] = []
+        ip_list: List[str] = []
+        seen_in: set = set()
+        seen_out: set = set()
+
+        content = domains_data.get("content", [])
+
+        for scope_item in content:
+            try:
+                scope_type = scope_item.get("type", {}).get("value", "")
+                endpoint = scope_item.get("endpoint", "")
+                tier = scope_item.get("tier", {}).get("value", "")
+                if not endpoint:
+                    continue
+                is_out_of_scope = tier in ["Out Of Scope", "No Bounty"]
+
+                if scope_type == "Url":
+                    pat = self._plain_domain_from_endpoint(endpoint)
+                    wc = False
+                    if not pat:
+                        continue
+                    key = (pat, wc)
+                    if is_out_of_scope:
+                        if key not in seen_out:
+                            seen_out.add(key)
+                            out_scope.append({"pattern": pat, "wildcard": wc})
+                    else:
+                        if key not in seen_in:
+                            seen_in.add(key)
+                            in_scope.append({"pattern": pat, "wildcard": wc})
+
+                elif scope_type == "Wildcard":
+                    pat = endpoint.lower().strip()
+                    if ":" in pat:
+                        pat = pat.split(":", 1)[0]
+                    pat = pat.strip(".")
+                    wc = True
+                    if not pat:
+                        continue
+                    key = (pat, wc)
+                    if is_out_of_scope:
+                        if key not in seen_out:
+                            seen_out.add(key)
+                            out_scope.append({"pattern": pat, "wildcard": wc})
+                    else:
+                        if key not in seen_in:
+                            seen_in.add(key)
+                            in_scope.append({"pattern": pat, "wildcard": wc})
+
+                elif scope_type == "IpRange":
+                    ips = self._parse_ip_range(endpoint)
+                    for ip in ips:
+                        if ip and ip not in ip_list and not is_out_of_scope:
+                            ip_list.append(ip)
+
+            except Exception as e:
+                logger.warning(f"Failed to process scope item: {e}")
+                continue
+
+        summary = {
+            "in_scope": len(in_scope),
+            "out_of_scope": len(out_scope),
+            "ip_ranges": len(ip_list),
+        }
+        logger.info(
+            "Converted structured Intigriti scope: %s in, %s out, %s IPs",
+            summary["in_scope"],
+            summary["out_of_scope"],
+            summary["ip_ranges"],
+        )
+        return in_scope, out_scope, ip_list, summary
+
+    def _plain_domain_from_endpoint(self, url: str) -> str:
+        """Hostname from URL or host string (lowercase)."""
+        domain = url
+        if "://" in domain:
+            domain = domain.split("://", 1)[1]
+        if "/" in domain:
+            domain = domain.split("/", 1)[0]
+        if ":" in domain:
+            domain = domain.split(":", 1)[0]
+        return domain.lower().strip(".")
+
     def _convert_url_to_regex(self, url: str) -> Optional[str]:
         """Convert URL to domain regex pattern
         

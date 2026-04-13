@@ -360,7 +360,75 @@ class BugcrowdService:
         logger.info(f"Converted targets: {summary['in_scope']} in-scope, {summary['out_of_scope']} out-of-scope, {summary['ip_ranges']} IPs")
         
         return in_scope_regexes, out_of_scope_regexes, ip_list, summary
-    
+
+    def convert_targets_to_structured(
+        self, scope_data: Dict[str, Any]
+    ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[str], Dict[str, int]]:
+        """Structured scope rows from Bugcrowd targets."""
+        in_scope: List[Dict[str, Any]] = []
+        out_scope: List[Dict[str, Any]] = []
+        ip_list: List[str] = []
+        seen_in: set = set()
+        seen_out: set = set()
+
+        for target in scope_data.get("in_scope", []):
+            uri = target.get("uri", "")
+            category = target.get("category", "")
+            if category == "website" or category == "api":
+                pat = self._plain_host_from_target_uri(uri)
+                if not pat:
+                    continue
+                wc = "*" in pat
+                key = (pat, wc)
+                if key not in seen_in:
+                    seen_in.add(key)
+                    in_scope.append({"pattern": pat, "wildcard": wc})
+            elif category == "other":
+                if self._is_ip_or_cidr(uri):
+                    if uri not in ip_list:
+                        ip_list.append(uri)
+                else:
+                    pat = self._plain_host_from_target_uri(uri)
+                    if not pat:
+                        continue
+                    wc = "*" in pat
+                    key = (pat, wc)
+                    if key not in seen_in:
+                        seen_in.add(key)
+                        in_scope.append({"pattern": pat, "wildcard": wc})
+
+        for target in scope_data.get("out_of_scope", []):
+            uri = target.get("uri", "")
+            category = target.get("category", "")
+            if category in ["website", "api", "other"]:
+                if self._is_ip_or_cidr(uri):
+                    continue
+                pat = self._plain_host_from_target_uri(uri)
+                if not pat:
+                    continue
+                wc = "*" in pat
+                key = (pat, wc)
+                if key not in seen_out:
+                    seen_out.add(key)
+                    out_scope.append({"pattern": pat, "wildcard": wc})
+
+        summary = {
+            "in_scope": len(in_scope),
+            "out_of_scope": len(out_scope),
+            "ip_ranges": len(ip_list),
+        }
+        return in_scope, out_scope, ip_list, summary
+
+    def _plain_host_from_target_uri(self, url: str) -> str:
+        domain = url
+        if "://" in domain:
+            domain = domain.split("://", 1)[1]
+        if "/" in domain:
+            domain = domain.split("/", 1)[0]
+        if ":" in domain and not domain.count(":") > 1:
+            domain = domain.split(":", 1)[0]
+        return domain.lower().strip(".")
+
     def _convert_url_to_regex(self, url: str) -> Optional[str]:
         """Convert URL to domain regex pattern
         

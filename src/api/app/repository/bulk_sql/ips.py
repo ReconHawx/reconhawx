@@ -38,6 +38,8 @@ def upsert_ips_chunk(program_name: str, items: List[Dict[str, Any]]) -> Dict[str
         now_naive = datetime.now(timezone.utc).replace(tzinfo=None)
         domain_regex = program.domain_regex or []
         oos_regex = program.out_of_scope_regex or []
+        scope_domains = getattr(program, "scope_domains", None) or []
+        out_of_scope_domains = getattr(program, "out_of_scope_domains", None) or []
 
         dedup: Dict[str, Dict[str, Any]] = {}
         order: List[str] = []
@@ -67,7 +69,13 @@ def upsert_ips_chunk(program_name: str, items: List[Dict[str, Any]]) -> Dict[str
         for saddr in order:
             item = dedup[saddr]
             disco = item.get("discovered_via_domain")
-            if disco and not domain_in_scope(disco, list(domain_regex), list(oos_regex)):
+            if disco and not domain_in_scope(
+                disco,
+                list(domain_regex),
+                list(oos_regex),
+                list(scope_domains) if scope_domains else [],
+                list(out_of_scope_domains) if out_of_scope_domains else [],
+            ):
                 out_of_scope_count += 1
                 skipped_assets.append(
                     {

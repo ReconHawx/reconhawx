@@ -22,7 +22,11 @@ function InputConfigSidebar({
   const getBadgeLabel = (config) => {
     if (config.type === 'direct') return `Direct: ${config.value_type}`;
     if (config.type === 'program_protected_domains') return 'Program Protected Domains';
-    if (config.type === 'program_scope_domains') return 'Program Scope Domains';
+    if (config.type === 'program_scope_domains') {
+      const f = config.scope_domains_filter || 'all';
+      const label = f === 'wildcard_only' ? ' (wildcard only)' : f === 'non_wildcard_only' ? ' (exact only)' : '';
+      return `Program Scope Domains${label}`;
+    }
     if (config.type === 'program_finding') {
       const base = config.filter_type
         ? `Program Finding: ${config.finding_type} (${config.filter_type === 'root' ? 'Root Only' : config.filter_type})`
@@ -118,7 +122,21 @@ function InputConfigSidebar({
                   <Alert variant="info" className="small py-2 mt-2">Protected domains. No extra config.</Alert>
                 )}
                 {editingInput.type === 'program_scope_domains' && !eventHandlerMode && (
-                  <Alert variant="info" className="small py-2 mt-2">Scope domains. No extra config.</Alert>
+                  <Form.Group className="mt-2 mb-0">
+                    <Form.Label className="small">Which scope rows</Form.Label>
+                    <Form.Select
+                      size="sm"
+                      value={editingInput.scope_domains_filter || 'all'}
+                      onChange={(e) => handleUpdateInput(editingInput.id, 'scope_domains_filter', e.target.value)}
+                    >
+                      <option value="all">All in-scope domains</option>
+                      <option value="wildcard_only">Wildcard domains only</option>
+                      <option value="non_wildcard_only">Non-wildcard domains only</option>
+                    </Form.Select>
+                    <Form.Text className="text-muted small">
+                      Filters structured scope domains; legacy regex is included only when filter is &quot;all&quot;.
+                    </Form.Text>
+                  </Form.Group>
                 )}
 
                 {editingInput.type === 'program_finding' && !eventHandlerMode && (

@@ -921,7 +921,9 @@ function WorkflowRun() {
                           )}
                           {inputDef.type === 'program_scope_domains' && (
                             <div className="ms-2">
-                              <small className="text-muted">Apex domains from program&apos;s domain regex</small>
+                              <small className="text-muted">
+                                Scope apex targets (structured scope; filter: {inputDef.scope_domains_filter || 'all'})
+                              </small>
                             </div>
                           )}
                         </li>
@@ -1128,7 +1130,9 @@ function WorkflowRun() {
                                 )}
                                 {inputDef.type === 'program_scope_domains' && (
                                   <div className="ms-2">
-                                    <small className="text-muted">Apex domains from program&apos;s domain regex</small>
+                                    <small className="text-muted">
+                                      Scope apex targets (filter: {inputDef.scope_domains_filter || 'all'})
+                                    </small>
                                   </div>
                                 )}
                               </li>

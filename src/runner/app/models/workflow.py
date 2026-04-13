@@ -1,4 +1,4 @@
-from typing import Dict, List, Optional, Any, Union
+from typing import Dict, List, Optional, Any, Union, Literal
 from pydantic import BaseModel, model_validator
 from datetime import datetime
 
@@ -14,6 +14,7 @@ class InputDefinition(BaseModel):
     limit: Optional[int] = None  # Limit the number of items from program assets or findings
     min_similarity_percent: Optional[float] = None  # For typosquat_domain/typosquat_apex_domain: min similarity % with protected domain (0-100)
     similarity_protected_domain: Optional[str] = None  # For typosquat_domain/typosquat_apex_domain: filter by this protected domain
+    scope_domains_filter: Optional[Literal["all", "wildcard_only", "non_wildcard_only"]] = "all"  # program_scope_domains input
 
 class TaskDefinition(BaseModel):
     """Task definition for workflow execution (New Format)"""

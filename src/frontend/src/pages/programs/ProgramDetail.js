@@ -18,6 +18,7 @@ import {
 } from 'react-bootstrap';
 import { programAPI, aiAPI } from '../../services/api';
 import EventHandlerForm from '../../components/EventHandlerForm';
+import ScopeDomainsEditor from '../../components/programs/ScopeDomainsEditor';
 import { useAuth } from '../../contexts/AuthContext';
 import { formatDate } from '../../utils/dateUtils';
 import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
@@ -123,6 +124,7 @@ function ProgramDetail() {
   const [editType, setEditType] = useState(null); // 'domain_regex', 'out_of_scope_regex', 'cidr_list', 'safe_registrar', 'safe_ssl_issuer', 'phishlabs_api_key', or 'threatstream_credentials'
   const [editForm, setEditForm] = useState({
     newItems: '',
+    scopeDomainRows: [],
     overwrite: false,
     api_user: '',
     api_key: ''
@@ -509,6 +511,41 @@ function ProgramDetail() {
     return Array.from(apexDomains).sort();
   };
 
+  const twoLevelTlds = ['co', 'com', 'org', 'net', 'ac', 'gov', 'edu'];
+  const apexFromStructuredPattern = (pattern) => {
+    let pat = (pattern || '').trim().toLowerCase().replace(/^\.+|\.+$/g, '');
+    if (!pat) return '';
+    let labels = pat.split('.').filter((p) => p.length > 0);
+    if (labels[0] === '*') labels = labels.slice(1);
+    if (labels.length < 2) return '';
+    if (labels.length >= 3 && twoLevelTlds.includes(labels[labels.length - 2])) {
+      return labels.slice(-3).join('.');
+    }
+    return labels.slice(-2).join('.');
+  };
+
+  const getApexDomainsForProgram = (prog) => {
+    const set = new Set();
+    (prog.scope_domains || []).forEach((row) => {
+      const a = apexFromStructuredPattern(row.pattern);
+      if (a && a.includes('.')) set.add(a);
+    });
+    getApexDomains(prog.domain_regex || []).forEach((a) => set.add(a));
+    return Array.from(set).sort();
+  };
+
+  /** Build API entries from structured scope rows (skip empty patterns; normalize like legacy line parser). */
+  const scopeRowsToEntries = (rows) => {
+    const out = [];
+    (rows || []).forEach((row) => {
+      const pattern = (row.pattern || '').trim().toLowerCase();
+      if (!pattern) return;
+      const wildcard = Boolean(row.wildcard) || pattern.includes('*');
+      out.push({ pattern, wildcard });
+    });
+    return out;
+  };
+
   const openEditModal = (type) => {
     setEditType(type);
 
@@ -518,6 +555,17 @@ function ProgramDetail() {
         api_user: program.threatstream_api_user || '',
         api_key: program.threatstream_api_key || '',
         overwrite: true
+      });
+    } else if (type === 'scope_domains' || type === 'out_of_scope_domains') {
+      const raw = Array.isArray(program[type]) ? program[type] : [];
+      const scopeDomainRows = raw.map((r) => ({
+        pattern: r.pattern != null ? String(r.pattern) : '',
+        wildcard: Boolean(r.wildcard),
+      }));
+      setEditForm({
+        newItems: '',
+        scopeDomainRows,
+        overwrite: true,
       });
     } else {
       // Handle regular fields
@@ -587,19 +635,29 @@ function ProgramDetail() {
         return;
       }
 
-      const newRegexes = convertDomainsToRegex(domains, importWildcard);
+      const newEntries = domains.map((line) => {
+        const lower = line.trim().toLowerCase();
+        const wildcard = lower.includes('*') || importWildcard;
+        return { pattern: lower, wildcard };
+      });
 
-      let payloadPatterns = newRegexes;
+      let payloadEntries = newEntries;
       if (!importReplaceAll) {
-        // Merge with existing regex patterns and deduplicate
-        const existing = Array.isArray(program.domain_regex) ? program.domain_regex : [];
-        const mergedSet = new Set([...existing, ...newRegexes]);
-        payloadPatterns = Array.from(mergedSet);
+        const existing = Array.isArray(program.scope_domains) ? program.scope_domains : [];
+        const seen = new Set(existing.map((e) => `${e.pattern}|${e.wildcard}`));
+        const merged = [...existing];
+        newEntries.forEach((e) => {
+          const k = `${e.pattern}|${e.wildcard}`;
+          if (!seen.has(k)) {
+            seen.add(k);
+            merged.push(e);
+          }
+        });
+        payloadEntries = merged;
       }
 
-      // Use overwrite to write the final payload exactly
-      await programAPI.update(programName, { domain_regex: payloadPatterns }, true);
-      setSuccess('Imported domains into domain regex patterns');
+      await programAPI.update(programName, { scope_domains: payloadEntries }, true);
+      setSuccess('Imported domains into structured in-scope patterns');
       setShowImportModal(false);
       await loadProgram();
     } catch (err) {
@@ -631,6 +689,13 @@ function ProgramDetail() {
         if (isSingleValue) {
           // For single-value fields, use the trimmed string directly
           updateData = { [editType]: editForm.newItems.trim() };
+        } else if (editType === 'scope_domains' || editType === 'out_of_scope_domains') {
+          const entries = scopeRowsToEntries(editForm.scopeDomainRows);
+          if (entries.length === 0 && !editForm.overwrite) {
+            setError('Add at least one pattern or enable replace mode to clear the list');
+            return;
+          }
+          updateData = { [editType]: entries };
         } else {
           // Parse the items (one per line) for list fields
           const items = editForm.newItems
@@ -649,9 +714,21 @@ function ProgramDetail() {
       }
 
       // Update the program
-      await programAPI.update(programName, updateData, editType === 'threatstream_credentials' ? true : (singleValueTypes.includes(editType) ? true : editForm.overwrite));
+      await programAPI.update(
+        programName,
+        updateData,
+        editType === 'threatstream_credentials'
+          ? true
+          : singleValueTypes.includes(editType)
+            ? true
+            : editType === 'scope_domains' || editType === 'out_of_scope_domains'
+              ? true
+              : editForm.overwrite
+      );
       
       const typeLabels = {
+        'scope_domains': 'In-scope domain patterns',
+        'out_of_scope_domains': 'Out-of-scope domain patterns',
         'domain_regex': 'Domain regex patterns',
         'cidr_list': 'CIDR blocks',
         'safe_registrar': 'Safe registrars',
@@ -756,7 +833,7 @@ function ProgramDetail() {
 
   // Copy apex domains to clipboard
   const copyApexDomainsToClipboard = async () => {
-    const apexDomains = getApexDomains(program.domain_regex);
+    const apexDomains = getApexDomainsForProgram(program);
     const domainsText = apexDomains.join('\n');
     
     try {
@@ -923,7 +1000,7 @@ function ProgramDetail() {
                   </tr>
                   <tr>
                     <td><strong>Program ID:</strong></td>
-                    <td><code>{program._id}</code></td>
+                    <td><code>{program.id}</code></td>
                   </tr>
                 </tbody>
               </Table>
@@ -935,13 +1012,13 @@ function ProgramDetail() {
               <div className="d-flex justify-content-between align-items-center">
                 <h5 className="mb-0">
                   🌐 Apex Domains
-                  {program.domain_regex && getApexDomains(program.domain_regex).length > 0 && (
+                  {getApexDomainsForProgram(program).length > 0 && (
                     <Badge bg="primary" className="ms-2">
-                      {getApexDomains(program.domain_regex).length} domain{getApexDomains(program.domain_regex).length !== 1 ? 's' : ''}
+                      {getApexDomainsForProgram(program).length} domain{getApexDomainsForProgram(program).length !== 1 ? 's' : ''}
                     </Badge>
                   )}
                 </h5>
-                {program.domain_regex && getApexDomains(program.domain_regex).length > 0 && (
+                {getApexDomainsForProgram(program).length > 0 && (
                   <Button
                     variant={copiedApexDomains ? "success" : "outline-primary"}
                     size="sm"
@@ -953,13 +1030,13 @@ function ProgramDetail() {
               </div>
             </Card.Header>
             <Card.Body>
-              {program.domain_regex && getApexDomains(program.domain_regex).length > 0 ? (
+              {getApexDomainsForProgram(program).length > 0 ? (
                 <div>
                   <p className="text-muted mb-3">
-                    Apex domains automatically extracted from the in-scope regex patterns. These represent the primary domains for this program.
+                    Apex domains derived from structured scope patterns and any legacy regex entries.
                   </p>
                   <div className="d-flex flex-wrap gap-2">
-                    {getApexDomains(program.domain_regex).map((domain, index) => (
+                    {getApexDomainsForProgram(program).map((domain, index) => (
                       <Badge 
                         key={index} 
                         bg="primary" 
@@ -984,21 +1061,21 @@ function ProgramDetail() {
             <Card.Header>
               <div className="d-flex justify-content-between align-items-center">
                 <h5 className="mb-0">
-                  Domain Regex Patterns 
-                  {program.domain_regex && program.domain_regex.length > 0 && (
+                  In-scope domain patterns
+                  {(program.scope_domains || []).length > 0 && (
                     <Badge bg="info" className="ms-2">
-                      {program.domain_regex.length} pattern{program.domain_regex.length !== 1 ? 's' : ''}
+                      {(program.scope_domains || []).length} entr{(program.scope_domains || []).length !== 1 ? 'ies' : 'y'}
                     </Badge>
                   )}
                 </h5>
                 {isUserManager && (
                   <div className="d-flex gap-2">
-                    <Button 
-                      variant="outline-primary" 
+                    <Button
+                      variant="outline-primary"
                       size="sm"
-                      onClick={() => openEditModal('domain_regex')}
+                      onClick={() => openEditModal('scope_domains')}
                     >
-                      ✏️ Edit Patterns
+                      ✏️ Edit
                     </Button>
                     <Button
                       variant="outline-success"
@@ -1012,246 +1089,165 @@ function ProgramDetail() {
               </div>
             </Card.Header>
             <Card.Body>
-              {program.domain_regex && program.domain_regex.length > 0 ? (
+              {(program.scope_domains || []).length > 0 ? (
                 <div>
-                  <p className="text-muted mb-3">
-                    These regex patterns define which domains belong to this program.
+                  <p className="text-muted mb-2">
+                    Hostname patterns (use * as a full label, e.g. *.example.com or api.*.example.com). Use Edit to add rows with a pattern and wildcard switch.
                   </p>
-                  
-                  {/* Search Box */}
-                  <InputGroup className="mb-3">
-                    <InputGroup.Text style={{ 
-                      backgroundColor: 'var(--bs-input-bg)',
-                      color: 'var(--bs-input-color)',
-                      borderColor: 'var(--bs-border-color)'
-                    }}>
-                      🔍
-                    </InputGroup.Text>
-                    <Form.Control
-                      type="text"
-                      placeholder="Search patterns..."
-                      value={searchTerms.domain_regex}
-                      onChange={(e) => handleSearchChange('domain_regex', e.target.value)}
-                      style={{
-                        backgroundColor: 'var(--bs-input-bg)',
-                        color: 'var(--bs-input-color)',
-                        borderColor: 'var(--bs-border-color)'
-                      }}
-                    />
-                    {searchTerms.domain_regex && (
-                      <>
-                        <Button 
-                          variant="outline-secondary"
-                          onClick={() => navigateSearch('domain_regex', 'prev')}
-                          disabled={getMatchingIndices(program.domain_regex, searchTerms.domain_regex).length === 0}
-                        >
-                          ↑
-                        </Button>
-                        <Button 
-                          variant="outline-secondary"
-                          onClick={() => navigateSearch('domain_regex', 'next')}
-                          disabled={getMatchingIndices(program.domain_regex, searchTerms.domain_regex).length === 0}
-                        >
-                          ↓
-                        </Button>
-                        <Button 
-                          variant="outline-secondary" 
-                          onClick={() => handleSearchChange('domain_regex', '')}
-                        >
-                          Clear
-                        </Button>
-                      </>
-                    )}
-                  </InputGroup>
-
-                  {/* Search Results Info */}
-                  {searchTerms.domain_regex && (
-                    <div className="mb-2">
-                      <small className="text-muted">
-                        {getMatchingIndices(program.domain_regex, searchTerms.domain_regex).length} match{getMatchingIndices(program.domain_regex, searchTerms.domain_regex).length !== 1 ? 'es' : ''}
-                        {getMatchingIndices(program.domain_regex, searchTerms.domain_regex).length > 0 && (
-                          <span> • Showing {searchIndices.domain_regex + 1} of {getMatchingIndices(program.domain_regex, searchTerms.domain_regex).length}</span>
-                        )}
-                      </small>
-                    </div>
-                  )}
-
-                  {/* Scrollable Table */}
+                  <p className="text-muted mb-3 small">
+                    Syntax quick guide: `domain.com` + Wildcard=Yes matches apex + subdomains, while `*.domain.com` matches subdomains only (not apex).
+                  </p>
                   <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
                     <Table striped bordered size="sm">
                       <thead>
                         <tr>
                           <th width="60" style={getTableHeaderStyle()}>#</th>
-                          <th style={getTableHeaderStyle()}>Regex Pattern</th>
+                          <th style={getTableHeaderStyle()}>Pattern</th>
+                          <th width="100" style={getTableHeaderStyle()}>Wildcard</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {program.domain_regex.map((pattern, index) => {
-                          const matches = getMatchingIndices(program.domain_regex, searchTerms.domain_regex);
-                          const isHighlighted = matches.includes(index) && searchTerms.domain_regex;
-                          const isCurrentMatch = matches[searchIndices.domain_regex] === index && searchTerms.domain_regex;
-                          
-                          return (
-                            <tr 
-                              key={index}
-                              data-search-highlight={`domain_regex-${index}`}
-                              className={
-                                isCurrentMatch
-                                  ? 'search-current-match'
-                                  : isHighlighted
-                                  ? 'search-highlight-row'
-                                  : ''
-                              }
-                              style={getRowStyle(isHighlighted, isCurrentMatch)}
-                            >
-                              <td>{index + 1}</td>
-                              <td><code>{highlightText(pattern, searchTerms.domain_regex)}</code></td>
-                            </tr>
-                          );
-                        })}
+                        {(program.scope_domains || []).map((row, index) => (
+                          <tr key={index}>
+                            <td>{index + 1}</td>
+                            <td><code>{row.pattern}</code></td>
+                            <td>{row.wildcard ? 'Yes' : 'No'}</td>
+                          </tr>
+                        ))}
                       </tbody>
                     </Table>
                   </div>
                 </div>
               ) : (
                 <div className="text-center py-3">
-                  <p className="text-muted">No domain regex patterns configured for this program.</p>
+                  <p className="text-muted">No structured in-scope patterns yet. Use Edit or Import, or rely on legacy regex below.</p>
                 </div>
               )}
             </Card.Body>
           </Card>
+
+          {program.domain_regex && program.domain_regex.length > 0 && (
+            <Card className="mb-4">
+              <Card.Header>
+                <div className="d-flex justify-content-between align-items-center">
+                  <h5 className="mb-0">
+                    Legacy in-scope regex
+                    <Badge bg="secondary" className="ms-2">{program.domain_regex.length}</Badge>
+                  </h5>
+                  {isUserManager && (
+                    <Button variant="outline-primary" size="sm" onClick={() => openEditModal('domain_regex')}>
+                      ✏️ Edit legacy regex
+                    </Button>
+                  )}
+                </div>
+              </Card.Header>
+              <Card.Body>
+                <p className="text-muted small mb-2">Optional advanced regex lines; matching uses structured patterns first, then these.</p>
+                <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
+                  <Table striped bordered size="sm">
+                    <tbody>
+                      {program.domain_regex.map((pattern, index) => (
+                        <tr key={index}>
+                          <td><code>{pattern}</code></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </Table>
+                </div>
+              </Card.Body>
+            </Card>
+          )}
 
           <Card className="mb-4">
             <Card.Header>
               <div className="d-flex justify-content-between align-items-center">
                 <h5 className="mb-0">
-                  🚫 Out-of-Scope Domain Patterns 
-                  {program.out_of_scope_regex && program.out_of_scope_regex.length > 0 && (
+                  Out-of-scope domain patterns
+                  {(program.out_of_scope_domains || []).length > 0 && (
                     <Badge bg="danger" className="ms-2">
-                      {program.out_of_scope_regex.length} exclusion{program.out_of_scope_regex.length !== 1 ? 's' : ''}
+                      {(program.out_of_scope_domains || []).length} exclusion{(program.out_of_scope_domains || []).length !== 1 ? 's' : ''}
                     </Badge>
                   )}
                 </h5>
                 {isUserManager && (
-                  <Button 
-                    variant="outline-primary" 
+                  <Button
+                    variant="outline-primary"
                     size="sm"
-                    onClick={() => openEditModal('out_of_scope_regex')}
+                    onClick={() => openEditModal('out_of_scope_domains')}
                   >
-                    ✏️ Edit Exclusions
+                    ✏️ Edit
                   </Button>
                 )}
               </div>
             </Card.Header>
             <Card.Body>
-              {program.out_of_scope_regex && program.out_of_scope_regex.length > 0 ? (
+              {(program.out_of_scope_domains || []).length > 0 ? (
                 <div>
-                  <p className="text-muted mb-3">
-                    These regex patterns define which domains should be excluded from scope, even if they match in-scope patterns.
+                  <p className="text-muted mb-2">
+                    Exclusions use the same pattern format as in-scope. Out-of-scope wins over in-scope.
                   </p>
-                  
-                  {/* Search Box */}
-                  <InputGroup className="mb-3">
-                    <InputGroup.Text style={{ 
-                      backgroundColor: 'var(--bs-input-bg)',
-                      color: 'var(--bs-input-color)',
-                      borderColor: 'var(--bs-border-color)'
-                    }}>
-                      🔍
-                    </InputGroup.Text>
-                    <Form.Control
-                      type="text"
-                      placeholder="Search exclusion patterns..."
-                      value={searchTerms.out_of_scope_regex}
-                      onChange={(e) => handleSearchChange('out_of_scope_regex', e.target.value)}
-                      style={{
-                        backgroundColor: 'var(--bs-input-bg)',
-                        color: 'var(--bs-input-color)',
-                        borderColor: 'var(--bs-border-color)'
-                      }}
-                    />
-                    {searchTerms.out_of_scope_regex && (
-                      <>
-                        <Button 
-                          variant="outline-secondary"
-                          onClick={() => navigateSearch('out_of_scope_regex', 'prev')}
-                          disabled={getMatchingIndices(program.out_of_scope_regex, searchTerms.out_of_scope_regex).length === 0}
-                        >
-                          ↑
-                        </Button>
-                        <Button 
-                          variant="outline-secondary"
-                          onClick={() => navigateSearch('out_of_scope_regex', 'next')}
-                          disabled={getMatchingIndices(program.out_of_scope_regex, searchTerms.out_of_scope_regex).length === 0}
-                        >
-                          ↓
-                        </Button>
-                        <Button 
-                          variant="outline-secondary" 
-                          onClick={() => handleSearchChange('out_of_scope_regex', '')}
-                        >
-                          Clear
-                        </Button>
-                      </>
-                    )}
-                  </InputGroup>
-
-                  {/* Search Results Info */}
-                  {searchTerms.out_of_scope_regex && (
-                    <div className="mb-2">
-                      <small className="text-muted">
-                        {getMatchingIndices(program.out_of_scope_regex, searchTerms.out_of_scope_regex).length} match{getMatchingIndices(program.out_of_scope_regex, searchTerms.out_of_scope_regex).length !== 1 ? 'es' : ''}
-                        {getMatchingIndices(program.out_of_scope_regex, searchTerms.out_of_scope_regex).length > 0 && (
-                          <span> • Showing {searchIndices.out_of_scope_regex + 1} of {getMatchingIndices(program.out_of_scope_regex, searchTerms.out_of_scope_regex).length}</span>
-                        )}
-                      </small>
-                    </div>
-                  )}
-
-                  {/* Scrollable Table */}
+                  <p className="text-muted mb-3 small">
+                    Syntax quick guide: `domain.com` + Wildcard=Yes matches apex + subdomains, while `*.domain.com` matches subdomains only (not apex).
+                  </p>
                   <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
                     <Table striped bordered size="sm">
                       <thead>
                         <tr>
                           <th width="60" style={getTableHeaderStyle()}>#</th>
-                          <th style={getTableHeaderStyle()}>Exclusion Pattern</th>
+                          <th style={getTableHeaderStyle()}>Pattern</th>
+                          <th width="100" style={getTableHeaderStyle()}>Wildcard</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {program.out_of_scope_regex.map((pattern, index) => {
-                          const matches = getMatchingIndices(program.out_of_scope_regex, searchTerms.out_of_scope_regex);
-                          const isHighlighted = matches.includes(index) && searchTerms.out_of_scope_regex;
-                          const isCurrentMatch = matches[searchIndices.out_of_scope_regex] === index && searchTerms.out_of_scope_regex;
-                          
-                          return (
-                            <tr 
-                              key={index}
-                              data-search-highlight={`out_of_scope_regex-${index}`}
-                              className={
-                                isCurrentMatch
-                                  ? 'search-current-match'
-                                  : isHighlighted
-                                  ? 'search-highlight-row'
-                                  : ''
-                              }
-                              style={getRowStyle(isHighlighted, isCurrentMatch)}
-                            >
-                              <td>{index + 1}</td>
-                              <td><code>{highlightText(pattern, searchTerms.out_of_scope_regex)}</code></td>
-                            </tr>
-                          );
-                        })}
+                        {(program.out_of_scope_domains || []).map((row, index) => (
+                          <tr key={index}>
+                            <td>{index + 1}</td>
+                            <td><code>{row.pattern}</code></td>
+                            <td>{row.wildcard ? 'Yes' : 'No'}</td>
+                          </tr>
+                        ))}
                       </tbody>
                     </Table>
                   </div>
                 </div>
               ) : (
                 <div className="text-center py-3">
-                  <p className="text-muted">No out-of-scope exclusion patterns configured for this program.</p>
+                  <p className="text-muted">No structured out-of-scope patterns. Use Edit, or legacy regex below.</p>
                 </div>
               )}
             </Card.Body>
           </Card>
+
+          {program.out_of_scope_regex && program.out_of_scope_regex.length > 0 && (
+            <Card className="mb-4">
+              <Card.Header>
+                <div className="d-flex justify-content-between align-items-center">
+                  <h5 className="mb-0">
+                    Legacy out-of-scope regex
+                    <Badge bg="secondary" className="ms-2">{program.out_of_scope_regex.length}</Badge>
+                  </h5>
+                  {isUserManager && (
+                    <Button variant="outline-primary" size="sm" onClick={() => openEditModal('out_of_scope_regex')}>
+                      ✏️ Edit legacy regex
+                    </Button>
+                  )}
+                </div>
+              </Card.Header>
+              <Card.Body>
+                <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
+                  <Table striped bordered size="sm">
+                    <tbody>
+                      {program.out_of_scope_regex.map((pattern, index) => (
+                        <tr key={index}>
+                          <td><code>{pattern}</code></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </Table>
+                </div>
+              </Card.Body>
+            </Card>
+          )}
 
           <Card className="mb-4">
             <Card.Header>
@@ -2772,8 +2768,10 @@ function ProgramDetail() {
       <Modal show={showEditModal} onHide={() => setShowEditModal(false)} size="lg">
         <Modal.Header closeButton>
                     <Modal.Title>
-            Edit {editType === 'domain_regex' ? 'Domain Regex Patterns' :
-                  editType === 'cidr_list' ? 'CIDR Blocks' :
+            Edit {editType === 'scope_domains' ? 'In-scope domain patterns' :
+                  editType === 'out_of_scope_domains' ? 'Out-of-scope domain patterns' :
+                  editType === 'domain_regex' ? 'Domain Regex Patterns' :
+                  editType === 'out_of_scope_regex' ? 'Out-of-scope regex (legacy)' :
                   editType === 'safe_registrar' ? 'Safe Registrars' :
                   editType === 'safe_ssl_issuer' ? 'Safe SSL Issuers' :
                   editType === 'protected_domains' ? 'Protected Domains' :
@@ -2789,8 +2787,10 @@ function ProgramDetail() {
               <strong>Manager Access Required:</strong> Only users with manager-level permissions can edit program settings.
             </Alert>
             
-            {/* Search Box for Edit Modal (only for list fields) */}
-            {!singleValueTypes.includes(editType) && (
+            {/* Search Box for Edit Modal (list fields; not structured scope rows) */}
+            {!singleValueTypes.includes(editType) &&
+              editType !== 'scope_domains' &&
+              editType !== 'out_of_scope_domains' && (
               <Form.Group className="mb-3">
                 <Form.Label>Search in current content:</Form.Label>
                 <InputGroup>
@@ -2848,15 +2848,19 @@ function ProgramDetail() {
             
             <Form.Group className="mb-3">
               <Form.Label>
-                {editType === 'domain_regex' ? 'Domain Regex Patterns' : 
-                 editType === 'cidr_list' ? 'CIDR Blocks' :
+                {editType === 'scope_domains' ? 'In-scope patterns' :
+                 editType === 'out_of_scope_domains' ? 'Out-of-scope patterns' :
+                 editType === 'domain_regex' ? 'Domain Regex Patterns' :
+                 editType === 'out_of_scope_regex' ? 'Out-of-scope regex' :
                  editType === 'safe_registrar' ? 'Safe Registrars' : 
                  editType === 'safe_ssl_issuer' ? 'Safe SSL Issuers' :
                  editType === 'protected_domains' ? 'Protected Domains' :
                  editType === 'protected_subdomain_prefixes' ? 'Protected Keywords' :
                  editType === 'recordedfuture_api_key' ? 'RecordedFuture API Key' :
                  'Phishlabs API Key'}
-                {!singleValueTypes.includes(editType) && (
+                {!singleValueTypes.includes(editType) &&
+                  editType !== 'scope_domains' &&
+                  editType !== 'out_of_scope_domains' && (
                   <small className="text-muted"> (one per line)</small>
                 )}
               </Form.Label>
@@ -2892,6 +2896,12 @@ function ProgramDetail() {
                     />
                   </Form.Group>
                 </div>
+              ) : editType === 'scope_domains' || editType === 'out_of_scope_domains' ? (
+                <ScopeDomainsEditor
+                  rows={editForm.scopeDomainRows || []}
+                  onChange={(scopeDomainRows) => setEditForm({ ...editForm, scopeDomainRows })}
+                  disabled={editLoading}
+                />
               ) : singleValueTypes.includes(editType) ? (
                 <Form.Control
                   type="text"
@@ -2914,7 +2924,7 @@ function ProgramDetail() {
                   value={editForm.newItems}
                   onChange={(e) => setEditForm({ ...editForm, newItems: e.target.value })}
                   placeholder={
-                    editType === 'domain_regex' 
+                    editType === 'domain_regex'
                       ? 'Enter regex patterns, one per line:\nexample\\.com$\n.*\\.example\\.org$'
                       : editType === 'cidr_list'
                       ? 'Enter CIDR blocks, one per line:\n192.168.1.0/24\n10.0.0.0/8'
@@ -2936,8 +2946,12 @@ function ProgramDetail() {
             </Form.Group>
 
                         <Form.Text className="text-muted">
-              {editType === 'domain_regex'
+              {editType === 'scope_domains' || editType === 'out_of_scope_domains'
+                ? 'Use hostname patterns; * is only allowed as a full label. domain.com + Wildcard=Yes includes apex + subdomains, while *.domain.com includes subdomains only (not apex).'
+                : editType === 'domain_regex'
                 ? 'Enter regular expressions that match domain names for this program'
+                : editType === 'out_of_scope_regex'
+                ? 'Legacy regex exclusions (advanced)'
                 : editType === 'cidr_list'
                 ? 'Enter CIDR notation for IP address ranges (e.g., 192.168.1.0/24)'
                 : editType === 'safe_registrar'
@@ -2963,7 +2977,7 @@ function ProgramDetail() {
                 </>
               )}
             </Form.Text>
-            {!singleValueTypes.includes(editType) && editType !== 'threatstream_credentials' && (
+              {!singleValueTypes.includes(editType) && editType !== 'threatstream_credentials' && editType !== 'scope_domains' && editType !== 'out_of_scope_domains' && (
               <Form.Group className="mb-3">
                 <Form.Check
                   type="checkbox"
@@ -2977,13 +2991,18 @@ function ProgramDetail() {
                 </Form.Text>
               </Form.Group>
             )}
+            {(editType === 'scope_domains' || editType === 'out_of_scope_domains') && (
+              <p className="text-muted small">Structured patterns always replace the full list from this editor. Tip: keep `domain.com` with Wildcard=Yes when you need to include the apex itself.</p>
+            )}
           </Modal.Body>
           <Modal.Footer>
             <Button variant="secondary" onClick={() => setShowEditModal(false)}>
               Cancel
             </Button>
             <Button variant="primary" type="submit" disabled={editLoading}>
-              {editLoading ? 'Updating...' : `Update ${editType === 'domain_regex' ? 'Patterns' :
+              {editLoading ? 'Updating...' : `Update ${editType === 'scope_domains' || editType === 'out_of_scope_domains' ? 'patterns' :
+                                                      editType === 'domain_regex' ? 'Patterns' :
+                                                      editType === 'out_of_scope_regex' ? 'regex' :
                                                       editType === 'cidr_list' ? 'CIDR Blocks' :
                                                       editType === 'safe_registrar' ? 'Registrars' :
                                                       editType === 'safe_ssl_issuer' ? 'SSL Issuers' :

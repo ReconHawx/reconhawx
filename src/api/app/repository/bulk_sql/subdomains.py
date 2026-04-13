@@ -124,6 +124,8 @@ def upsert_subdomains_chunk(program_name: str, items: List[Dict[str, Any]]) -> D
 
         domain_regex = program.domain_regex or []
         oos_regex = program.out_of_scope_regex or []
+        scope_domains = getattr(program, "scope_domains", None) or []
+        out_of_scope_domains = getattr(program, "out_of_scope_domains", None) or []
 
         prepared_map: Dict[str, Tuple[Dict[str, Any], str, str]] = {}
         for raw in items:
@@ -154,7 +156,13 @@ def upsert_subdomains_chunk(program_name: str, items: List[Dict[str, Any]]) -> D
                 )
                 continue
 
-            if not domain_in_scope(hostname, list(domain_regex), list(oos_regex)):
+            if not domain_in_scope(
+                hostname,
+                list(domain_regex),
+                list(oos_regex),
+                list(scope_domains) if scope_domains else [],
+                list(out_of_scope_domains) if out_of_scope_domains else [],
+            ):
                 out_of_scope_count += 1
                 skipped_assets.append(
                     {

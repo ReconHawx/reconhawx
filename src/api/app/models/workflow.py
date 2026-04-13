@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import List, Dict, Any, Optional, Union
+from typing import List, Dict, Any, Optional, Union, Literal
 from datetime import datetime
 
 class InputDefinition(BaseModel):
@@ -14,6 +14,10 @@ class InputDefinition(BaseModel):
     limit: Optional[int] = Field(None, description="Limit the number of items from program assets or findings")
     min_similarity_percent: Optional[float] = Field(None, description="For typosquat_domain/typosquat_apex_domain: minimum similarity % with protected domain (0-100)")
     similarity_protected_domain: Optional[str] = Field(None, description="For typosquat_domain/typosquat_apex_domain: filter by this protected domain")
+    scope_domains_filter: Optional[Literal["all", "wildcard_only", "non_wildcard_only"]] = Field(
+        "all",
+        description="For program_scope_domains: which structured scope rows to derive apex targets from",
+    )
 
 class TaskDefinition(BaseModel):
     """Task definition for workflow execution (New Format)"""

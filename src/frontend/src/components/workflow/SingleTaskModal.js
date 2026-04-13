@@ -55,6 +55,8 @@ function SingleTaskModal({ show, onHide, onSuccess }) {
   // Force execution state
   const [forceExecution, setForceExecution] = useState(false);
 
+  const [scopeDomainsFilter, setScopeDomainsFilter] = useState('all');
+
   // Available programs state
   const [availablePrograms, setAvailablePrograms] = useState([]);
   const [programsLoading, setProgramsLoading] = useState(false);
@@ -210,7 +212,8 @@ function SingleTaskModal({ show, onHide, onSuccess }) {
       };
     } else if (inputSourceType === 'program_scope_domains') {
       inputsConfig = {
-        "type": "program_scope_domains"
+        "type": "program_scope_domains",
+        "scope_domains_filter": scopeDomainsFilter || 'all'
       };
     } else if (inputSourceType === 'program_asset') {
       if (!assetType) {
@@ -554,9 +557,22 @@ function SingleTaskModal({ show, onHide, onSuccess }) {
           )}
 
           {inputSourceType === 'program_scope_domains' && (
-            <Alert variant="info" className="mb-3">
-              This will use apex domains extracted from the program&apos;s domain regex (in-scope patterns) as input. No additional configuration needed.
-            </Alert>
+            <>
+              <Alert variant="info" className="mb-3">
+                Uses apex targets from structured scope (and legacy regex when filter is &quot;all&quot;). Choose which rows contribute.
+              </Alert>
+              <Form.Group className="mb-3">
+                <Form.Label>Scope rows</Form.Label>
+                <Form.Select
+                  value={scopeDomainsFilter}
+                  onChange={(e) => setScopeDomainsFilter(e.target.value)}
+                > 
+                  <option value="all">All in-scope domains</option>
+                  <option value="wildcard_only">Wildcard domains only</option>
+                  <option value="non_wildcard_only">Non-wildcard domains only</option>
+                </Form.Select>
+              </Form.Group>
+            </>
           )}
 
           {inputSourceType === 'program_asset' && (

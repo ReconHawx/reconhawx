@@ -36,6 +36,8 @@ def upsert_apex_domains_chunk(program_name: str, items: List[Dict[str, Any]]) ->
 
         domain_regex = program.domain_regex or []
         oos_regex = program.out_of_scope_regex or []
+        scope_domains = getattr(program, "scope_domains", None) or []
+        out_of_scope_domains = getattr(program, "out_of_scope_domains", None) or []
         now_naive = datetime.now(timezone.utc).replace(tzinfo=None)
 
         dedup: Dict[str, Dict[str, Any]] = {}
@@ -72,7 +74,13 @@ def upsert_apex_domains_chunk(program_name: str, items: List[Dict[str, Any]]) ->
             item = dedup[nm]
             ex = by_name.get(nm)
             if ex is None:
-                if not domain_in_scope(nm, list(domain_regex), list(oos_regex)):
+                if not domain_in_scope(
+                    nm,
+                    list(domain_regex),
+                    list(oos_regex),
+                    list(scope_domains) if scope_domains else [],
+                    list(out_of_scope_domains) if out_of_scope_domains else [],
+                ):
                     failed_count += 1
                     skipped_assets.append(
                         {

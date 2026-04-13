@@ -94,8 +94,10 @@ class Program(Base):
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name = Column(String(255), unique=True, nullable=False, index=True)
-    domain_regex = Column(ARRAY(Text), default=[])  # Regex patterns for domain scope
-    out_of_scope_regex = Column(ARRAY(Text), default=[])  # Regex patterns for out-of-scope domains (exclusions)
+    domain_regex = Column(ARRAY(Text), default=[])  # Legacy regex patterns for domain scope
+    out_of_scope_regex = Column(ARRAY(Text), default=[])  # Legacy regex for out-of-scope domains (exclusions)
+    scope_domains = Column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))  # [{"pattern": str, "wildcard": bool}]
+    out_of_scope_domains = Column(JSONB, nullable=False, server_default=text("'[]'::jsonb"))  # same shape as scope_domains
     cidr_list = Column(ARRAY(Text), default=[])     # CIDR ranges for IP scope
     safe_registrar = Column(ARRAY(Text), default=[])  # Trusted registrars
     safe_ssl_issuer = Column(ARRAY(Text), default=[]) # Trusted SSL issuers

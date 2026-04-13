@@ -26,3 +26,23 @@ def test_no_in_scope_pattern():
 
 def test_empty_hostname():
     assert domain_in_scope("", [r".*"], []) is False
+
+
+def test_structured_in_scope_bulk_helper():
+    assert domain_in_scope(
+        "x.example.com",
+        [],
+        [],
+        [{"pattern": "*.example.com", "wildcard": True}],
+        [],
+    ) is True
+
+
+def test_structured_plus_legacy():
+    assert domain_in_scope(
+        "sub.example.com",
+        [r"^nomatch$"],
+        [],
+        [{"pattern": "example.com", "wildcard": True}],
+        [],
+    ) is True

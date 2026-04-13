@@ -4,12 +4,12 @@ import asyncio
 from datetime import datetime
 import time
 from uuid import UUID
-import re
 from sqlalchemy import desc, asc
 from db import get_db_session
 from services.protected_domain_similarity_service import ProtectedDomainSimilarityService
 from services.typosquat_auto_resolve_service import TyposquatAutoResolveService
 from utils.query_filters import ProgramAccessMixin
+from utils.scope_patterns import is_domain_in_scope_structured_and_legacy
 from models.postgres import (
     Program,
     Screenshot,
@@ -50,6 +50,8 @@ class ProgramRepository(ProgramAccessMixin):
                     name=program_data.get('name'),
                     domain_regex=program_data.get('domain_regex', []),
                     out_of_scope_regex=program_data.get('out_of_scope_regex', []),
+                    scope_domains=program_data.get('scope_domains') or [],
+                    out_of_scope_domains=program_data.get('out_of_scope_domains') or [],
                     cidr_list=program_data.get('cidr_list', []),
                     phishlabs_api_key=program_data.get('phishlabs_api_key'),
                     threatstream_api_key=program_data.get('threatstream_api_key'),
@@ -78,50 +80,19 @@ class ProgramRepository(ProgramAccessMixin):
     
     @staticmethod
     async def is_domain_in_scope(hostname: str, program_name: str) -> bool:
-        """Check if a domain is in scope for a program
-        
-        A domain is in scope if:
-        1. It matches at least one pattern in domain_regex (in-scope)
-        2. AND it does NOT match any pattern in out_of_scope_regex (exclusions)
-        
-        Out-of-scope patterns take precedence over in-scope patterns.
-        """
+        """Check if a domain is in scope for a program (structured patterns and/or legacy regex)."""
         async with get_db_session():
             try:
-                # Get program
                 program = await ProgramRepository.get_program_by_name(program_name)
                 if not program:
                     return False
-                
-                # First, check if domain matches any in-scope patterns
-                matches_in_scope = False
-                for regex_pattern in program['domain_regex']:
-                    try:
-                        if re.match(regex_pattern, hostname):
-                            matches_in_scope = True
-                            break
-                    except re.error:
-                        logger.warning(f"Invalid in-scope regex pattern: {regex_pattern}")
-                        continue
-                
-                # If doesn't match in-scope patterns, it's out of scope
-                if not matches_in_scope:
-                    return False
-                
-                # Check if domain matches any out-of-scope exclusion patterns
-                out_of_scope_patterns = program.get('out_of_scope_regex', [])
-                for regex_pattern in out_of_scope_patterns:
-                    try:
-                        if re.match(regex_pattern, hostname):
-                            logger.info(f"Domain '{hostname}' matched out-of-scope pattern '{regex_pattern}' for program '{program_name}'")
-                            return False
-                    except re.error:
-                        logger.warning(f"Invalid out-of-scope regex pattern: {regex_pattern}")
-                        continue
-                
-                # Matched in-scope and didn't match any exclusions
-                return True
-                
+                return is_domain_in_scope_structured_and_legacy(
+                    hostname,
+                    program.get("scope_domains") or [],
+                    program.get("out_of_scope_domains") or [],
+                    program.get("domain_regex") or [],
+                    program.get("out_of_scope_regex") or [],
+                )
             except Exception as e:
                 logger.error(f"Error checking domain scope: {str(e)}")
                 return False
@@ -140,6 +111,8 @@ class ProgramRepository(ProgramAccessMixin):
                     'name': program.name,
                     'domain_regex': program.domain_regex,
                     'out_of_scope_regex': program.out_of_scope_regex,
+                    'scope_domains': getattr(program, 'scope_domains', None) or [],
+                    'out_of_scope_domains': getattr(program, 'out_of_scope_domains', None) or [],
                     'cidr_list': program.cidr_list,
                     'phishlabs_api_key': program.phishlabs_api_key,
                     'threatstream_api_key': program.threatstream_api_key,
@@ -178,6 +151,8 @@ class ProgramRepository(ProgramAccessMixin):
                     'name': program.name,
                     'domain_regex': program.domain_regex,
                     'out_of_scope_regex': program.out_of_scope_regex,
+                    'scope_domains': getattr(program, 'scope_domains', None) or [],
+                    'out_of_scope_domains': getattr(program, 'out_of_scope_domains', None) or [],
                     'cidr_list': program.cidr_list,
                     'phishlabs_api_key': program.phishlabs_api_key,
                     'threatstream_api_key': program.threatstream_api_key,
@@ -266,6 +241,8 @@ class ProgramRepository(ProgramAccessMixin):
                         'name': p.name,
                         'domain_regex': p.domain_regex,
                         'out_of_scope_regex': p.out_of_scope_regex,
+                        'scope_domains': getattr(p, 'scope_domains', None) or [],
+                        'out_of_scope_domains': getattr(p, 'out_of_scope_domains', None) or [],
                         'cidr_list': p.cidr_list,
                         'safe_registrar': p.safe_registrar,
                         'safe_ssl_issuer': p.safe_ssl_issuer,
@@ -463,6 +440,9 @@ class ProgramRepository(ProgramAccessMixin):
                         "id": str(program.id),
                         "name": program.name,
                         "domain_regex": list(program.domain_regex) if program.domain_regex else [],
+                        "out_of_scope_regex": list(program.out_of_scope_regex) if program.out_of_scope_regex else [],
+                        "scope_domains": list(getattr(program, "scope_domains", None) or []),
+                        "out_of_scope_domains": list(getattr(program, "out_of_scope_domains", None) or []),
                         "cidr_list": list(program.cidr_list) if program.cidr_list else [],
                         "safe_registrar": list(program.safe_registrar) if program.safe_registrar else [],
                         "safe_ssl_issuer": list(program.safe_ssl_issuer) if program.safe_ssl_issuer else [],

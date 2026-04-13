@@ -196,6 +196,8 @@ CREATE TABLE public.programs (
     id uuid NOT NULL,
     name character varying(255) NOT NULL,
     domain_regex text[],
+    scope_domains jsonb DEFAULT '[]'::jsonb NOT NULL,
+    out_of_scope_domains jsonb DEFAULT '[]'::jsonb NOT NULL,
     cidr_list text[],
     safe_registrar text[],
     safe_ssl_issuer text[],

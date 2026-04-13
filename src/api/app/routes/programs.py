@@ -307,6 +307,22 @@ async def update_program(
                             if item not in existing_list:
                                 existing_list.append(item)
                         update_data[field] = existing_list
+            for field in ['scope_domains', 'out_of_scope_domains']:
+                if field in update_data and isinstance(update_data[field], list):
+                    existing_list = list(existing_program.get(field) or [])
+                    seen = {
+                        (d.get('pattern'), bool(d.get('wildcard')))
+                        for d in existing_list
+                        if isinstance(d, dict)
+                    }
+                    for item in update_data[field]:
+                        if not isinstance(item, dict):
+                            continue
+                        key = (item.get('pattern'), bool(item.get('wildcard')))
+                        if key not in seen:
+                            seen.add(key)
+                            existing_list.append(dict(item))
+                    update_data[field] = existing_list
         
         success = await ProgramRepository.update_program(existing_program["id"], update_data)
         
@@ -615,21 +631,23 @@ async def import_from_hackerone(
                 detail=f"No scope data found for program '{program_handle}' on HackerOne. The program may not exist or may not have any structured scope defined.",
             )
         
-        # Convert scope to regex patterns
-        logger.info(f"Converting {len(scopes)} scope items to regex patterns...")
-        in_scope_regexes, out_of_scope_regexes, summary = h1_service.convert_scope_to_regex(scopes)
-        
-        if not in_scope_regexes:
+        # Convert scope to structured patterns (legacy regex columns left empty)
+        logger.info(f"Converting {len(scopes)} HackerOne scope items to structured patterns...")
+        in_scope_sd, out_scope_sd, summary = h1_service.convert_scope_to_structured(scopes)
+
+        if not in_scope_sd:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"No valid in-scope domains found for program '{program_handle}'. The program may not have any bounty-eligible URL/WILDCARD scopes.",
             )
-        
+
         # Create program with converted scope
         program_data = {
             "name": program_name,
-            "domain_regex": in_scope_regexes,
-            "out_of_scope_regex": out_of_scope_regexes,
+            "scope_domains": in_scope_sd,
+            "out_of_scope_domains": out_scope_sd,
+            "domain_regex": [],
+            "out_of_scope_regex": [],
             "cidr_list": [],
             "safe_registrar": [],
             "safe_ssl_issuer": []
@@ -760,9 +778,11 @@ async def import_from_yeswehack(
                 detail=f"No valid in-scope domains or CIDR blocks found for program '{program_slug}'. The program may not have any web application scopes.",
             )
         
-        # Create program with converted scope
+        # Create program with converted scope (YesWeHack: structured scope empty; regex + CIDR only)
         program_create_data = {
             "name": program_name,
+            "scope_domains": [],
+            "out_of_scope_domains": [],
             "domain_regex": in_scope_regexes,
             "out_of_scope_regex": out_of_scope_regexes,
             "cidr_list": cidr_blocks,
@@ -898,21 +918,23 @@ async def import_from_intigriti(
                 detail=f"No scopes found for program '{program_handle}' on Intigriti."
             )
         
-        # Convert scopes to regex patterns and extract IP ranges
-        logger.info(f"Converting {len(scopes)} scope items to regex patterns...")
-        in_scope_regexes, out_of_scope_regexes, ip_list, summary = intigriti_service.convert_scopes_to_regex(domains_data)
-        
-        if not in_scope_regexes and not ip_list:
+        # Convert scopes to structured patterns and extract IP ranges
+        logger.info(f"Converting {len(scopes)} Intigriti scope items to structured patterns...")
+        in_scope_sd, out_scope_sd, ip_list, summary = intigriti_service.convert_scopes_to_structured(domains_data)
+
+        if not in_scope_sd and not ip_list:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"No valid in-scope domains or IP ranges found for program '{program_handle}'. All scopes may be 'Out Of Scope' or 'No Bounty'."
             )
-        
+
         # Create program with converted scope
         program_create_data = {
             "name": program_name,
-            "domain_regex": in_scope_regexes,
-            "out_of_scope_regex": out_of_scope_regexes,
+            "scope_domains": in_scope_sd,
+            "out_of_scope_domains": out_scope_sd,
+            "domain_regex": [],
+            "out_of_scope_regex": [],
             "cidr_list": ip_list,
             "safe_registrar": [],
             "safe_ssl_issuer": []
@@ -1032,21 +1054,23 @@ async def import_from_bugcrowd(
                 detail=f"No scope found for program '{request.program_code}' on Bugcrowd."
             )
         
-        # Convert scope to regex patterns and extract IP ranges
-        logger.info("Converting scope to regex patterns...")
-        in_scope_regexes, out_of_scope_regexes, ip_list, summary = bugcrowd_service.convert_targets_to_regex(scope_data)
-        
-        if not in_scope_regexes and not ip_list:
+        # Convert scope to structured patterns and extract IP ranges
+        logger.info("Converting Bugcrowd scope to structured patterns...")
+        in_scope_sd, out_scope_sd, ip_list, summary = bugcrowd_service.convert_targets_to_structured(scope_data)
+
+        if not in_scope_sd and not ip_list:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"No valid in-scope domains or IP ranges found for program '{request.program_code}'."
             )
-        
+
         # Create program with converted scope
         program_create_data = {
             "name": program_name,
-            "domain_regex": in_scope_regexes,
-            "out_of_scope_regex": out_of_scope_regexes,
+            "scope_domains": in_scope_sd,
+            "out_of_scope_domains": out_scope_sd,
+            "domain_regex": [],
+            "out_of_scope_regex": [],
             "cidr_list": ip_list,
             "safe_registrar": [],
             "safe_ssl_issuer": []
