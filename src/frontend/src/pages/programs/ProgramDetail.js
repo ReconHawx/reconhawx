@@ -990,8 +990,8 @@ function ProgramDetail() {
         <Col md={8}>
           <Tabs activeKey={activeTab} onSelect={(k) => setActiveTab(k)} className="mb-3">
             <Tab eventKey="overview" title="Overview">
-          <Card className="mb-4">
-            <Card.Header>
+          <Card className="dashboard-panel mb-4">
+            <Card.Header className="rh-card-header-table">
               <h5 className="mb-0">Program Information</h5>
             </Card.Header>
             <Card.Body>
@@ -1018,8 +1018,8 @@ function ProgramDetail() {
             </Card.Body>
           </Card>
 
-          <Card className="mb-4">
-            <Card.Header>
+          <Card className="dashboard-panel mb-4">
+            <Card.Header className="rh-card-header-table">
               <div className="d-flex justify-content-between align-items-center">
                 <h5 className="mb-0">
                   🌐 Apex Domains
@@ -1068,8 +1068,8 @@ function ProgramDetail() {
           </Card>
             </Tab>
             <Tab eventKey="scope" title="Scope">
-          <Card className="mb-4">
-            <Card.Header>
+          <Card className="dashboard-panel mb-4">
+            <Card.Header className="rh-card-header-table">
               <div className="d-flex justify-content-between align-items-center">
                 <h5 className="mb-0">
                   In-scope domain patterns
@@ -1138,8 +1138,8 @@ function ProgramDetail() {
           </Card>
 
           {program.domain_regex && program.domain_regex.length > 0 && (
-            <Card className="mb-4">
-              <Card.Header>
+            <Card className="dashboard-panel mb-4">
+              <Card.Header className="rh-card-header-table">
                 <div className="d-flex justify-content-between align-items-center">
                   <h5 className="mb-0">
                     Legacy in-scope regex
@@ -1169,8 +1169,8 @@ function ProgramDetail() {
             </Card>
           )}
 
-          <Card className="mb-4">
-            <Card.Header>
+          <Card className="dashboard-panel mb-4">
+            <Card.Header className="rh-card-header-table">
               <div className="d-flex justify-content-between align-items-center">
                 <h5 className="mb-0">
                   Out-of-scope domain patterns
@@ -1230,8 +1230,8 @@ function ProgramDetail() {
           </Card>
 
           {program.out_of_scope_regex && program.out_of_scope_regex.length > 0 && (
-            <Card className="mb-4">
-              <Card.Header>
+            <Card className="dashboard-panel mb-4">
+              <Card.Header className="rh-card-header-table">
                 <div className="d-flex justify-content-between align-items-center">
                   <h5 className="mb-0">
                     Legacy out-of-scope regex
@@ -1260,8 +1260,8 @@ function ProgramDetail() {
             </Card>
           )}
 
-          <Card className="mb-4">
-            <Card.Header>
+          <Card className="dashboard-panel mb-4">
+            <Card.Header className="rh-card-header-table">
               <div className="d-flex justify-content-between align-items-center">
                 <h5 className="mb-0">
                   CIDR Blocks 
@@ -1402,8 +1402,8 @@ function ProgramDetail() {
           </Card>
             </Tab>
             <Tab eventKey="typosquat" title="Typosquat">
-            <Card className="mb-4">
-              <Card.Header>
+            <Card className="dashboard-panel mb-4">
+              <Card.Header className="rh-card-header-table">
                 <h5 className="mb-0">Certificate transparency monitoring</h5>
               </Card.Header>
               <Card.Body>
@@ -1420,8 +1420,8 @@ function ProgramDetail() {
                 </p>
               </Card.Body>
             </Card>
-            <Card className="mb-4">
-              <Card.Header className="d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <Card className="dashboard-panel mb-4">
+              <Card.Header className="rh-card-header-table d-flex justify-content-between align-items-center flex-wrap gap-2">
                 <h5 className="mb-0">CT monitor (this program)</h5>
                 {isUserManager && (
                   <Button
@@ -1470,8 +1470,8 @@ function ProgramDetail() {
                 </Form.Group>
               </Card.Body>
             </Card>
-<Card className="mb-4">
-            <Card.Header>
+<Card className="dashboard-panel mb-4">
+            <Card.Header className="rh-card-header-table">
               <div className="d-flex justify-content-between align-items-center">
                 <h5 className="mb-0">
                   🛡️ Protected Domains
@@ -1603,8 +1603,8 @@ function ProgramDetail() {
             </Card.Body>
           </Card>
 
-          <Card className="mb-4">
-            <Card.Header>
+          <Card className="dashboard-panel mb-4">
+            <Card.Header className="rh-card-header-table">
               <div className="d-flex justify-content-between align-items-center">
                 <h5 className="mb-0">
                   Protected Keywords
@@ -1728,8 +1728,8 @@ function ProgramDetail() {
               )}
             </Card.Body>
           </Card>
-          <Card className="mb-4">
-            <Card.Header>
+          <Card className="dashboard-panel mb-4">
+            <Card.Header className="rh-card-header-table">
               <div className="d-flex justify-content-between align-items-center">
                 <h5 className="mb-0">Typosquat Filtering Settings</h5>
                 {isUserManager && (
@@ -1805,8 +1805,8 @@ function ProgramDetail() {
             </Card.Body>
           </Card>
 
-          <Card className="mb-4">
-            <Card.Header>
+          <Card className="dashboard-panel mb-4">
+            <Card.Header className="rh-card-header-table">
               <div className="d-flex justify-content-between align-items-center">
                 <h5 className="mb-0">Typosquat Auto-Resolve</h5>
                 {isUserManager && (
@@ -1859,8 +1859,8 @@ function ProgramDetail() {
             </Card.Body>
           </Card>
 
-<Card className="mb-4">
-            <Card.Header>
+<Card className="dashboard-panel mb-4">
+            <Card.Header className="rh-card-header-table">
               <div className="d-flex justify-content-between align-items-center">
                 <h5 className="mb-0">
                   Safe Registrars 
@@ -1991,8 +1991,8 @@ function ProgramDetail() {
             </Card.Body>
           </Card>
 
-          <Card className="mb-4">
-            <Card.Header>
+          <Card className="dashboard-panel mb-4">
+            <Card.Header className="rh-card-header-table">
               <div className="d-flex justify-content-between align-items-center">
                 <h5 className="mb-0">
                   Safe SSL Issuers 
@@ -2124,8 +2124,8 @@ function ProgramDetail() {
           </Card>
             </Tab>
             <Tab eventKey="ai" title="AI">
-          <Card className="mb-4">
-            <Card.Header>
+          <Card className="dashboard-panel mb-4">
+            <Card.Header className="rh-card-header-table">
               <div className="d-flex justify-content-between align-items-center">
                 <h5 className="mb-0">AI Analysis Prompts</h5>
                 {isUserManager && (
@@ -2176,8 +2176,8 @@ function ProgramDetail() {
           </Card>
             </Tab>
             <Tab eventKey="notifications" title="Notifications & Handlers">
-          <Card className="mb-4">
-            <Card.Header>
+          <Card className="dashboard-panel mb-4">
+            <Card.Header className="rh-card-header-table">
               <div className="d-flex justify-content-between align-items-center">
                 <h5 className="mb-0">Notifications</h5>
                 {isUserManager && (
@@ -2467,8 +2467,8 @@ function ProgramDetail() {
             </Modal.Footer>
           </Modal>
 
-          <Card className="mb-4">
-            <Card.Header>
+          <Card className="dashboard-panel mb-4">
+            <Card.Header className="rh-card-header-table">
               <div className="d-flex justify-content-between align-items-center">
                 <h5 className="mb-0">Event Handlers</h5>
               </div>
@@ -2568,8 +2568,8 @@ function ProgramDetail() {
           </Card>
             </Tab>
             <Tab eventKey="integrations" title="Integrations">
-          <Card className="mb-4">
-            <Card.Header>
+          <Card className="dashboard-panel mb-4">
+            <Card.Header className="rh-card-header-table">
               <div className="d-flex justify-content-between align-items-center">
                 <h5 className="mb-0">
                   Phishlabs API Key {program.phishlabs_api_key ? (
@@ -2618,8 +2618,8 @@ function ProgramDetail() {
             </Card.Body>
           </Card>
 
-          <Card className="mb-4">
-            <Card.Header>
+          <Card className="dashboard-panel mb-4">
+            <Card.Header className="rh-card-header-table">
               <div className="d-flex justify-content-between align-items-center">
                 <h5 className="mb-0">
                   RecordedFuture API Key {program.recordedfuture_api_key ? (
@@ -2668,8 +2668,8 @@ function ProgramDetail() {
             </Card.Body>
           </Card>
               
-          <Card className="mb-4">
-            <Card.Header>
+          <Card className="dashboard-panel mb-4">
+            <Card.Header className="rh-card-header-table">
               <div className="d-flex justify-content-between align-items-center">
                 <h5 className="mb-0">
                   Threatstream API Configuration
@@ -2731,8 +2731,8 @@ function ProgramDetail() {
           </Card>
             </Tab>
             <Tab eventKey="wordlists" title="Wordlists">
-          <Card className="mb-4">
-            <Card.Header>
+          <Card className="dashboard-panel mb-4">
+            <Card.Header className="rh-card-header-table">
               <div className="d-flex justify-content-between align-items-center">
                 <h5 className="mb-0">
                   Program Wordlists 
@@ -2774,8 +2774,8 @@ function ProgramDetail() {
         </Col>
 
         <Col md={4}>
-          <Card>
-            <Card.Header>
+          <Card className="dashboard-panel mb-4">
+            <Card.Header className="rh-card-header-table">
               <h5 className="mb-0">Program Data</h5>
             </Card.Header>
             <Card.Body>
