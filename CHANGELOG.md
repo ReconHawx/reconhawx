@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.16.0](https://github.com/ReconHawx/reconhawx/compare/v0.15.0...v0.16.0) (2026-04-13)
+
+
+### Features
+
+* **programs:** structured scope domains and workflow scope targets ([760ebc6](https://github.com/ReconHawx/reconhawx/commit/760ebc62e6098d8103f05e02387e77ebbc9a4bdc))
+* **typosquat:** whitelist apex domains and auto-dismiss matching findings ([e657d6c](https://github.com/ReconHawx/reconhawx/commit/e657d6c589002f2e1cc033cd7191aaa012591949))
+
+
+### Bug Fixes
+
+* **frontend:** align Bootstrap body text utilities with theme colors ([333fd4c](https://github.com/ReconHawx/reconhawx/commit/333fd4caffa69460bafbde250e4bbe27e18a61c8))
+
 ## [0.15.0](https://github.com/ReconHawx/reconhawx/compare/v0.14.0...v0.15.0) (2026-04-11)
 
 
