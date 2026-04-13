@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.1](https://github.com/ReconHawx/reconhawx/compare/v0.16.0...v0.16.1) (2026-04-13)
+
+
+### Bug Fixes
+
+* **api:** assign whitelist auto-dismissals to the editor who added the apex ([d65aa07](https://github.com/ReconHawx/reconhawx/commit/d65aa07ef997ff3329b7c2e51bf9729bf311a0ff))
+
 ## [0.16.0](https://github.com/ReconHawx/reconhawx/compare/v0.15.0...v0.16.0) (2026-04-13)
 
 
