@@ -544,6 +544,10 @@ Programs can configure **protected domains** - the legitimate domains they own. 
 
 Typosquat insertion **filtering** (`TyposquatFilteringService` check 2) uses the same `best_similarity_typo_to_protected` logic so gates stay consistent with stored scores.
 
+**Whitelisted apex domains (false-positive control):** Program JSONB `typosquat_filtering_settings.whitelisted_apex_domains` is a list of registrable apex strings (normalized on save via `TyposquatFilteringService.normalize_whitelisted_apex_domains`). When **typosquat filtering is enabled**, if the candidate FQDN’s registrable apex (same `_extract_apex_domain` as Check 0) matches any whitelist entry, insertion is rejected with reason `whitelisted_apex:<apex>`. All subdomains under that apex share the same registrable apex, so they are discarded too. This is independent of similarity to protected domains (legitimate third-party sites that look like typos). Check 0 (exact apex match to **protected** or **in-scope asset** apex) still applies first.
+
+**After whitelist updates:** When a program `PUT` adds new normalized apex entries (compared to the previous `whitelisted_apex_domains`), `TyposquatFindingsRepository.dismiss_typosquat_domains_for_whitelisted_apexes` dismisses existing non-terminal typosquat findings whose `typosquat_apex_domains.apex_domain` matches any added apex (case-insensitive). Each finding gets `status=dismissed`, an appended notes line, RF `comment` on the dismiss path, closure `closed_by_user_id` when the editor is a real user (not internal-service), and an action log when `closed_by_user_id` is set.
+
 **Similarity Output:**
 ```json
 {

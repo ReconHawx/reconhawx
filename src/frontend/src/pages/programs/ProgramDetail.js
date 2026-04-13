@@ -104,7 +104,8 @@ function ProgramDetail() {
   const [savingCtMonitorProgram, setSavingCtMonitorProgram] = useState(false);
   const [typosquatFiltering, setTyposquatFiltering] = useState({
     enabled: false,
-    min_similarity_percent: ''
+    min_similarity_percent: '',
+    whitelisted_apex_domains_text: ''
   });
   // AI prompt settings
   const [aiPrompts, setAiPrompts] = useState({ typosquat: '' });
@@ -233,9 +234,12 @@ function ProgramDetail() {
       min_similarity_percent: settings.min_similarity_percent ?? ''
     });
     const filterSettings = program?.typosquat_filtering_settings || {};
+    const wl = filterSettings.whitelisted_apex_domains;
+    const wlText = Array.isArray(wl) && wl.length ? wl.join('\n') : '';
     setTyposquatFiltering({
       enabled: filterSettings.enabled ?? false,
-      min_similarity_percent: filterSettings.min_similarity_percent ?? ''
+      min_similarity_percent: filterSettings.min_similarity_percent ?? '',
+      whitelisted_apex_domains_text: wlText
     });
     const prompts = (program?.ai_analysis_settings?.prompts) || {};
     setAiPrompts({ typosquat: prompts.typosquat || '' });
@@ -319,7 +323,14 @@ function ProgramDetail() {
       setSavingFiltering(true);
       setError('');
       const minSim = typosquatFiltering.min_similarity_percent === '' ? null : Number(typosquatFiltering.min_similarity_percent);
-      const payload = { enabled: typosquatFiltering.enabled };
+      const whitelistLines = (typosquatFiltering.whitelisted_apex_domains_text || '')
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean);
+      const payload = {
+        enabled: typosquatFiltering.enabled,
+        whitelisted_apex_domains: whitelistLines
+      };
       if (minSim != null) payload.min_similarity_percent = minSim;
       await programAPI.update(programName, { typosquat_filtering_settings: payload }, true);
       setSuccess('Typosquat filtering settings updated');
@@ -1736,6 +1747,7 @@ function ProgramDetail() {
             <Card.Body>
               <p className="text-muted mb-3">
                 When enabled, new typosquat domains must meet the minimum similarity threshold with a protected domain OR contain a protected keyword to be inserted.
+                Domains under a whitelisted apex are always discarded.
                 Domains that don&apos;t pass are discarded (RecordedFuture alerts are auto-resolved).
               </p>
               <Row>
@@ -1770,6 +1782,26 @@ function ProgramDetail() {
                   </Form.Group>
                 </Col>
               </Row>
+              <Form.Group className="mb-0">
+                <Form.Label>Whitelisted apex domains</Form.Label>
+                <Form.Control
+                  as="textarea"
+                  rows={4}
+                  placeholder={'One registrable apex per line, e.g.\npartner.com\naffiliate-brand.org'}
+                  value={typosquatFiltering.whitelisted_apex_domains_text}
+                  onChange={(e) =>
+                    setTyposquatFiltering({
+                      ...typosquatFiltering,
+                      whitelisted_apex_domains_text: e.target.value
+                    })
+                  }
+                  disabled={!isUserManager}
+                />
+                <Form.Text className="text-muted">
+                  When filtering is enabled, new typosquat candidates whose registrable apex matches a line here are discarded (including all subdomains under that apex).
+                  When you save newly added apex lines, existing open findings on those apexes are auto-dismissed with an explanatory note.
+                </Form.Text>
+              </Form.Group>
             </Card.Body>
           </Card>
 
