@@ -44,6 +44,12 @@
   border-color: var(--handle-color) !important;
 }
 
+/* Keep typed handle colors in dark theme too (beats scoped dark handle rule) */
+[data-theme="dark"] .workflow-node-handle-invisible.workflow-node-handle-colored {
+  background: var(--handle-color) !important;
+  border-color: var(--handle-color) !important;
+}
+
 
 /* Single-handle node styling */
 .react-flow__handle {

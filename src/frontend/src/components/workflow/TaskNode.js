@@ -59,7 +59,10 @@ const TaskNode = ({ data, selected, id }) => {
         type="target"
         position={Position.Left}
         id="input"
-        className="workflow-node-handle-invisible"
+        className="workflow-node-handle-invisible workflow-node-handle-colored"
+        style={{
+          '--handle-color': getDataTypeColor(taskType?.inputs?.[0] || 'default'),
+        }}
       />
 
       <div>
@@ -168,7 +171,10 @@ const TaskNode = ({ data, selected, id }) => {
           type="source"
           position={Position.Right}
           id="output"
-          className="workflow-node-handle-invisible"
+          className="workflow-node-handle-invisible workflow-node-handle-colored"
+          style={{
+            '--handle-color': getDataTypeColor('default'),
+          }}
         />
       )}
     </div>
