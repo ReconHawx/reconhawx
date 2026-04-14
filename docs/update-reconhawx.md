@@ -130,6 +130,7 @@ Set `KUBECONFIG` and context; use `RECONHAWX_NS` if you deploy to a non-default 
 
 ## Related documentation
 
+- [ReconHawx User Getting Started](user/getting-started.md) — core UI workflows for daily usage.
 - [Installation on Kubernetes](install-on-kubernetes.md) — first-time install.
 - [Installation on Minikube](install-on-minikube.md) — Minikube install.
 - [Uninstalling ReconHawx](uninstall-reconhawx.md) — remove from cluster or Minikube.

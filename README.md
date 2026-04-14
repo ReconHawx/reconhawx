@@ -33,6 +33,9 @@ Install and upgrade use manifests and scripts from a [**Source code** archive on
 
 - **[`docs/install-on-minikube.md`](docs/install-on-minikube.md)** — Install on Minikube
 - **[`docs/install-on-kubernetes.md`](docs/install-on-kubernetes.md)** — Install on a Kubernetes cluster
+- **[`docs/user/getting-started.md`](docs/user/getting-started.md)** — Start using ReconHawx in the UI
+- **[`docs/user/programs.md`](docs/user/programs.md)** — Full Programs settings guide for users
+- **[`docs/user/workflows.md`](docs/user/workflows.md)** — Build and run workflows, including input types
 - **[`docs/update-reconhawx.md`](docs/update-reconhawx.md)** — Upgrade an existing install
 - **[`docs/uninstall-reconhawx.md`](docs/uninstall-reconhawx.md)** — Remove ReconHawx from the cluster
 

@@ -71,6 +71,11 @@ Use **[`docs/update-reconhawx.md`](update-reconhawx.md)** (`./update-kubernetes.
 
 See **[`docs/uninstall-reconhawx.md`](uninstall-reconhawx.md)**.
 
+## Related documentation
+
+- [ReconHawx User Getting Started](user/getting-started.md) — first actions in the UI after login.
+- [Upgrading ReconHawx on Kubernetes](update-reconhawx.md) — upgrade an existing installation.
+
 ## Manual install (advanced)
 
 Use this only if you are not using **`install-kubernetes.sh`**, typically from an **extracted release** directory so `kubernetes/base` paths match this documentation. For more context (Quick Start, image pins, Kueue overview), see **[`kubernetes/README.md`](../kubernetes/README.md)**. After the steps below, run **[`reconhawx-kueue-quota-sync.py`](../reconhawx-kueue-quota-sync.py)** so **ClusterQueue** quotas match labeled nodes (requires **`python3`**), unless you set quotas yourself.

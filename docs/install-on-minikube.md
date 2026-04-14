@@ -50,6 +50,11 @@ Default profile is **`reconhawx`**. Override with **`MINIKUBE_PROFILE=my-profile
 
 See **[`docs/uninstall-reconhawx.md`](uninstall-reconhawx.md)** (script or **`minikube delete -p …`**).
 
+## Related documentation
+
+- [ReconHawx User Getting Started](user/getting-started.md) — first actions in the UI after login.
+- [Upgrading ReconHawx on Kubernetes](update-reconhawx.md) — upgrade an existing installation.
+
 ## Manual install (advanced)
 
 Use this only if you are not using **`install-minikube.sh`**, typically from an **extracted release** directory so `kubernetes/base` paths match this documentation. Replace **`reconhawx`** with your Minikube profile name if different. After the steps below, run **[`reconhawx-kueue-quota-sync.py`](../reconhawx-kueue-quota-sync.py)** with **`python3`** unless you set ClusterQueues manually. For manifest context, see **[`kubernetes/README.md`](../kubernetes/README.md)**.

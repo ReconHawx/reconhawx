@@ -49,4 +49,5 @@ If the profile runs **other** workloads, use **`./uninstall-kubernetes.sh`** wit
 
 ## Related documentation
 
+- **[`docs/user/getting-started.md`](user/getting-started.md)** — user onboarding and first workflow steps.
 - **[`docs/update-reconhawx.md`](update-reconhawx.md)** — upgrades (not uninstall).
