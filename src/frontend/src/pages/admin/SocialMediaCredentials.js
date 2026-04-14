@@ -142,7 +142,7 @@ export function SocialMediaCredentialsInner({ embedded = false }) {
 
   return (
     <Outer {...outerProps} className={embedded ? '' : 'mt-4'}>
-      <Card>
+      <Card className="rh-elevated-card">
         <Card.Header>
           <Row className="align-items-center">
             <Col>

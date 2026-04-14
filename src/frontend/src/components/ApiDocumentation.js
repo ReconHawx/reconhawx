@@ -170,7 +170,7 @@ queryNucleiFindings('example-program', 'new').then(data => console.log(data));`
   ];
 
   return (
-    <Card className="mt-3">
+    <Card className="rh-elevated-card mt-3">
       <Card.Header className="d-flex justify-content-between align-items-center">
         <h6>📖 API Documentation</h6>
         <Button 

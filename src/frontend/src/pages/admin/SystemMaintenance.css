@@ -1,9 +1,9 @@
 /* SystemMaintenance page — drain panel and JSON blocks follow ThemeContext (data-theme). */
 
-/* Elevated section cards — same shadow + borderless treatment as Dashboard (.dashboard-panel in index.css). */
+/* Elevated section cards — same shadow + borderless treatment as `.rh-elevated-card` in index.css. */
 .system-maintenance-page .maintenance-section-card.card {
   border: none !important;
-  box-shadow: var(--rh-dashboard-panel-shadow);
+  box-shadow: var(--rh-elevated-card-shadow);
 }
 
 .system-maintenance-page .maintenance-section-card.card .card-header {

@@ -248,7 +248,7 @@ function ExternalLinks() {
       {/* Results */}
       <Row>
         <Col>
-          <Card>
+          <Card className="rh-elevated-card">
             <Card.Header className="d-flex justify-content-between align-items-center">
               <div className="d-flex align-items-center ms-auto">
                 <Button variant="link" size="sm" className="me-2 p-0" onClick={() => {

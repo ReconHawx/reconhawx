@@ -135,7 +135,7 @@ function SystemStatus() {
 
           {error && <Alert variant="danger">{error}</Alert>}
 
-          <Card>
+          <Card className="rh-elevated-card">
             <Card.Body className="p-0">
               <Table striped hover responsive className="mb-0">
                 <thead>

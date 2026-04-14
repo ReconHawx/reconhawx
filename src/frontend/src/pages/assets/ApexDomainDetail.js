@@ -221,7 +221,7 @@ function ApexDomainDetail() {
 
       <Row>
         <Col md={6}>
-          <Card className="dashboard-panel mb-4">
+          <Card className="rh-elevated-card mb-4">
             <Card.Header>
               <h5 className="mb-0">📋 Basic Information</h5>
             </Card.Header>
@@ -263,7 +263,7 @@ function ApexDomainDetail() {
         </Col>
 
         <Col md={6}>
-          <Card className="dashboard-panel mb-4">
+          <Card className="rh-elevated-card mb-4">
             <Card.Header>
               <h5 className="mb-0">🌐 DNS Information</h5>
             </Card.Header>
@@ -315,7 +315,7 @@ function ApexDomainDetail() {
         apexDomain.whois_checked_at) && (
         <Row>
           <Col>
-            <Card className="dashboard-panel mb-4">
+            <Card className="rh-elevated-card mb-4">
               <Card.Header>
                 <h5 className="mb-0">📋 WHOIS Information</h5>
               </Card.Header>
@@ -443,7 +443,7 @@ function ApexDomainDetail() {
       {/* Related Assets */}
       <Row>
         <Col>
-          <Card className="dashboard-panel mb-4">
+          <Card className="rh-elevated-card mb-4">
             <Card.Header>
               <h5 className="mb-0">🔗 Related Assets</h5>
             </Card.Header>
@@ -470,7 +470,6 @@ function ApexDomainDetail() {
             currentNotes={apexDomain.notes || ''}
             apiUpdateFunction={apexDomainAPI.updateNotes}
             onNotesUpdate={handleNotesUpdate}
-            cardClassName="dashboard-panel"
           />
         </Col>
       </Row>
@@ -478,7 +477,7 @@ function ApexDomainDetail() {
       {/* Full Apex Domain JSON */}
       <Row>
         <Col>
-          <Card className="dashboard-panel mb-4">
+          <Card className="rh-elevated-card mb-4">
             <Card.Header className="d-flex justify-content-between align-items-center">
               <h6 className="mb-0">Full Apex Domain (JSON)</h6>
               <div>

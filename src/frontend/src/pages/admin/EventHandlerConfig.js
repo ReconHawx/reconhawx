@@ -140,7 +140,7 @@ export function EventHandlerConfigInner({ embedded = false }) {
       {error && <Alert variant="danger" onClose={() => setError('')} dismissible>{error}</Alert>}
       {success && <Alert variant="success" onClose={() => setSuccess('')} dismissible>{success}</Alert>}
 
-      <Card className="mb-4">
+      <Card className="rh-elevated-card mb-4">
         <Card.Header>
           <span>System handlers ({systemHandlers.length})</span>
         </Card.Header>
@@ -173,7 +173,7 @@ export function EventHandlerConfigInner({ embedded = false }) {
         </Card.Body>
       </Card>
 
-      <Card className="mb-4">
+      <Card className="rh-elevated-card mb-4">
         <Card.Header className="d-flex justify-content-between align-items-center">
           <span>Global handlers ({handlers.length})</span>
           <div>

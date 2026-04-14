@@ -327,7 +327,7 @@ function Technologies() {
       <Container fluid className="p-4">
         <Row>
           <Col className="text-center">
-            <Card className="mx-auto" style={{ maxWidth: '500px' }}>
+            <Card className="rh-elevated-card mx-auto" style={{ maxWidth: '500px' }}>
               <Card.Body>
                 <h5>🔄 Loading Technologies</h5>
                 <Spinner animation="border" role="status" className="mb-3">

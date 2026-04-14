@@ -204,7 +204,7 @@ export function JobManagementInner({ embedded = false }) {
     <Outer {...outerProps} className={embedded ? '' : 'mt-4'}>
       <Row>
         <Col>
-          <Card>
+          <Card className="rh-elevated-card">
             <Card.Header className="d-flex justify-content-between align-items-center">
               <h4 className="mb-0">{embedded ? 'Job monitoring' : 'Job Management'}</h4>
               <div className="d-flex align-items-center gap-3">

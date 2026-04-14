@@ -123,7 +123,7 @@ function ConditionEditor({ condition, onChange, onRemove }) {
   const update = (key, value) => onChange({ ...condition, [key]: value });
 
   return (
-    <Card className="mb-2">
+    <Card className="rh-elevated-card mb-2">
       <Card.Body className="py-2">
         <Row className="align-items-center g-2">
           <Col md="auto">
@@ -216,7 +216,7 @@ function ActionEditor({ action, onChange, onRemove, eventType }) {
   const update = (key, value) => onChange({ ...action, [key]: value });
 
   return (
-    <Card className="mb-3">
+    <Card className="rh-elevated-card mb-3">
       <Card.Header className="py-2 d-flex justify-content-between align-items-center">
         <Badge bg="primary">{type.replace(/_/g, ' ')}</Badge>
         <Button variant="outline-danger" size="sm" onClick={onRemove}>Remove</Button>
@@ -370,7 +370,7 @@ export default function EventHandlerForm({ handler, onChange }) {
 
   return (
     <Form>
-      <Card className="mb-3">
+      <Card className="rh-elevated-card mb-3">
         <Card.Header>Basic Info</Card.Header>
         <Card.Body>
           <Row className="g-2">
@@ -409,7 +409,7 @@ export default function EventHandlerForm({ handler, onChange }) {
         </Card.Body>
       </Card>
 
-      <Card className="mb-3">
+      <Card className="rh-elevated-card mb-3">
         <Card.Header className="d-flex justify-content-between align-items-center">
           <span>Conditions</span>
           <Button variant="outline-primary" size="sm" onClick={addCondition}>+ Add Condition</Button>
@@ -434,7 +434,7 @@ export default function EventHandlerForm({ handler, onChange }) {
         </Card.Body>
       </Card>
 
-      <Card className="mb-3">
+      <Card className="rh-elevated-card mb-3">
         <Card.Header className="d-flex justify-content-between align-items-center">
           <span>Actions</span>
           <Button variant="outline-primary" size="sm" onClick={addAction}>+ Add Action</Button>

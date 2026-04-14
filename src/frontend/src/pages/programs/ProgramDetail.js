@@ -990,7 +990,7 @@ function ProgramDetail() {
         <Col md={8}>
           <Tabs activeKey={activeTab} onSelect={(k) => setActiveTab(k)} className="mb-3">
             <Tab eventKey="overview" title="Overview">
-          <Card className="dashboard-panel mb-4">
+          <Card className="rh-elevated-card mb-4">
             <Card.Header className="rh-card-header-table">
               <h5 className="mb-0">Program Information</h5>
             </Card.Header>
@@ -1018,7 +1018,7 @@ function ProgramDetail() {
             </Card.Body>
           </Card>
 
-          <Card className="dashboard-panel mb-4">
+          <Card className="rh-elevated-card mb-4">
             <Card.Header className="rh-card-header-table">
               <div className="d-flex justify-content-between align-items-center">
                 <h5 className="mb-0">
@@ -1068,7 +1068,7 @@ function ProgramDetail() {
           </Card>
             </Tab>
             <Tab eventKey="scope" title="Scope">
-          <Card className="dashboard-panel mb-4">
+          <Card className="rh-elevated-card mb-4">
             <Card.Header className="rh-card-header-table">
               <div className="d-flex justify-content-between align-items-center">
                 <h5 className="mb-0">
@@ -1138,7 +1138,7 @@ function ProgramDetail() {
           </Card>
 
           {program.domain_regex && program.domain_regex.length > 0 && (
-            <Card className="dashboard-panel mb-4">
+            <Card className="rh-elevated-card mb-4">
               <Card.Header className="rh-card-header-table">
                 <div className="d-flex justify-content-between align-items-center">
                   <h5 className="mb-0">
@@ -1169,7 +1169,7 @@ function ProgramDetail() {
             </Card>
           )}
 
-          <Card className="dashboard-panel mb-4">
+          <Card className="rh-elevated-card mb-4">
             <Card.Header className="rh-card-header-table">
               <div className="d-flex justify-content-between align-items-center">
                 <h5 className="mb-0">
@@ -1230,7 +1230,7 @@ function ProgramDetail() {
           </Card>
 
           {program.out_of_scope_regex && program.out_of_scope_regex.length > 0 && (
-            <Card className="dashboard-panel mb-4">
+            <Card className="rh-elevated-card mb-4">
               <Card.Header className="rh-card-header-table">
                 <div className="d-flex justify-content-between align-items-center">
                   <h5 className="mb-0">
@@ -1260,7 +1260,7 @@ function ProgramDetail() {
             </Card>
           )}
 
-          <Card className="dashboard-panel mb-4">
+          <Card className="rh-elevated-card mb-4">
             <Card.Header className="rh-card-header-table">
               <div className="d-flex justify-content-between align-items-center">
                 <h5 className="mb-0">
@@ -1402,7 +1402,7 @@ function ProgramDetail() {
           </Card>
             </Tab>
             <Tab eventKey="typosquat" title="Typosquat">
-            <Card className="dashboard-panel mb-4">
+            <Card className="rh-elevated-card mb-4">
               <Card.Header className="rh-card-header-table">
                 <h5 className="mb-0">Certificate transparency monitoring</h5>
               </Card.Header>
@@ -1420,7 +1420,7 @@ function ProgramDetail() {
                 </p>
               </Card.Body>
             </Card>
-            <Card className="dashboard-panel mb-4">
+            <Card className="rh-elevated-card mb-4">
               <Card.Header className="rh-card-header-table d-flex justify-content-between align-items-center flex-wrap gap-2">
                 <h5 className="mb-0">CT monitor (this program)</h5>
                 {isUserManager && (
@@ -1470,7 +1470,7 @@ function ProgramDetail() {
                 </Form.Group>
               </Card.Body>
             </Card>
-<Card className="dashboard-panel mb-4">
+<Card className="rh-elevated-card mb-4">
             <Card.Header className="rh-card-header-table">
               <div className="d-flex justify-content-between align-items-center">
                 <h5 className="mb-0">
@@ -1603,7 +1603,7 @@ function ProgramDetail() {
             </Card.Body>
           </Card>
 
-          <Card className="dashboard-panel mb-4">
+          <Card className="rh-elevated-card mb-4">
             <Card.Header className="rh-card-header-table">
               <div className="d-flex justify-content-between align-items-center">
                 <h5 className="mb-0">
@@ -1728,7 +1728,7 @@ function ProgramDetail() {
               )}
             </Card.Body>
           </Card>
-          <Card className="dashboard-panel mb-4">
+          <Card className="rh-elevated-card mb-4">
             <Card.Header className="rh-card-header-table">
               <div className="d-flex justify-content-between align-items-center">
                 <h5 className="mb-0">Typosquat Filtering Settings</h5>
@@ -1805,7 +1805,7 @@ function ProgramDetail() {
             </Card.Body>
           </Card>
 
-          <Card className="dashboard-panel mb-4">
+          <Card className="rh-elevated-card mb-4">
             <Card.Header className="rh-card-header-table">
               <div className="d-flex justify-content-between align-items-center">
                 <h5 className="mb-0">Typosquat Auto-Resolve</h5>
@@ -1859,7 +1859,7 @@ function ProgramDetail() {
             </Card.Body>
           </Card>
 
-<Card className="dashboard-panel mb-4">
+<Card className="rh-elevated-card mb-4">
             <Card.Header className="rh-card-header-table">
               <div className="d-flex justify-content-between align-items-center">
                 <h5 className="mb-0">
@@ -1991,7 +1991,7 @@ function ProgramDetail() {
             </Card.Body>
           </Card>
 
-          <Card className="dashboard-panel mb-4">
+          <Card className="rh-elevated-card mb-4">
             <Card.Header className="rh-card-header-table">
               <div className="d-flex justify-content-between align-items-center">
                 <h5 className="mb-0">
@@ -2124,7 +2124,7 @@ function ProgramDetail() {
           </Card>
             </Tab>
             <Tab eventKey="ai" title="AI">
-          <Card className="dashboard-panel mb-4">
+          <Card className="rh-elevated-card mb-4">
             <Card.Header className="rh-card-header-table">
               <div className="d-flex justify-content-between align-items-center">
                 <h5 className="mb-0">AI Analysis Prompts</h5>
@@ -2176,7 +2176,7 @@ function ProgramDetail() {
           </Card>
             </Tab>
             <Tab eventKey="notifications" title="Notifications & Handlers">
-          <Card className="dashboard-panel mb-4">
+          <Card className="rh-elevated-card mb-4">
             <Card.Header className="rh-card-header-table">
               <div className="d-flex justify-content-between align-items-center">
                 <h5 className="mb-0">Notifications</h5>
@@ -2467,7 +2467,7 @@ function ProgramDetail() {
             </Modal.Footer>
           </Modal>
 
-          <Card className="dashboard-panel mb-4">
+          <Card className="rh-elevated-card mb-4">
             <Card.Header className="rh-card-header-table">
               <div className="d-flex justify-content-between align-items-center">
                 <h5 className="mb-0">Event Handlers</h5>
@@ -2568,7 +2568,7 @@ function ProgramDetail() {
           </Card>
             </Tab>
             <Tab eventKey="integrations" title="Integrations">
-          <Card className="dashboard-panel mb-4">
+          <Card className="rh-elevated-card mb-4">
             <Card.Header className="rh-card-header-table">
               <div className="d-flex justify-content-between align-items-center">
                 <h5 className="mb-0">
@@ -2618,7 +2618,7 @@ function ProgramDetail() {
             </Card.Body>
           </Card>
 
-          <Card className="dashboard-panel mb-4">
+          <Card className="rh-elevated-card mb-4">
             <Card.Header className="rh-card-header-table">
               <div className="d-flex justify-content-between align-items-center">
                 <h5 className="mb-0">
@@ -2668,7 +2668,7 @@ function ProgramDetail() {
             </Card.Body>
           </Card>
               
-          <Card className="dashboard-panel mb-4">
+          <Card className="rh-elevated-card mb-4">
             <Card.Header className="rh-card-header-table">
               <div className="d-flex justify-content-between align-items-center">
                 <h5 className="mb-0">
@@ -2731,7 +2731,7 @@ function ProgramDetail() {
           </Card>
             </Tab>
             <Tab eventKey="wordlists" title="Wordlists">
-          <Card className="dashboard-panel mb-4">
+          <Card className="rh-elevated-card mb-4">
             <Card.Header className="rh-card-header-table">
               <div className="d-flex justify-content-between align-items-center">
                 <h5 className="mb-0">
@@ -2774,7 +2774,7 @@ function ProgramDetail() {
         </Col>
 
         <Col md={4}>
-          <Card className="dashboard-panel mb-4">
+          <Card className="rh-elevated-card mb-4">
             <Card.Header className="rh-card-header-table">
               <h5 className="mb-0">Program Data</h5>
             </Card.Header>

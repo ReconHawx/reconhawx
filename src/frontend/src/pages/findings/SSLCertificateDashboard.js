@@ -716,8 +716,8 @@ const SSLCertificateDashboard = () => {
       )}
 
       {/* Quick Navigation */}
-      <Card className="border-primary mb-4">
-        <Card.Header className="bg-primary">
+      <Card className="rh-elevated-card border-primary mb-4">
+        <Card.Header className="rh-card-header-table">
           <h5 className="mb-0">⚡ Quick Actions</h5>
         </Card.Header>
         <Card.Body>
@@ -759,7 +759,7 @@ const SSLCertificateDashboard = () => {
       {/* Security Overview Cards */}
       <Row className="mb-4">
         <Col md={3}>
-          <Card className={`border-${getSecurityScoreColor(calculateSecurityScore())} text-center h-100`}>
+          <Card className={`rh-elevated-card border-${getSecurityScoreColor(calculateSecurityScore())} text-center h-100`}>
             <Card.Body>
               <h2 className={`text-${getSecurityScoreColor(calculateSecurityScore())} mb-1`}>
                 {calculateSecurityScore()}%
@@ -770,7 +770,7 @@ const SSLCertificateDashboard = () => {
           </Card>
         </Col>
         <Col md={3}>
-          <Card className="border-primary text-center h-100">
+          <Card className="rh-elevated-card border-primary text-center h-100">
             <Card.Body>
               <h2 className="text-primary mb-1">
                 {Object.keys(summary.tlsVersions).length}
@@ -785,7 +785,7 @@ const SSLCertificateDashboard = () => {
           </Card>
         </Col>
         <Col md={3}>
-          <Card className="border-warning text-center h-100">
+          <Card className="rh-elevated-card border-warning text-center h-100">
             <Card.Body>
               <h2 className="text-warning mb-1">
                 {Object.values(summary.deprecatedProtocols).reduce((a, b) => a + b, 0)}
@@ -797,7 +797,7 @@ const SSLCertificateDashboard = () => {
           </Card>
         </Col>
         <Col md={3}>
-          <Card className="border-success text-center h-100">
+          <Card className="rh-elevated-card border-success text-center h-100">
             <Card.Body>
               <h2 className="text-success mb-1">
                 {Object.keys(summary.hostBreakdown).length.toLocaleString()}
@@ -812,8 +812,8 @@ const SSLCertificateDashboard = () => {
       {/* TLS Version Analysis & Critical Issues */}
       <Row className="mb-4">
         <Col md={6}>
-          <Card className="h-100 border-primary">
-            <Card.Header className="bg-primary">
+          <Card className="rh-elevated-card h-100 border-primary">
+            <Card.Header className="rh-card-header-table">
               <h5 className="mb-0">🔒 TLS Version Distribution</h5>
             </Card.Header>
             <Card.Body>
@@ -864,8 +864,8 @@ const SSLCertificateDashboard = () => {
         </Col>
 
         <Col md={6}>
-          <Card className="h-100 border-danger">
-            <Card.Header className="bg-danger">
+          <Card className="rh-elevated-card h-100 border-danger">
+            <Card.Header className="rh-card-header-table">
               <h5 className="mb-0">⚠️ Critical Security Issues</h5>
             </Card.Header>
             <Card.Body>
@@ -916,11 +916,11 @@ const SSLCertificateDashboard = () => {
         </Col>
       </Row>
 
-      Cipher Analysis & Security Recommendations
+      <h6 className="mb-3 text-muted">Cipher Analysis & Security Recommendations</h6>
       <Row className="mb-4">
         <Col md={6}>
-          <Card className="h-100 border-info">
-            <Card.Header className="bg-info">
+          <Card className="rh-elevated-card h-100 border-info">
+            <Card.Header className="rh-card-header-table">
               <h5 className="mb-0">🔐 Cipher Suite Analysis</h5>
             </Card.Header>
             <Card.Body>
@@ -1001,8 +1001,8 @@ const SSLCertificateDashboard = () => {
         </Col>
 
         <Col md={6}>
-          <Card className="h-100 border-success">
-            <Card.Header className="bg-success">
+          <Card className="rh-elevated-card h-100 border-success">
+            <Card.Header className="rh-card-header-table">
               <h5 className="mb-0">📜 Certificate Assets</h5>
             </Card.Header>
             <Card.Body>
@@ -1104,8 +1104,8 @@ const SSLCertificateDashboard = () => {
       {/* Certificate Intelligence & Wildcard Analysis */}
       <Row className="mb-4">
         <Col md={6}>
-          <Card className="h-100 border-success">
-            <Card.Header className="bg-success">
+          <Card className="rh-elevated-card h-100 border-success">
+            <Card.Header className="rh-card-header-table">
               <h5 className="mb-0">🏛️ Certificate Authorities</h5>
             </Card.Header>
             <Card.Body>
@@ -1160,8 +1160,8 @@ const SSLCertificateDashboard = () => {
         </Col>
 
         <Col md={6}>
-          <Card className="h-100 border-secondary">
-            <Card.Header className="bg-secondary">
+          <Card className="rh-elevated-card h-100 border-secondary">
+            <Card.Header className="rh-card-header-table">
               <h5 className="mb-0">🌟 Wildcard Certificates</h5>
             </Card.Header>
             <Card.Body>
@@ -1228,8 +1228,8 @@ const SSLCertificateDashboard = () => {
       </Row>
 
       {/* High Priority Security Checks */}
-      <Card className="mb-4 border-success">
-        <Card.Header className="bg-success">
+      <Card className="rh-elevated-card mb-4 border-success">
+        <Card.Header className="rh-card-header-table">
           <h5 className="mb-0">🔍 Security Assessment Results</h5>
         </Card.Header>
         <Card.Body>
@@ -1258,7 +1258,7 @@ const SSLCertificateDashboard = () => {
 
               return (
                 <Col md={4} key={templateId} className="mb-3">
-                  <Card className={`border-${priorityColors[template.priority]} h-100`}>
+                  <Card className={`rh-elevated-card border-${priorityColors[template.priority]} h-100`}>
                     <Card.Body className="text-center">
                       <div className="d-flex justify-content-between align-items-start mb-2">
                         <div className="fs-3">{template.icon}</div>
@@ -1281,11 +1281,12 @@ const SSLCertificateDashboard = () => {
       </Card>
 
       {/* Critical SSL/TLS Security Findings */}
-      <Card className="mb-4 border-danger">
-        <Card.Header className="bg-danger d-flex justify-content-end align-items-center">
+      <Card className="rh-elevated-card mb-4 border-danger">
+        <Card.Header className="rh-card-header-table d-flex justify-content-between align-items-center flex-wrap gap-2">
+          <h5 className="mb-0">Critical SSL/TLS Security Findings</h5>
           <Link
             to={`/findings/nuclei${programParam}&finding_type=ssl`}
-            className="btn btn-sm btn-outline-light"
+            className="btn btn-sm btn-outline-primary"
           >
             View All Findings →
           </Link>

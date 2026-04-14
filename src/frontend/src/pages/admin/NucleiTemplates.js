@@ -365,7 +365,7 @@ function NucleiTemplates() {
       </Row>
 
       {/* Help Section */}
-      <Card className="mb-3">
+      <Card className="rh-elevated-card mb-3">
         <Card.Header>
           <h5 className="mb-0">💡 Template Format</h5>
         </Card.Header>
@@ -410,7 +410,7 @@ http:
       )}
 
       {/* Search and Filters */}
-      <Card className="mb-3">
+      <Card className="rh-elevated-card mb-3">
         <Card.Body>
           <Form onSubmit={handleSearch}>
             <Row>

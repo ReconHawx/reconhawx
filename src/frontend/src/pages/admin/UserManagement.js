@@ -319,7 +319,7 @@ function UserManagement() {
     <Container fluid className="mt-4">
       <Row>
         <Col>
-          <Card>
+          <Card className="rh-elevated-card">
             <Card.Header className="d-flex justify-content-between align-items-center">
               <h4>👥 User Management</h4>
               <Button 

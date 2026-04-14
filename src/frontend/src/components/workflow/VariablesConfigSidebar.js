@@ -34,7 +34,7 @@ function VariablesConfigSidebar({
           </Alert>
 
           {editingVariable ? (
-            <Card className="mb-3">
+            <Card className="rh-elevated-card mb-3">
               <Card.Header className="py-2">
                 <small>{editingVariable.id.startsWith('new_') ? 'Add Variable' : `Edit: ${editingVariable.name}`}</small>
               </Card.Header>

@@ -1086,7 +1086,7 @@ const ScheduledJobDetail = () => {
 
           {/* Edit Form */}
           {isEditing && editFormData && (
-            <Card className="mt-3">
+            <Card className="rh-elevated-card mt-3">
               <Card.Header>
                 <h5>✏️ Edit Scheduled Job</h5>
               </Card.Header>
@@ -1580,7 +1580,7 @@ const ScheduledJobDetail = () => {
             </Card.Body>
           </Card>
 
-          <Card className="mt-3">
+          <Card className="rh-elevated-card mt-3">
             <Card.Header>
               <h5>Quick Stats</h5>
             </Card.Header>

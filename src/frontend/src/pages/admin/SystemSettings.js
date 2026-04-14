@@ -332,7 +332,7 @@ function SystemSettings() {
     const hasTimeoutInTaskParams = Boolean(cfg?.params && Object.prototype.hasOwnProperty.call(cfg.params, 'timeout'));
     const hasChunkInTaskParams = Boolean(cfg?.params && Object.prototype.hasOwnProperty.call(cfg.params, 'chunk_size'));
     return (
-      <Card className="mt-3">
+      <Card className="rh-elevated-card mt-3">
         <Card.Header className="py-2">Execution timing</Card.Header>
         <Card.Body>
           <Form.Group className="mb-3">
@@ -993,7 +993,7 @@ function SystemSettings() {
             className="mb-3"
           >
             <Tab eventKey="recon" title="Recon task parameters">
-              <Card className="mb-4">
+              <Card className="rh-elevated-card mb-4">
                 <Card.Header className="d-flex justify-content-between align-items-center flex-wrap gap-2">
                   <h5 className="mb-0">Recon task parameters</h5>
                   <Button variant="primary" size="sm" onClick={openCreateModal}>
@@ -1091,7 +1091,7 @@ function SystemSettings() {
             </Tab>
 
             <Tab eventKey="aws" title="AWS credentials">
-              <Card className="mb-4">
+              <Card className="rh-elevated-card mb-4">
                 <Card.Header className="d-flex justify-content-between align-items-center flex-wrap gap-2">
                   <h5 className="mb-0">AWS credentials</h5>
                   <Button variant="primary" size="sm" onClick={openAwsCreateModal}>
@@ -1171,7 +1171,7 @@ function SystemSettings() {
             </Tab>
 
             <Tab eventKey="workflow" title="Workflow settings">
-              <Card className="mb-4">
+              <Card className="rh-elevated-card mb-4">
                 <Card.Header className="d-flex justify-content-between align-items-center flex-wrap gap-2">
                   <h5 className="mb-0">Workflow Kubernetes</h5>
                   <div className="d-flex flex-wrap gap-2">
@@ -1391,7 +1391,7 @@ function SystemSettings() {
             </Tab>
 
             <Tab eventKey="ctmonitor" title="CT monitor">
-              <Card className="mb-4">
+              <Card className="rh-elevated-card mb-4">
                 <Card.Header className="d-flex justify-content-between align-items-center flex-wrap gap-2">
                   <h5 className="mb-0">CT monitor runtime</h5>
                   <div>
@@ -1509,7 +1509,7 @@ function SystemSettings() {
             </Tab>
 
             <Tab eventKey="ai" title="AI settings">
-              <Card className="mb-4">
+              <Card className="rh-elevated-card mb-4">
                 <Card.Header className="d-flex justify-content-between align-items-center flex-wrap gap-2">
                   <h5 className="mb-0">AI settings</h5>
                   <div>
@@ -1551,7 +1551,7 @@ function SystemSettings() {
                     </div>
                   ) : (
                     <>
-                      <Card className="mb-4 border-secondary">
+                      <Card className="rh-elevated-card mb-4 border-secondary">
                         <Card.Header>
                           <h6 className="mb-0">Ollama connection</h6>
                         </Card.Header>

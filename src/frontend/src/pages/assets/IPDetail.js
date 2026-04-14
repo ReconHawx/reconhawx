@@ -225,7 +225,7 @@ function IPDetail() {
 
       <Row>
         <Col md={6}>
-          <Card className="dashboard-panel mb-4">
+          <Card className="rh-elevated-card mb-4">
             <Card.Header>
               <h5 className="mb-0">📋 Basic Information</h5>
             </Card.Header>
@@ -271,7 +271,7 @@ function IPDetail() {
         </Col>
 
         <Col md={6}>
-          <Card className="dashboard-panel mb-4">
+          <Card className="rh-elevated-card mb-4">
             <Card.Header>
               <h5 className="mb-0">🌐 DNS Information</h5>
             </Card.Header>
@@ -300,7 +300,7 @@ function IPDetail() {
       {/* Related Subdomains Section */}
       <Row>
         <Col>
-          <Card className="dashboard-panel mb-4">
+          <Card className="rh-elevated-card mb-4">
             <Card.Header>
               <h5 className="mb-0">🔗 Related Subdomains</h5>
             </Card.Header>
@@ -398,7 +398,6 @@ function IPDetail() {
             currentNotes={ip.notes || ''}
             apiUpdateFunction={ipAPI.updateNotes}
             onNotesUpdate={handleNotesUpdate}
-            cardClassName="dashboard-panel"
           />
         </Col>
       </Row>
@@ -406,7 +405,7 @@ function IPDetail() {
       {/* Full IP JSON */}
       <Row>
         <Col>
-          <Card className="dashboard-panel mb-4">
+          <Card className="rh-elevated-card mb-4">
             <Card.Header className="d-flex justify-content-between align-items-center">
               <h6 className="mb-0">Full IP (JSON)</h6>
               <div>

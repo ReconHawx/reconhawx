@@ -427,7 +427,7 @@ export function WorkflowMonitoringPanel({ embedded = false }) {
         <Modal.Body>
           <p>Are you sure you want to stop this workflow?</p>
                      {workflowToStop && (
-             <div className="card border">
+             <div className="card rh-elevated-card border">
                <div className="card-body">
                  <strong>Workflow:</strong> {workflowToStop.workflow_name}<br />
                  <strong>Program:</strong> {workflowToStop.program_name}<br />

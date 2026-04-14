@@ -58,7 +58,7 @@ function InputConfigSidebar({
           </Alert>
 
           {editingInput ? (
-            <Card className="mb-3">
+            <Card className="rh-elevated-card mb-3">
               <Card.Header className="py-2">
                 <small>{editingInput.id.startsWith('new_') ? 'Add Input' : `Edit: ${editingInput.name}`}</small>
               </Card.Header>

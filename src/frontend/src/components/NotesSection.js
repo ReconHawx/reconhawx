@@ -7,7 +7,7 @@ const NotesSection = ({
   currentNotes = '',
   apiUpdateFunction,
   onNotesUpdate = null,
-  cardClassName = '',
+  cardClassName = 'rh-elevated-card',
 }) => {
   const [notes, setNotes] = useState(currentNotes);
   const [originalNotes, setOriginalNotes] = useState(currentNotes);

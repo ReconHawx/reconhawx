@@ -22,6 +22,14 @@ The UI is **Bootstrap 5 + react-bootstrap**, not MUI or Tailwind. Theme switchin
 5. **SVG / canvas / chart strokes** where you need a JS object: import **[`chartTheme.js`](../../src/frontend/src/utils/chartTheme.js)** or follow the same `var(--bs-*)` strings as inline SVG attributes (supported in modern browsers).
 6. **Workflow canvas nodes (React Flow):** Use **`workflowNodeTheme.js`** shared tokens and **`var(--bs-*)`** in inline `style` gradients — avoid `isDark ? '#…' : '#…'` for layout chrome.
 7. **Card `Card.Header`:** **Section title** on an elevated card → optional **`rh-card-header-table`** (matches `thead` band). **Toolbar** above a table (filters, Total, Export) → **default** header only—see utility row below.
+8. **Primary content sections (most pages):** put **`rh-elevated-card`** on the root `Card` (or `className="card rh-elevated-card"` on a `div`) so the block gets borderless chrome + **`--rh-elevated-card-shadow`**. This is the default “section panel” look across the app (not limited to `/dashboard`). See **Elevated section cards** below.
+
+## Elevated section cards (`.rh-elevated-card`)
+
+- **What it is:** A utility class defined in [`index.css`](../../src/frontend/src/index.css) for `.card.rh-elevated-card`: removes the default card outline and applies a theme-aware layered shadow (`--rh-elevated-card-shadow` in `:root` and `[data-theme="dark"]`).
+- **When to use:** Wrap major page sections (detail pages, admin tables, list-in-card layouts, notes, workflow sidebars, etc.) unless you intentionally want a flat inset block or a special shell (e.g. workflow canvas `workflow-builder-card-shell`, terminal-style `TyposquatActionLogs`, or **`maintenance-section-card`** on System Maintenance).
+- **Companion token:** `--rh-elevated-card-shadow` — use this in custom CSS when you need the same elevation without duplicating shadow values (e.g. workflow builder CSS already references it).
+- **History:** This class was formerly named `dashboard-panel`; it was renamed to reflect app-wide use. Do not reintroduce the old name.
 
 ## Token reference (most-used) and card-header utility
 
@@ -43,14 +51,15 @@ The UI is **Bootstrap 5 + react-bootstrap**, not MUI or Tailwind. Theme switchin
 | `--rh-highlight-bg` | Soft “info” chip / highlight background |
 | `--rh-mark-bg`, `--rh-mark-color` | Search / text mark highlights |
 | `--rh-overlay-scrim`, `--rh-shadow-color` | Sidebars, overlays, soft elevation |
-| `--rh-dashboard-panel-shadow` | Dashboard cards (`.dashboard-panel`) and workflow builder section panels — borderless, same layered shadow in light/dark |
+| `--rh-elevated-card-shadow` | Layered shadow for **`.rh-elevated-card`** section panels and any CSS that should match the same elevation (e.g. workflow builder) — values set per theme in `index.css` |
 | `--rh-code-bg`, `--rh-code-color` | Inline code where pre tokens differ |
 | `--rh-table-border-color` | Table **row** lines (and list-group); stronger in light — no inset “frame” around tables |
 | `--rh-table-header-bg` | `thead` band — set **explicit hex per theme** in `:root` / `[data-theme="dark"]`; do **not** define on `:root` as only `var(--bs-secondary-bg)` (it resolves with light `--bs-secondary-bg` and that **computed** value inherits into dark, gray-washing headers) |
 
 | Utility class | Use |
 |---------------|-----|
-| **`rh-card-header-table`** (on `Card.Header`) | **`index.css`:** same background, bottom border, and text as **`.table thead th` / `td`** (`--rh-table-header-bg`, `--rh-table-border-color`, `--bs-body-color`). Use for **named section titles** on cards (e.g. Dashboard panels, System maintenance sections). **Do not** put it on **filter / action toolbars** above a data table (Total / Reset / Export / Import rows)—those stay the **default** `Card.Header` (`--bs-card-bg`) so they don’t look like a second `thead`. List pages: **one** table header row in `<thead>` only. |
+| **`rh-elevated-card`** (on `Card` / `div.card`) | **`index.css`:** borderless card + section shadow (`--rh-elevated-card-shadow`). Default wrapper for **page section** panels (detail pages, lists, admin, notes, etc.). Combine with Bootstrap spacing/utility classes (`mb-4`, `h-100`, `border-*` for semantic intent where rims are neutralized). |
+| **`rh-card-header-table`** (on `Card.Header`) | **`index.css`:** same background, bottom border, and text as **`.table thead th` / `td`** (`--rh-table-header-bg`, `--rh-table-border-color`, `--bs-body-color`). Use for **named section titles** on cards (e.g. program detail sections, System maintenance). **Do not** put it on **filter / action toolbars** above a data table (Total / Reset / Export / Import rows)—those stay the **default** `Card.Header` (`--bs-card-bg`) so they don’t look like a second `thead`. List pages: **one** table header row in `<thead>` only. |
 
 ## Palette summary (index.css)
 
@@ -58,9 +67,9 @@ Light (`:root`): body `#edf1f7`; card `#f7f9fc`; thead `#dce3ef` (`--rh-table-he
 
 Dark (`[data-theme="dark"]`): body `#121d32`; card `#1c2d4a`; table surface `#18243d`; thead band `#223651` (`--rh-table-header-bg`); elevated `#233451`; `--rh-table-border-color` for row lines; card rim cyan ~`0.4` alpha; muted text `#9abdd0`; neon `--bs-primary` / `--bs-info` for fills and dark-nav chrome.
 
-Semantic **outlined cards** (`.card.border-*`): **light + dark** use one rim — `var(--bs-card-border-color)` (markup keeps `border-primary` / `border-danger` / … without rainbow rims). **Dashboard** uses `.dashboard-panel` instead of `border-*`: **borderless** with a soft **shadow** (light: `var(--rh-shadow-color)` stack; dark: deeper neutral shadow so panels lift off `#121d32`). Plain section headers use `border-bottom: var(--bs-border-color)`; **`rh-card-header-table`** overrides that bottom edge to **`var(--rh-table-border-color)`** so the title strip aligns with real table heads.
+Semantic **outlined cards** (`.card.border-*`): **light + dark** use one rim — `var(--bs-card-border-color)` (markup keeps `border-primary` / `border-danger` / … without rainbow rims). **Section panels** use `.rh-elevated-card` for the default shell: **borderless** with **`--rh-elevated-card-shadow`** (light: `var(--rh-shadow-color)` stack; dark: deeper neutral shadow so panels lift off `#121d32`). Plain section headers use `border-bottom: var(--bs-border-color)`; **`rh-card-header-table`** overrides that bottom edge to **`var(--rh-table-border-color)`** so the title strip aligns with real table heads.
 
-**System maintenance** elevated cards (`.system-maintenance-page .maintenance-section-card`) mirror dashboard shadow; **`index.css`** + **`SystemMaintenance.css`** ensure `rh-card-header-table` dividers use **`--rh-table-border-color`** (not the generic card-header rule there).
+**System maintenance** elevated cards (`.system-maintenance-page .maintenance-section-card`) mirror the same shadow token; **`index.css`** + **`SystemMaintenance.css`** ensure `rh-card-header-table` dividers use **`--rh-table-border-color`** (not the generic card-header rule there).
 
 **Dark-mode links:** do not style every `a` with `!important` — that overrides `Button as={Link}` (`a.btn`); scope prose links with `:not(.btn)` (and other Bootstrap chrome) or set `a.btn` back to `var(--bs-btn-color)` / `var(--bs-btn-hover-color)`.
 
@@ -108,6 +117,7 @@ el.style.color = '';
 2. On **asset / findings list** pages: toolbar `Card.Header` should **not** use `rh-card-header-table`; only `<thead>` should use the table-header band.
 3. Hit **workflow builder**, **screenshots** viewers, **admin** tables, and any page you touched.
 4. If you added **SVG**: confirm strokes/fills in both themes (try `var(--bs-*)` first).
+5. For new or changed **`rh-elevated-card`** sections: confirm borderless panel + shadow reads correctly in light and dark (not a flat outlined box unless intentional).
 
 ## Related utilities
 

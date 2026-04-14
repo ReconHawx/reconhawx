@@ -208,7 +208,7 @@ function ServiceDetail() {
 
       <Row>
         <Col>
-          <Card className="dashboard-panel mb-4">
+          <Card className="rh-elevated-card mb-4">
             <Card.Header>
               <h5 className="mb-0">📋 Service Information</h5>
             </Card.Header>
@@ -294,7 +294,7 @@ function ServiceDetail() {
       {service.banner && (
         <Row>
           <Col>
-            <Card className="dashboard-panel mb-4">
+            <Card className="rh-elevated-card mb-4">
               <Card.Header>
                 <h5 className="mb-0">📄 Service Banner</h5>
               </Card.Header>
@@ -309,7 +309,7 @@ function ServiceDetail() {
       {service.nerva_metadata && Object.keys(service.nerva_metadata).length > 0 && (
         <Row>
           <Col>
-            <Card className="dashboard-panel mb-4">
+            <Card className="rh-elevated-card mb-4">
               <Card.Header>
                 <h5 className="mb-0">🔬 Nerva Fingerprint Metadata</h5>
               </Card.Header>
@@ -396,7 +396,6 @@ function ServiceDetail() {
             currentNotes={service.notes || ''}
             apiUpdateFunction={serviceAPI.updateNotes}
             onNotesUpdate={handleNotesUpdate}
-            cardClassName="dashboard-panel"
           />
         </Col>
       </Row>
@@ -404,7 +403,7 @@ function ServiceDetail() {
       {/* Full Service JSON */}
       <Row>
         <Col>
-          <Card className="dashboard-panel mb-4">
+          <Card className="rh-elevated-card mb-4">
             <Card.Header className="d-flex justify-content-between align-items-center">
               <h6 className="mb-0">Full Service (JSON)</h6>
               <div>

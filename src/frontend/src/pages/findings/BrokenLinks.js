@@ -183,7 +183,7 @@ function BrokenLinks() {
           </p>
         </Col>
       </Row>
-      <Card>
+      <Card className="rh-elevated-card">
         {selectedItems.size > 0 && (
           <Card.Header className="d-flex justify-content-end align-items-center">
             <Button

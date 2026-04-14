@@ -198,7 +198,7 @@ export function CTMonitorInner({ embedded = false }) {
       {/* Status and Control Card */}
       <Row className="mb-4">
         <Col>
-          <Card>
+          <Card className="rh-elevated-card">
             <Card.Header className="d-flex justify-content-between align-items-center">
               <h5 className="mb-0">Service Status</h5>
               <Badge bg={status?.status === 'running' ? 'success' : 'secondary'}>
@@ -273,7 +273,7 @@ export function CTMonitorInner({ embedded = false }) {
       {status && (
         <Row className="mb-4">
           <Col>
-            <Card>
+            <Card className="rh-elevated-card">
               <Card.Header>
                 <h5 className="mb-0">Programs with CT monitoring enabled</h5>
               </Card.Header>
@@ -343,7 +343,7 @@ export function CTMonitorInner({ embedded = false }) {
           {/* Processing Statistics */}
           <Row className="mb-4">
             <Col>
-              <Card>
+              <Card className="rh-elevated-card">
                 <Card.Header>
                   <h5 className="mb-0">Processing Statistics</h5>
                 </Card.Header>
@@ -424,7 +424,7 @@ export function CTMonitorInner({ embedded = false }) {
           {/* Domain Protection */}
           <Row className="mb-4">
             <Col>
-              <Card>
+              <Card className="rh-elevated-card">
                 <Card.Header>
                   <h5 className="mb-0">Domain Protection</h5>
                 </Card.Header>
@@ -464,7 +464,7 @@ export function CTMonitorInner({ embedded = false }) {
           {status.ct_logs && status.ct_logs.length > 0 && (
             <Row className="mb-4">
               <Col>
-                <Card>
+                <Card className="rh-elevated-card">
                   <Card.Header>
                     <h5 className="mb-0">CT Log Connections</h5>
                   </Card.Header>

@@ -487,7 +487,7 @@ function TyposquatUrls() {
 
       <Row>
         <Col>
-          <Card>
+          <Card className="rh-elevated-card">
             <Card.Header className="d-flex justify-content-between align-items-center">
               <div className="d-flex align-items-center ms-auto">
                 <Badge bg="secondary" className="me-3">Total: {totalItems}</Badge>

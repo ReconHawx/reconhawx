@@ -540,7 +540,7 @@ function TyposquatScreenshots() {
     <Row>
       {screenshots.map((screenshot) => (
         <Col md={4} lg={3} key={screenshot.file_id} className="mb-4">
-          <Card>
+          <Card className="rh-elevated-card">
             <div style={{ position: 'relative' }}>
               <LazyImage
                 src={getScreenshotUrl(screenshot, 400)}
@@ -871,7 +871,7 @@ function TyposquatScreenshots() {
 
       <Row>
         <Col>
-          <Card>
+          <Card className="rh-elevated-card">
             <Card.Header className="d-flex justify-content-between align-items-center">
               <div className="d-flex align-items-center ms-auto">
                 <Badge bg="secondary" className="me-3">Total: {totalItems}</Badge>

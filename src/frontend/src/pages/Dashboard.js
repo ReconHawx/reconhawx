@@ -253,7 +253,7 @@ function Dashboard() {
       </div>
 
       {/* Quick Links */}
-      <Card className="dashboard-panel mb-4">
+      <Card className="rh-elevated-card mb-4">
         <Card.Header className="rh-card-header-table">
           <h5 className="mb-0">⚡ Quick Links</h5>
         </Card.Header>
@@ -368,7 +368,7 @@ function Dashboard() {
       )}
 
       {/* Key Metrics Overview */}
-      <Card className="dashboard-panel mb-4">
+      <Card className="rh-elevated-card mb-4">
         <Card.Header className="rh-card-header-table">
           <h4 className="mb-0">📊 Key Metrics</h4>
         </Card.Header>
@@ -451,7 +451,7 @@ function Dashboard() {
       {/* Security Findings Overview */}
       <Row className="mb-4">
         <Col md={6}>
-          <Card className="dashboard-panel h-100">
+          <Card className="rh-elevated-card h-100">
             <Card.Header className="rh-card-header-table d-flex justify-content-between align-items-center">
               <h5 className="mb-0">🎯 Nuclei Findings</h5>
               <Link to={`/findings/nuclei${programParam}`} className="text-decoration-none">
@@ -489,7 +489,7 @@ function Dashboard() {
         </Col>
 
                   <Col md={6}>
-            <Card className="dashboard-panel h-100">
+            <Card className="rh-elevated-card h-100">
               <Card.Header className="rh-card-header-table d-flex justify-content-between align-items-center">
                 <h5 className="mb-0">🔍 Typosquat Findings</h5>
                 <Link to={`/findings/typosquat${programParam}`} className="text-decoration-none">
@@ -533,7 +533,7 @@ function Dashboard() {
         <Row>
           {/* Recent Subdomains */}
           <Col md={4} className="mb-3">
-            <Card className="dashboard-panel h-100">
+            <Card className="rh-elevated-card h-100">
               <Card.Header className="rh-card-header-table d-flex justify-content-between align-items-center">
                 <h6 className="mb-0">🌐 Recent Subdomains</h6>
                 <Link to={`/assets/subdomains${programParam}`} className="text-decoration-none">
@@ -573,7 +573,7 @@ function Dashboard() {
 
           {/* Recent URLs */}
           <Col md={4} className="mb-3">
-            <Card className="dashboard-panel h-100">
+            <Card className="rh-elevated-card h-100">
               <Card.Header className="rh-card-header-table d-flex justify-content-between align-items-center">
                 <h6 className="mb-0">🔗 Recent URLs</h6>
                 <Link to={`/assets/urls${programParam}`} className="text-decoration-none">
@@ -613,7 +613,7 @@ function Dashboard() {
 
           {/* Recent IP Addresses */}
           <Col md={4} className="mb-3">
-            <Card className="dashboard-panel h-100">
+            <Card className="rh-elevated-card h-100">
               <Card.Header className="rh-card-header-table d-flex justify-content-between align-items-center">
                 <h6 className="mb-0">🖥️ Recent IP Addresses</h6>
                 <Link to={`/assets/ips${programParam}`} className="text-decoration-none">
@@ -654,7 +654,7 @@ function Dashboard() {
         <Row>
           {/* Recent Nuclei Findings */}
           <Col md={6} className="mb-3">
-            <Card className="dashboard-panel h-100">
+            <Card className="rh-elevated-card h-100">
               <Card.Header className="rh-card-header-table d-flex justify-content-between align-items-center">
                 <h6 className="mb-0">🎯 Recent Nuclei Findings</h6>
                 <Link to={`/findings/nuclei${programParam}`} className="text-decoration-none">
@@ -692,7 +692,7 @@ function Dashboard() {
 
           {/* Recent Typosquat Findings */}
           <Col md={6} className="mb-3">
-            <Card className="dashboard-panel h-100">
+            <Card className="rh-elevated-card h-100">
               <Card.Header className="rh-card-header-table d-flex justify-content-between align-items-center">
                 <h6 className="mb-0">🔍 Recent Typosquat Findings</h6>
                 <Link to={`/findings/typosquat${programParam}`} className="text-decoration-none">

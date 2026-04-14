@@ -125,7 +125,7 @@ function BrokenLinkDetail() {
 
   return (
     <Container fluid className="mt-4">
-      <Card className="dashboard-panel mb-4">
+      <Card className="rh-elevated-card mb-4">
         <Card.Header>
           <Row className="align-items-center">
             <Col>
@@ -235,7 +235,7 @@ function BrokenLinkDetail() {
             </Col>
             <Col md={6}>
               {finding.response_data && (
-                <Card className="dashboard-panel mb-3">
+                <Card className="rh-elevated-card mb-3">
                   <Card.Header>Response Data</Card.Header>
                   <Card.Body>
                     <pre style={{ maxHeight: '400px', overflow: 'auto', backgroundColor: 'var(--bs-tertiary-bg)', padding: '10px' }}>
@@ -258,7 +258,6 @@ function BrokenLinkDetail() {
                   return { status: 'success' };
                 }}
                 onNotesUpdate={handleNotesSaved}
-                cardClassName="dashboard-panel"
               />
             </Col>
           </Row>

@@ -153,7 +153,7 @@
   background: var(--bs-card-bg);
   backdrop-filter: blur(10px);
   border: none;
-  box-shadow: var(--rh-dashboard-panel-shadow);
+  box-shadow: var(--rh-elevated-card-shadow);
 }
 
 /* Minimap styling */
@@ -161,7 +161,7 @@
   background: var(--bs-tertiary-bg);
   border: none;
   border-radius: 8px;
-  box-shadow: var(--rh-dashboard-panel-shadow);
+  box-shadow: var(--rh-elevated-card-shadow);
 }
 
 .react-flow__minimap-mask {
@@ -175,7 +175,7 @@
   background: var(--bs-card-bg);
   border: none;
   border-radius: 8px;
-  box-shadow: var(--rh-dashboard-panel-shadow);
+  box-shadow: var(--rh-elevated-card-shadow);
 }
 
 .react-flow__controls-button {
@@ -312,7 +312,7 @@
 /* Create/edit page: elevated card without theme cyan outline */
 .workflow-builder-card-shell.card {
   border: none !important;
-  box-shadow: var(--rh-dashboard-panel-shadow);
+  box-shadow: var(--rh-elevated-card-shadow);
 }
 
 /* Main React Flow region — same elevation as dashboard cards (no inset edge line) */
@@ -321,7 +321,7 @@
   min-height: 0;
   border-radius: 12px;
   background: var(--bs-card-bg);
-  box-shadow: var(--rh-dashboard-panel-shadow);
+  box-shadow: var(--rh-elevated-card-shadow);
   display: flex;
   flex-direction: column;
   flex: 1 1 0;
@@ -354,7 +354,7 @@
   background: linear-gradient(135deg, var(--bs-secondary-bg) 0%, var(--bs-tertiary-bg) 100%);
   border: none;
   border-radius: 12px;
-  box-shadow: var(--rh-dashboard-panel-shadow);
+  box-shadow: var(--rh-elevated-card-shadow);
   position: relative;
   align-self: stretch;
   height: 100%;
@@ -367,7 +367,7 @@
 
 [data-theme="dark"] .task-library-sidebar {
   background: linear-gradient(180deg, var(--bs-card-bg) 0%, var(--bs-pre-bg) 100%);
-  box-shadow: var(--rh-dashboard-panel-shadow);
+  box-shadow: var(--rh-elevated-card-shadow);
 }
 
 .task-library-header {
@@ -510,7 +510,7 @@
 .workflow-info-section {
   background: var(--bs-body-bg);
   border: none;
-  box-shadow: var(--rh-dashboard-panel-shadow);
+  box-shadow: var(--rh-elevated-card-shadow);
 }
 
 .workflow-info-section:not(.workflow-builder-metadata-bar) {
@@ -518,7 +518,7 @@
 }
 
 [data-theme="dark"] .workflow-info-section {
-  box-shadow: var(--rh-dashboard-panel-shadow);
+  box-shadow: var(--rh-elevated-card-shadow);
 }
 
 /* Workflow action panel (Configure Inputs, etc.) - theme-aware */
@@ -528,11 +528,11 @@
   margin-left: 10px;
   background: var(--bs-card-bg);
   border: none;
-  box-shadow: var(--rh-dashboard-panel-shadow);
+  box-shadow: var(--rh-elevated-card-shadow);
 }
 
 [data-theme="dark"] .workflow-action-panel {
-  box-shadow: var(--rh-dashboard-panel-shadow);
+  box-shadow: var(--rh-elevated-card-shadow);
 }
 
 /* Dark mode support - uses data-theme for app theme toggle */
@@ -544,13 +544,13 @@
   background: rgba(28, 45, 74, 0.94);
   color: var(--bs-body-color);
   border: none;
-  box-shadow: var(--rh-dashboard-panel-shadow);
+  box-shadow: var(--rh-elevated-card-shadow);
 }
 
 [data-theme="dark"] .react-flow__controls {
   background: rgba(28, 45, 74, 0.94);
   border: none;
-  box-shadow: var(--rh-dashboard-panel-shadow);
+  box-shadow: var(--rh-elevated-card-shadow);
 }
 
 [data-theme="dark"] .react-flow__controls-button:hover {
@@ -560,7 +560,7 @@
 [data-theme="dark"] .react-flow__minimap {
   background: var(--bs-card-bg);
   border: none;
-  box-shadow: var(--rh-dashboard-panel-shadow);
+  box-shadow: var(--rh-elevated-card-shadow);
 }
 
 [data-theme="dark"] .react-flow__minimap-mask {
@@ -619,23 +619,23 @@
 .step-area:nth-child(even) {
   background: linear-gradient(90deg, rgba(var(--bs-primary-rgb), 0.05) 0%, rgba(var(--bs-primary-rgb), 0.06) 100%);
   border: none;
-  box-shadow: var(--rh-dashboard-panel-shadow);
+  box-shadow: var(--rh-elevated-card-shadow);
 }
 
 .step-area:nth-child(odd) {
   background: linear-gradient(90deg, rgba(var(--bs-success-rgb), 0.05) 0%, rgba(var(--bs-success-rgb), 0.06) 100%);
   border: none;
-  box-shadow: var(--rh-dashboard-panel-shadow);
+  box-shadow: var(--rh-elevated-card-shadow);
 }
 
 [data-theme="dark"] .step-area:nth-child(even) {
   background: rgba(var(--rh-cyan-rgb), 0.04);
-  box-shadow: var(--rh-dashboard-panel-shadow);
+  box-shadow: var(--rh-elevated-card-shadow);
 }
 
 [data-theme="dark"] .step-area:nth-child(odd) {
   background: rgba(var(--rh-purple-rgb), 0.055);
-  box-shadow: var(--rh-dashboard-panel-shadow);
+  box-shadow: var(--rh-elevated-card-shadow);
 }
 
 .step-label {
@@ -646,14 +646,14 @@
   font-size: 14px;
   font-weight: bold;
   color: var(--bs-body-color);
-  box-shadow: var(--rh-dashboard-panel-shadow);
+  box-shadow: var(--rh-elevated-card-shadow);
   transition: all 0.2s ease;
 }
 
 [data-theme="dark"] .step-label {
   background: var(--bs-card-bg);
   color: var(--bs-body-color);
-  box-shadow: var(--rh-dashboard-panel-shadow);
+  box-shadow: var(--rh-elevated-card-shadow);
 }
 
 .step-management-panel {
@@ -668,24 +668,24 @@
   min-width: 200px;
   max-height: 70vh;
   overflow-y: auto;
-  box-shadow: var(--rh-dashboard-panel-shadow);
+  box-shadow: var(--rh-elevated-card-shadow);
   z-index: 1000;
 }
 
 [data-theme="dark"] .step-management-panel {
   background: var(--bs-card-bg);
-  box-shadow: var(--rh-dashboard-panel-shadow);
+  box-shadow: var(--rh-elevated-card-shadow);
 }
 
 /* Workflow steps panel (right side) - theme-aware */
 .workflow-steps-panel {
   background: var(--bs-card-bg);
   border: none;
-  box-shadow: var(--rh-dashboard-panel-shadow);
+  box-shadow: var(--rh-elevated-card-shadow);
 }
 
 [data-theme="dark"] .workflow-steps-panel {
-  box-shadow: var(--rh-dashboard-panel-shadow);
+  box-shadow: var(--rh-elevated-card-shadow);
 }
 
 .workflow-step-item.step-even {
@@ -767,14 +767,14 @@
   border: none;
   box-shadow:
     0 0 0 3px rgba(var(--bs-primary-rgb), 0.45),
-    var(--rh-dashboard-panel-shadow);
+    var(--rh-elevated-card-shadow);
   background: rgba(var(--bs-primary-rgb), 0.1);
 }
 
 [data-theme="dark"] .step-area.drag-over {
   box-shadow:
     0 0 0 3px rgba(var(--rh-cyan-rgb), 0.4),
-    var(--rh-dashboard-panel-shadow);
+    var(--rh-elevated-card-shadow);
   background: rgba(var(--rh-cyan-rgb), 0.08);
 }
 
@@ -782,20 +782,20 @@
   background: var(--bs-primary);
   color: var(--rh-on-cyan);
   transform: scale(1.05);
-  box-shadow: var(--rh-dashboard-panel-shadow);
+  box-shadow: var(--rh-elevated-card-shadow);
 }
 
 [data-theme="dark"] .step-area.drag-over .step-label {
   background: rgba(var(--rh-cyan-rgb), 0.2);
   color: var(--bs-body-color);
-  box-shadow: var(--rh-dashboard-panel-shadow);
+  box-shadow: var(--rh-elevated-card-shadow);
 }
 
 /* Step area backgrounds (canvas) — elevation like dashboard; dashed rims removed */
 .step-area-bg {
   border: none;
   opacity: 0.9;
-  box-shadow: var(--rh-dashboard-panel-shadow);
+  box-shadow: var(--rh-elevated-card-shadow);
 }
 
 .step-area-bg.step-bg-even {
@@ -808,12 +808,12 @@
 
 [data-theme="dark"] .step-area-bg.step-bg-even {
   background: rgba(var(--rh-cyan-rgb), 0.045);
-  box-shadow: var(--rh-dashboard-panel-shadow);
+  box-shadow: var(--rh-elevated-card-shadow);
 }
 
 [data-theme="dark"] .step-area-bg.step-bg-odd {
   background: rgba(var(--rh-purple-rgb), 0.055);
-  box-shadow: var(--rh-dashboard-panel-shadow);
+  box-shadow: var(--rh-elevated-card-shadow);
 }
 
 .step-area-label {
@@ -829,13 +829,13 @@
   background: var(--bs-card-bg);
   border: none;
   color: var(--bs-body-color);
-  box-shadow: var(--rh-dashboard-panel-shadow);
+  box-shadow: var(--rh-elevated-card-shadow);
 }
 
 [data-theme="dark"] .step-area-label {
   background: var(--bs-card-bg);
   color: var(--bs-body-color);
-  box-shadow: var(--rh-dashboard-panel-shadow);
+  box-shadow: var(--rh-elevated-card-shadow);
 }
 
 /* Workflow start node positioning */

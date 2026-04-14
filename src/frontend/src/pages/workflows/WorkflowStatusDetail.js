@@ -407,7 +407,7 @@ function WorkflowStatusDetail() {
       <div>
         {/* Quick Stats Summary */}
         <div className="mb-4">
-          <Card className="border summary-card">
+          <Card className="rh-elevated-card border summary-card">
             <Card.Body>
               <div className="d-flex justify-content-between align-items-center">
                 <div className="d-flex align-items-center">
@@ -654,7 +654,7 @@ function WorkflowStatusDetail() {
         {logs.workflow_definition && (
           <div className="mb-4">
             <h6 className="fw-bold text-primary mb-3">📋 Workflow Definition</h6>
-            <Card className="border">
+            <Card className="rh-elevated-card border">
               <Card.Header className="theme-aware-header">
                 <div className="d-flex justify-content-between align-items-center">
                   <span>
@@ -757,7 +757,7 @@ function WorkflowStatusDetail() {
                               >
                                 <div className="accordion-body">
                                   {step.tasks && step.tasks.map((task, taskIndex) => (
-                                    <Card key={taskIndex} className="mb-2 border">
+                                    <Card key={taskIndex} className="rh-elevated-card mb-2 border">
                                       <Card.Body className="p-3">
                                         <div className="d-flex justify-content-between align-items-start mb-2">
                                           <div>
@@ -828,7 +828,7 @@ function WorkflowStatusDetail() {
         {logs.task_execution_logs && logs.task_execution_logs.length > 0 && (
           <div className="mb-4">
             <h6 className="fw-bold text-primary mb-3">⚙️ Task Execution Logs</h6>
-            <Card className="border">
+            <Card className="rh-elevated-card border">
               <Card.Header className="theme-aware-header">
                 <div className="d-flex justify-content-between align-items-center">
                   <span>
@@ -1067,7 +1067,7 @@ function WorkflowStatusDetail() {
         {logs.runner_pod_output && (
           <div className="mb-4">
             <h6 className="fw-bold text-primary mb-3">📟 Runner Pod Output</h6>
-            <Card className="border">
+            <Card className="rh-elevated-card border">
               <Card.Header className="theme-aware-header">
                 <div className="d-flex justify-content-between align-items-center">
                   <span>
@@ -1207,7 +1207,7 @@ function WorkflowStatusDetail() {
                 Use this when you need to see all the technical details of the workflow execution.
               </small>
             </Alert>
-            <Card className="border-secondary">
+            <Card className="rh-elevated-card border-secondary">
               <Card.Body className="p-0">
                 <div className="theme-aware-code-block rounded p-3" style={{ maxHeight: '500px', overflow: 'auto' }}>
                   <pre className="mb-0" style={{ fontSize: '0.75rem' }}>
@@ -1557,7 +1557,7 @@ function WorkflowStatusDetail() {
       {/* Workflow Overview */}
       <Row className="mb-4">
         <Col>
-          <Card>
+          <Card className="rh-elevated-card">
             <Card.Header>
               <h5 className="mb-0">Workflow Overview</h5>
             </Card.Header>
@@ -1582,7 +1582,7 @@ function WorkflowStatusDetail() {
       {/* Aggregated Assets and Findings Overview */}
       <Row className="mb-4">
         <Col>
-          <Card>
+          <Card className="rh-elevated-card">
             <Card.Header>
               <h5 className="mb-0">📊 All Assets & Findings Summary</h5>
             </Card.Header>
@@ -1611,7 +1611,7 @@ function WorkflowStatusDetail() {
       {workflow?.output && (
         <Row className="mb-4">
           <Col>
-            <Card>
+            <Card className="rh-elevated-card">
               <Card.Header>
                 <h5 className="mb-0">Execution Output</h5>
               </Card.Header>
@@ -1628,7 +1628,7 @@ function WorkflowStatusDetail() {
       {/* Enhanced Workflow Logs */}
       <Row>
         <Col>
-          <Card>
+          <Card className="rh-elevated-card">
             <Card.Header>
               <div className="d-flex justify-content-between align-items-center">
                 <h5 className="mb-0">📋 Workflow Logs & Details</h5>
@@ -1655,7 +1655,7 @@ function WorkflowStatusDetail() {
         </Modal.Header>
         <Modal.Body>
           <p>Are you sure you want to stop this workflow?</p>
-          <div className="card border">
+          <div className="card rh-elevated-card border">
             <div className="card-body">
               <strong>Workflow ID:</strong> <code>{workflowId}</code><br />
               <strong>Program:</strong> {logs?.program_name || 'Unknown'}<br />

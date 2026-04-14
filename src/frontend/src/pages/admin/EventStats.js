@@ -392,7 +392,7 @@ export function EventStatsInner({ embedded = false }) {
           {/* Connection Status */}
           <Row className="mb-4">
             <Col>
-              <Card>
+              <Card className="rh-elevated-card">
                 <Card.Header className="d-flex justify-content-between align-items-center">
                   <h5 className="mb-0">Connection Status</h5>
                   <Badge bg={stats.connected ? 'success' : 'danger'}>
@@ -405,7 +405,7 @@ export function EventStatsInner({ embedded = false }) {
 
           <Row className="mb-4">
             <Col>
-              <Card>
+              <Card className="rh-elevated-card">
                 <Card.Header className="d-flex justify-content-between align-items-center flex-wrap gap-2">
                   <h5 className="mb-0">Event-handler processing</h5>
                   <div className="d-flex align-items-center flex-wrap gap-2">
@@ -457,7 +457,7 @@ export function EventStatsInner({ embedded = false }) {
           {stats.stream && (
             <Row className="mb-4">
               <Col>
-                <Card>
+                <Card className="rh-elevated-card">
                   <Card.Header>
                     <h5 className="mb-0">Stream: {stats.stream.name}</h5>
                   </Card.Header>
@@ -526,7 +526,7 @@ export function EventStatsInner({ embedded = false }) {
           {stats.consumer && (
             <Row className="mb-4">
               <Col>
-                <Card>
+                <Card className="rh-elevated-card">
                   <Card.Header>
                     <h5 className="mb-0">Consumer: {stats.consumer.name}</h5>
                   </Card.Header>
@@ -570,7 +570,7 @@ export function EventStatsInner({ embedded = false }) {
           {/* Event-Handler Batches (waiting in Redis) */}
           <Row className="mb-4">
             <Col>
-              <Card>
+              <Card className="rh-elevated-card">
                 <Card.Header className="d-flex flex-wrap justify-content-between align-items-center gap-2">
                   <h5 className="mb-0">Event-Handler Batches</h5>
                   <div className="d-flex flex-wrap gap-2">
@@ -660,7 +660,7 @@ export function EventStatsInner({ embedded = false }) {
           {/* Pending Messages (read-only load; delete/purge mutate stream) */}
           <Row className="mb-4">
             <Col>
-              <Card>
+              <Card className="rh-elevated-card">
                 <Card.Header className="d-flex flex-wrap justify-content-between align-items-center gap-2">
                   <h5 className="mb-0">Pending Messages</h5>
                   <div className="d-flex flex-wrap gap-2 align-items-center">

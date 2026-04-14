@@ -2170,7 +2170,7 @@ function TyposquatFindings() {
       </Row>
 
       {/* Results */}
-      <Card>
+      <Card className="rh-elevated-card">
         <Card.Header className="d-flex justify-content-between align-items-center flex-wrap gap-2">
           {totalCount > 0 && (
             <small className="text-muted">

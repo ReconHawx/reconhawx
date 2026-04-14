@@ -856,7 +856,7 @@ const ScheduledJobCreate = () => {
       <Form onSubmit={handleSubmit}>
         <Row>
           <Col lg={8}>
-            <Card className="mb-3">
+            <Card className="rh-elevated-card mb-3">
               <Card.Header>
                 <h5>Job Configuration</h5>
                 <small className="text-muted">
@@ -956,7 +956,7 @@ const ScheduledJobCreate = () => {
               </Card.Body>
             </Card>
 
-            <Card className="mb-3">
+            <Card className="rh-elevated-card mb-3">
               <Card.Header>
                 <h5>Schedule Configuration</h5>
                 <small className="text-muted">
@@ -989,7 +989,7 @@ const ScheduledJobCreate = () => {
               </Card.Body>
             </Card>
 
-            <Card className="mb-3">
+            <Card className="rh-elevated-card mb-3">
               <Card.Header>
                 <h5>Job Data</h5>
                 <small className="text-muted">

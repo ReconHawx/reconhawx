@@ -56,8 +56,8 @@
   --rh-code-color: var(--bs-pre-color);
   --rh-overlay-scrim: rgba(10, 15, 28, 0.2);
   --rh-shadow-color: rgba(10, 15, 28, 0.1);
-  /* Dashboard + elevated panels (workflow builder, etc.) */
-  --rh-dashboard-panel-shadow: 0 2px 12px var(--rh-shadow-color),
+  /* Primary “section card” elevation (see `.rh-elevated-card` in this file; used app-wide) */
+  --rh-elevated-card-shadow: 0 2px 12px var(--rh-shadow-color),
     0 1px 3px rgba(10, 15, 28, 0.06);
   --rh-highlight-bg: rgba(0, 151, 167, 0.12);
   --rh-mark-bg: #fff3cd;
@@ -111,7 +111,7 @@
   --rh-code-color: #9df6ff;
   --rh-overlay-scrim: rgba(0, 0, 0, 0.35);
   --rh-shadow-color: rgba(0, 0, 0, 0.25);
-  --rh-dashboard-panel-shadow: 0 4px 22px rgba(0, 0, 0, 0.5),
+  --rh-elevated-card-shadow: 0 4px 22px rgba(0, 0, 0, 0.5),
     0 2px 8px rgba(0, 0, 0, 0.32), 0 1px 2px rgba(0, 0, 0, 0.2);
   --rh-highlight-bg: rgba(0, 242, 255, 0.08);
   --rh-mark-bg: rgba(0, 242, 255, 0.18);
@@ -275,6 +275,14 @@ code {
   color: var(--bs-nav-link-hover-color) !important;
 }
 
+/* Keep active tab text readable on hover (especially in dark mode). */
+.nav-tabs .nav-link.active:hover,
+.nav-tabs .nav-link.active:focus,
+.nav-pills .nav-link.active:hover,
+.nav-pills .nav-link.active:focus {
+  color: var(--rh-on-cyan) !important;
+}
+
 .table-hover tbody tr:hover {
   background-color: var(--bs-table-hover-bg) !important;
 }
@@ -316,7 +324,7 @@ code {
 }
 
 /*
- * Dashboard sections: `border-primary` / `border-danger` / … stay in markup for intent;
+ * Semantic rims on `.card.border-*`: `border-primary` / `border-danger` / … stay in markup for intent;
  * rim color is always the neutral card border (light + dark).
  */
 .card.border-primary,
@@ -328,23 +336,23 @@ code {
   border-color: var(--bs-card-border-color) !important;
 }
 
-/* Dashboard: no card outline in light — colored headers carry section identity; soft shadow only */
-[data-theme="light"] .dashboard-panel.card {
+/* Elevated section cards: no outline — soft shadow (light); colored headers carry section identity */
+[data-theme="light"] .rh-elevated-card.card {
   border: none !important;
-  box-shadow: var(--rh-dashboard-panel-shadow);
+  box-shadow: var(--rh-elevated-card-shadow);
 }
 
-[data-theme="light"] .dashboard-panel.card .card-header {
+[data-theme="light"] .rh-elevated-card.card .card-header {
   border-bottom: 1px solid var(--bs-border-color) !important;
 }
 
-/* Dashboard panels: same borderless + elevated treatment as light (deeper shadow on dark canvas) */
-[data-theme="dark"] .dashboard-panel.card {
+/* Same borderless + elevated treatment in dark (deeper shadow on dark canvas) */
+[data-theme="dark"] .rh-elevated-card.card {
   border: none !important;
-  box-shadow: var(--rh-dashboard-panel-shadow);
+  box-shadow: var(--rh-elevated-card-shadow);
 }
 
-[data-theme="dark"] .dashboard-panel.card .card-header {
+[data-theme="dark"] .rh-elevated-card.card .card-header {
   border-bottom: 1px solid var(--bs-border-color) !important;
 }
 
@@ -376,8 +384,8 @@ code {
   color: var(--bs-body-color) !important;
 }
 
-[data-theme="light"] .dashboard-panel.card .card-header.rh-card-header-table,
-[data-theme="dark"] .dashboard-panel.card .card-header.rh-card-header-table {
+[data-theme="light"] .rh-elevated-card.card .card-header.rh-card-header-table,
+[data-theme="dark"] .rh-elevated-card.card .card-header.rh-card-header-table {
   border-bottom: 1px solid var(--rh-table-border-color) !important;
 }
 
