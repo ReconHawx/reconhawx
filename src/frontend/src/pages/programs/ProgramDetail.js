@@ -2804,6 +2804,7 @@ function ProgramDetail() {
                   editType === 'out_of_scope_domains' ? 'Out-of-scope domain patterns' :
                   editType === 'domain_regex' ? 'Domain Regex Patterns' :
                   editType === 'out_of_scope_regex' ? 'Out-of-scope regex (legacy)' :
+                  editType === 'cidr_list' ? 'CIDR Blocks' :
                   editType === 'safe_registrar' ? 'Safe Registrars' :
                   editType === 'safe_ssl_issuer' ? 'Safe SSL Issuers' :
                   editType === 'protected_domains' ? 'Protected Domains' :
@@ -2884,6 +2885,7 @@ function ProgramDetail() {
                  editType === 'out_of_scope_domains' ? 'Out-of-scope patterns' :
                  editType === 'domain_regex' ? 'Domain Regex Patterns' :
                  editType === 'out_of_scope_regex' ? 'Out-of-scope regex' :
+                 editType === 'cidr_list' ? 'CIDR Blocks' :
                  editType === 'safe_registrar' ? 'Safe Registrars' : 
                  editType === 'safe_ssl_issuer' ? 'Safe SSL Issuers' :
                  editType === 'protected_domains' ? 'Protected Domains' :

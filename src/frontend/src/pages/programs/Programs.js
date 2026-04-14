@@ -231,15 +231,18 @@ function Programs() {
       .filter(line => line.length > 0);
   };
 
-  const validateForm = () => {
+  const validateForm = (isCreate = false) => {
     const errors = {};
     
     if (!formData.name.trim()) {
       errors.name = 'Program name is required';
-    } else if (!/^[a-zA-Z0-9_-]+$/.test(formData.name)) {
-      errors.name = 'Program name can only contain letters, numbers, hyphens, and underscores';
     }
     
+    if (isCreate) {
+      setFormErrors(errors);
+      return Object.keys(errors).length === 0;
+    }
+
     // Parse and validate domain regex entries
     const domainRegexList = parseListInput(domainRegexInput);
     domainRegexList.forEach((regex, index) => {
@@ -276,7 +279,7 @@ function Programs() {
   };
 
   const handleCreateProgram = async () => {
-    if (!validateForm()) return;
+    if (!validateForm(true)) return;
     
     try {
       setSubmitting(true);
@@ -286,26 +289,22 @@ function Programs() {
         name: formData.name.trim(),
         scope_domains: [],
         out_of_scope_domains: [],
-        domain_regex: parseListInput(domainRegexInput),
-        out_of_scope_regex: parseListInput(outOfScopeRegexInput),
-        cidr_list: parseListInput(cidrListInput),
-        safe_registrar: parseListInput(safeRegistrarInput),
-        safe_ssl_issuer: parseListInput(safeSslIssuerInput)
+        domain_regex: [],
+        out_of_scope_regex: [],
+        cidr_list: [],
+        safe_registrar: [],
+        safe_ssl_issuer: []
       };
       
       await programAPI.create(programData);
       
-      setSuccess(`Program "${programData.name}" created successfully!`);
       setShowCreateModal(false);
       resetForm();
-      setCurrentPage(1);
-      await loadPrograms(1);
-      
-      // Clear success message after delay
-      setTimeout(() => setSuccess(null), 5000);
+      navigate(`/programs/${encodeURIComponent(programData.name)}`);
     } catch (err) {
       console.error('Failed to create program:', err);
-      setError('Failed to create program: ' + err.message);
+      const errorMessage = err.response?.data?.detail || err.message || 'Failed to create program';
+      setError(`Failed to create program: ${errorMessage}`);
     } finally {
       setSubmitting(false);
     }
@@ -919,12 +918,18 @@ function Programs() {
       {!loading && !error && renderPagination()}
 
       {/* Create Program Modal */}
-      <Modal show={showCreateModal} onHide={closeAllModals} size="lg">
+      <Modal show={showCreateModal} onHide={closeAllModals}>
         <Modal.Header closeButton>
           <Modal.Title>Create New Program</Modal.Title>
         </Modal.Header>
         <Modal.Body>
-          <Form>
+          <Form
+            id="create-program-form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleCreateProgram();
+            }}
+          >
             <Row>
               <Col md={12}>
                 <Form.Group className="mb-3">
@@ -935,9 +940,10 @@ function Programs() {
                     onChange={(e) => setFormData({...formData, name: e.target.value})}
                     placeholder="Enter program name (e.g., company-name)"
                     isInvalid={!!formErrors.name}
+                    autoFocus
                   />
                   <Form.Text className="text-muted">
-                    Only letters, numbers, hyphens, and underscores allowed.
+                    Enter a descriptive program name.
                   </Form.Text>
                   <Form.Control.Feedback type="invalid">
                     {formErrors.name}
@@ -945,120 +951,13 @@ function Programs() {
                 </Form.Group>
               </Col>
             </Row>
-            
-            <Row>
-              <Col md={6}>
-                <Form.Group className="mb-3">
-                  <Form.Label>Domain Regex Patterns</Form.Label>
-                  <Form.Control
-                    as="textarea"
-                    rows={6}
-                    value={domainRegexInput}
-                    onChange={(e) => setDomainRegexInput(e.target.value)}
-                    placeholder=".*\.example\.com&#10;subdomain\.example\.org&#10;test-.*\.example\.net"
-                    isInvalid={!!formErrors.domain_regex}
-                  />
-                  <Form.Text className="text-muted">
-                    Enter one regex pattern per line. These patterns define which domains belong to this program.
-                  </Form.Text>
-                  <Form.Control.Feedback type="invalid">
-                    {formErrors.domain_regex && formErrors.domain_regex.join(', ')}
-                  </Form.Control.Feedback>
-                </Form.Group>
-              </Col>
-              
-              <Col md={6}>
-                <Form.Group className="mb-3">
-                  <Form.Label>Out-of-Scope Regex Patterns</Form.Label>
-                  <Form.Control
-                    as="textarea"
-                    rows={6}
-                    value={outOfScopeRegexInput}
-                    onChange={(e) => setOutOfScopeRegexInput(e.target.value)}
-                    placeholder="^test-.*\.example\.com&#10;^staging-.*\.example\.com&#10;^dev-.*"
-                    isInvalid={!!formErrors.out_of_scope_regex}
-                  />
-                  <Form.Text className="text-muted">
-                    Enter one regex pattern per line. Domains matching these patterns will be excluded, even if they match in-scope patterns.
-                  </Form.Text>
-                  <Form.Control.Feedback type="invalid">
-                    {formErrors.out_of_scope_regex && formErrors.out_of_scope_regex.join(', ')}
-                  </Form.Control.Feedback>
-                </Form.Group>
-              </Col>
-            </Row>
-            
-            <Row>
-              <Col md={6}>
-                <Form.Group className="mb-3">
-                  <Form.Label>CIDR Blocks</Form.Label>
-                  <Form.Control
-                    as="textarea"
-                    rows={6}
-                    value={cidrListInput}
-                    onChange={(e) => setCidrListInput(e.target.value)}
-                    placeholder="192.168.1.0/24&#10;10.0.0.0/16&#10;172.16.0.0/12"
-                    isInvalid={!!formErrors.cidr_list}
-                  />
-                  <Form.Text className="text-muted">
-                    Enter one CIDR block per line. These define the IP address ranges for this program.
-                  </Form.Text>
-                  <Form.Control.Feedback type="invalid">
-                    {formErrors.cidr_list && formErrors.cidr_list.join(', ')}
-                  </Form.Control.Feedback>
-                </Form.Group>
-              </Col>
-              
-              <Col md={6}>
-                <Form.Group className="mb-3">
-                  <Form.Label>Safe Registrars</Form.Label>
-                  <Form.Control
-                    as="textarea"
-                    rows={4}
-                    value={safeRegistrarInput}
-                    onChange={(e) => setSafeRegistrarInput(e.target.value)}
-                    placeholder="GoDaddy&#10;Namecheap&#10;Cloudflare"
-                    isInvalid={!!formErrors.safe_registrar}
-                  />
-                  <Form.Text className="text-muted">
-                    Enter one registrar per line. These registrars are considered safe/legitimate for this program.
-                  </Form.Text>
-                  <Form.Control.Feedback type="invalid">
-                    {formErrors.safe_registrar && formErrors.safe_registrar.join(', ')}
-                  </Form.Control.Feedback>
-                </Form.Group>
-              </Col>
-            </Row>
-            
-            <Row>
-              <Col md={6}>
-                <Form.Group className="mb-3">
-                  <Form.Label>Safe SSL Issuers</Form.Label>
-                  <Form.Control
-                    as="textarea"
-                    rows={4}
-                    value={safeSslIssuerInput}
-                    onChange={(e) => setSafeSslIssuerInput(e.target.value)}
-                    placeholder="Let's Encrypt&#10;DigiCert&#10;Cloudflare"
-                    isInvalid={!!formErrors.safe_ssl_issuer}
-                  />
-                  <Form.Text className="text-muted">
-                    Enter one SSL issuer per line. These SSL certificate issuers are considered safe/legitimate for this program.
-                  </Form.Text>
-                  <Form.Control.Feedback type="invalid">
-                    {formErrors.safe_ssl_issuer && formErrors.safe_ssl_issuer.join(', ')}
-                  </Form.Control.Feedback>
-                </Form.Group>
-              </Col>
-              <Col md={6}></Col>
-            </Row>
           </Form>
         </Modal.Body>
         <Modal.Footer>
           <Button variant="secondary" onClick={closeAllModals} disabled={submitting}>
             Cancel
           </Button>
-          <Button variant="primary" onClick={handleCreateProgram} disabled={submitting}>
+          <Button variant="primary" type="submit" form="create-program-form" disabled={submitting}>
             {submitting ? (
               <>
                 <Spinner animation="border" size="sm" className="me-2" />
