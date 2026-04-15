@@ -5,6 +5,7 @@
   inputs,
   ...
 }: {
+  dotenv.disableHint = true;
   git-hooks.enable = false;
   languages.python = {
     enable = true;
