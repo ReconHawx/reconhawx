@@ -8,7 +8,7 @@ It covers:
 - Common task input types you will configure
 - Validation and troubleshooting basics
 
-It intentionally does **not** go deep into individual runner task internals; that belongs in a separate task-focused guide.
+For a concise catalog of each recon task (purpose, input kind, outputs), see [Recon tasks reference](recon-tasks.md).
 
 ## Before you start
 
@@ -243,5 +243,6 @@ Avoid early complexity:
 
 - [Getting Started](getting-started.md)
 - [Programs Guide](programs.md)
+- [Recon tasks reference](recon-tasks.md)
 - [Installation on Kubernetes](../install-on-kubernetes.md)
 - [Installation on Minikube](../install-on-minikube.md)
