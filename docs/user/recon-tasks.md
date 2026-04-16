@@ -53,8 +53,6 @@ Timeouts, chunk sizes, wordlists, and similar knobs are controlled by **recon ta
 | **fuzz_website** | Directory/file discovery with ffuf using a wordlist. | string (base URLs to fuzz) | url |
 | **detect_broken_links** | Checks pages for broken or risky outbound links (including social links and hijackable unregistered domains). | string (page URLs, `http://` or `https://`) | broken_link finding |
 | **typosquat_detection** | Generates and analyzes typosquat candidates (dnstwist and related checks), risk scoring, optional screenshots; persists typosquat findings via the API. | subdomain | _(findings written during the run; no standard asset output list)_ |
-| **shell_command** | Runs a configured shell pipeline; optional stdin from workflow input. Parameters define the command; mapped input is fed on standard input when provided. | string (stdin text) | string (raw stdout/stderr capture) |
-| **asset_batch_generator** | **Testing only:** generates synthetic subdomains, IPs, services, URLs, certificates, and sample Nuclei-style findings for load tests. | string (program name seed) | subdomain, ip, service, url, certificate, nuclei finding, string (synthetic apex payloads) |
 
 ---
 
