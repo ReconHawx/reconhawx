@@ -6,6 +6,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { formatLocalDateTime } from '../../utils/dateUtils';
 import VariableInput from '../../components/VariableInput';
 import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
+import { HIDDEN_JOB_TYPES_SET } from './hiddenJobTypes';
 
 // Helper function to get user-friendly timezone name
 const getUserFriendlyTimezone = () => {
@@ -37,7 +38,7 @@ const ScheduledJobCreate = () => {
 
   
   const [formData, setFormData] = useState({
-    job_type: 'dummy_batch',
+    job_type: 'workflow',
     name: '',
     description: '',
     program_name: '',
@@ -58,7 +59,8 @@ const ScheduledJobCreate = () => {
       timezone: initialTimezone // Use the helper function
     },
     job_data: {
-      items: ['test1', 'test2', 'test3']
+      workflow_id: '',
+      workflow_variables: {}
     },
     tags: []
   });
@@ -67,13 +69,8 @@ const ScheduledJobCreate = () => {
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(false);
   const [jobTypes, setJobTypes] = useState([
-    { value: 'dummy_batch', label: 'Dummy Batch Job', description: 'A test job that processes a list of items' },
-    { value: 'typosquat_batch', label: 'Typosquat Batch Job', description: 'Analyze domains for typosquatting characteristics' },
-    { value: 'phishlabs_batch', label: 'PhishLabs Batch Job', description: 'Enrich typosquat findings with PhishLabs data' },
-    { value: 'ai_analysis_batch', label: 'AI Analysis Batch Job', description: 'Run AI threat analysis on typosquat findings' },
-    { value: 'gather_api_findings', label: 'Gather API Findings', description: 'Gather typosquat findings from vendor APIs (ThreatStream, RecordedFuture)' },
-    { value: 'sync_recordedfuture_data', label: 'Sync RecordedFuture Data', description: 'Synchronize RecordedFuture data for existing findings' },
-    { value: 'workflow', label: 'Workflow Job', description: 'Execute a predefined workflow' }
+    { value: 'workflow', label: 'Workflow Job', description: 'Execute a predefined workflow' },
+    { value: 'gather_api_findings', label: 'Gather API Findings', description: 'Gather typosquat findings from vendor APIs (ThreatStream, RecordedFuture)' }
   ]);
   
   const [workflows, setWorkflows] = useState([]);
@@ -102,13 +99,15 @@ const ScheduledJobCreate = () => {
     try {
       const response = await scheduledJobsAPI.getJobTypes();
       const supportedTypes = response.supported_job_types || {};
-      
+
       if (Object.keys(supportedTypes).length > 0) {
-        const jobTypesList = Object.entries(supportedTypes).map(([value, info]) => ({
-          value,
-          label: info.name,
-          description: info.description
-        }));
+        const jobTypesList = Object.entries(supportedTypes)
+          .filter(([value]) => !HIDDEN_JOB_TYPES_SET.has(value))
+          .map(([value, info]) => ({
+            value,
+            label: info.name,
+            description: info.description
+          }));
         setJobTypes(jobTypesList);
       }
     } catch (err) {
