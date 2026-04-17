@@ -1,4 +1,4 @@
-"""Tests for ``tasks.wpscan.WPScan``."""
+"""Tests for ``recon_tasks.wpscan.WPScan``."""
 
 from __future__ import annotations
 
@@ -6,8 +6,8 @@ import base64
 
 import pytest
 
-from tasks.base import FindingType
-from tasks.wpscan import WPScan
+from recon_tasks.base import FindingType
+from recon_tasks.wpscan import WPScan
 
 
 @pytest.fixture

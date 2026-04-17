@@ -42,6 +42,6 @@ Each job requests 500m CPU, 512Mi. To limit concurrency:
 ## Related Files
 
 - `src/api/app/services/job_submission.py` — `create_ai_analysis_batch_job`, `get_job_status(job_type=)`
-- `src/runner/app/tasks/ai_analysis_batch.py` — AIAnalysisBatchTask
+- `src/runner/app/batch_jobs/ai_analysis_batch.py` — AIAnalysisBatchTask
 - `src/api/app/services/ai_analysis_service.py` — prompt/context logic (API-side reference)
 - `src/event-handler/app/event_handlers.py` — `_execute_ai_analysis_batch_action`

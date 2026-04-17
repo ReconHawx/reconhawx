@@ -1,5 +1,5 @@
 ---
-globs: ["src/runner/app/tasks/*.py", "src/runner/app/task_executor.py"]
+globs: ["src/runner/app/recon_tasks/*.py", "src/runner/app/task_executor.py"]
 ---
 
 # Runner Task Implementation Patterns
@@ -75,7 +75,7 @@ context = {
 
 ## Task Base Class
 
-All tasks inherit from the abstract `Task` class in `tasks/base.py`:
+All tasks inherit from the abstract `Task` class in `recon_tasks/base.py`:
 
 ```python
 class Task(ABC):
@@ -146,7 +146,7 @@ Because of this, **new tasks should not re-filter their inputs for type-shape va
 
 ### Per-task unit tests
 
-Per-task pytest coverage lives under [`src/runner/tests/tasks/test_<name>.py`](../../src/runner/tests/tasks/), with fixtures under [`src/runner/tests/fixtures/<name>/`](../../src/runner/tests/fixtures/). The tests intentionally sit **outside** `src/runner/app/` so the runner Docker image (which `COPY`s `./app/`) does not ship test code or fixtures. Shared helpers (`patched_resolvers`, `load_fixture`, `fixture_path`, `_stub_parameter_manager`, `_freeze_random`) are defined in [`src/runner/tests/conftest.py`](../../src/runner/tests/conftest.py), which also prepends `src/runner/app` to `sys.path` so tests can `import tasks`, `import models`, etc. When adding a Tier-1 task, add matching tests that cover `get_command` (or `generate_commands` for async-only tasks), `parse_output`, and — for dual-purpose tasks — `transform_to_findings`. **Do not** add `__init__.py` to `tests/tasks/`; it would shadow the real `tasks` package. Run the suite with `devenv shell -- bash -c 'cd src/runner && python -m pytest tests/ -v'` (or from the repo root via the top-level [`pytest.ini`](../../pytest.ini) `testpaths`).
+Per-task pytest coverage lives under [`src/runner/tests/recon_tasks/test_<name>.py`](../../src/runner/tests/recon_tasks/), with fixtures under [`src/runner/tests/fixtures/<name>/`](../../src/runner/tests/fixtures/). The tests intentionally sit **outside** `src/runner/app/` so the runner Docker image (which `COPY`s `./app/`) does not ship test code or fixtures. Shared helpers (`patched_resolvers`, `load_fixture`, `fixture_path`, `_stub_parameter_manager`, `_freeze_random`) are defined in [`src/runner/tests/conftest.py`](../../src/runner/tests/conftest.py), which also prepends `src/runner/app` to `sys.path` so tests can `import recon_tasks`, `import models`, etc. When adding a Tier-1 task, add matching tests that cover `get_command` (or `generate_commands` for async-only tasks), `parse_output`, and — for dual-purpose tasks — `transform_to_findings`. **Do not** add `__init__.py` to `tests/recon_tasks/`; it would shadow the real `recon_tasks` package. Run the suite with `devenv shell -- bash -c 'cd src/runner && python -m pytest tests/ -v'` (or from the repo root via the top-level [`pytest.ini`](../../pytest.ini) `testpaths`).
 
 ### Storing new asset types in the workflow asset store
 
@@ -173,7 +173,7 @@ class FindingType(Enum):
 
 ## Task Registry
 
-Tasks are automatically discovered and registered via `tasks/__init__.py`:
+Tasks are automatically discovered and registered via `recon_tasks/__init__.py`:
 
 ```python
 class TaskRegistry:

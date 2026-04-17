@@ -1,4 +1,4 @@
-"""Tests for ``tasks.test_http.TestHTTP`` (multi-type SUBDOMAIN+URL)."""
+"""Tests for ``recon_tasks.test_http.TestHTTP`` (multi-type SUBDOMAIN+URL)."""
 
 from __future__ import annotations
 
@@ -6,8 +6,8 @@ import base64
 
 import pytest
 
-from tasks.base import AssetType
-from tasks.test_http import TestHTTP
+from recon_tasks.base import AssetType
+from recon_tasks.test_http import TestHTTP
 
 
 @pytest.fixture

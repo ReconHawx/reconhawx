@@ -196,7 +196,7 @@ class TaskParameterManager:
         listing every mismatch so drift is loud and early.
         """
         try:
-            import tasks as _tasks_pkg  # Late import: TaskRegistry populated on package import
+            import recon_tasks as _tasks_pkg  # Late import: TaskRegistry populated on package import
         except Exception as e:
             logger.warning("Skipping task I/O drift check: tasks package not importable (%s)", e)
             return

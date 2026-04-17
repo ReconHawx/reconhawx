@@ -13,7 +13,7 @@ from dataclasses import dataclass
 import json
 import requests
 import aiohttp
-from tasks.base import AssetType
+from recon_tasks.base import AssetType
 from models.workflow import AssetStore
 from services.kubernetes import KubernetesService
 from task_queue_client import TaskQueueClient
@@ -381,7 +381,7 @@ class ProgressiveAssetStreamer:
     
     def _separate_assets_and_findings(self, parsed_assets: Dict[Any, List[Any]]) -> tuple:
         """Separate assets from findings (copied from AssetProcessingCoordinator logic)"""
-        from tasks.base import FindingType, AssetType
+        from recon_tasks.base import FindingType, AssetType
         
         nuclei_findings = []
         regular_assets = {}

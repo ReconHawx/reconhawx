@@ -2,7 +2,7 @@
 
 Tests live at ``src/runner/tests/`` (outside ``app/``) so they are not baked
 into the runner Docker image. This conftest adds ``src/runner/app`` to
-``sys.path`` so test modules can ``import tasks`` etc. as if they were
+``sys.path`` so test modules can ``import recon_tasks`` etc. as if they were
 running from the app root.
 """
 
@@ -34,9 +34,10 @@ def _freeze_random() -> None:
 
 @pytest.fixture(autouse=True)
 def _stub_parameter_manager(monkeypatch) -> None:
-    """Replace ``tasks.base.parameter_manager`` accessors so tasks that read
-    timeouts / chunk sizes at unit scope don't hit the API manifest loader."""
-    import tasks.base as base
+    """Replace ``recon_tasks.base.parameter_manager`` accessors so tasks that
+    read timeouts / chunk sizes at unit scope don't hit the API manifest
+    loader."""
+    import recon_tasks.base as base
 
     monkeypatch.setattr(base.parameter_manager, "get_timeout", lambda name: 300)
     monkeypatch.setattr(base.parameter_manager, "get_chunk_size", lambda name: 10)

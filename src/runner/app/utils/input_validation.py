@@ -25,7 +25,7 @@ import os
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, Iterable, List, Sequence, Set
 
-from tasks.base import AssetType
+from recon_tasks.base import AssetType
 from utils.utils import is_valid_domain, is_valid_url
 
 logger = logging.getLogger(__name__)

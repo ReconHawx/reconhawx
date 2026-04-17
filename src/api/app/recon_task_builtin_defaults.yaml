@@ -5,7 +5,7 @@
 #
 # last_execution_threshold: plain number = hours (default). Optional suffix on a string: h, d (days), w (weeks).
 # Examples: 24 -> 24h, 24h -> 24h, 1d -> 24h, 2d -> 48h, 1w -> 168h. No months/years.
-# shell_command / asset_batch_generator: in this file for runner + public manifest; hidden from System Settings.
+# shell_command: in this file for runner + public manifest; hidden from System Settings.
 #
 # input_types / output_types: asset/finding type metadata (not user-editable parameters).
 # Must mirror each runner Task's input_type / output_types attribute. Values are the lowercase
@@ -147,11 +147,3 @@ shell_command:
   command: []
   input_types: [string]
   output_types: [string]
-# Debug / test task; hidden from System Settings (see RECON_TASKS_HIDDEN_FROM_ADMIN_CATALOG).
-asset_batch_generator:
-  last_execution_threshold: 1
-  timeout: 300
-  chunk_size: 50
-  batch_size: 100
-  input_types: [string]
-  output_types: [subdomain, ip, service, url, certificate, nuclei, string]

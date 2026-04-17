@@ -5,11 +5,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from tasks.base import TaskParameterManager
+from recon_tasks.base import TaskParameterManager
 
 
 def _patch_http(fake_resp):
-    return patch("tasks.base.requests.get", return_value=fake_resp)
+    return patch("recon_tasks.base.requests.get", return_value=fake_resp)
 
 
 def _env_no_backoff(retries: str = "2"):
@@ -87,7 +87,7 @@ def test_get_task_parameters_unknown_key_after_load():
 
 def test_drift_check_raises_when_manifest_missing_registered_task():
     """With check_registry=True, a manifest that omits a registered task must fail."""
-    import tasks  # noqa: F401  ensure registry populated
+    import recon_tasks  # noqa: F401  ensure registry populated
 
     mgr = TaskParameterManager()
     fake_resp = MagicMock()
@@ -108,7 +108,7 @@ def test_drift_check_raises_when_manifest_missing_registered_task():
 
 def test_drift_check_raises_on_input_type_mismatch():
     """With check_registry=True, a mismatching input_type must fail."""
-    import tasks as _tasks_pkg
+    import recon_tasks as _tasks_pkg
 
     registered = dict(getattr(_tasks_pkg.TaskRegistry, "_tasks", {}))
     assert registered, "TaskRegistry must be populated for this test"

@@ -55,7 +55,6 @@ KNOWN_RECON_TASKS: FrozenSet[str] = frozenset(RECON_TASK_BUILTIN_DEFAULTS.keys()
 # Tasks still in KNOWN_RECON_TASKS (e.g. shell_command in YAML) get public GET for the runner but are omitted here.
 RECON_TASKS_HIDDEN_FROM_ADMIN_CATALOG: FrozenSet[str] = frozenset({
     "shell_command",
-    "asset_batch_generator",
 })
 
 # Keys removed from the recon-task contract; omitted from API responses even if still present in DB JSON.

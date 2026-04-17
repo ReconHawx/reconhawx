@@ -1,4 +1,4 @@
-"""Tests for ``tasks.whois_domain_check.WhoisDomainCheck``."""
+"""Tests for ``recon_tasks.whois_domain_check.WhoisDomainCheck``."""
 
 from __future__ import annotations
 
@@ -6,8 +6,8 @@ import base64
 
 import pytest
 
-from tasks.base import AssetType, CommandSpec
-from tasks.whois_domain_check import WhoisDomainCheck, _RAW_RESPONSE_MAX
+from recon_tasks.base import AssetType, CommandSpec
+from recon_tasks.whois_domain_check import WhoisDomainCheck, _RAW_RESPONSE_MAX
 
 
 @pytest.fixture

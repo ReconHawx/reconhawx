@@ -19,7 +19,8 @@ Read **`AGENTS.md`** for component paths (`src/runner/`, `src/worker/`). Detaile
 
 ## Typical locations
 
-- Task implementations: `src/runner/app/tasks/*.py`
+- Recon task implementations: `src/runner/app/recon_tasks/*.py`
+- Batch job implementations: `src/runner/app/batch_jobs/*.py`
 - Executor / dispatch: `src/runner/app/task_executor.py` (and related modules per architecture rule)
 - Worker handlers: `src/worker/app/` (mirror `task_name` from `CommandSpec`)
 

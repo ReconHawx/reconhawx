@@ -1,4 +1,4 @@
-"""Tests for ``tasks.subdomain_finder.SubdomainFinder``."""
+"""Tests for ``recon_tasks.subdomain_finder.SubdomainFinder``."""
 
 from __future__ import annotations
 
@@ -6,8 +6,8 @@ import base64
 
 import pytest
 
-from tasks.base import AssetType
-from tasks.subdomain_finder import SubdomainFinder
+from recon_tasks.base import AssetType
+from recon_tasks.subdomain_finder import SubdomainFinder
 
 
 @pytest.fixture

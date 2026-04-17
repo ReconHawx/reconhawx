@@ -1,4 +1,4 @@
-"""Tests for ``tasks.resolve_domain.ResolveDomain``."""
+"""Tests for ``recon_tasks.resolve_domain.ResolveDomain``."""
 
 from __future__ import annotations
 
@@ -6,8 +6,8 @@ import base64
 
 import pytest
 
-from tasks.base import AssetType
-from tasks.resolve_domain import ResolveDomain
+from recon_tasks.base import AssetType
+from recon_tasks.resolve_domain import ResolveDomain
 
 
 @pytest.fixture

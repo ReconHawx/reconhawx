@@ -1,5 +1,5 @@
 ---
-globs: ["src/runner/app/tasks/detect_broken_links.py", "src/worker/app/check_broken_links.py"]
+globs: ["src/runner/app/recon_tasks/detect_broken_links.py", "src/worker/app/check_broken_links.py"]
 ---
 
 # Broken Links Detection Task

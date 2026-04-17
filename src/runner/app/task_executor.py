@@ -5,8 +5,8 @@ import re
 from typing import Dict, List, Any, Optional, Union
 from kubernetes import client
 import os
-from tasks import TaskRegistry
-from tasks.base import Task, AssetType, FindingType, CommandSpec, parameter_manager
+from recon_tasks import TaskRegistry
+from recon_tasks.base import Task, AssetType, FindingType, CommandSpec, parameter_manager
 from models.assets import Ip, Service as AssetService
 from models.workflow import TaskDefinition, AssetStore
 from task_queue_client import TaskQueueClient
@@ -3062,7 +3062,7 @@ class TaskExecutor:
             
             # Parse the screenshot output using the screenshot_website task
             try:
-                from tasks.screenshot_website import ScreenshotWebsite
+                from recon_tasks.screenshot_website import ScreenshotWebsite
                 screenshot_task = ScreenshotWebsite()
                 parsed_output = screenshot_task.parse_output(output)
                 

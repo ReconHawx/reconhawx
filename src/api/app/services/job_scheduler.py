@@ -472,9 +472,7 @@ class JobSchedulerService:
                         **effective_job_data,
                     }
 
-                if request.job_type == JobType.DUMMY_BATCH:
-                    self.job_submission_service.create_dummy_batch_job(job_id, worker_payload)
-                elif request.job_type == JobType.TYPOSQUAT_BATCH:
+                if request.job_type == JobType.TYPOSQUAT_BATCH:
                     self.job_submission_service.create_typosquat_batch_job(job_id, worker_payload)
                 elif request.job_type == JobType.PHISHLABS_BATCH:
                     self.job_submission_service.create_phishlabs_batch_job(job_id, worker_payload)
