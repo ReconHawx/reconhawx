@@ -130,7 +130,7 @@ When you change a task's inputs or outputs, update **both**:
 1. The `input_type` / `output_types` class attributes in the task module.
 2. The `input_types:` / `output_types:` arrays for that task in `src/api/app/recon_task_builtin_defaults.yaml`.
 
-Regression coverage: `src/runner/app/tests/test_yaml_matches_task_declarations.py` asserts Python ↔ YAML agreement, and `src/api/tests/test_recon_task_manifest_public.py` asserts the API payload shape.
+Regression coverage: `src/runner/tests/test_yaml_matches_task_declarations.py` asserts Python ↔ YAML agreement, and `src/api/tests/test_recon_task_manifest_public.py` asserts the API payload shape.
 
 ### Dispatch-time input validation
 

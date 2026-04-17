@@ -3,8 +3,9 @@ Cross-checks that recon_task_builtin_defaults.yaml (API side) mirrors the Python
 Task.input_type / Task.output_types declarations in the runner. This locks the
 "single source of truth" invariant: the YAML is the serialized form of the code.
 
-Run from the runner test root (src/runner/app). The YAML lives in
-src/api/app/recon_task_builtin_defaults.yaml relative to the repo root.
+The YAML lives in src/api/app/recon_task_builtin_defaults.yaml relative to the
+repo root. Test file path: src/runner/tests/test_yaml_matches_task_declarations.py
+(parents[3] == repo root).
 """
 
 from __future__ import annotations
@@ -22,8 +23,8 @@ from tasks import TaskRegistry
 
 
 def _repo_root() -> Path:
-    # test file: src/runner/app/tests/test_yaml_matches_task_declarations.py
-    return Path(__file__).resolve().parents[4]
+    # test file: src/runner/tests/test_yaml_matches_task_declarations.py
+    return Path(__file__).resolve().parents[3]
 
 
 def _load_yaml() -> Dict[str, Dict[str, object]]:
