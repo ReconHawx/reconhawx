@@ -1,0 +1,12 @@
+{
+  "urls": {
+    "https://example.com": {
+      "httpx_output": "{\"url\": \"https://example.com/\", \"host\": \"example.com\", \"scheme\": \"https\", \"port\": \"443\", \"path\": \"/\", \"method\": \"GET\", \"status_code\": 200, \"title\": \"Example\", \"tech\": [\"Nginx\"], \"a\": [\"1.2.3.4\"], \"content_type\": \"text/html\", \"content_length\": 1024, \"time\": \"50ms\", \"failed\": false}\n{\"url\": \"https://example.com/about\", \"host\": \"example.com\", \"scheme\": \"https\", \"port\": \"443\", \"path\": \"/about\", \"method\": \"GET\", \"status_code\": 200, \"a\": [\"1.2.3.4\"], \"time\": \"30ms\", \"failed\": false}",
+      "katana_output": "https://example.com/about\nhttps://example.com/extra",
+      "links": {
+        "https://example.com:443/": ["https://other.test/x"],
+        "https://example.com:443/about": []
+      }
+    }
+  }
+}

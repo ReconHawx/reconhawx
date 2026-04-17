@@ -1,0 +1,20 @@
+{
+  "random.wild.example.com": {
+    "dnsx": {
+      "host": "random.wild.example.com",
+      "a": ["10.0.0.1"],
+      "cname": []
+    },
+    "is_wildcard": true,
+    "wildcard_type": ["A"]
+  },
+  "noresolve.example.com": {
+    "dnsx": {
+      "host": "noresolve.example.com",
+      "a": [],
+      "cname": []
+    },
+    "is_wildcard": false,
+    "wildcard_type": null
+  }
+}

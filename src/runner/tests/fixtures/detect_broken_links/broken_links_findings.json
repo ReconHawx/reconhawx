@@ -1,0 +1,18 @@
+[
+  {
+    "url": "https://example.com/page",
+    "broken_link": "https://twitter.com/deleted_account",
+    "type": "social_media",
+    "platform": "twitter",
+    "status_code": 404,
+    "hijackable": true
+  },
+  {
+    "url": "https://example.com/page2",
+    "broken_link": "https://abandoned.test/x",
+    "type": "general",
+    "status_code": 0,
+    "hijackable": true,
+    "reason": "nxdomain"
+  }
+]

@@ -1,0 +1,16 @@
+{
+  "8.8.8.8": {
+    "dnsx": {
+      "host": "8.8.8.8",
+      "ptr": ["dns.google", "google-public-dns-a.google.com"]
+    },
+    "provider": "Google"
+  },
+  "1.1.1.1": {
+    "dnsx": {
+      "host": "1.1.1.1",
+      "ptr": ["one.one.one.one"]
+    },
+    "provider": "Cloudflare"
+  }
+}
