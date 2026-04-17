@@ -105,15 +105,32 @@ class Task(ABC):
 ### AssetType Enum
 ```python
 class AssetType(Enum):
-    SUBDOMAIN = "subdomain"      # Domain/subdomain names
+    SUBDOMAIN = "subdomain"      # Domain/subdomain names (including apex-looking hostnames fed as seeds)
     IP = "ip"                    # IP addresses
-    STRING = "string"            # Generic string inputs
+    STRING = "string"            # Generic string inputs (utility/debug tasks only)
     SERVICE = "service"          # IP:port services
     URL = "url"                  # Full URLs
     CERTIFICATE = "certificate"  # TLS certificates
     SCREENSHOT = "screenshot"    # Website screenshots
     APEX_DOMAIN = "apex_domain"  # Program apex assets (unified /assets → API)
+    CIDR = "cidr"                # CIDR blocks (e.g. 10.0.0.0/24), used by resolve_ip_cidr
 ```
+
+### input_type / output_types are the single source of truth
+
+`Task.input_type` and `Task.output_types` declarations in runner code drive the whole UI+docs chain:
+
+- The API's `recon_task_builtin_defaults.yaml` carries `input_types:` / `output_types:` arrays **mirroring** the Python declarations for each task.
+- `GET /admin/public/recon-tasks/effective-parameters` returns a nested manifest: `{tasks: {name: {parameters, input_types, output_types}}}`. Do **not** leak `input_types`/`output_types` into the `parameters` object—`recon_task_defaults.effective_parameters` strips them via `METADATA_RECON_TASK_KEYS`.
+- The frontend workflow builder consumes this manifest (`taskManifestStore.js`) instead of hardcoded `TASK_TYPES.inputs/outputs`.
+- `TaskParameterManager.load_all_from_api()` runs `_assert_registry_matches_manifest()` at runner startup: if any registered Task's `input_type`/`output_types` disagrees with the manifest, the workflow fails loudly with a diff. Tests that inject partial manifests can opt out with `load_all_from_api(check_registry=False)`.
+
+When you change a task's inputs or outputs, update **both**:
+
+1. The `input_type` / `output_types` class attributes in the task module.
+2. The `input_types:` / `output_types:` arrays for that task in `src/api/app/recon_task_builtin_defaults.yaml`.
+
+Regression coverage: `src/runner/app/tests/test_yaml_matches_task_declarations.py` asserts Python ↔ YAML agreement, and `src/api/tests/test_recon_task_manifest_public.py` asserts the API payload shape.
 
 ### Storing new asset types in the workflow asset store
 

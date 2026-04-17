@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 class SubdomainFinder(Task):
     name = "subdomain_finder"
     description = "Finds subdomains using subfinder"
-    input_type = AssetType.STRING
+    input_type = AssetType.SUBDOMAIN
     output_types = [AssetType.SUBDOMAIN]
 
     def get_timestamp_hash(self, target: Any, params: Optional[Dict[Any, Any]] = None) -> str:

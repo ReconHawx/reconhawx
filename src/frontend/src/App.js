@@ -1,4 +1,4 @@
-import React, { lazy, Suspense } from 'react';
+import React, { lazy, Suspense, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { Container } from 'react-bootstrap';
 import { AuthProvider } from './contexts/AuthContext';
@@ -10,6 +10,7 @@ import ProtectedRoute from './components/ProtectedRoute';
 import PublicHealthStatus from './components/PublicHealthStatus';
 import LoadingFallback from './components/LoadingFallback';
 import AppStatusBar from './components/AppStatusBar';
+import { useTaskManifestStore } from './stores/taskManifestStore';
 
 // Lazy load all page components for better code splitting
 const Dashboard = lazy(() => import('./pages/Dashboard'));
@@ -77,6 +78,11 @@ const SystemStatus = lazy(() => import('./pages/admin/SystemStatus'));
 const SystemMaintenance = lazy(() => import('./pages/admin/SystemMaintenance'));
 
 function AppContent() {
+  const hydrateTaskManifest = useTaskManifestStore((s) => s.hydrateFromApi);
+  useEffect(() => {
+    hydrateTaskManifest();
+  }, [hydrateTaskManifest]);
+
   return (
     <Router>
       <div className="d-flex flex-column min-vh-100">

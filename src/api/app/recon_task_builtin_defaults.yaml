@@ -4,21 +4,32 @@
 # Shallow merge: DB row in recon_task_parameters overrides these keys per task.
 #
 # last_execution_threshold: plain number = hours (default). Optional suffix on a string: h, d (days), w (weeks).
-# Examples: 24 → 24h, 24h → 24h, 1d → 24h, 2d → 48h, 1w → 168h. No months/years.
+# Examples: 24 -> 24h, 24h -> 24h, 1d -> 24h, 2d -> 48h, 1w -> 168h. No months/years.
 # shell_command / asset_batch_generator: in this file for runner + public manifest; hidden from System Settings.
+#
+# input_types / output_types: asset/finding type metadata (not user-editable parameters).
+# Must mirror each runner Task's input_type / output_types attribute. Values are the lowercase
+# string values of AssetType and FindingType (e.g. subdomain, ip, url, cidr, nuclei, broken_link).
+# Guarded at runner startup and in tests.
 
 resolve_domain:
   last_execution_threshold: 24
   timeout: 120
   chunk_size: 10
+  input_types: [subdomain]
+  output_types: [subdomain, ip]
 whois_domain_check:
   last_execution_threshold: 24
   timeout: 600
   chunk_size: 1
+  input_types: [subdomain]
+  output_types: [apex_domain]
 resolve_ip:
   last_execution_threshold: 24
   timeout: 120
   chunk_size: 10
+  input_types: [ip]
+  output_types: [subdomain, ip]
 resolve_ip_cidr:
   last_execution_threshold: 1
   timeout: 300
@@ -29,10 +40,14 @@ resolve_ip_cidr:
   enable_port_scan: true
   port_scan_timeout: 300
   force_ip: false
+  input_types: [cidr]
+  output_types: [subdomain, ip, service]
 subdomain_finder:
   last_execution_threshold: 24
   timeout: 300
   chunk_size: 10
+  input_types: [subdomain]
+  output_types: [subdomain]
 subdomain_permutations:
   last_execution_threshold: 24
   timeout: 300
@@ -40,16 +55,22 @@ subdomain_permutations:
   permutation_list: files/permutations.txt
   permutation_limit: null
   batch_size: 10
+  input_types: [subdomain]
+  output_types: [subdomain, ip]
 dns_bruteforce:
   last_execution_threshold: 24
   timeout: 600
   chunk_size: 10
   wordlist: /workspace/files/subdomains.txt
   batch_size: 5
+  input_types: [subdomain]
+  output_types: [subdomain, ip]
 port_scan:
   last_execution_threshold: 24
   timeout: 900
   chunk_size: 5
+  input_types: [ip]
+  output_types: [service]
 nuclei_scan:
   last_execution_threshold: 24
   timeout: 900
@@ -58,16 +79,22 @@ nuclei_scan:
     official: []
     custom: []
   cmd_args: []
+  input_types: [subdomain, ip, url]
+  output_types: [nuclei, subdomain, ip, service, url]
 wpscan:
   last_execution_threshold: 24
   timeout: 1800
   chunk_size: 5
   api_token: ''
   enumerate: []
+  input_types: [url]
+  output_types: [wpscan]
 test_http:
   last_execution_threshold: 24
   timeout: 900
   chunk_size: 10
+  input_types: [subdomain, url]
+  output_types: [service, subdomain, ip, url, certificate]
 typosquat_detection:
   last_execution_threshold: 1w
   timeout: 1800
@@ -85,32 +112,46 @@ typosquat_detection:
   recalculate_risk: false
   enable_fuzzing: false
   fuzzer_wordlist: /workspace/files/webcontent_test.txt
+  input_types: [subdomain]
+  output_types: [typosquat_domain, typosquat_url, typosquat_screenshot]
 detect_broken_links:
   last_execution_threshold: 24
   timeout: 900
   chunk_size: 10
+  input_types: [url]
+  output_types: [broken_link]
 screenshot_website:
   last_execution_threshold: 24
   timeout: 60
   chunk_size: 10
+  input_types: [url]
+  output_types: [screenshot]
 crawl_website:
   last_execution_threshold: 24
   timeout: 1800
   chunk_size: 1
   depth: 5
+  input_types: [url]
+  output_types: [url]
 fuzz_website:
   last_execution_threshold: 24
   timeout: 300
   chunk_size: 5
   wordlist: /workspace/files/webcontent_test.txt
+  input_types: [url]
+  output_types: [url]
 shell_command:
   last_execution_threshold: 24
   timeout: 300
   chunk_size: 10
   command: []
+  input_types: [string]
+  output_types: [string]
 # Debug / test task; hidden from System Settings (see RECON_TASKS_HIDDEN_FROM_ADMIN_CATALOG).
 asset_batch_generator:
   last_execution_threshold: 1
   timeout: 300
   chunk_size: 50
   batch_size: 100
+  input_types: [string]
+  output_types: [subdomain, ip, service, url, certificate, nuclei, string]

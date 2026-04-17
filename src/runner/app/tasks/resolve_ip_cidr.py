@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 class ResolveIPCIDR(Task):
     name = "resolve_ip_cidr"
     description = "Resolves IP addresses from CIDR blocks using orchestrator pattern with batch job spawning for both DNS resolution and port scanning"
-    input_type = AssetType.STRING
+    input_type = AssetType.CIDR
     output_types = [AssetType.SUBDOMAIN, AssetType.IP, AssetType.SERVICE]
 
     # Task parameters:

@@ -60,6 +60,7 @@ class AssetType(Enum):
     CERTIFICATE = "certificate"
     SCREENSHOT = "screenshot"
     APEX_DOMAIN = "apex_domain"
+    CIDR = "cidr"
 
 class FindingType(Enum):
     NUCLEI = "nuclei"
@@ -85,7 +86,8 @@ class TaskParameterManager:
     def __init__(self):
         self.api_url = os.getenv("API_URL", "http://data-api:8000")
         self.internal_api_key = os.getenv("INTERNAL_SERVICE_API_KEY", "")
-        # Populated by load_all_from_api()
+        # Populated by load_all_from_api(). Each entry has shape:
+        #   {"parameters": {...}, "input_types": [...], "output_types": [...]}
         self._loaded: Optional[Dict[str, Dict[str, Any]]] = None
 
         logger.info("=== TaskParameterManager ===")
@@ -93,10 +95,16 @@ class TaskParameterManager:
         logger.info(f"Internal API key present: {bool(self.internal_api_key)}")
         logger.info("=== End TaskParameterManager ===")
 
-    def load_all_from_api(self) -> None:
+    def load_all_from_api(self, *, check_registry: bool = True) -> None:
         """
-        Fetch effective parameters for all known tasks via public manifest endpoint.
-        Retries with backoff; raises RuntimeError if exhausted.
+        Fetch the effective parameters manifest (parameters + I/O type metadata) for
+        all known tasks via the public manifest endpoint. Retries with backoff; raises
+        RuntimeError if exhausted. After a successful load, asserts that each registered
+        runner Task's input_type / output_types matches the manifest (fail fast on drift).
+
+        ``check_registry`` defaults to True for production (workflow startup). Tests that
+        inject a partial fake manifest can pass ``check_registry=False`` to skip the drift
+        assertion without disabling it globally.
         """
         retries = max(1, int(os.getenv("RUNNER_RECON_PARAMS_RETRIES", "5")))
         backoff = max(0.0, float(os.getenv("RUNNER_RECON_PARAMS_BACKOFF_SECONDS", "2")))
@@ -114,11 +122,16 @@ class TaskParameterManager:
                     tasks = data.get("tasks")
                     if not isinstance(tasks, dict) or not tasks:
                         raise ValueError("manifest missing or empty 'tasks' object")
-                    self._loaded = {str(k): dict(v) for k, v in tasks.items()}
+                    self._loaded = {
+                        str(k): self._normalize_manifest_entry(v)
+                        for k, v in tasks.items()
+                    }
                     logger.info(
                         "Loaded recon task parameter manifest (%s tasks) from API",
                         len(self._loaded),
                     )
+                    if check_registry:
+                        self._assert_registry_matches_manifest()
                     return
                 last_error = f"HTTP {response.status_code}: {response.text[:200]}"
             except Exception as e:
@@ -136,8 +149,23 @@ class TaskParameterManager:
             f"Failed to load recon task parameters from API after {retries} attempt(s). Last error: {last_error}"
         )
 
-    def get_task_parameters(self, task_name: str) -> Dict[str, Any]:
-        """Return effective parameters loaded at startup; no per-task HTTP."""
+    @staticmethod
+    def _normalize_manifest_entry(entry: Any) -> Dict[str, Any]:
+        """
+        Accept both the new {parameters, input_types, output_types} shape and a legacy
+        flat parameters dict (so an old API build does not crash a new runner image).
+        """
+        if not isinstance(entry, dict):
+            return {"parameters": {}, "input_types": [], "output_types": []}
+        if "parameters" in entry and isinstance(entry["parameters"], dict):
+            return {
+                "parameters": dict(entry["parameters"]),
+                "input_types": list(entry.get("input_types") or []),
+                "output_types": list(entry.get("output_types") or []),
+            }
+        return {"parameters": dict(entry), "input_types": [], "output_types": []}
+
+    def _get_entry(self, task_name: str) -> Dict[str, Any]:
         if self._loaded is None:
             raise RuntimeError(
                 "Task parameters not loaded; call parameter_manager.load_all_from_api() at workflow startup"
@@ -148,6 +176,67 @@ class TaskParameterManager:
                 "If this task is valid, add it to recon_task_builtin_defaults.yaml on the API."
             )
         return self._loaded[task_name]
+
+    def get_task_parameters(self, task_name: str) -> Dict[str, Any]:
+        """Return effective parameters loaded at startup; no per-task HTTP."""
+        return dict(self._get_entry(task_name)["parameters"])
+
+    def get_task_input_types(self, task_name: str) -> List[str]:
+        """Return declared input type names (lowercase strings) from the manifest."""
+        return list(self._get_entry(task_name).get("input_types") or [])
+
+    def get_task_output_types(self, task_name: str) -> List[str]:
+        """Return declared output type names (lowercase strings) from the manifest."""
+        return list(self._get_entry(task_name).get("output_types") or [])
+
+    def _assert_registry_matches_manifest(self) -> None:
+        """
+        Verify every registered Task class declares input_type / output_types that match
+        the API manifest. Runs once per process after load_all_from_api(). Raises RuntimeError
+        listing every mismatch so drift is loud and early.
+        """
+        try:
+            import tasks as _tasks_pkg  # Late import: TaskRegistry populated on package import
+        except Exception as e:
+            logger.warning("Skipping task I/O drift check: tasks package not importable (%s)", e)
+            return
+
+        registry = getattr(_tasks_pkg, "TaskRegistry", None)
+        if registry is None:
+            logger.warning("Skipping task I/O drift check: TaskRegistry not found on tasks package")
+            return
+
+        registered: Dict[str, Any] = getattr(registry, "_tasks", {}) or {}
+        mismatches: List[str] = []
+
+        for name, task_cls in registered.items():
+            if self._loaded is None or name not in self._loaded:
+                mismatches.append(f"task '{name}': registered in runner but missing from API manifest")
+                continue
+
+            expected_inputs = _type_attr_to_names(getattr(task_cls, "input_type", None))
+            expected_outputs = _type_attr_to_names(getattr(task_cls, "output_types", None))
+            manifest_inputs = {s.lower() for s in self.get_task_input_types(name)}
+            manifest_outputs = {s.lower() for s in self.get_task_output_types(name)}
+
+            if expected_inputs != manifest_inputs:
+                mismatches.append(
+                    f"task '{name}': input_type mismatch (code={sorted(expected_inputs)}, "
+                    f"manifest={sorted(manifest_inputs)})"
+                )
+            if expected_outputs != manifest_outputs:
+                mismatches.append(
+                    f"task '{name}': output_types mismatch (code={sorted(expected_outputs)}, "
+                    f"manifest={sorted(manifest_outputs)})"
+                )
+
+        if mismatches:
+            raise RuntimeError(
+                "Runner Task I/O types do not match API manifest. Fix recon_task_builtin_defaults.yaml "
+                "or the Task class declarations so they agree.\n  - "
+                + "\n  - ".join(mismatches)
+            )
+        logger.info("Task I/O type drift check passed for %s registered task(s)", len(registered))
 
     def get_last_execution_threshold(self, task_name: str) -> int:
         """
@@ -164,32 +253,48 @@ class TaskParameterManager:
         parameters = self.get_task_parameters(task_name)
         raw = parameters.get("last_execution_threshold", 24)
         return last_execution_threshold_to_hours(raw, default_hours=24)
-    
+
     def get_timeout(self, task_name: str) -> int:
         """
         Get the timeout for a specific task
-        
+
         Args:
             task_name: Name of the recon task
-            
+
         Returns:
             Timeout in seconds
         """
         parameters = self.get_task_parameters(task_name)
         return parameters.get("timeout", 300)  # Default 5 minutes
-    
+
     def get_chunk_size(self, task_name: str) -> int:
         """
         Get the chunk size for a specific task
-        
+
         Args:
             task_name: Name of the recon task
-            
+
         Returns:
             Chunk size (number of items per chunk)
         """
         parameters = self.get_task_parameters(task_name)
         return parameters.get("chunk_size", 10)  # Default 10 items per chunk
+
+
+def _type_attr_to_names(value: Any) -> set:
+    """Convert a Task.input_type / Task.output_types value to a set of lowercase strings."""
+    if value is None:
+        return set()
+    if not isinstance(value, (list, tuple, set)):
+        value = [value]
+    out: set = set()
+    for item in value:
+        if isinstance(item, Enum):
+            out.add(str(item.value).lower())
+        elif isinstance(item, str) and item.strip():
+            out.add(item.strip().lower())
+    return out
+
 
 # Global parameter manager instance
 parameter_manager = TaskParameterManager()

@@ -11,6 +11,7 @@ import {
 import { useProgramFilter } from '../../contexts/ProgramFilterContext';
 import { workflowAPI, programAPI } from '../../services/api';
 import { TASK_TYPES } from './constants';
+import { useTaskManifestStore } from '../../stores/taskManifestStore';
 import ProgramAssetSelector from './ProgramAssetSelector';
 import TaskParameterSelector from './TaskParameterSelector';
 
@@ -142,9 +143,9 @@ function SingleTaskModal({ show, onHide, onSuccess }) {
     setTaskParams({});
 
     // Auto-set input type based on task's primary input
-    const taskConfig = TASK_TYPES[taskType];
-    if (taskConfig && taskConfig.inputs && taskConfig.inputs.length > 0) {
-      const primaryInput = taskConfig.inputs[0];
+    const taskInputs = useTaskManifestStore.getState().getInputs(taskType);
+    if (taskInputs.length > 0) {
+      const primaryInput = taskInputs[0];
       // Map task input types to our input type options
       if (primaryInput === 'domains') {
         setInputType('domains');
@@ -665,9 +666,9 @@ function SingleTaskModal({ show, onHide, onSuccess }) {
               <br />
               <strong>Description:</strong> {getTaskDescription(selectedTask)}
               <br />
-              <strong>Expected Inputs:</strong> {TASK_TYPES[selectedTask].inputs.join(', ')}
+              <strong>Expected Inputs:</strong> {useTaskManifestStore.getState().getInputs(selectedTask).join(', ')}
               <br />
-              <strong>Expected Outputs:</strong> {TASK_TYPES[selectedTask].outputs.join(', ')}
+              <strong>Expected Outputs:</strong> {useTaskManifestStore.getState().getOutputs(selectedTask).join(', ')}
             </Alert>
           )}
         </Form>

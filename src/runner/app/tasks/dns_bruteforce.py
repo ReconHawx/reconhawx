@@ -54,7 +54,7 @@ class DnsBruteforce(Task):
     
     name = "dns_bruteforce"
     description = "Bruteforce subdomains using PureDNS with wordlist"
-    input_type = AssetType.STRING
+    input_type = AssetType.SUBDOMAIN
     output_types = [AssetType.SUBDOMAIN, AssetType.IP]
 
     def __init__(self):

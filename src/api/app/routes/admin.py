@@ -57,6 +57,14 @@ class ReconTaskParametersResponse(BaseModel):
     id: Optional[str] = Field(None, description="Document ID")
     recon_task: str = Field(..., description="Name of the recon task")
     parameters: Dict[str, Any] = Field(..., description="Task parameters")
+    input_types: List[str] = Field(
+        default_factory=list,
+        description="Declared input asset/finding type names (metadata, not user-editable)",
+    )
+    output_types: List[str] = Field(
+        default_factory=list,
+        description="Declared output asset/finding type names (metadata, not user-editable)",
+    )
     created_at: Optional[str] = Field(None, description="Creation timestamp")
     updated_at: Optional[str] = Field(None, description="Last update timestamp")
     stored_in_database: bool = Field(
@@ -71,12 +79,29 @@ class ReconTaskParametersListResponse(BaseModel):
     total: int = Field(..., description="Total number of tasks")
 
 
-class ReconTaskParametersManifestResponse(BaseModel):
-    """Public manifest: task name -> effective parameters (runner bootstrap)."""
+class ReconTaskManifestEntry(BaseModel):
+    """Per-task manifest entry: parameters plus I/O type metadata."""
 
-    tasks: Dict[str, Dict[str, Any]] = Field(
+    parameters: Dict[str, Any] = Field(
         ...,
-        description="All known recon tasks and their effective parameter dicts",
+        description="Effective parameters (builtin defaults merged with DB overrides)",
+    )
+    input_types: List[str] = Field(
+        default_factory=list,
+        description="Declared input asset/finding type names",
+    )
+    output_types: List[str] = Field(
+        default_factory=list,
+        description="Declared output asset/finding type names",
+    )
+
+
+class ReconTaskParametersManifestResponse(BaseModel):
+    """Public manifest: task name -> { parameters, input_types, output_types }."""
+
+    tasks: Dict[str, ReconTaskManifestEntry] = Field(
+        ...,
+        description="All known recon tasks with effective parameters and I/O type metadata",
     )
 
 class LastExecutionThresholdRequest(BaseModel):

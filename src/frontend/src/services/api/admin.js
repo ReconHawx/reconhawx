@@ -136,6 +136,13 @@ export const adminAPI = {
     return response.data;
   },
 
+  // Public manifest: effective parameters + input/output type metadata for every known task.
+  // Used by the workflow builder to avoid hardcoding per-task I/O types in the frontend.
+  getPublicReconTaskManifest: async () => {
+    const response = await api.get('/admin/public/recon-tasks/effective-parameters');
+    return response.data;
+  },
+
   createReconTaskParameters: async (reconTask, parameters) => {
     const response = await api.post(`/admin/recon-tasks/${reconTask}/parameters`, {
       parameters: parameters

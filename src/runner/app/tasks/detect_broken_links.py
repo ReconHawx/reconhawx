@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 class DetectBrokenLinks(Task):
     name = "detect_broken_links"
     description = "Detect broken links: social media links (Facebook, Instagram, Twitter/X, LinkedIn) and general links with unregistered domains (hijackable)"
-    input_type = AssetType.STRING
+    input_type = AssetType.URL
     output_types = [FindingType.BROKEN_LINK]
 
     def get_timestamp_hash(self, target: Any, params: Optional[Dict[Any, Any]] = None) -> str:

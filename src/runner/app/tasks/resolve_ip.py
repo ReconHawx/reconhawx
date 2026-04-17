@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 class ResolveIP(Task):
     name = "resolve_ip"
     description = "Resolves IP addresses to domain names using dnsx"
-    input_type = AssetType.STRING
+    input_type = AssetType.IP
     output_types = [AssetType.SUBDOMAIN, AssetType.IP]
 
     def get_timestamp_hash(self, target: Any, params: Optional[Dict[Any, Any]] = None) -> str:

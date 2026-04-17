@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 class ScreenshotWebsite(Task):
     name = "screenshot_website"
     description = "Screenshot a website"
-    input_type = AssetType.STRING
+    input_type = AssetType.URL
     output_types = [AssetType.SCREENSHOT]
     chunk_size = 10
 

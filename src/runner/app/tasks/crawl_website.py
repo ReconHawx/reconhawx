@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 class CrawlWebsite(Task):
     name = "crawl_website"
     description = "Crawl a website"
-    input_type = AssetType.STRING
+    input_type = AssetType.URL
     output_types = [AssetType.URL]
     chunk_size = 1
 
