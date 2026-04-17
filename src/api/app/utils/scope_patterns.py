@@ -50,6 +50,43 @@ def validate_scope_domain_entry(entry: Dict[str, Any]) -> Tuple[str, bool]:
     return pattern, wildcard
 
 
+def sanitize_scope_entries(
+    entries: Optional[Sequence[Any]],
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, str]]]:
+    """Split a structured scope list into (valid, dropped).
+
+    Each valid entry is returned in normalized form as
+    ``{"pattern": <lowercased>, "wildcard": <bool>}``. Invalid or non-dict
+    rows are collected in ``dropped`` as ``{"pattern": <raw>, "reason": <str>}``
+    so callers can log them and/or surface them to the UI.
+
+    The helper is intentionally permissive: it never raises. It is meant for
+    write paths that want to drop bad rows silently rather than reject the
+    whole request.
+    """
+    valid: List[Dict[str, Any]] = []
+    dropped: List[Dict[str, str]] = []
+    if not entries:
+        return valid, dropped
+    for raw in entries:
+        if not isinstance(raw, dict):
+            dropped.append({"pattern": str(raw), "reason": "not an object"})
+            continue
+        try:
+            pat, wc = validate_scope_domain_entry(raw)
+        except ValueError as e:
+            raw_pat = raw.get("pattern")
+            dropped.append(
+                {
+                    "pattern": raw_pat if isinstance(raw_pat, str) else str(raw_pat),
+                    "reason": str(e),
+                }
+            )
+            continue
+        valid.append({"pattern": pat, "wildcard": wc})
+    return valid, dropped
+
+
 def structured_pattern_to_regex(pattern: str) -> str:
     """Build anchored regex for a validated structured pattern (lowercase)."""
     labels = pattern.split(".")

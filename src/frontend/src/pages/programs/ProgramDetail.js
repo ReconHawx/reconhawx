@@ -118,10 +118,18 @@ function ProgramDetail() {
   const [importLoading, setImportLoading] = useState(false);
   const [importError, setImportError] = useState('');
   const [importReplaceAll, setImportReplaceAll] = useState(false);
-  
+  // Invalid scope patterns returned by the API when importing domains. Kept
+  // per-modal so the import dialog can stay open with the dropped entries in
+  // view while the valid ones are already persisted server-side.
+  const [importScopeWarnings, setImportScopeWarnings] = useState([]);
+
   // Edit modal states
   const [showEditModal, setShowEditModal] = useState(false);
   const [editLoading, setEditLoading] = useState(false);
+  // Dropped scope entries ({pattern, reason}) returned by the API for the
+  // current edit submission. Populated for scope_domains / out_of_scope_domains
+  // only; surfaced inline in the edit modal so the user can fix bad rows.
+  const [editScopeWarnings, setEditScopeWarnings] = useState([]);
   const [editType, setEditType] = useState(null); // 'domain_regex', 'out_of_scope_regex', 'cidr_list', 'safe_registrar', 'safe_ssl_issuer', 'phishlabs_api_key', or 'threatstream_credentials'
   const [editForm, setEditForm] = useState({
     newItems: '',
@@ -188,10 +196,17 @@ function ProgramDetail() {
 
   usePageTitle(formatPageTitle(program?.name || programName, 'Program'));
 
-  const loadProgram = useCallback(async () => {
+  const loadProgram = useCallback(async ({ silent = false } = {}) => {
     try {
-      setLoading(true);
-      setError(null);
+      // When `silent` is true, skip toggling the page-level `loading` flag so
+      // an open modal (e.g. the scope-domains editor) does not get unmounted
+      // by the top-level `if (loading) return <Spinner/>` branch. Use this
+      // after save-style actions where the user is already looking at a modal
+      // and we just want to refresh `program` in place.
+      if (!silent) {
+        setLoading(true);
+        setError(null);
+      }
 
       const response = await programAPI.getByName(programName);
       setProgram(response);
@@ -199,7 +214,9 @@ function ProgramDetail() {
       console.error('Failed to load program:', err);
       setError('Failed to load program: ' + err.message);
     } finally {
-      setLoading(false);
+      if (!silent) {
+        setLoading(false);
+      }
     }
   }, [programName]);
 
@@ -590,6 +607,7 @@ function ProgramDetail() {
     }
     setEditModalSearch(''); // Reset search in modal
     setEditModalSearchIndex(0);
+    setEditScopeWarnings([]);
     setShowEditModal(true);
   };
 
@@ -620,6 +638,7 @@ function ProgramDetail() {
     setImportWildcard(true);
     setImportError('');
     setImportReplaceAll(false);
+    setImportScopeWarnings([]);
     setShowImportModal(true);
   };
 
@@ -667,10 +686,24 @@ function ProgramDetail() {
         payloadEntries = merged;
       }
 
-      await programAPI.update(programName, { scope_domains: payloadEntries }, true);
-      setSuccess('Imported domains into structured in-scope patterns');
-      setShowImportModal(false);
-      await loadProgram();
+      const resp = await programAPI.update(programName, { scope_domains: payloadEntries }, true);
+      const dropped = resp?.scope_warnings?.ignored_in_scope || [];
+      if (dropped.length > 0) {
+        // Valid rows were saved; keep the modal open so the user can see which
+        // entries were rejected and why. Silent reload avoids unmounting the
+        // modal via the page-level loading spinner.
+        setImportScopeWarnings(dropped);
+        setSuccess(
+          `Imported ${payloadEntries.length - dropped.length} valid domain pattern(s); ` +
+          `${dropped.length} invalid entr${dropped.length === 1 ? 'y was' : 'ies were'} skipped.`
+        );
+        await loadProgram({ silent: true });
+      } else {
+        setImportScopeWarnings([]);
+        setSuccess('Imported domains into structured in-scope patterns');
+        setShowImportModal(false);
+        await loadProgram();
+      }
     } catch (err) {
       console.error('Failed to import domains:', err);
       setImportError('Failed to import domains: ' + (err.response?.data?.detail || err.message));
@@ -685,6 +718,7 @@ function ProgramDetail() {
     try {
       setEditLoading(true);
       setError('');
+      setEditScopeWarnings([]);
 
       let updateData = {};
 
@@ -725,7 +759,7 @@ function ProgramDetail() {
       }
 
       // Update the program
-      await programAPI.update(
+      const resp = await programAPI.update(
         programName,
         updateData,
         editType === 'threatstream_credentials'
@@ -736,7 +770,7 @@ function ProgramDetail() {
               ? true
               : editForm.overwrite
       );
-      
+
       const typeLabels = {
         'scope_domains': 'In-scope domain patterns',
         'out_of_scope_domains': 'Out-of-scope domain patterns',
@@ -750,12 +784,32 @@ function ProgramDetail() {
         'recordedfuture_api_key': 'RecordedFuture API key',
         'threatstream_credentials': 'Threatstream API credentials'
       };
-      setSuccess(`${typeLabels[editType]} updated successfully`);
-      setShowEditModal(false);
-      
-      // Reload program data
-      await loadProgram();
-      
+
+      // Surface any scope patterns the API dropped as invalid (e.g. a user
+      // typed ".*h3x.it"). Keep the modal open so the user can fix them.
+      let droppedScope = [];
+      if (editType === 'scope_domains') {
+        droppedScope = resp?.scope_warnings?.ignored_in_scope || [];
+      } else if (editType === 'out_of_scope_domains') {
+        droppedScope = resp?.scope_warnings?.ignored_out_of_scope || [];
+      }
+
+      if (droppedScope.length > 0) {
+        setEditScopeWarnings(droppedScope);
+        const savedCount = (editForm.scopeDomainRows || []).filter((r) => (r.pattern || '').trim()).length - droppedScope.length;
+        setSuccess(
+          `${typeLabels[editType]}: ${savedCount >= 0 ? savedCount : 0} saved; ` +
+          `${droppedScope.length} invalid entr${droppedScope.length === 1 ? 'y was' : 'ies were'} skipped.`
+        );
+        // Reload without flipping the page-level loading spinner so the modal
+        // stays mounted while the user sees and fixes the invalid rows.
+        await loadProgram({ silent: true });
+      } else {
+        setSuccess(`${typeLabels[editType]} updated successfully`);
+        setShowEditModal(false);
+        await loadProgram();
+      }
+
     } catch (err) {
       console.error('Failed to update program:', err);
       setError('Failed to update program: ' + (err.response?.data?.detail || err.message));
@@ -2819,6 +2873,27 @@ function ProgramDetail() {
             <Alert variant="info">
               <strong>Manager Access Required:</strong> Only users with manager-level permissions can edit program settings.
             </Alert>
+
+            {(editType === 'scope_domains' || editType === 'out_of_scope_domains') && editScopeWarnings.length > 0 && (
+              <Alert variant="warning" onClose={() => setEditScopeWarnings([])} dismissible>
+                <Alert.Heading className="h6 mb-2">
+                  {editScopeWarnings.length} invalid pattern{editScopeWarnings.length === 1 ? '' : 's'} skipped
+                </Alert.Heading>
+                <p className="mb-2 small">
+                  The entries below were not saved because they are not valid DNS patterns. Valid rows
+                  have been saved. Fix or remove the bad rows and resubmit.
+                </p>
+                <ul className="mb-0 small">
+                  {editScopeWarnings.map((w, i) => (
+                    <li key={i}>
+                      <code>{w.pattern}</code>
+                      {w.reason ? <> — {w.reason}</> : null}
+                    </li>
+                  ))}
+                </ul>
+              </Alert>
+            )}
+
             
             {/* Search Box for Edit Modal (list fields; not structured scope rows) */}
             {!singleValueTypes.includes(editType) &&
@@ -2935,6 +3010,7 @@ function ProgramDetail() {
                   rows={editForm.scopeDomainRows || []}
                   onChange={(scopeDomainRows) => setEditForm({ ...editForm, scopeDomainRows })}
                   disabled={editLoading}
+                  invalidPatterns={editScopeWarnings}
                 />
               ) : singleValueTypes.includes(editType) ? (
                 <Form.Control
@@ -3061,6 +3137,24 @@ function ProgramDetail() {
             {importError && (
               <Alert variant="danger" onClose={() => setImportError('')} dismissible>
                 {importError}
+              </Alert>
+            )}
+            {importScopeWarnings.length > 0 && (
+              <Alert variant="warning" onClose={() => setImportScopeWarnings([])} dismissible>
+                <Alert.Heading className="h6 mb-2">
+                  {importScopeWarnings.length} invalid pattern{importScopeWarnings.length === 1 ? '' : 's'} skipped
+                </Alert.Heading>
+                <p className="mb-2 small">
+                  Valid entries were imported. These were rejected as invalid DNS patterns:
+                </p>
+                <ul className="mb-0 small">
+                  {importScopeWarnings.map((w, i) => (
+                    <li key={i}>
+                      <code>{w.pattern}</code>
+                      {w.reason ? <> — {w.reason}</> : null}
+                    </li>
+                  ))}
+                </ul>
               </Alert>
             )}
             <Alert variant="info">
