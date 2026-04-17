@@ -5,6 +5,9 @@ import { scheduledJobsAPI } from '../../services/api';
 import { formatDate, formatRelativeTime } from '../../utils/dateUtils';
 import { useAuth } from '../../contexts/AuthContext';
 import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
+import { HIDDEN_JOB_TYPES } from './hiddenJobTypes';
+
+const LEGACY_PROBE_LIMIT = 100;
 
 const ScheduledJobs = () => {
   usePageTitle(formatPageTitle('Scheduled Jobs'));
@@ -18,6 +21,7 @@ const ScheduledJobs = () => {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [jobToDelete, setJobToDelete] = useState(null);
   const [actionLoading, setActionLoading] = useState({});
+  const [legacyJobCounts, setLegacyJobCounts] = useState({});
   
   const navigate = useNavigate();
   const { isSuperuser, isAdmin, user, hasProgramPermission } = useAuth();
@@ -63,6 +67,29 @@ const ScheduledJobs = () => {
   useEffect(() => {
     loadJobs();
   }, [loadJobs]);
+
+  const detectLegacyJobs = useCallback(async () => {
+    const results = await Promise.all(
+      HIDDEN_JOB_TYPES.map(async (type) => {
+        try {
+          const rows = await scheduledJobsAPI.getAll(LEGACY_PROBE_LIMIT, 0, null, type);
+          const count = Array.isArray(rows) ? rows.length : 0;
+          return [type, count];
+        } catch (_) {
+          return [type, 0];
+        }
+      })
+    );
+    const nonEmpty = results.filter(([, n]) => n > 0);
+    setLegacyJobCounts(Object.fromEntries(nonEmpty));
+  }, []);
+
+  useEffect(() => {
+    if (!hasAnyManagerPermission()) return;
+    detectLegacyJobs();
+    // hasAnyManagerPermission reads from context refs; re-running only on mount is fine.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detectLegacyJobs]);
 
   const handleDelete = async () => {
     if (!jobToDelete) return;
@@ -135,6 +162,8 @@ const ScheduledJobs = () => {
       'typosquat_batch': 'Typosquat Batch',
       'phishlabs_batch': 'PhishLabs Batch',
       'ai_analysis_batch': 'AI Analysis Batch',
+      'gather_api_findings': 'Gather API Findings',
+      'sync_recordedfuture_data': 'Sync RecordedFuture Data',
       'workflow': 'Workflow'
     };
     return labels[jobType] || jobType;
@@ -233,6 +262,39 @@ const ScheduledJobs = () => {
         </Row>
       )}
 
+      {hasAnyManagerPermission() && Object.keys(legacyJobCounts).length > 0 && (
+        <Row className="mb-3">
+          <Col>
+            <Alert variant="warning" className="mb-0">
+              <Alert.Heading as="h6">Scheduled jobs of removed types detected</Alert.Heading>
+              <p className="mb-2">
+                The following job types are no longer supported and will not run.
+                Please review and delete these scheduled jobs:
+              </p>
+              <ul className="mb-0">
+                {Object.entries(legacyJobCounts).map(([type, count]) => {
+                  const displayCount = count >= LEGACY_PROBE_LIMIT ? `${LEGACY_PROBE_LIMIT}+` : count;
+                  const jobLabel = count === 1 ? 'job' : 'jobs';
+                  return (
+                    <li key={type}>
+                      <strong>{getJobTypeLabel(type)}</strong>: {displayCount} {jobLabel}{' '}
+                      <Button
+                        size="sm"
+                        variant="link"
+                        className="p-0 align-baseline"
+                        onClick={() => setFilters((prev) => ({ ...prev, jobType: type }))}
+                      >
+                        show in list
+                      </Button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </Alert>
+          </Col>
+        </Row>
+      )}
+
       <Row className="mb-3">
         <Col md={6}>
           <Form.Group>
@@ -258,10 +320,6 @@ const ScheduledJobs = () => {
               onChange={(e) => setFilters(prev => ({ ...prev, jobType: e.target.value }))}
             >
               <option value="">All Types</option>
-              <option value="dummy_batch">Dummy Batch</option>
-              <option value="typosquat_batch">Typosquat Batch</option>
-              <option value="phishlabs_batch">PhishLabs Batch</option>
-              <option value="ai_analysis_batch">AI Analysis Batch</option>
               <option value="workflow">Workflow</option>
             </Form.Select>
           </Form.Group>
