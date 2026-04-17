@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.17.0](https://github.com/ReconHawx/reconhawx/compare/v0.16.1...v0.17.0) (2026-04-17)
+
+
+### Features
+
+* **frontend:** hide deprecated scheduled-job types and warn on legacy entries ([d2578f9](https://github.com/ReconHawx/reconhawx/commit/d2578f95629d8009fdfc024f7476e6fe5ec7e8cc))
+* **programs:** reject invalid scope patterns on write and surface them in the editor ([16bce42](https://github.com/ReconHawx/reconhawx/commit/16bce42958a822d58973d3cd067859004010ef63))
+* **runner:** drop malformed task inputs and report drops on step status ([44ccce0](https://github.com/ReconHawx/reconhawx/commit/44ccce0ca32241f56bf37ff5b6e316a354c5fee1))
+* **runner:** unify recon task input and output types across stack ([ee37603](https://github.com/ReconHawx/reconhawx/commit/ee37603899e7a2ff8c05c3fe526ea8525759d3e7))
+
+
+### Bug Fixes
+
+* **frontend:** restore workflow handle colors by input and output type ([7fc96f2](https://github.com/ReconHawx/reconhawx/commit/7fc96f2f0821816f7c7409d2208b3fe91897eb91))
+* **programs:** streamline program creation and continue setup in detail view ([05cae76](https://github.com/ReconHawx/reconhawx/commit/05cae76b6ee3ecd13faf6c610a20cd445b6037e4))
+
 ## [0.16.1](https://github.com/ReconHawx/reconhawx/compare/v0.16.0...v0.16.1) (2026-04-13)
 
 
