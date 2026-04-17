@@ -1,0 +1,6 @@
+Starting check...
+[INF] processing https://example.com
+{"url": "https://example.com", "broken_link": "https://dead.test/a", "type": "general", "hijackable": false}
+[INF] done
+{"url": "https://example.com", "broken_link": "https://dead.test/b", "type": "general", "hijackable": true}
+this line is garbage and should be skipped

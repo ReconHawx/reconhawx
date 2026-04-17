@@ -1,0 +1,20 @@
+{
+  "example.com": {
+    "status": "Registered",
+    "registrar": "Example Registrar, Inc.",
+    "creation_date": "1995-08-14T04:00:00Z",
+    "expiration_date": "2026-08-13T04:00:00Z",
+    "updated_date": "2024-08-14T09:12:21Z",
+    "name_servers": ["ns1.example.net", "ns2.example.net"],
+    "registrant_name": "Example Corp",
+    "registrant_org": "Example Org",
+    "registrant_country": "US",
+    "admin_email": "admin@example.com",
+    "tech_email": "tech@example.com",
+    "dnssec": "unsigned",
+    "whois_server": "whois.example-registry.net",
+    "response_source": "rdap",
+    "raw_response": "Domain Name: EXAMPLE.COM"
+  },
+  "notfound.test": "lookup failed: timeout"
+}

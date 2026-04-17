@@ -1,0 +1,10 @@
+
+[INF] banner line about to be ignored
+api.example.com
+www.example.com
+API.Example.com
+https://not-a-domain-line.example.com
+invalid..com
+sub.example.co.uk
+   mail.example.com   
+

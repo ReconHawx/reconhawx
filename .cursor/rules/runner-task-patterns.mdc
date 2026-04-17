@@ -144,6 +144,10 @@ The executor runs `utils.input_validation.validate_inputs_for_task(values, task.
 
 Because of this, **new tasks should not re-filter their inputs for type-shape validity inside `get_command` / `generate_commands`**. Per-task filtering is only appropriate for task-specific semantics (e.g. `whois_domain_check` extracting the apex from a valid subdomain, not rejecting invalid hostnames). Existing per-task filters (`resolve_domain.get_command` calling `get_valid_domains`) are idempotent no-ops after the central validator runs; prefer removing them when touching the task for other reasons.
 
+### Per-task unit tests
+
+Per-task pytest coverage lives under [`src/runner/tests/tasks/test_<name>.py`](../../src/runner/tests/tasks/), with fixtures under [`src/runner/tests/fixtures/<name>/`](../../src/runner/tests/fixtures/). The tests intentionally sit **outside** `src/runner/app/` so the runner Docker image (which `COPY`s `./app/`) does not ship test code or fixtures. Shared helpers (`patched_resolvers`, `load_fixture`, `fixture_path`, `_stub_parameter_manager`, `_freeze_random`) are defined in [`src/runner/tests/conftest.py`](../../src/runner/tests/conftest.py), which also prepends `src/runner/app` to `sys.path` so tests can `import tasks`, `import models`, etc. When adding a Tier-1 task, add matching tests that cover `get_command` (or `generate_commands` for async-only tasks), `parse_output`, and — for dual-purpose tasks — `transform_to_findings`. **Do not** add `__init__.py` to `tests/tasks/`; it would shadow the real `tasks` package. Run the suite with `devenv shell -- bash -c 'cd src/runner && python -m pytest tests/ -v'` (or from the repo root via the top-level [`pytest.ini`](../../pytest.ini) `testpaths`).
+
 ### Storing new asset types in the workflow asset store
 
 `AssetProcessor.store_assets` in `task_components.py` only persists keys that are **`AssetType` enum instances**. String keys (e.g. `"apex_domain"`) are **skipped**, so step outputs will not appear for downstream `input_mapping` unless you add a matching **`AssetType`** member whose **`.value`** matches the unified API asset key (e.g. `apex_domain`).

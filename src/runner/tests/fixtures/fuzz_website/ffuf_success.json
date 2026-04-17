@@ -1,0 +1,3 @@
+{"url": "https://example.com/admin", "status": 200, "length": 123, "content-type": "text/html", "words": 10, "lines": 3, "redirectlocation": ""}
+{"url": "https://example.com/login", "status": 401, "length": 456, "content-type": "text/html", "words": 15, "lines": 4, "redirectlocation": ""}
+{"url": "https://example.com/moved", "status": 301, "length": 0, "content-type": "", "redirectlocation": "https://example.com/new"}

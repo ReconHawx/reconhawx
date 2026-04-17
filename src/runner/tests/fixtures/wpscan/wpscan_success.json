@@ -1,0 +1,54 @@
+{
+  "target_url": "https://example.com/",
+  "effective_url": "https://example.com/",
+  "version": {
+    "number": "6.2.1",
+    "status": "insecure",
+    "vulnerabilities": [
+      {
+        "title": "WordPress 6.2 - SQL Injection",
+        "fixed_in": "6.2.2",
+        "cve": ["CVE-2024-1234"],
+        "references": {
+          "url": ["https://wpvulndb.example/1"]
+        }
+      }
+    ]
+  },
+  "main_theme": {
+    "slug": "twentytwentythree",
+    "version": {"number": "1.2"},
+    "vulnerabilities": []
+  },
+  "plugins": {
+    "vulnerable-plugin": {
+      "version": {"number": "1.0"},
+      "vulnerabilities": [
+        {
+          "title": "Vulnerable Plugin XSS",
+          "cvss_score": 7.5,
+          "references": {
+            "cve": ["CVE-2024-5678"]
+          }
+        }
+      ]
+    },
+    "clean-plugin": {
+      "version": {"number": "2.1"},
+      "vulnerabilities": []
+    }
+  },
+  "themes": {},
+  "users": {
+    "admin": {"name": "admin"},
+    "editor": {"name": "editor"}
+  },
+  "interesting_findings": [
+    {
+      "url": "https://example.com/wp-content/",
+      "type": "wp_content_dir",
+      "to_s": "wp-content directory exposed",
+      "interesting_entries": ["Directory listing enabled"]
+    }
+  ]
+}

@@ -1,0 +1,6 @@
+{"template-id": "cve-2024-0001", "template": "http/cves/2024/cve-2024-0001.yaml", "info": {"name": "Example CVE", "severity": "high", "tags": ["cve", "http"], "description": "Test"}, "type": "http", "host": "example.com", "url": "https://example.com/path", "matched-at": "https://example.com/path", "matcher-name": "keyword", "ip": "1.2.3.4", "port": "443", "scheme": "https", "extracted-results": ["secret"]}
+{"template-id": "tls-detect", "template": "ssl/tls-detect.yaml", "info": {"name": "TLS detect", "severity": "info", "tags": ["tcp"]}, "type": "tcp", "matched-at": "192.168.1.10:8443", "ip": "", "port": ""}
+{"template-id": "nginx-detect", "template": "http/technologies/nginx-detect.yaml", "info": {"name": "Nginx", "severity": "info"}, "type": "http", "url": "https://example.com/", "matcher-name": "nginx", "host": "example.com"}
+stderr: ignored line
+not-json-line
+{"template-id": "skipped-bad-json"
