@@ -3,6 +3,7 @@
 from utils.scope_patterns import (
     discovery_targets_from_scope,
     is_domain_in_scope_structured_and_legacy,
+    sanitize_scope_entries,
     validate_scope_domain_entry,
 )
 
@@ -91,6 +92,45 @@ def test_discovery_targets_filter_wildcard_only():
     assert "example.com" in t
     assert "other.com" in t
     assert "third.com" not in t
+
+
+def test_sanitize_drops_regex_style_pattern():
+    valid, dropped = sanitize_scope_entries(
+        [{"pattern": ".*h3x.it", "wildcard": True}]
+    )
+    assert valid == []
+    assert len(dropped) == 1
+    assert dropped[0]["pattern"] == ".*h3x.it"
+    assert "*h3x" in dropped[0]["reason"]
+
+
+def test_sanitize_mixed_batch_keeps_valid_normalizes_and_reports_dropped():
+    valid, dropped = sanitize_scope_entries(
+        [
+            {"pattern": "reconhawx.io", "wildcard": True},
+            {"pattern": "*.api.reconhawx.com", "wildcard": True},
+            {"pattern": ".*h3x.it", "wildcard": True},
+        ]
+    )
+    assert valid == [
+        {"pattern": "reconhawx.io", "wildcard": True},
+        {"pattern": "*.api.reconhawx.com", "wildcard": True},
+    ]
+    assert len(dropped) == 1
+    assert dropped[0]["pattern"] == ".*h3x.it"
+
+
+def test_sanitize_non_dict_row_is_dropped():
+    valid, dropped = sanitize_scope_entries(["example.com"])
+    assert valid == []
+    assert len(dropped) == 1
+    assert dropped[0]["reason"] == "not an object"
+    assert dropped[0]["pattern"] == "example.com"
+
+
+def test_sanitize_empty_or_none_input():
+    assert sanitize_scope_entries(None) == ([], [])
+    assert sanitize_scope_entries([]) == ([], [])
 
 
 def test_discovery_targets_wildcard_suffix_after_last_star():

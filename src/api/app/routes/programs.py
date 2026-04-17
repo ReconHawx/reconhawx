@@ -16,6 +16,7 @@ from services.hackerone_service import HackerOneService
 from services.yeswehack_service import YesWeHackService
 from services.intigriti_service import IntigritiService
 from services.bugcrowd_service import BugcrowdService
+from utils.scope_patterns import sanitize_scope_entries
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -76,8 +77,8 @@ class BugcrowdImportResponse(BaseModel):
     message: str = Field(..., description="Detailed message about the import")
     scope_summary: Dict[str, int] = Field(..., description="Summary of imported scope items")
 
-@router.post("", include_in_schema=True, response_model=Dict[str, str])
-@router.post("/", include_in_schema=True, response_model=Dict[str, str])
+@router.post("", include_in_schema=True, response_model=Dict[str, Any])
+@router.post("/", include_in_schema=True, response_model=Dict[str, Any])
 async def create_program(
     program: APIProgram,
     restore_from_archive: bool = Query(
@@ -99,6 +100,13 @@ async def create_program(
             )
 
         program_dict = program.model_dump(by_alias=True, exclude_none=True)
+        scope_warnings = program.scope_warnings()
+        if scope_warnings:
+            logger.warning(
+                "Dropped invalid scope patterns for new program %s: %s",
+                program_dict.get("name"),
+                scope_warnings,
+            )
         
         logger.info(f"Attempting to create program: {program_dict.get('name')}, Restore: {restore_from_archive}")
         
@@ -116,7 +124,10 @@ async def create_program(
              # Consider returning a different status or message
              raise HTTPException(status_code=400, detail="Program creation skipped or failed validation.")
 
-        return {"id": program_id, "status": "success"}
+        response: Dict[str, Any] = {"id": program_id, "status": "success"}
+        if scope_warnings:
+            response["scope_warnings"] = scope_warnings
+        return response
     except HTTPException:
         # Re-raise HTTPExceptions (e.g., our 403 guard) without converting to 500
         raise
@@ -262,8 +273,8 @@ async def get_program(program_name: str = Path(..., min_length=1)):
         logger.error(f"Error fetching program: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.put("/{program_name}", include_in_schema=True, response_model=Dict[str, str])
-@router.put("/{program_name}/", include_in_schema=True, response_model=Dict[str, str])
+@router.put("/{program_name}", include_in_schema=True, response_model=Dict[str, Any])
+@router.put("/{program_name}/", include_in_schema=True, response_model=Dict[str, Any])
 async def update_program(
     program_name: str = Path(..., min_length=1),
     update_data: Dict[str, Any] = Body(...),
@@ -307,6 +318,20 @@ async def update_program(
                 )
             update_data["typosquat_filtering_settings"] = fs
 
+        # Drop invalid structured scope rows from the incoming payload up
+        # front. Valid entries are normalized (lowercased, wildcard forced
+        # when pattern contains *) so merge keys match regardless of casing.
+        scope_warnings: Dict[str, List[Dict[str, str]]] = {}
+        for field, warn_key in (
+            ('scope_domains', 'ignored_in_scope'),
+            ('out_of_scope_domains', 'ignored_out_of_scope'),
+        ):
+            if field in update_data and isinstance(update_data[field], list):
+                valid, dropped = sanitize_scope_entries(update_data[field])
+                update_data[field] = valid
+                if dropped:
+                    scope_warnings[warn_key] = dropped
+
         # For PostgreSQL, we need to handle list fields differently
         # If overwrite is True, we replace the entire list
         # If overwrite is False, we merge the lists (add unique values)
@@ -337,6 +362,26 @@ async def update_program(
                             seen.add(key)
                             existing_list.append(dict(item))
                     update_data[field] = existing_list
+
+        # Sanitize merged result so any pre-existing bad rows in the DB
+        # (legacy data from before validation was enforced) get cleaned up
+        # the next time the program is saved.
+        for field, warn_key in (
+            ('scope_domains', 'ignored_in_scope'),
+            ('out_of_scope_domains', 'ignored_out_of_scope'),
+        ):
+            if field in update_data and isinstance(update_data[field], list):
+                valid, dropped = sanitize_scope_entries(update_data[field])
+                update_data[field] = valid
+                if dropped:
+                    scope_warnings.setdefault(warn_key, []).extend(dropped)
+
+        if scope_warnings:
+            logger.warning(
+                "Dropped invalid scope patterns for program %s: %s",
+                program_name,
+                scope_warnings,
+            )
         
         from repository.typosquat_findings_repo import TyposquatFindingsRepository
 
@@ -409,7 +454,13 @@ async def update_program(
             await sync_ct_monitor_program_config()
         
         logger.info(f"Successfully updated program: {program_name}")
-        return {"status": "success", "message": f"Program {program_name} updated successfully"}
+        response: Dict[str, Any] = {
+            "status": "success",
+            "message": f"Program {program_name} updated successfully",
+        }
+        if scope_warnings:
+            response["scope_warnings"] = scope_warnings
+        return response
     except HTTPException:
         # Re-raise HTTP exceptions
         raise
@@ -690,6 +741,14 @@ async def import_from_hackerone(
         logger.info(f"Converting {len(scopes)} HackerOne scope items to structured patterns...")
         in_scope_sd, out_scope_sd, summary = h1_service.convert_scope_to_structured(scopes)
 
+        in_scope_sd, in_dropped = sanitize_scope_entries(in_scope_sd)
+        out_scope_sd, out_dropped = sanitize_scope_entries(out_scope_sd)
+        if in_dropped or out_dropped:
+            logger.warning(
+                "HackerOne import dropped invalid scope patterns for %s: in_scope=%s out_of_scope=%s",
+                program_name, in_dropped, out_dropped,
+            )
+
         if not in_scope_sd:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -833,11 +892,19 @@ async def import_from_yeswehack(
                 detail=f"No valid in-scope domains or CIDR blocks found for program '{program_slug}'. The program may not have any web application scopes.",
             )
         
-        # Create program with converted scope (YesWeHack: structured scope empty; regex + CIDR only)
+        # Create program with converted scope (YesWeHack: structured scope empty; regex + CIDR only).
+        # Sanitize anyway in case the converter is changed later to emit structured entries.
+        yw_in, yw_in_dropped = sanitize_scope_entries([])
+        yw_out, yw_out_dropped = sanitize_scope_entries([])
+        if yw_in_dropped or yw_out_dropped:
+            logger.warning(
+                "YesWeHack import dropped invalid scope patterns for %s: in_scope=%s out_of_scope=%s",
+                program_name, yw_in_dropped, yw_out_dropped,
+            )
         program_create_data = {
             "name": program_name,
-            "scope_domains": [],
-            "out_of_scope_domains": [],
+            "scope_domains": yw_in,
+            "out_of_scope_domains": yw_out,
             "domain_regex": in_scope_regexes,
             "out_of_scope_regex": out_of_scope_regexes,
             "cidr_list": cidr_blocks,
@@ -977,6 +1044,14 @@ async def import_from_intigriti(
         logger.info(f"Converting {len(scopes)} Intigriti scope items to structured patterns...")
         in_scope_sd, out_scope_sd, ip_list, summary = intigriti_service.convert_scopes_to_structured(domains_data)
 
+        in_scope_sd, in_dropped = sanitize_scope_entries(in_scope_sd)
+        out_scope_sd, out_dropped = sanitize_scope_entries(out_scope_sd)
+        if in_dropped or out_dropped:
+            logger.warning(
+                "Intigriti import dropped invalid scope patterns for %s: in_scope=%s out_of_scope=%s",
+                program_name, in_dropped, out_dropped,
+            )
+
         if not in_scope_sd and not ip_list:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -1112,6 +1187,14 @@ async def import_from_bugcrowd(
         # Convert scope to structured patterns and extract IP ranges
         logger.info("Converting Bugcrowd scope to structured patterns...")
         in_scope_sd, out_scope_sd, ip_list, summary = bugcrowd_service.convert_targets_to_structured(scope_data)
+
+        in_scope_sd, in_dropped = sanitize_scope_entries(in_scope_sd)
+        out_scope_sd, out_dropped = sanitize_scope_entries(out_scope_sd)
+        if in_dropped or out_dropped:
+            logger.warning(
+                "Bugcrowd import dropped invalid scope patterns for %s: in_scope=%s out_of_scope=%s",
+                program_name, in_dropped, out_dropped,
+            )
 
         if not in_scope_sd and not ip_list:
             raise HTTPException(
