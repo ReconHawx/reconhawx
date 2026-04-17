@@ -132,6 +132,18 @@ When you change a task's inputs or outputs, update **both**:
 
 Regression coverage: `src/runner/app/tests/test_yaml_matches_task_declarations.py` asserts Python ↔ YAML agreement, and `src/api/tests/test_recon_task_manifest_public.py` asserts the API payload shape.
 
+### Dispatch-time input validation
+
+The executor runs `utils.input_validation.validate_inputs_for_task(values, task.input_type)` inside `TaskExecutor._finalize_input_data_async` before the last-execution filter:
+
+- Values that don't match the declared `AssetType` (one of `SUBDOMAIN`, `APEX_DOMAIN`, `URL`, `IP`, `CIDR`) are dropped with a single WARNING log containing `by_type` counts and up to 5 sample offending values.
+- Multi-type tasks (e.g. `test_http = [SUBDOMAIN, URL]`, `nuclei_scan = [SUBDOMAIN, IP, URL]`) accept a value if it matches **any** declared type.
+- `STRING`, `SERVICE`, `CERTIFICATE`, `SCREENSHOT` are accept-all (no policing for utility tasks like `shell_command`).
+- A per-step `input_validation: {kept, dropped, by_type, samples}` block is attached to the workflow step status payload (`get_step_status_data`).
+- Escape hatch: `RUNNER_INPUT_VALIDATION=off` short-circuits the validator.
+
+Because of this, **new tasks should not re-filter their inputs for type-shape validity inside `get_command` / `generate_commands`**. Per-task filtering is only appropriate for task-specific semantics (e.g. `whois_domain_check` extracting the apex from a valid subdomain, not rejecting invalid hostnames). Existing per-task filters (`resolve_domain.get_command` calling `get_valid_domains`) are idempotent no-ops after the central validator runs; prefer removing them when touching the task for other reasons.
+
 ### Storing new asset types in the workflow asset store
 
 `AssetProcessor.store_assets` in `task_components.py` only persists keys that are **`AssetType` enum instances**. String keys (e.g. `"apex_domain"`) are **skipped**, so step outputs will not appear for downstream `input_mapping` unless you add a matching **`AssetType`** member whose **`.value`** matches the unified API asset key (e.g. `apex_domain`).

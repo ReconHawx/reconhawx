@@ -316,6 +316,11 @@ class TaskExecutor:
         self._step_api_responses = {}
         # Initialize step timing tracking
         self._step_timing = {}
+        # Per-step input validation summaries (populated by _finalize_input_data_async)
+        self._step_input_validation: Dict[str, Dict[str, Any]] = {}
+        # Current step name, set by execute_task before input preparation so the
+        # input validator can key its summary without threading through every helper.
+        self._current_step_name: Optional[str] = None
 
     async def initialize(self):
         """Initialize the task executor"""
@@ -494,6 +499,9 @@ class TaskExecutor:
         
         # Set program name for use in _prepare_input_data
         self.program_name = program_name
+        # Track current step name so _finalize_input_data_async can record a
+        # structured input-validation summary keyed by step.
+        self._current_step_name = step_name
 
         task_results = []
 
@@ -2350,6 +2358,32 @@ class TaskExecutor:
             
             input_data = cleaned_inputs
             logger.info(f"Cleaned input size for task {task_def.name}: {len(input_data)}")
+
+            # Runtime input validation: drop values that don't match the task's
+            # declared input_type(s). Fully-invalid batches fall through the
+            # existing "no input -> skip" path below.
+            from utils.input_validation import validate_inputs_for_task
+
+            declared = task.input_type if isinstance(task.input_type, list) else [task.input_type]
+            validation = validate_inputs_for_task(input_data, declared)
+            step_name = self._current_step_name or task_def.name
+            if validation.dropped:
+                logger.warning(
+                    "Dropped %d invalid input(s) for task '%s' (step '%s'): by_type=%s samples=%s",
+                    validation.dropped,
+                    task_def.name,
+                    step_name,
+                    validation.by_type,
+                    validation.samples,
+                )
+            # Record a summary per step (overwrites on re-entry; tasks run once per step).
+            self._step_input_validation[step_name] = {
+                "kept": len(validation.kept),
+                "dropped": validation.dropped,
+                "by_type": dict(validation.by_type),
+                "samples": list(validation.samples),
+            }
+            input_data = validation.kept
 
             # Find input limit but don't apply it yet - we'll apply it after filtering
             input_limit = None
@@ -4840,6 +4874,13 @@ class TaskExecutor:
                 "failed_findings": 0,
                 "finding_types": {}
             }
+
+        # Attach input-validation summary for this step if one was recorded
+        # by _finalize_input_data_async. Surfaces as a JSON blob on the step
+        # status payload consumed by the workflow status UI.
+        iv = self._step_input_validation.get(step_name)
+        if iv:
+            result["input_validation"] = iv
 
         return result
 
