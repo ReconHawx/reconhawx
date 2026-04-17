@@ -2,7 +2,7 @@ from pydantic import BaseModel, Field, ConfigDict, field_validator
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 
-from models.base import serialize_datetime
+from models.base import SerializedDatetime, utcnow
 
 class NucleiFinding(BaseModel):
     id: Optional[str] = None
@@ -27,13 +27,12 @@ class NucleiFinding(BaseModel):
     extracted_results: Optional[List[str]] = []
     info: Optional[dict] = {}
     notes: Optional[str] = None
-    created_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
-    updated_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
+    created_at: Optional[SerializedDatetime] = Field(default_factory=utcnow)
+    updated_at: Optional[SerializedDatetime] = Field(default_factory=utcnow)
 
     model_config = ConfigDict(
         populate_by_name=True,
         arbitrary_types_allowed=True,
-        json_encoders={datetime: serialize_datetime},
         json_schema_extra={
             "example": {
                 "id": "123e4567-e89b-12d3-a456-426614174000",
@@ -65,10 +64,10 @@ class TyposquatDomain(BaseModel):
     typo_domain: str
     # info field removed - all data now in separate normalized columns
     fuzzers: Optional[List[str]] = []
-    timestamp: Optional[datetime] = Field(default_factory=datetime.utcnow)
+    timestamp: Optional[SerializedDatetime] = Field(default_factory=utcnow)
     notes: Optional[str] = None
     program_name: Optional[str] = None
-    fix_timestamp: Optional[datetime] = None
+    fix_timestamp: Optional[SerializedDatetime] = None
     # New normalized schema fields
     domain_registered: Optional[bool] = None
     dns_a_records: Optional[List[str]] = None
@@ -99,7 +98,7 @@ class TyposquatDomain(BaseModel):
     assigned_to: Optional[str] = None
     # Parked domain detection
     is_parked: Optional[bool] = None
-    parked_detection_timestamp: Optional[datetime] = None
+    parked_detection_timestamp: Optional[SerializedDatetime] = None
     parked_detection_reasons: Optional[Dict[str, Any]] = None
     parked_confidence: Optional[int] = None  # Confidence score 0-100
     # Protected domain similarities (calculated API-side)
@@ -108,7 +107,7 @@ class TyposquatDomain(BaseModel):
     auto_resolve: Optional[bool] = None
     # AI analysis
     ai_analysis: Optional[Dict[str, Any]] = None
-    ai_analyzed_at: Optional[datetime] = None
+    ai_analyzed_at: Optional[SerializedDatetime] = None
 
     @field_validator('phishlabs_data', 'threatstream_data', 'recordedfuture_data', 'ai_analysis', mode='before')
     @classmethod
@@ -126,7 +125,6 @@ class TyposquatDomain(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True,
         arbitrary_types_allowed=True,
-        json_encoders={datetime: serialize_datetime},
         json_schema_extra={
             "example": {
                 "typo_domain": "examp1e.com",
@@ -188,15 +186,14 @@ class BrokenLink(BaseModel):
     url: Optional[str] = None
     error_code: Optional[str] = None
     response_data: Optional[Dict[str, Any]] = None
-    checked_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
+    checked_at: Optional[SerializedDatetime] = Field(default_factory=utcnow)
     notes: Optional[str] = None
-    created_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
-    updated_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
+    created_at: Optional[SerializedDatetime] = Field(default_factory=utcnow)
+    updated_at: Optional[SerializedDatetime] = Field(default_factory=utcnow)
 
     model_config = ConfigDict(
         populate_by_name=True,
         arbitrary_types_allowed=True,
-        json_encoders={datetime: serialize_datetime},
         json_schema_extra={
             "example": {
                 "id": "123e4567-e89b-12d3-a456-426614174000",
@@ -225,14 +222,14 @@ class BrokenLinkCreate(BaseModel):
     url: Optional[str] = None
     error_code: Optional[str] = None
     response_data: Optional[Dict[str, Any]] = None
-    checked_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
+    checked_at: Optional[SerializedDatetime] = Field(default_factory=utcnow)
     notes: Optional[str] = None
 
 class BrokenLinkUpdate(BaseModel):
     status: Optional[str] = None
     error_code: Optional[str] = None
     response_data: Optional[Dict[str, Any]] = None
-    checked_at: Optional[datetime] = None
+    checked_at: Optional[SerializedDatetime] = None
     notes: Optional[str] = None
 
 class BrokenLinkSearchRequest(BaseModel):
@@ -266,8 +263,8 @@ class WPScanFinding(BaseModel):
     notes: Optional[str] = None
     status: Optional[str] = None
     assigned_to: Optional[str] = None
-    created_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
-    updated_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
+    created_at: Optional[SerializedDatetime] = Field(default_factory=utcnow)
+    updated_at: Optional[SerializedDatetime] = Field(default_factory=utcnow)
 
     def to_dict(self):
         """Custom to_dict method that excludes None values to prevent overwriting existing data"""
@@ -277,7 +274,6 @@ class WPScanFinding(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True,
         arbitrary_types_allowed=True,
-        json_encoders={datetime: serialize_datetime},
         json_schema_extra={
             "example": {
                 "id": "123e4567-e89b-12d3-a456-426614174000",

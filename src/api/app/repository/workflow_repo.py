@@ -1,6 +1,7 @@
 from typing import List, Dict, Any, Optional
 import logging
 from datetime import datetime
+from models.base import utcnow
 from sqlalchemy import and_, or_, not_, desc, asc
 from sqlalchemy.exc import SQLAlchemyError
 from models.postgres import WorkflowLog
@@ -205,7 +206,7 @@ class WorkflowRepository:
                 mapped_data[field] = log_object[field]
 
         # Handle workflow timing
-        now = datetime.utcnow()
+        now = utcnow()
         if not existing_log:  # New workflow log
             # Set started_at for new workflows
             mapped_data["started_at"] = now

@@ -26,6 +26,7 @@ import redis
 import ipaddress
 
 from .base import FindingType
+from models.base import utcnow
 from models.findings import TyposquatDomain
 from utils import normalize_url_for_storage
 from utils.html_extractor import extract_text_from_gowitness_jsonl, extract_text_from_image_ocr
@@ -542,7 +543,7 @@ class VariationCacheManager:
             ttl_to_use = ttl if ttl is not None else self.default_ttl
 
             cache_value = json.dumps({
-                "tested_at": datetime.utcnow().isoformat(),
+                "tested_at": utcnow().isoformat(),
                 "variation_domain": variation_domain
             })
 
@@ -1178,7 +1179,7 @@ class TyposquatAnalyzer:
         """
         # Check cache
         if self._protected_domains_cache is not None and self._protected_domains_cache_timestamp:
-            elapsed = (datetime.utcnow() - self._protected_domains_cache_timestamp).total_seconds()
+            elapsed = (utcnow() - self._protected_domains_cache_timestamp).total_seconds()
             if elapsed < self._cache_ttl:
                 return self._protected_domains_cache
         
@@ -1197,7 +1198,7 @@ class TyposquatAnalyzer:
                 data = response.json()
                 protected_domains = data.get("protected_domains", [])
                 self._protected_domains_cache = protected_domains
-                self._protected_domains_cache_timestamp = datetime.utcnow()
+                self._protected_domains_cache_timestamp = utcnow()
                 logger.debug(f"Fetched {len(protected_domains)} protected domains for program {program_name}")
                 return protected_domains
             else:
@@ -1543,7 +1544,7 @@ class TyposquatAnalyzer:
                 typosquat_params = {
                     "typo_domain": result.get("typo_domain", ""),
                     "fuzzers": result.get("fuzzers", []),
-                    "timestamp": datetime.utcnow(),
+                    "timestamp": utcnow(),
                     "program_name": program_name,
                     # Map domain information from worker output
                     "domain_registered": domain_info.get("registered"),
@@ -1567,7 +1568,7 @@ class TyposquatAnalyzer:
                     "source": source,
                     # Parked domain detection
                     "is_parked": is_parked if is_parked else None,
-                    "parked_detection_timestamp": datetime.utcnow() if is_parked else None,
+                    "parked_detection_timestamp": utcnow() if is_parked else None,
                     "parked_detection_reasons": detection_reasons if is_parked else None,
                     "parked_confidence": parked_confidence,
                 }

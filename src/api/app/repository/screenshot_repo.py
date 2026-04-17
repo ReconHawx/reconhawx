@@ -2,6 +2,7 @@ from sqlalchemy import func, desc, asc
 from typing import Dict, Any, Optional, List, Union
 import logging
 from datetime import datetime
+from models.base import utcnow
 from uuid import UUID
 
 from models.postgres import (
@@ -260,7 +261,7 @@ class ScreenshotRepository(ProgramAccessMixin):
                     # Image already exists for this URL, just update the existing screenshot record
                     # Update capture count and timestamp
                     existing_screenshot.capture_count += 1
-                    existing_screenshot.last_captured_at = datetime.utcnow()
+                    existing_screenshot.last_captured_at = utcnow()
                     
                     # Update workflow_id, step_name, program_name, extracted_text if provided
                     if workflow_id:

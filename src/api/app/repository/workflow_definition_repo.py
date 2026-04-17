@@ -1,6 +1,7 @@
 from typing import List, Dict, Any, Optional
 import logging
 from datetime import datetime
+from models.base import utcnow
 from sqlalchemy import and_, desc
 from sqlalchemy.exc import SQLAlchemyError
 from models.postgres import Workflow, Program
@@ -46,8 +47,8 @@ class WorkflowDefinitionRepository:
                     variables=variables,
                     inputs=inputs,
                     steps={"steps": steps},  # Only store steps, not inputs/variables
-                    created_at=datetime.utcnow(),
-                    updated_at=datetime.utcnow()
+                    created_at=utcnow(),
+                    updated_at=utcnow()
                 )
                 
                 db.add(workflow_definition)
@@ -168,7 +169,7 @@ class WorkflowDefinitionRepository:
                 workflow.variables = variables
                 workflow.inputs = inputs
                 workflow.steps = {"steps": steps}  # Only store steps, not inputs/variables
-                workflow.updated_at = datetime.utcnow()
+                workflow.updated_at = utcnow()
                 
                 db.commit()
                 db.refresh(workflow)

@@ -2,6 +2,7 @@ from sqlalchemy import and_, or_, func, desc, asc
 from typing import Dict, Any, Optional, List
 import logging
 from datetime import datetime
+from models.base import utcnow
 
 from models.postgres import (
     WPScanFinding, Program
@@ -71,7 +72,7 @@ class WPScanFindingsRepository(ProgramAccessMixin):
                     
                     # Update timestamp if any changes were made
                     if updated:
-                        existing.updated_at = datetime.utcnow()
+                        existing.updated_at = utcnow()
                     
                     db.commit()
                     action = "updated" if updated else "skipped"
@@ -520,7 +521,7 @@ class WPScanFindingsRepository(ProgramAccessMixin):
                     if hasattr(finding, key):
                         setattr(finding, key, value)
                 
-                finding.updated_at = datetime.utcnow()
+                finding.updated_at = utcnow()
                 db.commit()
                 return True
                 

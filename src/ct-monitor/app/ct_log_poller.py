@@ -21,7 +21,7 @@ import aiohttp
 from cryptography import x509
 from cryptography.hazmat.backends import default_backend
 
-from models import CertificateInfo, ProcessingStats
+from models import CertificateInfo, ProcessingStats, _utcnow
 
 logger = logging.getLogger(__name__)
 
@@ -338,7 +338,7 @@ class CTLogPoller:
                     state.last_index = batch_end + 1
             
             state.tree_size = current_size
-            state.last_poll = datetime.utcnow()
+            state.last_poll = _utcnow()
             
         except Exception as e:
             logger.error(f"Error polling {state.name}: {e}")
@@ -548,7 +548,7 @@ class CTLogPoller:
                 serial_number=str(cert.serial_number),
                 source=state.name,
                 cert_index=None,
-                seen_at=datetime.utcnow().isoformat(),
+                seen_at=_utcnow().isoformat(),
                 update_type="X509LogEntry"
             )
             

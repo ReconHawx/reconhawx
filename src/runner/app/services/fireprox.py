@@ -20,6 +20,8 @@ import boto3
 from botocore.config import Config
 from botocore.exceptions import ClientError
 
+from models.base import utcnow
+
 logger = logging.getLogger(__name__)
 
 
@@ -234,7 +236,7 @@ class FireProxService:
         title = f'fireprox_{domain}'
 
         # Current timestamp
-        version_date = datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')
+        version_date = utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')
 
         template = {
             "swagger": "2.0",

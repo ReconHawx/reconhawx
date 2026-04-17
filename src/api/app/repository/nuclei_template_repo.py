@@ -2,6 +2,7 @@ from sqlalchemy import or_, desc
 from typing import Dict, Any, Optional, List
 import logging
 from datetime import datetime
+from models.base import utcnow
 
 from models.postgres import NucleiTemplate
 from db import get_db_session
@@ -161,7 +162,7 @@ class NucleiTemplateRepository:
                 if 'tags' in update_data and 'content' not in update_data:
                     template.tags = update_data['tags']
                 
-                template.updated_at = datetime.utcnow()
+                template.updated_at = utcnow()
                 db.commit()
                 db.refresh(template)
                 

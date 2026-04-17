@@ -2,6 +2,7 @@ from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from typing import Optional, List
 from datetime import datetime
+from models.base import utcnow
 from auth.utils import decode_access_token
 from models.user_postgres import UserResponse
 from repository import AuthRepository
@@ -38,8 +39,8 @@ async def get_current_user(credentials: Optional[HTTPAuthorizationCredentials] =
                         email="internal-service@recon.local",
                         is_active=True,
                         is_superuser=True,  # Give full permissions to internal services
-                        created_at=datetime.utcnow(),
-                        updated_at=datetime.utcnow(),
+                        created_at=utcnow(),
+                        updated_at=utcnow(),
                         program_permissions=[],
                         must_change_password=False,
                     )
@@ -77,7 +78,7 @@ async def get_current_user(credentials: Optional[HTTPAuthorizationCredentials] =
                         logger.warning(f"Invalid expires_at format: {expires_at}")
                         expires_at = None
                 
-                if expires_at and datetime.utcnow() > expires_at:
+                if expires_at and utcnow() > expires_at:
                     logger.warning("Expired API token attempted")
                     return None
             
@@ -471,8 +472,8 @@ async def get_internal_service_user() -> Optional[UserResponse]:
         email="internal-service@recon.local",
         is_active=True,
         is_superuser=True,  # Give full permissions to internal services
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow(),
+        created_at=utcnow(),
+        updated_at=utcnow(),
         program_permissions=[],
         must_change_password=False,
     )

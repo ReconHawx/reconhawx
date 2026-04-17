@@ -2,6 +2,7 @@ from sqlalchemy import and_, or_, func, desc, asc, text
 from typing import Dict, Any, Optional, List, Union
 import logging
 from datetime import datetime, timezone
+from models.base import utcnow
 from uuid import UUID
 
 from models.postgres import (
@@ -145,7 +146,7 @@ class CertificateAssetsRepository(ProgramAccessMixin):
                     base_query = base_query.filter(Certificate.cipher.ilike(f"%{cipher}%"))
 
                 if status:
-                    now_dt = datetime.utcnow()
+                    now_dt = utcnow()
                     if status == 'expired':
                         base_query = base_query.filter(Certificate.valid_until < now_dt)
                     elif status == 'valid':
@@ -238,7 +239,7 @@ class CertificateAssetsRepository(ProgramAccessMixin):
                     count_query = count_query.filter(Certificate.cipher.ilike(f"%{cipher}%"))
 
                 if status:
-                    now_dt = datetime.utcnow()
+                    now_dt = utcnow()
                     if status == 'expired':
                         count_query = count_query.filter(Certificate.valid_until < now_dt)
                     elif status == 'valid':
@@ -305,22 +306,22 @@ class CertificateAssetsRepository(ProgramAccessMixin):
                     fingerprint_hash = hashlib.sha256(hash_input.encode()).hexdigest()
                 
                 # Parse dates
-                valid_from = datetime.utcnow()
-                valid_until = datetime.utcnow()
+                valid_from = utcnow()
+                valid_until = utcnow()
                 
                 if certificate_data.get('valid_from') or certificate_data.get('not_valid_before'):
                     try:
                         date_str = certificate_data.get('valid_from') or certificate_data.get('not_valid_before')
                         valid_from = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
                     except:
-                        valid_from = datetime.utcnow()
+                        valid_from = utcnow()
                 
                 if certificate_data.get('valid_until') or certificate_data.get('not_valid_after'):
                     try:
                         date_str = certificate_data.get('valid_until') or certificate_data.get('not_valid_after')
                         valid_until = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
                     except:
-                        valid_until = datetime.utcnow()
+                        valid_until = utcnow()
                 
                 # Check if certificate already exists for this program
                 existing = db.query(Certificate).filter(

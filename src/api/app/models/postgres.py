@@ -8,6 +8,8 @@ import uuid
 from pydantic import BaseModel
 from typing import Optional
 
+from models.base import utcnow
+
 Base = declarative_base()
 
 # Detailed Stat Models
@@ -115,8 +117,8 @@ class Program(Base):
     ai_analysis_settings = Column(JSONB, default=dict)  # {"enabled": false, "model": "llama3:latest", ...}
     ct_monitoring_enabled = Column(Boolean, nullable=False, default=False)  # CT log monitoring for typosquat alerts
     ct_monitor_program_settings = Column(JSONB, nullable=False, default=dict)  # {"tld_filter": "com,net", "similarity_threshold": 0.75}
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
     
     # Relationships
     apex_domains = relationship("ApexDomain", back_populates="program", cascade="all, delete-orphan")
@@ -146,8 +148,8 @@ class ApexDomain(Base):
     name = Column(String(255), unique=True, nullable=False, index=True)
     program_id = Column(UUID(as_uuid=True), ForeignKey("programs.id"), nullable=False, index=True)
     notes = Column(Text)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
 
     # WHOIS (workflow whois_domain_check / imports)
     whois_status = Column(String(64), nullable=True)
@@ -182,8 +184,8 @@ class IP(Base):
     service_provider = Column(String(255))
     program_id = Column(UUID(as_uuid=True), ForeignKey("programs.id"), nullable=False, index=True)
     notes = Column(Text)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
     
     # Relationships
     program = relationship("Program", back_populates="ips")
@@ -203,8 +205,8 @@ class Subdomain(Base):
     is_wildcard = Column(Boolean, default=False)
     wildcard_types = Column(ARRAY(String(10)))  # DNS record types that wildcard
     notes = Column(Text)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
     
     # Relationships
     program = relationship("Program", back_populates="subdomains")
@@ -219,7 +221,7 @@ class SubdomainIP(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     subdomain_id = Column(UUID(as_uuid=True), ForeignKey("subdomains.id"), nullable=False)
     ip_id = Column(UUID(as_uuid=True), ForeignKey("ips.id"), nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
     
     # Relationships
     subdomain = relationship("Subdomain", back_populates="subdomain_ips")
@@ -243,8 +245,8 @@ class Service(Base):
     program_id = Column(UUID(as_uuid=True), ForeignKey("programs.id"), nullable=False, index=True)
     notes = Column(Text)
     nerva_metadata = Column(JSONB)  # Nerva fingerprinting: cpes, confidence, algo, etc.
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
     
     # Relationships
     program = relationship("Program", back_populates="services")
@@ -275,8 +277,8 @@ class Certificate(Base):
     fingerprint_hash = Column(String(255), nullable=False, index=True)
     program_id = Column(UUID(as_uuid=True), ForeignKey("programs.id"), nullable=True, index=True)
     notes = Column(Text)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
     
     # Relationships
     program = relationship("Program", back_populates="certificates")
@@ -320,8 +322,8 @@ class URL(Base):
     program_id = Column(UUID(as_uuid=True), ForeignKey("programs.id"), nullable=False, index=True)
     
     notes = Column(Text)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
     
     # Relationships
     program = relationship("Program", back_populates="urls")
@@ -339,7 +341,7 @@ class URLService(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     url_id = Column(UUID(as_uuid=True), ForeignKey("urls.id"), nullable=False, index=True)
     service_id = Column(UUID(as_uuid=True), ForeignKey("services.id"), nullable=False, index=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
 
     # Relationships
     url = relationship("URL", back_populates="service_associations")
@@ -356,8 +358,8 @@ class ExtractedLink(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     link_url = Column(Text, unique=True, nullable=False, index=True)
     program_id = Column(UUID(as_uuid=True), ForeignKey("programs.id"), nullable=False, index=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
 
     # Relationships
     program = relationship("Program", overlaps="extracted_links")
@@ -370,7 +372,7 @@ class ExtractedLinkSource(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     extracted_link_id = Column(UUID(as_uuid=True), ForeignKey("extracted_links.id"), nullable=False, index=True)
     source_url_id = Column(UUID(as_uuid=True), ForeignKey("urls.id"), nullable=False, index=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
 
     # Relationships
     extracted_link = relationship("ExtractedLink", back_populates="sources")
@@ -388,8 +390,8 @@ class Technology(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name = Column(String(100), nullable=False, index=True)
     program_id = Column(UUID(as_uuid=True), ForeignKey("programs.id"), nullable=False, index=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
 
     # Relationships
     program = relationship("Program", overlaps="technologies")
@@ -407,7 +409,7 @@ class URLTechnology(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     technology_id = Column(UUID(as_uuid=True), ForeignKey("technologies.id"), nullable=False, index=True)
     url_id = Column(UUID(as_uuid=True), ForeignKey("urls.id"), nullable=False, index=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
 
     # Relationships
     technology = relationship("Technology", back_populates="url_associations")
@@ -427,7 +429,7 @@ class ScreenshotFile(Base):
     content_type = Column(String(100), nullable=False)
     filename = Column(String(255), nullable=False)
     file_size = Column(BigInteger, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
     
     # Relationships
     screenshot = relationship("Screenshot", back_populates="file", uselist=False)
@@ -444,8 +446,8 @@ class Screenshot(Base):
     step_name = Column(String(255), index=True)  # Step name that captured it
     program_name = Column(String(255), index=True)  # Associated program name
     capture_count = Column(Integer, default=1)  # How many times this exact image was captured
-    last_captured_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    last_captured_at = Column(DateTime, default=utcnow, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
     extracted_text = Column(Text, nullable=True)  # HTML-derived page text from gowitness JSONL
     
     # Relationships
@@ -487,8 +489,8 @@ class NucleiFinding(Base):
     program_id = Column(UUID(as_uuid=True), ForeignKey("programs.id"), nullable=False, index=True)
     
     notes = Column(Text)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
     
     # Relationships
     program = relationship("Program", back_populates="nuclei_findings")
@@ -514,8 +516,8 @@ class TyposquatApexDomain(Base):
     whois_registrant_name = Column(Text)
     whois_registrant_country = Column(Text)
     whois_admin_email = Column(Text)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
 
     program = relationship("Program", back_populates="typosquat_apex_domains")
     typosquat_findings = relationship("TyposquatDomain", back_populates="typosquat_apex")
@@ -530,7 +532,7 @@ class TyposquatDomain(Base):
     fuzzer_types = Column(ARRAY(String(50)))  # insertion, substitution, etc.
     risk_score = Column(Integer)  # Computed risk score
     program_id = Column(UUID(as_uuid=True), ForeignKey("programs.id"), nullable=False, index=True)
-    detected_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    detected_at = Column(DateTime, default=utcnow, nullable=False, index=True)
     fixed_at = Column(DateTime, nullable=True, index=True)  # When issue was resolved
     status = Column(String(20), default='new', index=True)  # new, inprogress, resolved, dismissed
     assigned_to = Column(String(255))  # User assigned to investigate
@@ -538,8 +540,8 @@ class TyposquatDomain(Base):
     apex_typosquat_domain_id = Column(
         UUID(as_uuid=True), ForeignKey("typosquat_apex_domains.id"), nullable=False, index=True
     )
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
     
     # Domain information
     domain_registered = Column(Boolean)
@@ -616,10 +618,10 @@ class BrokenLink(Base):
     url = Column(Text)
     error_code = Column(String(50))
     response_data = Column(JSONB)
-    checked_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    checked_at = Column(DateTime, default=utcnow, nullable=False, index=True)
     notes = Column(Text)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
     
     # Relationships
     program = relationship("Program", back_populates="broken_links")
@@ -671,8 +673,8 @@ class WPScanFinding(Base):
     notes = Column(Text)
     status = Column(String(50), index=True)
     assigned_to = Column(String(255))
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False, index=True)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
     
     # Relationships
     program = relationship("Program", back_populates="wpscan_findings")
@@ -693,8 +695,8 @@ class SocialMediaCredentials(Base):
     email = Column(String(255), nullable=True)
     password = Column(String(255), nullable=True)
     is_active = Column(Boolean, nullable=False, default=True, index=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert model instance to dictionary"""
@@ -750,8 +752,8 @@ class Workflow(Base):
     variables = Column(JSONB)  # Workflow variables
     inputs = Column(JSONB)     # Input definitions
     steps = Column(JSONB)      # Workflow steps configuration
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
     
     # Relationships
     program = relationship("Program", back_populates="workflows")
@@ -779,8 +781,8 @@ class WorkflowLog(Base):
     task_execution_logs = Column(JSONB)  # Per-task execution logs
     started_at = Column(DateTime, index=True)
     completed_at = Column(DateTime, index=True)
-    created_at = Column(DateTime, default=datetime.utcnow, server_default=func.now(), nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, server_default=func.now(), onupdate=func.now(), nullable=False)
+    created_at = Column(DateTime, default=utcnow, server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime, default=utcnow, server_default=func.now(), onupdate=func.now(), nullable=False)
     
     # Relationships
     program = relationship("Program", back_populates="workflow_logs")
@@ -823,8 +825,8 @@ class NucleiTemplate(Base):
     tags = Column(ARRAY(String(100)), index=True)
     yaml_content = Column(Text, nullable=False)  # Full YAML template
     is_active = Column(Boolean, default=True, index=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
 
 class WordlistFile(Base):
     """Wordlist file content storage"""
@@ -835,7 +837,7 @@ class WordlistFile(Base):
     content_type = Column(String(100), nullable=False)
     filename = Column(String(255), nullable=False)
     file_size = Column(BigInteger, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
     
     # Relationships
     wordlist = relationship("Wordlist", back_populates="file", uselist=False)
@@ -853,8 +855,8 @@ class Wordlist(Base):
     program_id = Column(UUID(as_uuid=True), ForeignKey("programs.id"), nullable=True, index=True)
     created_by = Column(String(255))
     is_active = Column(Boolean, default=True, index=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
     
     # Dynamic wordlist fields
     is_dynamic = Column(Boolean, default=False, nullable=False, index=True)
@@ -884,9 +886,9 @@ class User(Base):
     hackerone_api_token = Column(String(255), nullable=True)
     hackerone_api_user = Column(String(255), nullable=True)
     intigriti_api_token = Column(String(255), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
     last_login = Column(DateTime, nullable=True)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
     must_change_password = Column(Boolean, default=False, nullable=False)
     
     # Relationships
@@ -929,7 +931,7 @@ class UserProgramPermission(Base):
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     program_id = Column(UUID(as_uuid=True), ForeignKey("programs.id"), nullable=False)
     permission_level = Column(String(20), nullable=False)  # analyst, manager
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
     
     # Relationships
     user = relationship("User", back_populates="program_permissions")
@@ -953,8 +955,8 @@ class APIToken(Base):
     is_active = Column(Boolean, default=True, index=True)
     expires_at = Column(DateTime, nullable=True, index=True)
     last_used_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
     
     # Relationships
     user = relationship("User", back_populates="api_tokens")
@@ -988,8 +990,8 @@ class JobStatus(Base):
     progress = Column(SmallInteger, default=0)  # 0-100
     message = Column(Text)
     results = Column(JSONB)  # Job results data
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False, index=True)
+    created_at = Column(DateTime, default=utcnow, nullable=False, index=True)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow, nullable=False, index=True)
     
     # Relationships
     user = relationship("User")
@@ -1016,8 +1018,8 @@ class ReconTaskParameters(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     recon_task = Column(String(100), unique=True, nullable=False, index=True)
     parameters = Column(JSONB, nullable=False)  # Task-specific configuration
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert model instance to dictionary"""
@@ -1039,8 +1041,8 @@ class AwsCredentials(Base):
     secret_access_key = Column(String(255), nullable=False)
     default_region = Column(String(50), nullable=False)
     is_active = Column(Boolean, nullable=False, default=True, index=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert model instance to dictionary"""
@@ -1061,7 +1063,7 @@ class SystemSetting(Base):
 
     key = Column(String(100), primary_key=True)
     value = Column(JSONB, nullable=False, default=dict)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert model instance to dictionary"""
@@ -1081,8 +1083,8 @@ class EventHandlerConfig(Base):
     handler_id = Column(String(100), nullable=False)
     event_type = Column(String(100), nullable=False)
     config = Column(JSONB, nullable=False, default=dict)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
 
     def to_handler_dict(self) -> Dict[str, Any]:
         """Convert row to handler object format: {id, event_type, conditions, actions, description, ...}"""
@@ -1114,8 +1116,8 @@ class ScheduledJob(Base):
     successful_executions = Column(Integer, default=0)
     failed_executions = Column(Integer, default=0)
     enabled = Column(Boolean, default=True, index=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
     
     # Relationships
     user = relationship("User")
@@ -1159,7 +1161,7 @@ class JobExecutionHistory(Base):
     duration_seconds = Column(Integer, nullable=True)
     error_message = Column(Text)
     results = Column(JSONB)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert model instance to dictionary"""
@@ -1186,8 +1188,8 @@ class InternalServiceToken(Base):
     name = Column(String(100), nullable=False)
     description = Column(Text, nullable=True)
     is_active = Column(Boolean, nullable=False, default=True, index=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
     last_used_at = Column(DateTime, nullable=True)
     expires_at = Column(DateTime, nullable=True)
     
@@ -1221,8 +1223,8 @@ class TyposquatCertificate(Base):
     fingerprint_hash = Column(String(255), nullable=False, index=True)
     program_id = Column(UUID(as_uuid=True), ForeignKey("programs.id"), nullable=True, index=True)
     notes = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
     
     # Relationships
     program = relationship("Program")
@@ -1277,8 +1279,8 @@ class TyposquatURL(Base):
     program_id = Column(UUID(as_uuid=True), ForeignKey("programs.id"), nullable=True, index=True)
     typosquat_domain_id = Column(UUID(as_uuid=True), ForeignKey("typosquat_domains.id"), nullable=True, index=True)
     notes = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
     
     # Relationships
     typosquat_certificate = relationship("TyposquatCertificate")
@@ -1327,7 +1329,7 @@ class TyposquatScreenshotFile(Base):
     content_type = Column(String(100), nullable=False)
     filename = Column(String(255), nullable=False)
     file_size = Column(BigInteger, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    created_at = Column(DateTime, default=utcnow, nullable=False, index=True)
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert model instance to dictionary"""
@@ -1350,7 +1352,7 @@ class TyposquatScreenshot(Base):
     workflow_id = Column(String(255), nullable=True, index=True)
     capture_count = Column(Integer, nullable=True, index=True)
     last_captured_at = Column(DateTime, nullable=False, index=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    created_at = Column(DateTime, default=utcnow, nullable=False, index=True)
     step_name = Column(String(255), nullable=True, index=True)
     program_name = Column(String(255), nullable=True, index=True)
     extracted_text = Column(Text, nullable=True)  # HTML-derived page text from gowitness JSONL

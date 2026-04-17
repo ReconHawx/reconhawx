@@ -1,5 +1,6 @@
 from typing import Dict, Any, Optional, List
 from datetime import datetime
+from models.base import utcnow
 from sqlalchemy.exc import SQLAlchemyError
 from db import get_db_session
 from models.postgres import ReconTaskParameters, AwsCredentials, SystemSetting
@@ -65,7 +66,7 @@ class AdminRepository:
                 if existing:
                     # Update existing parameters
                     existing.parameters = parameters
-                    existing.updated_at = datetime.utcnow()
+                    existing.updated_at = utcnow()
                     db.commit()
                     db.refresh(existing)
                     return existing.to_dict()
@@ -339,7 +340,7 @@ class AdminRepository:
                 if 'is_active' in data:
                     credential.is_active = data['is_active']
 
-                credential.updated_at = datetime.utcnow()
+                credential.updated_at = utcnow()
                 db.commit()
                 db.refresh(credential)
                 return credential.to_dict()
@@ -422,7 +423,7 @@ class AdminRepository:
                 existing = db.query(SystemSetting).filter(SystemSetting.key == key).first()
                 if existing:
                     existing.value = value
-                    existing.updated_at = datetime.utcnow()
+                    existing.updated_at = utcnow()
                     db.commit()
                     db.refresh(existing)
                     return existing.to_dict()

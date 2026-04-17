@@ -3,7 +3,7 @@ from typing import Optional, List, Dict, Any
 from datetime import datetime
 from uuid import UUID
 
-from models.base import serialize_datetime
+from models.base import SerializedDatetime, utcnow
 from utils.scope_patterns import sanitize_scope_entries
 
 
@@ -46,8 +46,8 @@ class APIProgram(BaseModel):
     typosquat_filtering_settings: Optional[Dict[str, Any]] = None
     ct_monitor_program_settings: Optional[Dict[str, Any]] = None
     ct_monitoring_enabled: bool = False
-    created_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
-    updated_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
+    created_at: Optional[SerializedDatetime] = Field(default_factory=utcnow)
+    updated_at: Optional[SerializedDatetime] = Field(default_factory=utcnow)
 
     # Captured by the scope sanitation validator so the route handler can
     # surface dropped rows to the client without failing the whole request.
@@ -76,7 +76,6 @@ class APIProgram(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True,
         arbitrary_types_allowed=True,
-        json_encoders={datetime: serialize_datetime},
         json_schema_extra={
             "example": {
                 "name": "Example Program",

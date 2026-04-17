@@ -8,6 +8,7 @@ import re
 import time
 import uuid
 from datetime import datetime, timezone
+from models.base import utcnow
 from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy import select
@@ -79,7 +80,7 @@ def _parse_dt(cert: Dict[str, Any], *keys: str) -> datetime:
                 return dt
             except ValueError:
                 continue
-    return datetime.utcnow()
+    return utcnow()
 
 
 def _merge_san(existing: Optional[List[str]], new: Optional[List[str]]) -> Optional[List[str]]:

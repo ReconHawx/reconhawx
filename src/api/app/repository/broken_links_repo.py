@@ -2,6 +2,7 @@ from sqlalchemy import and_, desc, asc
 from typing import Dict, Any, Optional, List
 import logging
 from datetime import datetime
+from models.base import utcnow
 
 from models.postgres import (
     BrokenLink, Program
@@ -83,7 +84,7 @@ class BrokenLinksRepository(ProgramAccessMixin):
                         updated = True
                     
                     if updated:
-                        existing.updated_at = datetime.utcnow()
+                        existing.updated_at = utcnow()
                     
                     db.commit()
                     action = "updated" if updated else "skipped"
@@ -94,7 +95,7 @@ class BrokenLinksRepository(ProgramAccessMixin):
                     if checked_at and isinstance(checked_at, str):
                         checked_at = datetime.fromisoformat(checked_at.replace('Z', '+00:00'))
                     elif not checked_at:
-                        checked_at = datetime.utcnow()
+                        checked_at = utcnow()
                     
                     broken_link = BrokenLink(
                         program_id=program.id,
@@ -281,7 +282,7 @@ class BrokenLinksRepository(ProgramAccessMixin):
                 if 'notes' in update_data:
                     finding.notes = update_data['notes']
                 
-                finding.updated_at = datetime.utcnow()
+                finding.updated_at = utcnow()
                 
                 db.commit()
                 db.refresh(finding)
