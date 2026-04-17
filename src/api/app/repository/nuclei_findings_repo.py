@@ -2,6 +2,7 @@ from sqlalchemy import and_, or_, func, desc, asc
 from typing import Dict, Any, Optional, List
 import logging
 from datetime import datetime
+from models.base import utcnow
 
 from models.postgres import (
     NucleiFinding, Program, IP
@@ -89,7 +90,7 @@ class NucleiFindingsRepository(ProgramAccessMixin):
                     
                     # Update timestamp if any changes were made
                     if updated:
-                        existing.updated_at = datetime.utcnow()
+                        existing.updated_at = utcnow()
                         #logger.debug(f"Updated existing nuclei finding {finding_data.get('url')} with template {finding_data.get('template_id')}")
                     #else:
                     #    logger.info(f"Nuclei finding {finding_data.get('url')} with template {finding_data.get('template_id')} already exists with same data, skipping")
@@ -660,7 +661,7 @@ class NucleiFindingsRepository(ProgramAccessMixin):
                     if hasattr(finding, key):
                         setattr(finding, key, value)
                 
-                finding.updated_at = datetime.utcnow()
+                finding.updated_at = utcnow()
                 db.commit()
                 
                 return True

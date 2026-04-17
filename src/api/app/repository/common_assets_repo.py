@@ -5,6 +5,7 @@ from sqlalchemy import and_, or_, desc, func
 from models.postgres import Program, ApexDomain, Subdomain, IP, Service, URL, SubdomainIP, Certificate
 from db import get_db_session
 from datetime import datetime, timedelta
+from models.base import utcnow
 import logging
 
 logger = logging.getLogger(__name__)
@@ -145,7 +146,7 @@ class CommonAssetsRepository(ProgramAccessMixin):
                 ).count()
                 
                 # Calculate certificate status counts
-                now = datetime.utcnow()
+                now = utcnow()
                 thirty_days_from_now = now + timedelta(days=30)
                 
                 # Valid certificates (not expired and not expiring soon)
@@ -337,7 +338,7 @@ class CommonAssetsRepository(ProgramAccessMixin):
                 ).count()
                 
                 # Calculate certificate status counts
-                now = datetime.utcnow()
+                now = utcnow()
                 thirty_days_from_now = now + timedelta(days=30)
                 
                 # Valid certificates (not expired and not expiring soon)
@@ -444,7 +445,7 @@ class CommonAssetsRepository(ProgramAccessMixin):
                 from datetime import datetime, timedelta
                 time_filter = None
                 if days_ago:
-                    cutoff_date = datetime.utcnow() - timedelta(days=days_ago)
+                    cutoff_date = utcnow() - timedelta(days=days_ago)
                     time_filter = cutoff_date
                     logger.info(f"Filtering assets created after: {cutoff_date}")
                 

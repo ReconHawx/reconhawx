@@ -2,7 +2,7 @@ from pydantic import BaseModel, Field, ConfigDict
 from typing import Optional, List, Any, Dict
 from datetime import datetime
 
-from models.base import serialize_datetime
+from models.base import SerializedDatetime, utcnow
 
 class Ip(BaseModel):
     ip: str
@@ -12,13 +12,12 @@ class Ip(BaseModel):
     notes: Optional[str] = None
     # Hostname whose DNS A-records yielded this IP (runner → API scope gate; not persisted on IP row)
     discovered_via_domain: Optional[str] = None
-    created_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
-    updated_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
+    created_at: Optional[SerializedDatetime] = Field(default_factory=utcnow)
+    updated_at: Optional[SerializedDatetime] = Field(default_factory=utcnow)
 
     model_config = ConfigDict(
         populate_by_name=True,
         arbitrary_types_allowed=True,
-        json_encoders={datetime: serialize_datetime},
         json_schema_extra={
             "example": {
                 "ip": "192.168.1.1",
@@ -52,13 +51,12 @@ class Domain(BaseModel):
     wildcard_type: Optional[List[str]] = None
     program_name: Optional[str] = None
     notes: Optional[str] = None
-    created_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
-    updated_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
+    created_at: Optional[SerializedDatetime] = Field(default_factory=utcnow)
+    updated_at: Optional[SerializedDatetime] = Field(default_factory=utcnow)
 
     model_config = ConfigDict(
         populate_by_name=True,
         arbitrary_types_allowed=True,
-        json_encoders={datetime: serialize_datetime},
         json_schema_extra={
             "example": {
                 "name": "sub.example.com",
@@ -87,13 +85,12 @@ class Service(BaseModel):
     program_name: Optional[str] = None
     notes: Optional[str] = None
     nerva_metadata: Optional[Dict[str, Any]] = None
-    created_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
-    updated_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
+    created_at: Optional[SerializedDatetime] = Field(default_factory=utcnow)
+    updated_at: Optional[SerializedDatetime] = Field(default_factory=utcnow)
 
     model_config = ConfigDict(
         populate_by_name=True,
         arbitrary_types_allowed=True,
-        json_encoders={datetime: serialize_datetime},
         json_schema_extra={
             "example": {
                 "ip": "192.168.1.1",
@@ -119,13 +116,12 @@ class Website(BaseModel):
     favicon_url: Optional[str] = None
     program_name: Optional[str] = None
     notes: Optional[str] = None
-    created_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
-    updated_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
+    created_at: Optional[SerializedDatetime] = Field(default_factory=utcnow)
+    updated_at: Optional[SerializedDatetime] = Field(default_factory=utcnow)
     
     model_config = ConfigDict(
         populate_by_name=True,
         arbitrary_types_allowed=True,
-        json_encoders={datetime: serialize_datetime},
         json_schema_extra={
             "example": {
                 "url": "https://example.com",
@@ -169,13 +165,12 @@ class Url(BaseModel):
     certificate_serial: Optional[str] = None
     notes: Optional[str] = None
     extracted_links: Optional[List[str]] = None
-    created_at: Optional[datetime] = None #Field(default_factory=datetime.utcnow)
-    updated_at: Optional[datetime] = None #Field(default_factory=datetime.utcnow)
+    created_at: Optional[SerializedDatetime] = None
+    updated_at: Optional[SerializedDatetime] = None
 
     model_config = ConfigDict(
         populate_by_name=True,
         arbitrary_types_allowed=True,
-        json_encoders={datetime: serialize_datetime},
         json_schema_extra={
             "example": {
                 "url": "https://example.com",
@@ -222,13 +217,12 @@ class Certificate(BaseModel):
     serial_number: str
     fingerprint_hash: str
     notes: Optional[str] = None
-    created_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
-    updated_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
+    created_at: Optional[SerializedDatetime] = Field(default_factory=utcnow)
+    updated_at: Optional[SerializedDatetime] = Field(default_factory=utcnow)
 
     model_config = ConfigDict(
         populate_by_name=True,
         arbitrary_types_allowed=True,
-        json_encoders={datetime: serialize_datetime},    
         json_schema_extra={
             "example": {
                 "subject_dn": "CN=example.com,OU=Example,O=Example,L=Example,ST=Example,C=US",

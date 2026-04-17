@@ -1,6 +1,7 @@
 from typing import List, Dict, Any, Optional, Tuple
 import logging
 from datetime import datetime
+from models.base import utcnow
 from sqlalchemy import and_, desc
 from sqlalchemy.exc import SQLAlchemyError
 from models.postgres import JobStatus
@@ -24,8 +25,8 @@ class JobRepository:
                     "progress": 0,
                     "message": "Job created",
                     "results": None,
-                    "created_at": datetime.utcnow(),
-                    "updated_at": datetime.utcnow()
+                    "created_at": utcnow(),
+                    "updated_at": utcnow()
                 }
                 
                 job_status = JobStatus(**job_doc)
@@ -57,7 +58,7 @@ class JobRepository:
                 job_status.status = status
                 job_status.progress = progress
                 job_status.message = message
-                job_status.updated_at = datetime.utcnow()
+                job_status.updated_at = utcnow()
                 
                 if results is not None:
                     job_status.results = results

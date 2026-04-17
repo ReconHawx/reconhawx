@@ -1,6 +1,7 @@
 from typing import List, Dict, Any, Optional
 import logging
 from datetime import datetime
+from models.base import utcnow
 from sqlalchemy import desc
 from sqlalchemy.exc import SQLAlchemyError
 from models.postgres import ScheduledJob, JobExecutionHistory, Program
@@ -99,8 +100,8 @@ class ScheduledJobRepository:
                     successful_executions=job_data.get("successful_executions", 0),
                     failed_executions=job_data.get("failed_executions", 0),
                     enabled=job_data.get("enabled", True),
-                    created_at=job_data.get("created_at", datetime.utcnow()),
-                    updated_at=job_data.get("updated_at", datetime.utcnow())
+                    created_at=job_data.get("created_at", utcnow()),
+                    updated_at=job_data.get("updated_at", utcnow())
                 )
 
                 db.add(scheduled_job)
@@ -242,7 +243,7 @@ class ScheduledJobRepository:
                         return False
                     scheduled_job.program_ids = program_uuid_list
 
-                scheduled_job.updated_at = datetime.utcnow()
+                scheduled_job.updated_at = utcnow()
 
                 db.commit()
                 logger.info(f"Updated scheduled job {schedule_id}")
@@ -297,7 +298,7 @@ class ScheduledJobRepository:
                     duration_seconds=execution_data.get("duration_seconds"),
                     error_message=execution_data.get("error_message"),
                     results=results_serialized,
-                    created_at=execution_data.get("created_at", datetime.utcnow())
+                    created_at=execution_data.get("created_at", utcnow())
                 )
 
                 db.add(execution_history)

@@ -2,6 +2,7 @@ from typing import Dict, Any, Optional, List
 import logging
 import asyncio
 from datetime import datetime
+from models.base import utcnow
 import time
 from uuid import UUID
 from sqlalchemy import desc, asc
@@ -201,7 +202,7 @@ class ProgramRepository(ProgramAccessMixin):
                     if hasattr(program, key):
                         setattr(program, key, value)
                 
-                program.updated_at = datetime.utcnow()
+                program.updated_at = utcnow()
                 db.commit()
                 
                 # If typosquat_auto_resolve_settings changed, trigger bulk auto_resolve recalculation

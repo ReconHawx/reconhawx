@@ -4,7 +4,12 @@ Data models for CT Monitor Services.
 
 from dataclasses import dataclass, field
 from typing import Dict, List, Any, Optional
-from datetime import datetime
+from datetime import datetime, timezone
+
+
+def _utcnow() -> datetime:
+    """Naive UTC 'now' replacement for the deprecated datetime.utcnow()."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 @dataclass
@@ -66,7 +71,7 @@ class CTAlert:
     """Alert generated when a suspicious certificate is detected"""
     
     event_type: str = "ct_typosquat_detected"
-    timestamp: str = field(default_factory=lambda: datetime.utcnow().isoformat())
+    timestamp: str = field(default_factory=lambda: _utcnow().isoformat())
     program_name: str = ""
     
     # Match information
@@ -114,10 +119,10 @@ class ProcessingStats:
     cache_hits: int = 0
     cache_misses: int = 0
     errors: int = 0
-    start_time: datetime = field(default_factory=datetime.utcnow)
+    start_time: datetime = field(default_factory=_utcnow)
     
     def to_dict(self) -> Dict[str, Any]:
-        runtime = (datetime.utcnow() - self.start_time).total_seconds()
+        runtime = (_utcnow() - self.start_time).total_seconds()
         rate = self.total_received / runtime if runtime > 0 else 0
         
         return {

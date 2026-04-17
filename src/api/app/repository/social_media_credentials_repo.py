@@ -2,6 +2,7 @@ from sqlalchemy import and_
 from typing import Dict, Any, Optional, List
 import logging
 from datetime import datetime
+from models.base import utcnow
 
 from models.postgres import SocialMediaCredentials
 from db import get_db_session
@@ -121,7 +122,7 @@ class SocialMediaCredentialsRepository:
                 if 'is_active' in update_data:
                     credential.is_active = update_data['is_active']
                 
-                credential.updated_at = datetime.utcnow()
+                credential.updated_at = utcnow()
                 
                 db.commit()
                 db.refresh(credential)

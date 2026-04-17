@@ -4369,16 +4369,16 @@ class TaskExecutor:
 
     def start_step_timing(self, step_name: str):
         """Start timing for a step"""
-        from datetime import datetime
+        from models.base import utcnow
         self._step_timing[step_name] = {
-            'started_at': datetime.utcnow().isoformat() + 'Z'
+            'started_at': utcnow().isoformat() + 'Z'
         }
 
     def complete_step_timing(self, step_name: str):
         """Complete timing for a step"""
-        from datetime import datetime
+        from models.base import utcnow
         if step_name in self._step_timing:
-            self._step_timing[step_name]['completed_at'] = datetime.utcnow().isoformat() + 'Z'
+            self._step_timing[step_name]['completed_at'] = utcnow().isoformat() + 'Z'
             logger.debug(f"Completed timing for step '{step_name}'")
         else:
             logger.warning(f"Cannot complete timing for step '{step_name}' - no start time recorded")

@@ -399,15 +399,15 @@ class ProgressiveAssetStreamer:
     
     def _track_job_for_step(self, step_name: str, job_id: str, job_type: str, chunk_id: str = None):
         """Track a job for step coordination"""
-        from datetime import datetime
-        
+        from models.base import utcnow
+
         # Create job info
         job_info = {
             "job_id": job_id,
             "step_name": step_name,
             "job_type": job_type,  # "asset" or "findings"
             "chunk_id": chunk_id,
-            "sent_at": datetime.utcnow(),
+            "sent_at": utcnow(),
             "status": "pending"
         }
         

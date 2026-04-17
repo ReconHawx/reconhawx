@@ -4,6 +4,7 @@ from typing import Dict, Any, Optional, List
 import logging
 import os
 from datetime import datetime, timezone
+from models.base import utcnow
 import uuid
 import json
 from utils import normalize_url_for_storage
@@ -504,7 +505,7 @@ class TyposquatFindingsRepository(ProgramAccessMixin):
                         existing.risk_score = typosquat_data.get('risk_analysis_total_score')
                     if 'notes' in typosquat_data:
                         existing.notes = typosquat_data.get('notes')
-                    existing.updated_at = datetime.utcnow()
+                    existing.updated_at = utcnow()
                     
                     expected_apex = extract_apex_domain(existing.typo_domain)
                     apex_row = TyposquatFindingsRepository.find_or_create_typosquat_apex_in_session(
@@ -729,7 +730,7 @@ class TyposquatFindingsRepository(ProgramAccessMixin):
                         "fuzzer_types": typosquat_data.get('fuzzers', []),
                         "risk_score": typosquat_data.get('risk_analysis_total_score'),
                         "program_id": program.id,
-                        "detected_at": typosquat_data.get('detected_at') or datetime.utcnow(),
+                        "detected_at": typosquat_data.get('detected_at') or utcnow(),
                         "notes": typosquat_data.get('notes'),
                         "status": typosquat_data.get('status'),
                         "assigned_to": typosquat_data.get('assigned_to'),
@@ -2529,7 +2530,7 @@ class TyposquatFindingsRepository(ProgramAccessMixin):
                     ns = new_status
                     ps = prev_status or "new"
                     if ns in _TERMINAL_CLOSURE_STATUSES and ps != ns:
-                        closed_at_naive = datetime.utcnow()
+                        closed_at_naive = utcnow()
                         closed_at_str = closed_at_naive.isoformat() + "Z"
                         existing_ev = typosquat.closure_events
                         if existing_ev is None or not isinstance(existing_ev, list):
@@ -2550,7 +2551,7 @@ class TyposquatFindingsRepository(ProgramAccessMixin):
                     elif ns in ("new", "inprogress") and ps in _TERMINAL_CLOSURE_STATUSES:
                         typosquat.fixed_at = None
 
-                typosquat.updated_at = datetime.utcnow()
+                typosquat.updated_at = utcnow()
                 logger.debug(f"Committing database changes for domain {domain_id}")
                 db.commit()
                 logger.debug(f"Database lock released for domain {domain_id}")
@@ -4107,7 +4108,7 @@ class TyposquatFindingsRepository(ProgramAccessMixin):
                 typosquat.risk_analysis_category_scores = detailed_analysis['category_scores']
                 typosquat.risk_analysis_risk_factors = detailed_analysis['risk_factors']
                 # Don't update info_data - keep it empty as requested
-                typosquat.updated_at = datetime.utcnow()
+                typosquat.updated_at = utcnow()
                 
                 db.commit()
                 
@@ -4187,7 +4188,7 @@ class TyposquatFindingsRepository(ProgramAccessMixin):
                         domain.risk_analysis_timestamp = detailed_analysis['analysis_timestamp']
                         domain.risk_analysis_category_scores = detailed_analysis['category_scores']
                         domain.risk_analysis_risk_factors = detailed_analysis['risk_factors']
-                        domain.updated_at = datetime.utcnow()
+                        domain.updated_at = utcnow()
                         
                         updated_count += 1
                         
@@ -4765,7 +4766,7 @@ class TyposquatFindingsRepository(ProgramAccessMixin):
                             id=uuid.uuid4(),
                             typo_domain=typo_domain_name,
                             program_id=program.id,
-                            detected_at=datetime.utcnow(),
+                            detected_at=utcnow(),
                             status='new',
                             apex_typosquat_domain_id=apex_row.id,
                             notes=f"Auto-created from typosquat URL: {url_data.get('url')}"
@@ -4812,7 +4813,7 @@ class TyposquatFindingsRepository(ProgramAccessMixin):
                                 id=uuid.uuid4(),
                                 typo_domain=hostname,
                                 program_id=program.id,
-                                detected_at=datetime.utcnow(),
+                                detected_at=utcnow(),
                                 status='new',
                                 apex_typosquat_domain_id=apex_row.id,
                                 notes=f"Auto-created from typosquat URL: {url_data.get('url')}"
@@ -5049,7 +5050,7 @@ class TyposquatFindingsRepository(ProgramAccessMixin):
                     
                     # Update timestamp if any changes were made
                     if updated:
-                        existing.updated_at = datetime.utcnow()
+                        existing.updated_at = utcnow()
                         logger.debug(f"Updated existing typosquat URL {url_data.get('url')}")
                     else:
                         logger.info(f"Typosquat URL {url_data.get('url')} already exists with same data, skipping")
@@ -5189,7 +5190,7 @@ class TyposquatFindingsRepository(ProgramAccessMixin):
                     # Image already exists for this URL, just update the existing screenshot record
                     # Update capture count and timestamp
                     existing_screenshot.capture_count += 1
-                    existing_screenshot.last_captured_at = datetime.utcnow()
+                    existing_screenshot.last_captured_at = utcnow()
                     
                     # Update workflow_id, step_name, program_name, extracted_text, source_created_at, source if provided
                     if workflow_id:
@@ -5227,7 +5228,7 @@ class TyposquatFindingsRepository(ProgramAccessMixin):
                     "step_name": step_name,
                     "program_name": program_name,
                     "capture_count": 1,
-                    "last_captured_at": datetime.utcnow(),  # Set the required last_captured_at field
+                    "last_captured_at": utcnow(),  # Set the required last_captured_at field
                     "extracted_text": extracted_text,
                     "source_created_at": parsed_source_created_at,
                     "source": source.strip() if source and source.strip() else None
@@ -5453,7 +5454,7 @@ class TyposquatFindingsRepository(ProgramAccessMixin):
                     
                     # Update timestamp if any changes were made
                     if updated:
-                        existing.updated_at = datetime.utcnow()
+                        existing.updated_at = utcnow()
                         #logger.debug(f"Updated existing typosquat certificate {certificate_data.get('serial_number')}")
                    # else:
                         #logger.info(f"Typosquat certificate {certificate_data.get('serial_number')} already exists with same data, skipping")
@@ -5549,7 +5550,7 @@ class TyposquatFindingsRepository(ProgramAccessMixin):
                         if value is not None and value != "null":
                             setattr(certificate, key, value)
                 
-                certificate.updated_at = datetime.utcnow()
+                certificate.updated_at = utcnow()
                 db.commit()
                 
                 return True
@@ -5666,7 +5667,7 @@ class TyposquatFindingsRepository(ProgramAccessMixin):
                     return False
                 
                 url.notes = notes
-                url.updated_at = datetime.utcnow()
+                url.updated_at = utcnow()
                 db.commit()
                 
                 return True

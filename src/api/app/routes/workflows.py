@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException, Query, Request, Depends, status
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field
 from datetime import datetime
+from models.base import utcnow
 import logging
 import uuid
 import os
@@ -875,7 +876,7 @@ async def stop_workflow_execution(
         try:
             update_data = {
                 "result": "stopping",
-                "updated_at": datetime.utcnow(),
+                "updated_at": utcnow(),
                 "stop_reason": "manually_stopped"
             }
             update_data["execution_id"] = execution_id
@@ -895,7 +896,7 @@ async def stop_workflow_execution(
                 try:
                     final_update_data = {
                         "result": "stopped",
-                        "updated_at": datetime.utcnow(),
+                        "updated_at": utcnow(),
                         "stop_reason": "manually_stopped",
                         "stop_results": stop_results
                     }
@@ -925,7 +926,7 @@ async def stop_workflow_execution(
                 try:
                     error_update_data = {
                         "result": "failed",
-                        "updated_at": datetime.utcnow(),
+                        "updated_at": utcnow(),
                         "stop_reason": "cleanup_failed",
                         "stop_error": str(e)
                     }

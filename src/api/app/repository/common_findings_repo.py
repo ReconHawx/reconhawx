@@ -1,5 +1,6 @@
 from utils.query_filters import ProgramAccessMixin
 from typing import Optional, Dict, Any, List
+from models.base import utcnow
 from models.postgres import FindingsStatsResponse, AggregatedFindingsStatsResponse, NucleiFindingStats, TyposquatFindingStats
 from sqlalchemy import and_, desc
 from models.postgres import Program, NucleiFinding, TyposquatDomain
@@ -33,7 +34,7 @@ class CommonFindingsRepository(ProgramAccessMixin):
                 from datetime import datetime, timedelta
                 time_filter = None
                 if days_ago:
-                    cutoff_date = datetime.utcnow() - timedelta(days=days_ago)
+                    cutoff_date = utcnow() - timedelta(days=days_ago)
                     time_filter = cutoff_date
                     logger.info(f"Filtering findings created after: {cutoff_date}")
                 

@@ -11,6 +11,7 @@ import signal
 from datetime import datetime
 
 # Import our task system
+from models.base import utcnow
 from models.workflow import Workflow
 from task_executor import TaskExecutor
 from tasks.base import parameter_manager
@@ -504,7 +505,7 @@ async def run_step(task_executor, program_name, workflow_id, step_num, step, ste
             input_count = 0
         
         # Track task start time
-        task_start_time = datetime.utcnow()
+        task_start_time = utcnow()
         task_metadata.append({
             'task_def': task_def,
             'start_time': task_start_time,
@@ -539,7 +540,7 @@ async def run_step(task_executor, program_name, workflow_id, step_num, step, ste
             task_start_time = task_meta['start_time']
             input_count = task_meta['input_count']
             input_data = task_meta.get('input_data')
-            task_end_time = datetime.utcnow()
+            task_end_time = utcnow()
             
             if isinstance(result, Exception):
                 logger.error(f"Task {i+1} in step {step.name} failed with error: {result}")
