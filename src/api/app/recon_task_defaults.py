@@ -63,6 +63,13 @@ DEPRECATED_RECON_TASK_PARAMETER_KEYS: FrozenSet[str] = frozenset({
     "max_retries",
 })
 
+# Keys carried in the YAML as per-task metadata (not user-editable parameters).
+# Surfaced separately in API payloads as input_types / output_types.
+METADATA_RECON_TASK_KEYS: FrozenSet[str] = frozenset({
+    "input_types",
+    "output_types",
+})
+
 GENERIC_BUILTIN_FALLBACK: Dict[str, Any] = {
     "last_execution_threshold": 24,
     "timeout": 300,
@@ -100,18 +107,41 @@ def effective_parameters(
 ) -> Dict[str, Any]:
     """
     Builtin defaults shallow-merged with optional DB-stored parameters (stored wins per key).
+    Metadata keys (input_types / output_types) and deprecated keys are stripped from the output.
     Unknown task names use GENERIC_BUILTIN_FALLBACK only (no raise).
     """
     merged = dict(builtin_parameters(recon_task))
     if stored:
         merged = {**merged, **stored}
-    if DEPRECATED_RECON_TASK_PARAMETER_KEYS:
-        merged = {
-            k: v
-            for k, v in merged.items()
-            if k not in DEPRECATED_RECON_TASK_PARAMETER_KEYS
-        }
-    return merged
+    strip_keys = DEPRECATED_RECON_TASK_PARAMETER_KEYS | METADATA_RECON_TASK_KEYS
+    return {k: v for k, v in merged.items() if k not in strip_keys}
+
+
+def _normalize_type_list(value: Any) -> List[str]:
+    """Coerce a YAML value into a list of lowercase string type names."""
+    if value is None:
+        return []
+    if isinstance(value, str):
+        value = [value]
+    if not isinstance(value, list):
+        return []
+    out: List[str] = []
+    for item in value:
+        if isinstance(item, str) and item.strip():
+            out.append(item.strip().lower())
+    return out
+
+
+def input_types_for(recon_task: str) -> List[str]:
+    """Declared input asset/finding types for a task, as lowercase strings."""
+    base = RECON_TASK_BUILTIN_DEFAULTS.get(recon_task) or {}
+    return _normalize_type_list(base.get("input_types"))
+
+
+def output_types_for(recon_task: str) -> List[str]:
+    """Declared output asset/finding types for a task, as lowercase strings."""
+    base = RECON_TASK_BUILTIN_DEFAULTS.get(recon_task) or {}
+    return _normalize_type_list(base.get("output_types"))
 
 
 def recon_task_api_payload(
@@ -121,12 +151,15 @@ def recon_task_api_payload(
     """
     Build a dict for ReconTaskParametersResponse.
     row: result of ReconTaskParameters.to_dict(), or None if no DB row.
+    input_types / output_types come from YAML metadata and are not user-editable.
     """
     stored = row.get("parameters") if row else None
     return {
         "id": row.get("id") if row else None,
         "recon_task": recon_task,
         "parameters": effective_parameters(recon_task, stored),
+        "input_types": input_types_for(recon_task),
+        "output_types": output_types_for(recon_task),
         "created_at": row.get("created_at") if row else None,
         "updated_at": row.get("updated_at") if row else None,
         "stored_in_database": row is not None,

@@ -5,7 +5,7 @@ import {
   applyEdgeChanges,
   Position,
 } from 'reactflow';
-import { TASK_TYPES } from '../components/workflow/constants';
+import { getTaskInputs } from './taskManifestStore';
 
 const useWorkflowStore = create((set, get) => ({
   nodes: [
@@ -91,7 +91,7 @@ const useWorkflowStore = create((set, get) => ({
     let newNodes = state.nodes;
     const targetNode = state.nodes.find(n => n.id === connection.target);
     if (targetNode?.type === 'taskNode' && targetNode.data) {
-      const taskInputs = TASK_TYPES[targetNode.data.taskType]?.inputs || [];
+      const taskInputs = getTaskInputs(targetNode.data.taskType);
       const existingMapping = targetNode.data.inputMapping || {};
       const mappingKey = connection.sourceHandle && connection.sourceHandle !== 'output'
         ? `${connection.source}::${connection.sourceHandle}`
@@ -487,7 +487,7 @@ const useWorkflowStore = create((set, get) => ({
             }
             if (!targetHandle) {
               // Fallback: assign by connection order to task's input types
-              const taskInputs = TASK_TYPES[node.data.taskType]?.inputs || [];
+              const taskInputs = getTaskInputs(node.data.taskType);
               targetHandle = taskInputs[index] || taskInputs[0];
             }
             if (!targetHandle) return;

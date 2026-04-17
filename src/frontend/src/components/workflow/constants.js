@@ -1,12 +1,15 @@
-// Task types configuration
+// Task types configuration.
+// Input/output type lists are NOT here anymore - they come from the backend
+// manifest (/admin/public/recon-tasks/effective-parameters) via
+// src/stores/taskManifestStore.js. That store is the single source of truth,
+// derived from each runner Task's input_type / output_types attribute and the
+// matching recon_task_builtin_defaults.yaml entry on the API.
 export const TASK_TYPES = {
   resolve_domain: {
     name: 'Domain Resolution',
     description: 'Resolve domain names to IP addresses using dnsx',
     category: 'DNS',
     icon: '🔍',
-    inputs: ['domains'],
-    outputs: ['domains', 'ips'],
     params: {
       timeout: { type: 'number', default: 120, description: 'Optional timeout override in seconds (uses system default if not specified)' }
     }
@@ -16,8 +19,6 @@ export const TASK_TYPES = {
     description: 'WHOIS lookup on apex domains (subdomains are normalized to apex); results stored on apex domain assets',
     category: 'DNS',
     icon: '📇',
-    inputs: ['domains'],
-    outputs: ['apex_domains'],
     params: {
       timeout: { type: 'number', default: 600, description: 'Optional timeout override in seconds (uses system default if not specified)' },
       chunk_size: { type: 'number', default: 1, description: 'Apex domains per worker job (1 recommended for WHOIS rate limits)' }
@@ -28,8 +29,6 @@ export const TASK_TYPES = {
     description: 'Resolve IP addresses to domain names using dnsx',
     category: 'DNS',
     icon: '🔍',
-    inputs: ['ips'],
-    outputs: ['domains', 'ips'],
     params: {
       timeout: { type: 'number', default: 120, description: 'Optional timeout override in seconds (uses system default if not specified)' }
     }
@@ -39,8 +38,6 @@ export const TASK_TYPES = {
     description: 'Progressively resolve IP addresses from CIDR blocks with stateful processing',
     category: 'DNS',
     icon: '🌐',
-    inputs: ['cidrs'],
-    outputs: ['domains', 'ips'],
     params: {
       ip_limit: { type: 'number', default: 500, description: 'Maximum IPs to process from CIDR blocks' },
       max_cidr_size: { type: 'number', default: 65536, description: 'Maximum CIDR size to process (safety limit)' },
@@ -56,8 +53,6 @@ export const TASK_TYPES = {
     description: 'Find subdomains using subfinder',
     category: 'Discovery',
     icon: '🔎',
-    inputs: ['domains'],
-    outputs: ['domains'],
     params: {
       timeout: { type: 'number', default: 300, description: 'Optional timeout override in seconds (uses system default if not specified)' }
     }
@@ -67,8 +62,6 @@ export const TASK_TYPES = {
     description: 'Generate and test subdomain permutations using gotator with intelligent wildcard filtering',
     category: 'Discovery',
     icon: '🔀',
-    inputs: ['domains'],
-    outputs: ['domains'],
     params: {
       permutation_list: { type: 'string', default: 'files/permutations.txt', description: 'Permutation list to use (wordlist ID, URL, or file path)' },
       permutation_limit: { type: 'number', default: null, description: 'Maximum permutations to test (optional, no limit if not set)' },
@@ -82,8 +75,6 @@ export const TASK_TYPES = {
     description: 'Bruteforce subdomains using PureDNS with wordlist (skips wildcard domains)',
     category: 'Discovery',
     icon: '🔨',
-    inputs: ['domains'],
-    outputs: ['domains', 'ips'],
     params: {
       wordlist: { type: 'string', default: '/workspace/files/subdomains.txt', description: 'Wordlist for bruteforcing (wordlist ID, URL, or file path)' },
       chunk_size: { type: 'number', default: 10, description: 'Number of domains per worker job' },
@@ -96,8 +87,6 @@ export const TASK_TYPES = {
     description: 'Scan ports on target hosts using nmap',
     category: 'Scanning',
     icon: '🚪',
-    inputs: ['ips'],
-    outputs: ['services'],
     params: {
       timeout: { type: 'number', default: 900, description: 'Optional timeout override in seconds (uses system default if not specified)' }
     }
@@ -107,8 +96,6 @@ export const TASK_TYPES = {
     description: 'Run nuclei vulnerability scanner on target',
     category: 'Vulnerability',
     icon: '🔬',
-    inputs: ['domains', 'ips', 'urls'],
-    outputs: ['findings', 'domains', 'ips', 'services', 'urls'],
     params: {
       template: { 
         type: 'nuclei_template_object', 
@@ -123,8 +110,6 @@ export const TASK_TYPES = {
     description: 'Scan WordPress sites for vulnerabilities in WordPress core, plugins, and themes',
     category: 'Vulnerability',
     icon: '🔒',
-    inputs: ['urls'],
-    outputs: ['findings'],
     params: {
       api_token: { type: 'string', default: '', description: 'WPScan API token (optional, improves vulnerability detection)' },
       enumerate: { type: 'array', default: [], description: 'WPScan --enumerate tokens, one per line (e.g. vp, vt, u, ap, at). If empty, the runner uses ap,at,u (aggressive plugins, aggressive themes, users)' }
@@ -135,8 +120,6 @@ export const TASK_TYPES = {
     description: 'Test HTTP endpoints using httpx',
     category: 'Discovery',
     icon: '🌐',
-    inputs: ['domains', 'urls'],
-    outputs: ['services', 'domains', 'ips', 'urls', 'certificates'],
     params: {
       timeout: { type: 'number', default: 900, description: 'Optional timeout override in seconds (uses system default if not specified)' }
     }
@@ -146,8 +129,6 @@ export const TASK_TYPES = {
     description: 'Detect typosquatting domains using dnstwist and risk analysis. Supports both variation generation and direct input domain analysis modes.',
     category: 'Security',
     icon: '🎯',
-    inputs: ['domains'],
-    outputs: ['findings'],
     params: {
       analyze_input_as_variations: { type: 'boolean', default: false, description: 'Analyze input domains directly as typosquat variations (no variation generation)' },
       source: { type: 'string', default: '', description: 'Source of the typosquat detection (e.g. "ct_monitoring", "domain_analysis", "variation_detection")' },
@@ -169,8 +150,6 @@ export const TASK_TYPES = {
     description: 'Detect broken social media links (Facebook, Instagram, Twitter/X, LinkedIn)',
     category: 'Security',
     icon: '🔗',
-    inputs: ['urls'],
-    outputs: ['findings'],
     params: {}
   },
   screenshot_website: {
@@ -178,8 +157,6 @@ export const TASK_TYPES = {
     description: 'Take screenshots of websites',
     category: 'Discovery',
     icon: '📸',
-    inputs: ['urls'],
-    outputs: ['screenshots'],
     params: {
       timeout: { type: 'number', default: 60, description: 'Worker job timeout in seconds (Kubernetes active deadline for the whole screenshot batch; not passed per-URL to gowitness)' }
     }
@@ -189,8 +166,6 @@ export const TASK_TYPES = {
     description: 'Crawl websites to discover URLs',
     category: 'Discovery',
     icon: '🕷️',
-    inputs: ['urls'],
-    outputs: ['urls'],
     params: {
       timeout: { type: 'number', default: 1800, description: 'Optional timeout override in seconds (uses system default if not specified)' },
       depth: { type: 'number', default: 5, description: 'Crawling depth for katana' }
@@ -201,8 +176,6 @@ export const TASK_TYPES = {
     description: 'Fuzz websites to discover hidden paths',
     category: 'Discovery',
     icon: '🕷️',
-    inputs: ['urls'],
-    outputs: ['urls'],
     params: {
       wordlist: { type: 'string', default: '/workspace/files/webcontent_test.txt', description: 'Wordlist to use for fuzzing' }
     }
@@ -212,8 +185,6 @@ export const TASK_TYPES = {
     description: 'Execute custom shell commands',
     category: 'Utility',
     icon: '🔧',
-    inputs: ['strings'],
-    outputs: ['strings'],
     params: {
       command: { type: 'array', default: [], description: 'Command to execute (one per line, e.g., echo "Hello World", ls -la)' },
       timeout: { type: 'number', default: 300, description: 'Optional timeout override in seconds (uses system default if not specified)' }

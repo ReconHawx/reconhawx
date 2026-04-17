@@ -30,7 +30,7 @@ class SubdomainPermutations(Task):
     
     name = "subdomain_permutations"
     description = "Generate subdomain permutations using gotator and resolve them"
-    input_type = AssetType.STRING
+    input_type = AssetType.SUBDOMAIN
     output_types = [AssetType.SUBDOMAIN, AssetType.IP]
 
     def __init__(self):

@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 class PortScan(Task):
     name = "port_scan"
     description = "Scan ports on a target. Accepts IP addresses for port range scanning or IP:PORT for specific port scanning"
-    input_type = AssetType.STRING
+    input_type = AssetType.IP
     output_types = [AssetType.SERVICE]
 
     def get_timestamp_hash(self, target: Any, params: Optional[Dict[Any, Any]] = None) -> str:

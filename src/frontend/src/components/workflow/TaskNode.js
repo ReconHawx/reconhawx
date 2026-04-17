@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { Handle, Position } from 'reactflow';
 import { Form, Button, Badge } from 'react-bootstrap';
 import { useWorkflowStore } from '../../stores/workflowStore';
+import { useTaskManifestStore } from '../../stores/taskManifestStore';
 import { TASK_TYPES, TASK_CATEGORIES, getDataTypeColor } from './constants';
 import {
   WORKFLOW_STEP_BACKGROUND_PATTERNS,
@@ -12,6 +13,8 @@ import {
 const TaskNode = ({ data, selected, id }) => {
   const { openTaskConfigModal, deleteNode, steps, getStepForPosition, updateNodeData } = useWorkflowStore();
   const taskType = TASK_TYPES[data.taskType];
+  const taskInputs = useTaskManifestStore((s) => s.getInputs(data.taskType));
+  const taskOutputs = useTaskManifestStore((s) => s.getOutputs(data.taskType));
   const category = taskType?.category || 'Other';
   const categoryInfo = TASK_CATEGORIES[category] || { color: 'var(--bs-text-muted)', icon: '⚙️' };
   
@@ -61,7 +64,7 @@ const TaskNode = ({ data, selected, id }) => {
         id="input"
         className="workflow-node-handle-invisible workflow-node-handle-colored"
         style={{
-          '--handle-color': getDataTypeColor(taskType?.inputs?.[0] || 'default'),
+          '--handle-color': getDataTypeColor(taskInputs[0] || 'default'),
         }}
       />
 
@@ -146,7 +149,7 @@ const TaskNode = ({ data, selected, id }) => {
       </div>
 
       {/* Multiple output handles - one per output type for connecting to downstream tasks */}
-      {taskType?.outputs?.map((outputType, index) => {
+      {taskOutputs.map((outputType, index) => {
         const handleColor = getDataTypeColor(outputType);
         const topPosition = 20 + (index * 28);
         return (
@@ -166,7 +169,7 @@ const TaskNode = ({ data, selected, id }) => {
         );
       })}
       {/* Fallback: single output handle for tasks with no outputs defined */}
-      {(!taskType?.outputs || taskType.outputs.length === 0) && (
+      {taskOutputs.length === 0 && (
         <Handle
           type="source"
           position={Position.Right}

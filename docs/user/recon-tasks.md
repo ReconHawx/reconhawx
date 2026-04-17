@@ -8,16 +8,17 @@ For how to wire inputs and run workflows in the UI, see [Workflows](workflows.md
 
 ### Input type (technical)
 
-Each task declares one or more **runner input types**. In the UI you usually connect **workflow inputs** or **program assets**; those map to the same underlying kinds:
+Each task declares one or more **runner input types** on its `Task.input_type` attribute. Those values are mirrored in the API's recon-task manifest (`/admin/public/recon-tasks/effective-parameters`) and consumed by the workflow builder so the UI and this page stay in sync with the runner code. In the UI you usually connect **workflow inputs** or **program assets**; those map to the same underlying kinds:
 
 | Input type | Meaning for you |
 |------------|-----------------|
-| **string** | Plain text lines the worker treats as targets (often hostnames, IPs, URLs, or CIDRs depending on the task). Multi-value workflow inputs become multiple lines. |
-| **subdomain** | Subdomain records (hostnames), including from **Program assets → Subdomains**. |
+| **subdomain** | Subdomain / hostname records, including from **Program assets → Subdomains**. |
 | **ip** | IP addresses. |
 | **url** | Full URLs (`http://` or `https://`). |
+| **cidr** | CIDR blocks such as `10.0.0.0/24`. |
+| **string** | Plain text lines (used only by utility / debug tasks such as `shell_command`). |
 
-Some tasks accept **more than one** input kind (for example Nuclei).
+Some tasks accept **more than one** input kind (for example Nuclei and HTTP testing).
 
 ### Output type
 
@@ -37,22 +38,22 @@ Timeouts, chunk sizes, wordlists, and similar knobs are controlled by **recon ta
 
 | Task | What it does | Input type | Output type |
 |------|----------------|------------|---------------|
-| **resolve_domain** | DNS forward lookup: resolves hostnames to IPv4/IPv6 addresses (dnsx). | string (hostnames) | subdomain, ip |
-| **resolve_ip** | Reverse DNS: maps IP addresses to names (dnsx). | string (IPs) | subdomain, ip |
-| **resolve_ip_cidr** | Expands a CIDR block into individual IPs, resolves PTR-style names where applicable, and can orchestrate follow-on jobs (including optional port scans). | string (CIDR such as `10.0.0.0/24`, or single IPs) | subdomain, ip, service |
-| **subdomain_finder** | Passive subdomain discovery (subfinder) from seed domains. | string (apex or seed domains) | subdomain |
-| **dns_bruteforce** | Active subdomain brute force using DNS and a wordlist (PureDNS-style pipeline). | string (parent domains / zones to brute force) | subdomain, ip |
-| **subdomain_permutations** | Generates likely subdomain permutations (gotator) and resolves them. | string (base domains) | subdomain, ip |
-| **port_scan** | TCP/UDP port scan: accepts bare IPs or `ip:port` targets for focused checks. | string | service |
-| **nuclei_scan** | Runs the Nuclei template engine against targets; records template matches as findings and can also surface related hosts, URLs, and services from results. | subdomain, ip, or url | nuclei finding, subdomain, ip, service, url |
+| **resolve_domain** | DNS forward lookup: resolves hostnames to IPv4/IPv6 addresses (dnsx). | subdomain | subdomain, ip |
+| **resolve_ip** | Reverse DNS: maps IP addresses to names (dnsx). | ip | subdomain, ip |
+| **resolve_ip_cidr** | Expands a CIDR block into individual IPs, resolves PTR-style names where applicable, and can orchestrate follow-on jobs (including optional port scans). | cidr | subdomain, ip, service |
+| **subdomain_finder** | Passive subdomain discovery (subfinder) from seed domains. | subdomain | subdomain |
+| **dns_bruteforce** | Active subdomain brute force using DNS and a wordlist (PureDNS-style pipeline). | subdomain | subdomain, ip |
+| **subdomain_permutations** | Generates likely subdomain permutations (gotator) and resolves them. | subdomain | subdomain, ip |
+| **port_scan** | TCP/UDP port scan: accepts bare IPs or `ip:port` targets for focused checks. | ip | service |
+| **nuclei_scan** | Runs the Nuclei template engine against targets; records template matches as findings and can also surface related hosts, URLs, and services from results. | subdomain, ip, url | nuclei finding, subdomain, ip, service, url |
 | **wpscan** | WordPress security scan (WPScan) for core, plugins, and themes. | url | wpscan finding |
-| **test_http** | Probes HTTP/HTTPS with httpx: separates full URLs from bare hostnames, fingerprints TLS, detects technologies, and collects live services, hosts, IPs, URLs, and certificate material from responses. | string (URLs and/or hostnames) | service, subdomain, ip, url, certificate |
-| **whois_domain_check** | WHOIS lookup for registrable domains; attaches structured WHOIS to apex domain records. | string (domain names) | apex_domain |
-| **crawl_website** | Web crawl from seed URLs to discover more URLs on the same sites. | string (seed URLs) | url |
-| **screenshot_website** | Captures rendered page screenshots for URLs. | string (URLs) | screenshot |
-| **fuzz_website** | Directory/file discovery with ffuf using a wordlist. | string (base URLs to fuzz) | url |
-| **detect_broken_links** | Checks pages for broken or risky outbound links (including social links and hijackable unregistered domains). | string (page URLs, `http://` or `https://`) | broken_link finding |
-| **typosquat_detection** | Generates and analyzes typosquat candidates (dnstwist and related checks), risk scoring, optional screenshots; persists typosquat findings via the API. | subdomain | _(findings written during the run; no standard asset output list)_ |
+| **test_http** | Probes HTTP/HTTPS with httpx: separates full URLs from bare hostnames, fingerprints TLS, detects technologies, and collects live services, hosts, IPs, URLs, and certificate material from responses. | subdomain, url | service, subdomain, ip, url, certificate |
+| **whois_domain_check** | WHOIS lookup for registrable domains; attaches structured WHOIS to apex domain records. | subdomain | apex_domain |
+| **crawl_website** | Web crawl from seed URLs to discover more URLs on the same sites. | url | url |
+| **screenshot_website** | Captures rendered page screenshots for URLs. | url | screenshot |
+| **fuzz_website** | Directory/file discovery with ffuf using a wordlist. | url | url |
+| **detect_broken_links** | Checks pages for broken or risky outbound links (including social links and hijackable unregistered domains). | url | broken_link finding |
+| **typosquat_detection** | Generates and analyzes typosquat candidates (dnstwist and related checks), risk scoring, optional screenshots; persists typosquat findings via the API. | subdomain | typosquat_domain / typosquat_url / typosquat_screenshot findings |
 
 ---
 

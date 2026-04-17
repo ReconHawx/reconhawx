@@ -12,8 +12,8 @@ logger = logging.getLogger(__name__)
 class TestHTTP(Task):
     name = "test_http"
     description = "Test HTTP"
-    input_type = AssetType.STRING
-    output_types = [AssetType.SERVICE, AssetType.SUBDOMAIN, AssetType.IP, AssetType.URL]
+    input_type = [AssetType.SUBDOMAIN, AssetType.URL]
+    output_types = [AssetType.SERVICE, AssetType.SUBDOMAIN, AssetType.IP, AssetType.URL, AssetType.CERTIFICATE]
 
     def get_timestamp_hash(self, target: Any, params: Optional[Dict[Any, Any]] = None) -> str:
         hash_dict = {

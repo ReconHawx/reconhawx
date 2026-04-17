@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 class FuzzWebsite(Task):
     name = "fuzz_website"
     description = "Fuzz website paths using ffuf"
-    input_type = AssetType.STRING
+    input_type = AssetType.URL
     output_types = [AssetType.URL]
 
     def get_timestamp_hash(self, target: Any, params: Optional[Dict[Any, Any]] = None) -> str:

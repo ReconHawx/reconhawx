@@ -1,13 +1,13 @@
 import React from 'react';
 import { Form } from 'react-bootstrap';
 import { useWorkflowStore } from '../../stores/workflowStore';
+import { useTaskManifestStore } from '../../stores/taskManifestStore';
 import { TASK_TYPES } from './constants';
 
 function InputMappingSection({ selectedNode, updateNodeData }) {
   const { nodes, edges } = useWorkflowStore();
   const taskType = selectedNode?.data?.taskType;
-  const taskConfig = TASK_TYPES[taskType];
-  const inputTypes = taskConfig?.inputs || [];
+  const inputTypes = useTaskManifestStore((s) => s.getInputs(taskType));
 
   const incomingEdges = edges.filter(edge => edge.target === selectedNode?.id);
   const inputMapping = selectedNode?.data?.inputMapping || {};

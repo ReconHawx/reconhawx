@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 class ResolveDomain(Task):
     name = "resolve_domain"
     description = "Resolves domain names to IP addresses using dnsx"
-    input_type = AssetType.STRING
+    input_type = AssetType.SUBDOMAIN
     output_types = [AssetType.SUBDOMAIN, AssetType.IP]
     
     # Timeout and execution threshold are now handled by the base Task class

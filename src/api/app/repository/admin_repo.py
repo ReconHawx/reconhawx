@@ -109,8 +109,16 @@ class AdminRepository:
 
     async def get_all_known_recon_task_parameters_manifest(self) -> Dict[str, Dict[str, Any]]:
         """
-        Effective parameters for every KNOWN_RECON_TASK (built-in + DB row if any).
-        Used by the runner to bootstrap without per-task HTTP calls.
+        Effective parameters and I/O-type metadata for every KNOWN_RECON_TASK
+        (built-in + DB row if any). Used by the runner and frontend to bootstrap
+        without per-task HTTP calls.
+
+        Each entry shape:
+            {
+                "parameters": { ... effective params ... },
+                "input_types": ["subdomain", ...],
+                "output_types": ["subdomain", "ip", ...],
+            }
         """
         try:
             async with get_db_session() as db:
@@ -119,7 +127,11 @@ class AdminRepository:
             tasks: Dict[str, Dict[str, Any]] = {}
             for name in sorted(KNOWN_RECON_TASKS):
                 payload = recon_task_api_payload(name, by_name.get(name))
-                tasks[name] = payload["parameters"]
+                tasks[name] = {
+                    "parameters": payload["parameters"],
+                    "input_types": payload["input_types"],
+                    "output_types": payload["output_types"],
+                }
             return tasks
 
         except SQLAlchemyError as e:

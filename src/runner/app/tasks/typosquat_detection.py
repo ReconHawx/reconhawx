@@ -42,7 +42,7 @@ class TyposquatDetection(Task):
     name = "typosquat_detection"
     description = "Detect typosquatting domains using dnstwist and risk analysis. Supports both variation generation and direct input domain analysis modes."
     input_type = AssetType.SUBDOMAIN
-    output_types = []  # We return findings directly to API, not as asset types
+    output_types = [FindingType.TYPOSQUAT_DOMAIN, FindingType.TYPOSQUAT_URL, FindingType.TYPOSQUAT_SCREENSHOT]
     chunk_size = 20  # Default chunk size for domain variations
 
     def __init__(self):

@@ -14,7 +14,7 @@ _RAW_RESPONSE_MAX = 16000
 class WhoisDomainCheck(Task):
     name = "whois_domain_check"
     description = "WHOIS lookup on apex domains; structured WHOIS stored on apex_domain assets"
-    input_type = AssetType.STRING
+    input_type = AssetType.SUBDOMAIN
     output_types = [AssetType.APEX_DOMAIN]
 
     def get_timestamp_hash(self, target: Any, params: Optional[Dict[Any, Any]] = None) -> str:
