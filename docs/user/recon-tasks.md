@@ -20,6 +20,8 @@ Each task declares one or more **runner input types** on its `Task.input_type` a
 
 Some tasks accept **more than one** input kind (for example Nuclei and HTTP testing).
 
+At dispatch time the runner **validates each input** against the task's declared types and silently drops values that don't match (for example, a plain string mistakenly wired into a `url`-only task). Dropped counts appear on the workflow step status under `input_validation` (with up to 5 sample values) and in the runner log as a `WARNING`. If every input is invalid, the step is skipped the same way it would be with no input at all. Utility tasks typed as `string` skip validation entirely.
+
 ### Output type
 
 **Assets** (subdomains, IPs, services, URLs, certificates, screenshots, apex domains) are stored on the program and can feed **downstream tasks** in the same workflow.
