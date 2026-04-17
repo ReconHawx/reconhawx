@@ -1,4 +1,4 @@
-"""Tests for ``tasks.crawl_website.CrawlWebsite``."""
+"""Tests for ``recon_tasks.crawl_website.CrawlWebsite``."""
 
 from __future__ import annotations
 
@@ -7,8 +7,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from tasks.base import AssetType
-from tasks.crawl_website import CrawlWebsite
+from recon_tasks.base import AssetType
+from recon_tasks.crawl_website import CrawlWebsite
 
 
 @pytest.fixture
@@ -43,7 +43,7 @@ def test_get_command_empty_on_no_valid_urls(task: CrawlWebsite) -> None:
 
 def test_parse_output_builds_url_assets_with_metadata(task: CrawlWebsite, load_fixture) -> None:
     # Avoid real DNS for katana-discovered redirect/final URLs in _process_entry.
-    with patch("tasks.crawl_website.dns.resolver.Resolver") as mock_resolver_cls:
+    with patch("recon_tasks.crawl_website.dns.resolver.Resolver") as mock_resolver_cls:
         mock_resolver_cls.return_value = MagicMock()
         raw = load_fixture("crawl_website/crawler_success.json")
         result = task.parse_output(raw)
@@ -64,7 +64,7 @@ def test_parse_output_builds_url_assets_with_metadata(task: CrawlWebsite, load_f
 
 
 def test_parse_output_deduplicates_via_normalize_url_for_comparison(task: CrawlWebsite) -> None:
-    with patch("tasks.crawl_website.dns.resolver.Resolver"):
+    with patch("recon_tasks.crawl_website.dns.resolver.Resolver"):
         raw = (
             '{"urls": {"https://example.com": {"httpx_output": '
             '"{\\"url\\": \\"https://example.com/x\\", \\"host\\": \\"example.com\\", \\"scheme\\": \\"https\\", \\"port\\": \\"443\\", \\"path\\": \\"/x\\", \\"a\\": [\\"1.2.3.4\\"], \\"time\\": \\"10ms\\", \\"failed\\": false}", '

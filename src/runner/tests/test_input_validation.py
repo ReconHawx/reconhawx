@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 import pytest
 
-from tasks.base import AssetType
+from recon_tasks.base import AssetType
 from utils.input_validation import (
     ValidationResult,
     validate_inputs_for_task,

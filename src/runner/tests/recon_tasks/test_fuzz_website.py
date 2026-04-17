@@ -1,4 +1,4 @@
-"""Tests for ``tasks.fuzz_website.FuzzWebsite`` (dual-purpose task)."""
+"""Tests for ``recon_tasks.fuzz_website.FuzzWebsite`` (dual-purpose task)."""
 
 from __future__ import annotations
 
@@ -6,8 +6,8 @@ import base64
 
 import pytest
 
-from tasks.base import AssetType, FindingType
-from tasks.fuzz_website import FuzzWebsite
+from recon_tasks.base import AssetType, FindingType
+from recon_tasks.fuzz_website import FuzzWebsite
 
 
 DEFAULT_WL = "/workspace/files/webcontent_test.txt"

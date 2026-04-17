@@ -27,12 +27,12 @@ class TaskRegistry:
         return list(cls._tasks.keys())
 
 def load_tasks():
-    """Dynamically load all task modules and register their tasks"""
-    import tasks  # Import the tasks package itself
-    package = tasks.__package__ or tasks.__name__
+    """Dynamically load all recon task modules and register their tasks"""
+    import recon_tasks as pkg
+    package = pkg.__package__ or pkg.__name__
 
-    # Iterate through all modules in the tasks package
-    for _, module_name, _ in pkgutil.iter_modules(tasks.__path__):
+    # Iterate through all modules in the recon_tasks package
+    for _, module_name, _ in pkgutil.iter_modules(pkg.__path__):
         if module_name != 'base':  # Skip the base module
             try:
                 module = importlib.import_module(f"{package}.{module_name}")

@@ -4,11 +4,10 @@ import logging
 import json
 import os
 import asyncio
-from tasks.phishlabs_batch import PhishLabsBatchTask
-from tasks.dummy_batch import DummyBatchTask
-from tasks.gather_api_findings import GatherApiFindingsTask
-from tasks.sync_recordedfuture_data import SyncRecordedFutureDataTask
-from tasks.ai_analysis_batch import AIAnalysisBatchTask
+from batch_jobs.phishlabs_batch import PhishLabsBatchTask
+from batch_jobs.gather_api_findings import GatherApiFindingsTask
+from batch_jobs.sync_recordedfuture_data import SyncRecordedFutureDataTask
+from batch_jobs.ai_analysis_batch import AIAnalysisBatchTask
 
 # Set up logging
 logging.basicConfig(
@@ -48,30 +47,6 @@ async def run_phishlabs_batch_job(job_data: dict):
 
     except Exception as e:
         logger.error(f"Error running PhishLabs batch job: {str(e)}")
-        return False
-
-async def run_dummy_batch_job(job_data: dict):
-    """Run a dummy batch job for testing purposes"""
-    try:
-        job_id = job_data.get("job_id")
-        items = job_data.get("items", [])
-        user_id = job_data.get("user_id", "unknown")
-
-        if not job_id:
-            logger.error("Job ID is required")
-            return False
-
-        logger.info(f"Starting dummy batch job {job_id} for {len(items)} items")
-
-        # Create and execute the task
-        task = DummyBatchTask(job_id, items, user_id)
-        await task.execute()
-
-        logger.info(f"Dummy batch job {job_id} completed successfully")
-        return True
-
-    except Exception as e:
-        logger.error(f"Error running dummy batch job: {str(e)}")
         return False
 
 async def run_gather_api_findings_job(job_data: dict):
@@ -203,8 +178,6 @@ async def main():
             success = await run_phishlabs_batch_job(job_data)
         elif job_type == "ai_analysis_batch":
             success = await run_ai_analysis_batch_job(job_data)
-        elif job_type == "dummy_batch":
-            success = await run_dummy_batch_job(job_data)
         elif job_type == "gather_api_findings":
             success = await run_gather_api_findings_job(job_data)
         elif job_type == "sync_recordedfuture_data":

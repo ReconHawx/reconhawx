@@ -1,4 +1,4 @@
-"""Tests for ``tasks.screenshot_website.ScreenshotWebsite``."""
+"""Tests for ``recon_tasks.screenshot_website.ScreenshotWebsite``."""
 
 from __future__ import annotations
 
@@ -9,8 +9,8 @@ from unittest.mock import patch
 
 import pytest
 
-from tasks.base import AssetType
-from tasks.screenshot_website import ScreenshotWebsite
+from recon_tasks.base import AssetType
+from recon_tasks.screenshot_website import ScreenshotWebsite
 
 
 @pytest.fixture
@@ -70,10 +70,10 @@ def test_parse_output_gowitness_archive(task: ScreenshotWebsite) -> None:
     )
 
     with patch(
-        "tasks.screenshot_website.extract_text_from_gowitness_jsonl",
+        "recon_tasks.screenshot_website.extract_text_from_gowitness_jsonl",
         return_value="hi",
     ), patch(
-        "tasks.screenshot_website.extract_text_from_image_ocr",
+        "recon_tasks.screenshot_website.extract_text_from_image_ocr",
         return_value="",
     ):
         result = task.parse_output(archive)
@@ -95,10 +95,10 @@ def test_parse_output_falls_back_to_ocr_when_no_jsonl(task: ScreenshotWebsite) -
         {"http---only.example.com---.png": b"\x89PNG\r\n\x1a\n"}
     )
     with patch(
-        "tasks.screenshot_website.extract_text_from_gowitness_jsonl",
+        "recon_tasks.screenshot_website.extract_text_from_gowitness_jsonl",
         return_value=None,
     ), patch(
-        "tasks.screenshot_website.extract_text_from_image_ocr",
+        "recon_tasks.screenshot_website.extract_text_from_image_ocr",
         return_value="ocr-text",
     ):
         result = task.parse_output(archive)

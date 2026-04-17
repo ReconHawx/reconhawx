@@ -14,7 +14,7 @@ from datetime import datetime
 from models.base import utcnow
 from models.workflow import Workflow
 from task_executor import TaskExecutor
-from tasks.base import parameter_manager
+from recon_tasks.base import parameter_manager
 from data_api_client import DataAPIClient
 from services.kubernetes import KubernetesService
 
@@ -28,7 +28,8 @@ logger = logging.getLogger(__name__)
 
 # Set DEBUG level for task_executor module and its dependencies
 logging.getLogger('task_executor').setLevel(logging.DEBUG)
-logging.getLogger('tasks').setLevel(logging.DEBUG)
+logging.getLogger('recon_tasks').setLevel(logging.DEBUG)
+logging.getLogger('batch_jobs').setLevel(logging.DEBUG)
 logging.getLogger('task_queue_client').setLevel(logging.DEBUG)
 
 # Disable noisy Kubernetes client debug logs while keeping our app's debug logs

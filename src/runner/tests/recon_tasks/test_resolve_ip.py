@@ -1,4 +1,4 @@
-"""Tests for ``tasks.resolve_ip.ResolveIP``."""
+"""Tests for ``recon_tasks.resolve_ip.ResolveIP``."""
 
 from __future__ import annotations
 
@@ -6,8 +6,8 @@ import base64
 
 import pytest
 
-from tasks.base import AssetType
-from tasks.resolve_ip import ResolveIP
+from recon_tasks.base import AssetType
+from recon_tasks.resolve_ip import ResolveIP
 
 
 @pytest.fixture

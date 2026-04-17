@@ -1,4 +1,4 @@
-"""Tests for ``tasks.detect_broken_links.DetectBrokenLinks``."""
+"""Tests for ``recon_tasks.detect_broken_links.DetectBrokenLinks``."""
 
 from __future__ import annotations
 
@@ -6,8 +6,8 @@ import base64
 
 import pytest
 
-from tasks.base import FindingType
-from tasks.detect_broken_links import DetectBrokenLinks
+from recon_tasks.base import FindingType
+from recon_tasks.detect_broken_links import DetectBrokenLinks
 
 
 @pytest.fixture

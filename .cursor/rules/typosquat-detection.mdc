@@ -1,5 +1,5 @@
 ---
-globs: ["src/runner/app/tasks/typosquat_detection.py", "src/runner/app/tasks/typosquat_components.py", "src/worker/app/typosquat_worker.py", "src/api/app/repository/typosquat_findings_repo.py", "src/api/app/services/protected_domain_similarity_service.py"]
+globs: ["src/runner/app/recon_tasks/typosquat_detection.py", "src/runner/app/recon_tasks/typosquat_components.py", "src/worker/app/typosquat_worker.py", "src/api/app/repository/typosquat_findings_repo.py", "src/api/app/services/protected_domain_similarity_service.py"]
 ---
 
 # Typosquat Detection System
@@ -688,7 +688,7 @@ POST /api/v1/findings/typosquat/calculate-risk-scores
 
 ### Parked Domain Detection (Runner-Side)
 
-**Location:** `src/runner/app/tasks/typosquat_components.py` (`TyposquatAnalyzer.parse_worker_output`)
+**Location:** `src/runner/app/recon_tasks/typosquat_components.py` (`TyposquatAnalyzer.parse_worker_output`)
 
 Parked domains are identified during worker output parsing based on multiple indicators.
 

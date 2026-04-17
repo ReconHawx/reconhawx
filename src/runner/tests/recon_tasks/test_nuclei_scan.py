@@ -1,4 +1,4 @@
-"""Tests for ``tasks.nuclei_scan.NucleiScan`` (multi-type input)."""
+"""Tests for ``recon_tasks.nuclei_scan.NucleiScan`` (multi-type input)."""
 
 from __future__ import annotations
 
@@ -6,8 +6,8 @@ import base64
 
 import pytest
 
-from tasks.base import AssetType, FindingType
-from tasks.nuclei_scan import NucleiScan
+from recon_tasks.base import AssetType, FindingType
+from recon_tasks.nuclei_scan import NucleiScan
 
 
 @pytest.fixture

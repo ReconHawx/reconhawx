@@ -18,8 +18,8 @@ from typing import Dict, List, Set
 import pytest
 import yaml
 
-import tasks as _tasks_pkg  # noqa: F401  populates TaskRegistry on import
-from tasks import TaskRegistry
+import recon_tasks as _tasks_pkg  # noqa: F401  populates TaskRegistry on import
+from recon_tasks import TaskRegistry
 
 
 def _repo_root() -> Path:

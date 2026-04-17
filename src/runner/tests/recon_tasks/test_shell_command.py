@@ -1,11 +1,11 @@
-"""Tests for ``tasks.shell_command.ShellCommand`` (raw passthrough task)."""
+"""Tests for ``recon_tasks.shell_command.ShellCommand`` (raw passthrough task)."""
 
 from __future__ import annotations
 
 import pytest
 
-from tasks.base import AssetType
-from tasks.shell_command import ShellCommand
+from recon_tasks.base import AssetType
+from recon_tasks.shell_command import ShellCommand
 
 
 @pytest.fixture
