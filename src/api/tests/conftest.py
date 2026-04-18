@@ -22,10 +22,59 @@ for _path in (_api_root, _app_dir):
 import pytest
 import httpx
 from httpx import ASGITransport
-from fastapi import FastAPI
 
 # Import app after path and env are set
 from app.main import app
+from models.user_postgres import UserResponse
+
+
+def make_test_user(
+    *,
+    is_superuser: bool = False,
+    roles: list[str] | None = None,
+    program_permissions: dict | list | None = None,
+) -> UserResponse:
+    """Build a UserResponse for dependency overrides and route tests."""
+    return UserResponse(
+        id="test-user-id",
+        username="testuser",
+        email="test@example.com",
+        is_active=True,
+        is_superuser=is_superuser,
+        roles=roles or ["user"],
+        program_permissions=program_permissions if program_permissions is not None else {},
+    )
+
+
+@pytest.fixture
+def mock_user_superuser():
+    return make_test_user(is_superuser=True)
+
+
+@pytest.fixture
+def mock_user_admin():
+    return make_test_user(roles=["admin"])
+
+
+@pytest.fixture
+def mock_user_restricted():
+    return make_test_user(
+        roles=["user"],
+        program_permissions={"program-a": "viewer", "program-b": "viewer"},
+    )
+
+
+@pytest.fixture
+def mock_user_no_programs():
+    return make_test_user(roles=["user"], program_permissions={})
+
+
+@pytest.fixture
+def mock_user_manager():
+    return make_test_user(
+        roles=["user"],
+        program_permissions={"program-a": "manager", "program-b": "viewer"},
+    )
 
 # User fixture names that tests use for auth override
 _USER_FIXTURES = (

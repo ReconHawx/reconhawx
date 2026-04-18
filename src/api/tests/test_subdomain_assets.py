@@ -7,61 +7,6 @@ import httpx
 from app.models.user_postgres import UserResponse
 
 
-def _make_user(
-    *,
-    is_superuser: bool = False,
-    roles: list[str] | None = None,
-    program_permissions: dict | list | None = None,
-) -> UserResponse:
-    return UserResponse(
-        id="test-user-id",
-        username="testuser",
-        email="test@example.com",
-        is_active=True,
-        is_superuser=is_superuser,
-        roles=roles or ["user"],
-        program_permissions=program_permissions or {},
-    )
-
-
-
-
-@pytest.fixture
-def mock_user_superuser():
-    """User with superuser privileges."""
-    return _make_user(is_superuser=True)
-
-
-@pytest.fixture
-def mock_user_admin():
-    """User with admin role."""
-    return _make_user(roles=["admin"])
-
-
-@pytest.fixture
-def mock_user_restricted():
-    """User with restricted program access."""
-    return _make_user(
-        roles=["user"],
-        program_permissions={"program-a": "viewer", "program-b": "viewer"},
-    )
-
-
-@pytest.fixture
-def mock_user_no_programs():
-    """User with no program access."""
-    return _make_user(roles=["user"], program_permissions={})
-
-
-@pytest.fixture
-def mock_user_manager():
-    """User with manager permission for a program."""
-    return _make_user(
-        roles=["user"],
-        program_permissions={"program-a": "manager", "program-b": "viewer"},
-    )
-
-
 class TestSearchSubdomainsTyped:
     """Tests for POST /assets/subdomain/search."""
 

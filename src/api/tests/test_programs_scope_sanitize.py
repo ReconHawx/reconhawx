@@ -14,28 +14,6 @@ import pytest
 from app.models.user_postgres import UserResponse
 
 
-def _make_user(
-    *,
-    is_superuser: bool = False,
-    roles: list[str] | None = None,
-    program_permissions: dict | list | None = None,
-) -> UserResponse:
-    return UserResponse(
-        id="test-user-id",
-        username="testuser",
-        email="test@example.com",
-        is_active=True,
-        is_superuser=is_superuser,
-        roles=roles or ["user"],
-        program_permissions=program_permissions or {},
-    )
-
-
-@pytest.fixture
-def mock_user_superuser():
-    return _make_user(is_superuser=True)
-
-
 class TestUpdateProgramScopeSanitize:
     """Tests for PUT /programs/{name}."""
 
