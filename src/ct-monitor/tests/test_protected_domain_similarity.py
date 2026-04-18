@@ -1,21 +1,9 @@
 """Tests for duplicated API-aligned protected-domain similarity (ct-monitor)."""
 
-import sys
-from pathlib import Path
-
-_APP = Path(__file__).resolve().parent.parent / "app"
-if str(_APP) not in sys.path:
-    sys.path.insert(0, str(_APP))
-
-from protected_domain_similarity import (  # noqa: E402
-    best_match_among_protected,
-    best_similarity_typo_to_protected,
-    _typo_suffix_hostnames,
-)
-
 
 def test_dfs_fragment_regression_low_vs_typical_brand_list():
-    """Long unrelated label containing '-dcs' should stay below a strict threshold."""
+    from protected_domain_similarity import best_match_among_protected
+
     typo = "35thanniversaryidp-dcs.com"
     protected = [
         "enterprise.com",
@@ -27,16 +15,22 @@ def test_dfs_fragment_regression_low_vs_typical_brand_list():
 
 
 def test_examp1e_regression():
+    from protected_domain_similarity import best_similarity_typo_to_protected
+
     assert best_similarity_typo_to_protected("examp1e.com", "example.com") >= 0.85
 
 
 def test_collapsed_dot_split_cap():
+    from protected_domain_similarity import best_similarity_typo_to_protected
+
     typo = "dcs-entre.prise.com"
     protected = "dcs-entreprise.com"
     assert best_similarity_typo_to_protected(typo, protected) == 0.99
 
 
 def test_typo_suffix_hostnames_multi_label():
+    from protected_domain_similarity import _typo_suffix_hostnames
+
     labels = _typo_suffix_hostnames("a.b.c.d.com")
     assert "a.b.c.d.com" in labels
     assert "d.com" in labels
