@@ -212,9 +212,10 @@ src/event-handler/app/
 ├── event_handlers.py    # Handler system core
 ├── handler_config.py    # HandlerSet / in-memory handler registry from API-shaped dicts
 ├── program_settings.py  # API settings provider
+├── api_config_provider.py  # Fetches handler definitions from API (Redis cache)
 ├── discord.py           # Discord client
 ├── batching.py          # Batch manager aliases
-├── typosquat_handler.py # Specialized handler
+├── http_api.py          # Health / admin control HTTP API
 └── config_generator.py  # Config file generator
 ```
 
