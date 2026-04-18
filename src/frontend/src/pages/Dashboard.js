@@ -66,6 +66,8 @@ function Dashboard() {
     nuclei: [], typosquat: []
   });
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState(null);
   const [error, setError] = useState(null);
 
   const getActiveWorkflowCount = useCallback(async (programName) => {
@@ -86,10 +88,15 @@ function Dashboard() {
     }
   }, []);
 
-  const loadDashboardData = useCallback(async () => {
-    setLoading(true);
+  const loadDashboardData = useCallback(async (opts = {}) => {
+    const silent = opts.silent === true;
+    if (silent) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
     setError(null);
-    
+
     try {
       // Load statistics using the new common stats endpoints
       let assetStats, findingsStats;
@@ -182,6 +189,8 @@ function Dashboard() {
       setError('Failed to load dashboard data. Please try again.');
     } finally {
       setLoading(false);
+      setRefreshing(false);
+      setLastUpdated(new Date());
     }
   }, [selectedProgram, getActiveWorkflowCount]);
 
@@ -232,10 +241,10 @@ function Dashboard() {
   return (
     <Container fluid className="p-4">
       {/* Header Section with Consolidated Navigation */}
-      <div className="d-flex justify-content-between align-items-start mb-4">
+      <div className="d-flex justify-content-between align-items-start mb-4 flex-wrap gap-3">
         <div>
-          <h1 className="mb-2">🔍 Reconnaissance Dashboard</h1>
-          <div className="d-flex align-items-center gap-3">
+          <h1 className="mb-2">🔍 Dashboard</h1>
+          <div className="d-flex align-items-center gap-3 flex-wrap">
             {!selectedProgram && totalPrograms > 0 && (
               <Badge bg="success" className="fs-6 px-3 py-2">
                 📊 {totalPrograms} Programs
@@ -246,10 +255,35 @@ function Dashboard() {
                 🎯 {selectedProgram}
               </Badge>
             )}
+            <Link to={`/workflows/status${programParam}`} className="text-decoration-none">
+              <Badge bg="warning" text="dark" className="fs-6 px-3 py-2 hover-link">
+                🔄 Active workflows: {stats.activeWorkflows.toLocaleString()}
+              </Badge>
+            </Link>
           </div>
         </div>
-
-
+        <div className="d-flex flex-column align-items-end gap-2">
+          <Button
+            variant="outline-secondary"
+            size="sm"
+            disabled={loading || refreshing}
+            onClick={() => loadDashboardData({ silent: true })}
+          >
+            {refreshing ? (
+              <>
+                <Spinner animation="border" size="sm" className="me-2" role="status" />
+                Refreshing…
+              </>
+            ) : (
+              'Refresh data'
+            )}
+          </Button>
+          {lastUpdated && (
+            <small className="text-muted">
+              Last updated: {lastUpdated.toLocaleString()}
+            </small>
+          )}
+        </div>
       </div>
 
       {/* Quick Links */}
@@ -296,7 +330,7 @@ function Dashboard() {
               </Row>
               <Row className="g-2">
                 <Col xs={6} sm={4} md={4}>
-                  <Button as={Link} to="/assets/screenshots" variant="outline-primary" size="sm" className="w-100 py-1 px-2">
+                  <Button as={Link} to={`/assets/screenshots${programParam}`} variant="outline-primary" size="sm" className="w-100 py-1 px-2">
                     📸 Screenshots
                   </Button>
                 </Col>
@@ -640,6 +674,133 @@ function Dashboard() {
                 <div className="mt-auto pt-2">
                   <Link to={`/assets/ips${programParam}`} className="btn btn-sm btn-outline-info w-100">
                     View All IPs
+                  </Link>
+                </div>
+              </Card.Body>
+            </Card>
+          </Col>
+        </Row>
+        <Row>
+          {/* Recent Apex Domains */}
+          <Col md={4} className="mb-3">
+            <Card className="rh-elevated-card h-100">
+              <Card.Header className="rh-card-header-table d-flex justify-content-between align-items-center">
+                <h6 className="mb-0">🎯 Recent Apex Domains</h6>
+                <Link to={`/assets/apex-domains${programParam}`} className="text-decoration-none">
+                  <Badge bg="light" text="dark hover-link">{latestAssets.apex_domains?.length || 0}</Badge>
+                </Link>
+              </Card.Header>
+              <Card.Body className="d-flex flex-column">
+                <div className="flex-grow-1">
+                  {latestAssets.apex_domains && latestAssets.apex_domains.length > 0 ? (
+                    <div className="list-group list-group-flush">
+                      {latestAssets.apex_domains.slice(0, 10).map((domain) => (
+                        <div key={domain.id} className="list-group-item px-0 py-2 d-flex justify-content-between align-items-center">
+                          <Link
+                            to={`/assets/apex-domain/details?id=${encodeURIComponent(domain.id || '')}`}
+                            className="text-decoration-none flex-grow-1 me-2"
+                          >
+                            <small>{truncateText(domain.name, 30)}</small>
+                          </Link>
+                          <span className="text-muted small">{getAgeFromDate(domain.created_at)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-muted text-center small">No apex domains found</p>
+                  )}
+                </div>
+                <div className="mt-auto pt-2">
+                  <Link to={`/assets/apex-domains${programParam}`} className="btn btn-sm btn-outline-success w-100">
+                    View All Apex Domains
+                  </Link>
+                </div>
+              </Card.Body>
+            </Card>
+          </Col>
+
+          {/* Recent Services */}
+          <Col md={4} className="mb-3">
+            <Card className="rh-elevated-card h-100">
+              <Card.Header className="rh-card-header-table d-flex justify-content-between align-items-center">
+                <h6 className="mb-0">⚡ Recent Services</h6>
+                <Link to={`/assets/services${programParam}`} className="text-decoration-none">
+                  <Badge bg="light" text="dark hover-link">{latestAssets.services?.length || 0}</Badge>
+                </Link>
+              </Card.Header>
+              <Card.Body className="d-flex flex-column">
+                <div className="flex-grow-1">
+                  {latestAssets.services && latestAssets.services.length > 0 ? (
+                    <div className="list-group list-group-flush">
+                      {latestAssets.services.slice(0, 10).map((service) => (
+                        <div key={service.id} className="list-group-item px-0 py-2 d-flex justify-content-between align-items-center">
+                          <Link
+                            to={`/assets/services/details?id=${encodeURIComponent(service.id || '')}`}
+                            className="text-decoration-none flex-grow-1 me-2"
+                          >
+                            <small>
+                              {truncateText(
+                                [service.service_name, service.ip && `${service.ip}:${service.port || ''}`]
+                                  .filter(Boolean)
+                                  .join(' · ') || 'Service',
+                                36
+                              )}
+                            </small>
+                          </Link>
+                          <div className="d-flex align-items-center gap-2 flex-shrink-0">
+                            <span className="text-muted small">{getAgeFromDate(service.created_at)}</span>
+                            {service.protocol && (
+                              <Badge bg="secondary" className="text-uppercase">{service.protocol}</Badge>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-muted text-center small">No services found</p>
+                  )}
+                </div>
+                <div className="mt-auto pt-2">
+                  <Link to={`/assets/services${programParam}`} className="btn btn-sm btn-outline-secondary w-100">
+                    View All Services
+                  </Link>
+                </div>
+              </Card.Body>
+            </Card>
+          </Col>
+
+          {/* Recent Certificates */}
+          <Col md={4} className="mb-3">
+            <Card className="rh-elevated-card h-100">
+              <Card.Header className="rh-card-header-table d-flex justify-content-between align-items-center">
+                <h6 className="mb-0">🔒 Recent Certificates</h6>
+                <Link to={`/assets/certificates${programParam}`} className="text-decoration-none">
+                  <Badge bg="light" text="dark hover-link">{latestAssets.certificates?.length || 0}</Badge>
+                </Link>
+              </Card.Header>
+              <Card.Body className="d-flex flex-column">
+                <div className="flex-grow-1">
+                  {latestAssets.certificates && latestAssets.certificates.length > 0 ? (
+                    <div className="list-group list-group-flush">
+                      {latestAssets.certificates.slice(0, 10).map((cert) => (
+                        <div key={cert.id} className="list-group-item px-0 py-2 d-flex justify-content-between align-items-center">
+                          <Link
+                            to={`/assets/certificates/details?id=${encodeURIComponent(cert.id || '')}`}
+                            className="text-decoration-none flex-grow-1 me-2"
+                          >
+                            <small>{truncateText(cert.subject_dn, 32)}</small>
+                          </Link>
+                          <span className="text-muted small flex-shrink-0">{getAgeFromDate(cert.created_at)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-muted text-center small">No certificates found</p>
+                  )}
+                </div>
+                <div className="mt-auto pt-2">
+                  <Link to={`/assets/certificates${programParam}`} className="btn btn-sm btn-outline-danger w-100">
+                    View All Certificates
                   </Link>
                 </div>
               </Card.Body>
