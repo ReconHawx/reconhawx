@@ -16,10 +16,11 @@ import {
   Tabs,
   Tab
 } from 'react-bootstrap';
-import { programAPI, aiAPI } from '../../services/api';
+import { programAPI, aiAPI, authAPI } from '../../services/api';
 import EventHandlerForm from '../../components/EventHandlerForm';
 import ScopeDomainsEditor from '../../components/programs/ScopeDomainsEditor';
 import { useAuth } from '../../contexts/AuthContext';
+import { useProgramFilter } from '../../contexts/ProgramFilterContext';
 import { formatDate } from '../../utils/dateUtils';
 import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
 
@@ -83,12 +84,15 @@ function mergeProgramNotificationSettings(programSettings) {
 function ProgramDetail() {
   const { programName } = useParams();
   const navigate = useNavigate();
-  const { hasProgramPermission } = useAuth();
+  const { hasProgramPermission, updateUser } = useAuth();
+  const { selectedProgram, setSelectedProgram, refreshPrograms } = useProgramFilter();
 
   const [program, setProgram] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState('');
+  const [programNameDraft, setProgramNameDraft] = useState('');
+  const [savingProgramName, setSavingProgramName] = useState(false);
   const [savingNotifications, setSavingNotifications] = useState(false);
   const [savingAutoResolve, setSavingAutoResolve] = useState(false);
   const [typosquatAutoResolve, setTyposquatAutoResolve] = useState({
@@ -268,6 +272,9 @@ function ProgramDetail() {
           ? String(cms.similarity_threshold)
           : ''
     });
+    if (program?.name != null) {
+      setProgramNameDraft(program.name);
+    }
   }, [program]);
 
   useEffect(() => {
@@ -309,6 +316,39 @@ function ProgramDetail() {
   useEffect(() => {
     if (program && programName) loadEventHandlerConfig();
   }, [program, programName, loadEventHandlerConfig]);
+
+  const handleRenameProgram = async () => {
+    const trimmed = programNameDraft.trim();
+    if (!trimmed || !program || trimmed === program.name) return;
+    try {
+      setSavingProgramName(true);
+      setError('');
+      await programAPI.update(programName, { name: trimmed }, true);
+      const fresh = await authAPI.getCurrentUser();
+      updateUser(fresh);
+      if (selectedProgram === programName) {
+        setSelectedProgram(trimmed);
+      }
+      try {
+        await refreshPrograms();
+      } catch (e) {
+        console.warn('refreshPrograms after rename:', e);
+      }
+      setSuccess('Program name updated.');
+      navigate(`/programs/${encodeURIComponent(trimmed)}`, { replace: true });
+    } catch (err) {
+      const d = err.response?.data?.detail;
+      const msg =
+        typeof d === 'string'
+          ? d
+          : Array.isArray(d)
+            ? d.map((x) => (typeof x === 'string' ? x : x?.msg || '')).filter(Boolean).join(' ')
+            : err.message;
+      setError(msg || 'Failed to rename program');
+    } finally {
+      setSavingProgramName(false);
+    }
+  };
 
   useEffect(() => {
     // Sync local draft with program data when it loads/changes
@@ -1053,7 +1093,33 @@ function ProgramDetail() {
                 <tbody>
                   <tr>
                     <td width="200"><strong>Program Name:</strong></td>
-                    <td>{program.name}</td>
+                    <td>
+                      {isUserManager ? (
+                        <InputGroup className="flex-nowrap" style={{ maxWidth: 'min(100%, 32rem)' }}>
+                          <Form.Control
+                            type="text"
+                            value={programNameDraft}
+                            onChange={(e) => setProgramNameDraft(e.target.value)}
+                            disabled={savingProgramName}
+                            maxLength={255}
+                            aria-label="Program name"
+                          />
+                          <Button
+                            variant="primary"
+                            disabled={
+                              savingProgramName ||
+                              !programNameDraft.trim() ||
+                              programNameDraft.trim() === program.name
+                            }
+                            onClick={handleRenameProgram}
+                          >
+                            {savingProgramName ? 'Saving…' : 'Save'}
+                          </Button>
+                        </InputGroup>
+                      ) : (
+                        program.name
+                      )}
+                    </td>
                   </tr>
                   <tr>
                     <td><strong>Created:</strong></td>

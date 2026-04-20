@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, Path, Body, Query, Depends, status
 from typing import Dict, Any, Optional, Literal, List
 from pydantic import BaseModel, Field
+from sqlalchemy.exc import IntegrityError
 import logging
 from models.program import APIProgram
 from repository import ProgramRepository, EventHandlerConfigRepository
@@ -304,6 +305,40 @@ async def update_program(
         # Remove id field if present to avoid immutable field error
         update_data.pop('id', None)
 
+        renamed_to: Optional[str] = None
+        if "name" in update_data:
+            raw_name = update_data["name"]
+            if raw_name is None:
+                update_data.pop("name", None)
+            elif not isinstance(raw_name, str):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Program name must be a string",
+                )
+            else:
+                new_name = raw_name.strip()
+                if not new_name:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Program name cannot be empty",
+                    )
+                if len(new_name) > 255:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Program name must be at most 255 characters",
+                    )
+                if new_name == existing_program["name"]:
+                    update_data.pop("name", None)
+                else:
+                    name_taken = await ProgramRepository.get_program_by_name(new_name)
+                    if name_taken and name_taken.get("id") != existing_program.get("id"):
+                        raise HTTPException(
+                            status_code=status.HTTP_409_CONFLICT,
+                            detail=f"A program named '{new_name}' already exists",
+                        )
+                    update_data["name"] = new_name
+                    renamed_to = new_name
+
         from services.typosquat_filtering_service import TyposquatFilteringService
 
         if "typosquat_filtering_settings" in update_data and isinstance(
@@ -403,10 +438,23 @@ async def update_program(
             )
             added_whitelist_apexes = sorted(new_wl_set - old_wl_set)
 
-        success = await ProgramRepository.update_program(existing_program["id"], update_data)
-        
+        try:
+            success = await ProgramRepository.update_program(existing_program["id"], update_data)
+        except IntegrityError as ie:
+            logger.warning(
+                "Program update integrity error program_id=%s: %s",
+                existing_program.get("id"),
+                ie,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="A program with this name already exists",
+            )
+
         if not success:
             raise HTTPException(status_code=500, detail="Failed to update program")
+
+        final_program_name = renamed_to if renamed_to else program_name
 
         if added_whitelist_apexes:
             closed_by: Optional[str] = None
@@ -420,13 +468,13 @@ async def update_program(
                     closed_by_user_id=closed_by,
                 )
                 logger.info(
-                    f"Typosquat whitelist auto-dismiss program={program_name}: "
+                    f"Typosquat whitelist auto-dismiss program={final_program_name}: "
                     f"added_apexes={added_whitelist_apexes} "
                     f"dismissed={dismiss_result.get('dismissed_count')}"
                 )
             except Exception as dismiss_err:
                 logger.exception(
-                    f"Typosquat whitelist auto-dismiss failed for program={program_name}: {dismiss_err}"
+                    f"Typosquat whitelist auto-dismiss failed for program={final_program_name}: {dismiss_err}"
                 )
         
         # Sync notification handlers when notification_settings changed
@@ -439,7 +487,7 @@ async def update_program(
                     update_data["notification_settings"],
                 )
             except Exception as e:
-                logger.warning(f"Failed to sync notification handlers for {program_name}: {e}")
+                logger.warning(f"Failed to sync notification handlers for {final_program_name}: {e}")
 
         ct_related = {
             "ct_monitoring_enabled",
@@ -453,11 +501,13 @@ async def update_program(
         ):
             await sync_ct_monitor_program_config()
         
-        logger.info(f"Successfully updated program: {program_name}")
+        logger.info(f"Successfully updated program: {final_program_name}")
         response: Dict[str, Any] = {
             "status": "success",
-            "message": f"Program {program_name} updated successfully",
+            "message": f"Program {final_program_name} updated successfully",
         }
+        if renamed_to:
+            response["data"] = {"name": renamed_to}
         if scope_warnings:
             response["scope_warnings"] = scope_warnings
         return response
