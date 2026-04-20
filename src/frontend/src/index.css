@@ -487,12 +487,18 @@ code {
   background-color: #9915e8 !important;
 }
 
-/* Warning / high-severity badges — dark text on amber for legibility in both themes */
-.badge.bg-warning {
+/*
+ * Warning badges — dark text on amber in both themes.
+ * In dark mode, `[data-theme="dark"] .text-dark` forces near-white for page copy; badges that
+ * pass `text="dark"` (react-bootstrap) still carry `.text-dark` and must keep black text.
+ */
+.badge.bg-warning,
+.badge.text-bg-warning {
   color: var(--rh-navy) !important;
 }
 
-/* Table cells set body text with !important; badges inside cells need an explicit win */
+[data-theme="dark"] .badge.bg-warning,
+[data-theme="dark"] .badge.text-bg-warning,
 [data-theme="dark"] .table td .badge.bg-warning {
   color: #000 !important;
 }
