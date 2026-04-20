@@ -60,7 +60,7 @@ class HackerOneService:
                     
                     # Raise exception for bad status codes
                     response.raise_for_status()
-                    
+
                     # Get the JSON response
                     scopes_data = response.json()
                     
@@ -113,22 +113,17 @@ class HackerOneService:
         for scope in scopes:
             try:
                 attrs = scope.get('attributes', {})
-                
-                # Only process bounty-eligible scopes
-                if not attrs.get('eligible_for_bounty', False):
-                    continue
-                
                 asset_type = attrs.get('asset_type', '')
                 asset_identifier = attrs.get('asset_identifier', '')
-                eligible_for_submission = attrs.get('eligible_for_submission', True)
-                
-                # Only process URL and WILDCARD asset types
                 if asset_type not in ['URL', 'WILDCARD']:
                     continue
-                
+
+                eligible_for_bounty = attrs.get('eligible_for_bounty', False)
+                eligible_for_submission = attrs.get('eligible_for_submission', True)
+
                 # Check if asset_identifier contains comma-separated domains
                 identifiers = self._split_comma_separated_domains(asset_identifier)
-                
+
                 # Process each identifier separately
                 for identifier in identifiers:
                     # Convert to regex pattern
@@ -138,9 +133,11 @@ class HackerOneService:
                         regex = self._extract_domain_from_url(identifier)
                     else:
                         continue
-                    
+
                     # Add to appropriate list based on scope
                     if eligible_for_submission:
+                        if not eligible_for_bounty:
+                            continue
                         if regex and regex not in in_scope_regexes:
                             in_scope_regexes.append(regex)
                     else:
@@ -172,13 +169,14 @@ class HackerOneService:
         for scope in scopes:
             try:
                 attrs = scope.get("attributes", {})
-                if not attrs.get("eligible_for_bounty", False):
-                    continue
                 asset_type = attrs.get("asset_type", "")
                 asset_identifier = attrs.get("asset_identifier", "")
-                eligible_for_submission = attrs.get("eligible_for_submission", True)
                 if asset_type not in ["URL", "WILDCARD"]:
                     continue
+
+                eligible_for_bounty = attrs.get("eligible_for_bounty", False)
+                eligible_for_submission = attrs.get("eligible_for_submission", True)
+
                 identifiers = self._split_comma_separated_domains(asset_identifier)
                 for identifier in identifiers:
                     if asset_type == "WILDCARD":
@@ -193,6 +191,8 @@ class HackerOneService:
                         continue
                     key = (pat, wc)
                     if eligible_for_submission:
+                        if not eligible_for_bounty:
+                            continue
                         if key not in seen_in:
                             seen_in.add(key)
                             in_scope.append({"pattern": pat, "wildcard": wc})

@@ -8,6 +8,73 @@ import pytest
 from services.hackerone_service import HackerOneService
 
 
+def test_convert_scope_to_structured_includes_out_of_scope_without_bounty():
+    """OOS URL/WILDCARD rows are often not bounty-eligible; they must still import."""
+    svc = HackerOneService("user", "token")
+    scopes = [
+        {
+            "type": "structured-scope",
+            "attributes": {
+                "asset_type": "URL",
+                "asset_identifier": "vercel.com",
+                "eligible_for_bounty": True,
+                "eligible_for_submission": True,
+            },
+        },
+        {
+            "type": "structured-scope",
+            "attributes": {
+                "asset_type": "WILDCARD",
+                "asset_identifier": "*.vercel.app",
+                "eligible_for_bounty": False,
+                "eligible_for_submission": False,
+            },
+        },
+    ]
+    in_scope, out_scope, summary = svc.convert_scope_to_structured(scopes)
+    assert summary == {"in_scope": 1, "out_of_scope": 1}
+    assert in_scope == [{"pattern": "vercel.com", "wildcard": False}]
+    assert out_scope == [{"pattern": "*.vercel.app", "wildcard": True}]
+
+
+def test_convert_scope_to_structured_skips_non_bounty_in_scope_only():
+    """In-scope rows still require bounty eligibility."""
+    svc = HackerOneService("user", "token")
+    scopes = [
+        {
+            "attributes": {
+                "asset_type": "URL",
+                "asset_identifier": "example.com",
+                "eligible_for_bounty": False,
+                "eligible_for_submission": True,
+            },
+        },
+    ]
+    in_scope, out_scope, summary = svc.convert_scope_to_structured(scopes)
+    assert in_scope == []
+    assert out_scope == []
+    assert summary == {"in_scope": 0, "out_of_scope": 0}
+
+
+def test_convert_scope_to_regex_includes_out_of_scope_without_bounty():
+    svc = HackerOneService("user", "token")
+    scopes = [
+        {
+            "attributes": {
+                "asset_type": "WILDCARD",
+                "asset_identifier": "*.vercel.app",
+                "eligible_for_bounty": False,
+                "eligible_for_submission": False,
+            },
+        },
+    ]
+    in_re, out_re, summary = svc.convert_scope_to_regex(scopes)
+    assert in_re == []
+    assert len(out_re) == 1
+    assert "vercel" in out_re[0]
+    assert summary == {"in_scope": 0, "out_of_scope": 1}
+
+
 def _client_that_returns(response: MagicMock):
     inner = MagicMock()
     inner.get = AsyncMock(return_value=response)
