@@ -38,6 +38,10 @@ After a manual deploy, **[`reconhawx-kueue-quota-sync.py`](../reconhawx-kueue-qu
 
 Use repo root **`update-kubernetes.sh`** or **`update-minikube.sh`**, or manually `kubectl apply -k kubernetes/base-update/` then restart app Deployments. See **[`docs/update-reconhawx.md`](../docs/update-reconhawx.md)** for prerequisites, versioning (`reconhawx-version` / `APP_VERSION`), why **`base-update`** avoids re-applying Secrets from git, and troubleshooting.
 
+### In-cluster upgrade Job (`upgrader-sa`)
+
+The base manifests include **`kubernetes/base/upgrader/`**: ServiceAccount **`upgrader-sa`**, a namespaced **Role** for applying `base-update` workloads, and a scoped **ClusterRole** for Kueue cluster resources and RBAC objects the bundle touches. Superusers can trigger upgrades from the UI (**System upgrade**); the API creates a **Job** whose pod runs the **`upgrader`** container image (`UPGRADER_IMAGE` on the API Deployment, semver-pinned like other services). Tune RBAC there if your policy requires a narrower set of verbs.
+
 ### PostgreSQL: Deployment to StatefulSet (existing clusters)
 
 Manifests run PostgreSQL as a **StatefulSet** with a **headless** Service (`postgresql-headless`) for pod identity and the existing **NodePort** Service `postgresql` for clients. If the cluster still has **`deployment.apps/postgresql`** from an older release, do **not** apply the StatefulSet while that Deployment is running: both select `app=postgresql`, so the Service could send traffic to two Postgres instances.
@@ -76,7 +80,7 @@ The API exposes `/admin/database/status`, `/admin/database/backup`, and **`/admi
 
 ### Maintenance mode (UI + optional env)
 
-- **Normal:** Superusers toggle maintenance in the UI (stored in **`system_settings.maintenance_mode`**). When effective, the API returns **503** for most routes; **`/status`**, **`/admin/database/*`**, and the internal restore pull path stay available.
+- **Normal:** Superusers toggle maintenance in the UI (stored in **`system_settings.maintenance_mode`**). When effective, the API returns **503** for most routes; **`/status`**, **`/admin/database/*`**, **`/admin/system/upgrade/*`**, and the internal restore / upgrade tarball pull paths stay available.
 - **Break-glass:** Set **`MAINTENANCE_MODE`** (and optionally **`MAINTENANCE_MESSAGE`**) on the API Deployment if you must force a gate when the DB setting is unavailable.
 
 ### Kueue drain before restore

@@ -1,0 +1,54 @@
+# Namespaced permissions for the in-cluster upgrade Job (kubectl apply -k kubernetes/base-update/).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: upgrader
+  labels:
+    app: reconhawx
+    component: upgrader
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments", "statefulsets", "daemonsets", "replicasets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources:
+      ["services", "configmaps", "serviceaccounts", "pods", "persistentvolumeclaims", "endpoints", "events"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+  # Escalation: Roles applied via base-update (job-manager, runner-role, …) must not grant verbs the
+  # upgrader does not already hold (RBAC refuses create/update on those Role/RoleBinding objects).
+  - apiGroups: [""]
+    resources: ["pods/log", "pods/status"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["batch"]
+    resources: ["jobs", "jobs/status", "cronjobs"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses", "networkpolicies"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["roles", "rolebindings"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["kueue.x-k8s.io"]
+    resources: ["localqueues", "workloads"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: upgrader
+  labels:
+    app: reconhawx
+    component: upgrader
+subjects:
+  - kind: ServiceAccount
+    name: upgrader-sa
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: upgrader

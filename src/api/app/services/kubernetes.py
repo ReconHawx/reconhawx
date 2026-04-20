@@ -10,6 +10,15 @@ from repository.program_repo import ProgramRepository
 
 logger = logging.getLogger(__name__)
 
+# In-cluster upgrade Jobs (admin UI) — prefix must stay stable for RBAC / UI / flush exclusions.
+UPGRADE_JOB_NAME_PREFIX = "reconhawx-upgrade-"
+
+
+def _reconhawx_k8s_namespace() -> str:
+    """Namespace for ReconHawx app workloads. Treat empty KUBERNETES_NAMESPACE like unset."""
+    v = (os.getenv("KUBERNETES_NAMESPACE") or "reconhawx").strip()
+    return v or "reconhawx"
+
 # Workflow Job/Workload: never put raw program name in labels (Kubernetes max 63 chars).
 WORKFLOW_PROGRAM_NAME_ANNOTATION = "reconhawx.io/program-name"
 WORKFLOW_PROGRAM_ID_LABEL = "program-id"
@@ -1487,8 +1496,10 @@ class KubernetesService:
                 active_names.append(name)
         return len(active_names), active_names
 
-    def count_running_batch_jobs_exclude_restore(self, name_prefix_exclude: str = "db-restore-") -> tuple[int, List[str]]:
-        """Batch Jobs with status.active > 0, excluding database restore Jobs by name prefix."""
+    def count_running_batch_jobs_exclude_restore(
+        self, name_prefixes_exclude: Tuple[str, ...] = ("db-restore-", "reconhawx-upgrade-")
+    ) -> tuple[int, List[str]]:
+        """Batch Jobs with status.active > 0, excluding restore / in-cluster upgrade Jobs by name prefix."""
         namespace = os.getenv("KUBERNETES_NAMESPACE", "reconhawx")
         running: List[str] = []
         try:
@@ -1498,7 +1509,7 @@ class KubernetesService:
             raise
         for job in jobs.items or []:
             jn = job.metadata.name or ""
-            if jn.startswith(name_prefix_exclude):
+            if any(jn.startswith(p) for p in name_prefixes_exclude):
                 continue
             active = (job.status.active or 0) if job.status else 0
             if active > 0:
@@ -1508,10 +1519,10 @@ class KubernetesService:
     def delete_all_batch_jobs_flush_kueue(
         self,
         *,
-        name_prefix_exclude: str = "db-restore-",
+        name_prefixes_exclude: Tuple[str, ...] = ("db-restore-", "reconhawx-upgrade-"),
         name_cap: int = 100,
     ) -> Dict[str, Any]:
-        """Delete all Batch Jobs in the app namespace (except restore Jobs).
+        """Delete all Batch Jobs in the app namespace (except restore / upgrade Jobs).
 
         Uses Background propagation so Pods are cleaned up. Intended for maintenance
         flush when ClusterQueues are on Hold.
@@ -1532,7 +1543,7 @@ class KubernetesService:
             jn = job.metadata.name or ""
             if not jn:
                 continue
-            if jn.startswith(name_prefix_exclude):
+            if any(jn.startswith(p) for p in name_prefixes_exclude):
                 skipped_restore += 1
                 continue
             try:
@@ -1709,7 +1720,7 @@ class KubernetesService:
             raise
 
     def read_namespaced_job_status(self, job_name: str) -> Dict[str, Any]:
-        namespace = os.getenv("KUBERNETES_NAMESPACE", "reconhawx")
+        namespace = _reconhawx_k8s_namespace()
         try:
             job = self.batch_v1.read_namespaced_job_status(name=job_name, namespace=namespace)
         except ApiException as e:
@@ -1748,3 +1759,217 @@ class KubernetesService:
         else:
             st["phase"] = "unknown"
         return st
+
+    # --- In-cluster upgrade Job (admin UI) ---
+    UPGRADE_JOB_LABEL_APP = "reconhawx-upgrade"
+
+    def create_upgrade_job(
+        self,
+        job_name: str,
+        *,
+        upgrader_image: str,
+        target_version: str,
+        github_repo: str,
+        pull_token: Optional[str] = None,
+        staging_id: Optional[str] = None,
+        api_internal_base: Optional[str] = None,
+        kueue_resync_quotas: bool = False,
+        triggered_by_user_id: str = "",
+    ) -> client.V1Job:
+        """One-shot Job: apply kubernetes/base-update from a release tarball (or staged pull)."""
+        namespace = _reconhawx_k8s_namespace()
+
+        work_vol = client.V1Volume(
+            name="upgrade-work",
+            empty_dir=client.V1EmptyDirVolumeSource(size_limit="500Mi"),
+        )
+
+        env = [
+            client.V1EnvVar(name="RECONHAWX_NS", value=namespace),
+            client.V1EnvVar(name="RECONHAWX_VERSION", value=target_version),
+            client.V1EnvVar(name="RECONHAWX_GITHUB_REPO", value=github_repo),
+            client.V1EnvVar(
+                name="RECONHAWX_KUEUE_RESYNC_QUOTAS",
+                value="1" if kueue_resync_quotas else "0",
+            ),
+            client.V1EnvVar(name="TMPDIR", value="/work/tmp"),
+        ]
+        if pull_token and api_internal_base:
+            env.append(client.V1EnvVar(name="PULL_TOKEN", value=pull_token))
+            env.append(client.V1EnvVar(name="API_INTERNAL_URL", value=api_internal_base.rstrip("/")))
+            env.append(
+                client.V1EnvVar(
+                    name="INTERNAL_SERVICE_API_KEY",
+                    value_from=client.V1EnvVarSource(
+                        secret_key_ref=client.V1SecretKeySelector(
+                            name="internal-service-secret",
+                            key="token",
+                            optional=True,
+                        )
+                    ),
+                )
+            )
+
+        container = client.V1Container(
+            name="upgrade",
+            image=upgrader_image,
+            command=[
+                "bash",
+                "-c",
+                # Non-login shell: avoid /etc/profile.d snippets (e.g. kubectl) that set KUBECONFIG to a
+                # localhost default; that breaks discovery (memcache) while some /api/v1 GETs still work.
+                "set -euo pipefail; mkdir -p /work/tmp; exec /opt/reconhawx/upgrade.sh",
+            ],
+            env=env,
+            volume_mounts=[client.V1VolumeMount(name="upgrade-work", mount_path="/work")],
+            resources=client.V1ResourceRequirements(
+                requests={"cpu": "100m", "memory": "256Mi"},
+                limits={"cpu": "1", "memory": "1Gi"},
+            ),
+        )
+
+        ttl = int(os.getenv("UPGRADE_JOB_TTL_SECONDS", "3600"))
+        deadline = int(os.getenv("UPGRADE_JOB_ACTIVE_DEADLINE_SEC", "3600"))
+
+        annotations: Dict[str, str] = {
+            "reconhawx.io/upgrade-version": target_version[:200],
+            "reconhawx.io/triggered-by": (triggered_by_user_id or "")[:200],
+        }
+        if staging_id:
+            annotations["reconhawx.io/upgrade-staging-id"] = staging_id
+
+        pod_spec = client.V1PodSpec(
+            restart_policy="Never",
+            service_account_name="upgrader-sa",
+            automount_service_account_token=True,
+            volumes=[work_vol],
+            containers=[container],
+        )
+        template = client.V1PodTemplateSpec(
+            metadata=client.V1ObjectMeta(
+                labels={"app": self.UPGRADE_JOB_LABEL_APP},
+            ),
+            spec=pod_spec,
+        )
+
+        job_spec = client.V1JobSpec(
+            template=template,
+            backoff_limit=0,
+            ttl_seconds_after_finished=ttl,
+            active_deadline_seconds=deadline,
+        )
+
+        job = client.V1Job(
+            api_version="batch/v1",
+            kind="Job",
+            metadata=client.V1ObjectMeta(
+                name=job_name,
+                labels={"app": self.UPGRADE_JOB_LABEL_APP},
+                annotations=annotations,
+            ),
+            spec=job_spec,
+        )
+
+        try:
+            created = self.batch_v1.create_namespaced_job(namespace=namespace, body=job)
+            logger.warning(
+                "created upgrade Job %s namespace=%s version=%s staging_id=%s",
+                job_name,
+                namespace,
+                target_version,
+                staging_id or "",
+            )
+            return created
+        except ApiException as e:
+            logger.error("create upgrade Job failed: %s", e)
+            raise
+
+    def list_upgrade_jobs(self, *, limit: int = 20) -> List[Dict[str, Any]]:
+        namespace = _reconhawx_k8s_namespace()
+        try:
+            jobs = self.batch_v1.list_namespaced_job(
+                namespace=namespace,
+                label_selector=f"app={self.UPGRADE_JOB_LABEL_APP}",
+            )
+        except ApiException as e:
+            logger.error("list upgrade jobs: %s", e)
+            raise
+
+        items = list(jobs.items or [])
+        items.sort(
+            key=lambda j: (j.metadata.creation_timestamp or ""),
+            reverse=True,
+        )
+        out: List[Dict[str, Any]] = []
+        for job in items[:limit]:
+            jn = job.metadata.name or ""
+            if not jn:
+                continue
+            st = self.read_namespaced_job_status(jn)
+            out.append(
+                {
+                    "job_name": jn,
+                    "creation_timestamp": job.metadata.creation_timestamp.isoformat()
+                    if job.metadata.creation_timestamp
+                    else None,
+                    **st,
+                }
+            )
+        return out
+
+    def has_non_terminal_upgrade_job(self) -> bool:
+        for row in self.list_upgrade_jobs(limit=50):
+            ph = row.get("phase")
+            if ph in ("succeeded", "failed"):
+                continue
+            if row.get("succeeded") or row.get("failed"):
+                continue
+            return True
+        return False
+
+    def upgrade_job_pod_name(self, job_name: str) -> Optional[str]:
+        namespace = _reconhawx_k8s_namespace()
+        try:
+            pods = self.v1.list_namespaced_pod(
+                namespace=namespace,
+                label_selector=f"job-name={job_name}",
+            )
+        except ApiException as e:
+            logger.warning("list pods for job %s: %s", job_name, e)
+            return None
+        for p in pods.items or []:
+            if p.metadata and p.metadata.name:
+                return p.metadata.name
+        return None
+
+    def read_upgrade_job_status(self, job_name: str) -> Dict[str, Any]:
+        st = self.read_namespaced_job_status(job_name)
+        if not st.get("found"):
+            return st
+        st = dict(st)
+        st["pod_name"] = self.upgrade_job_pod_name(job_name)
+        return st
+
+    def tail_upgrade_job_logs(
+        self,
+        job_name: str,
+        *,
+        tail_lines: int = 500,
+        since_seconds: Optional[int] = None,
+    ) -> Tuple[Optional[str], str]:
+        namespace = _reconhawx_k8s_namespace()
+        pod = self.upgrade_job_pod_name(job_name)
+        if not pod:
+            return None, ""
+        try:
+            log = self.v1.read_namespaced_pod_log(
+                name=pod,
+                namespace=namespace,
+                container="upgrade",
+                tail_lines=tail_lines,
+                since_seconds=since_seconds,
+            )
+            return pod, log or ""
+        except ApiException as e:
+            logger.warning("read pod log %s/%s: %s", namespace, pod, e)
+            return pod, ""

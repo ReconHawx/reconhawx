@@ -209,6 +209,9 @@ function Navigation() {
                       <Dropdown.Item as={Link} to="/admin/system-maintenance">
                         🔧 System maintenance
                       </Dropdown.Item>
+                      <Dropdown.Item as={Link} to="/admin/system-upgrade">
+                        ⬆️ System upgrade
+                      </Dropdown.Item>
                       <Dropdown.Item
                         href="/headlamp/"
                         target="_blank"

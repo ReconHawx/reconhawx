@@ -137,6 +137,13 @@ spec:
               name: reconhawx-version
               key: APP_VERSION
 
+        # In-cluster upgrade Job image (tag pinned via components/pinned-releases)
+        - name: UPGRADER_IMAGE
+          value: ghcr.io/reconhawx/reconhawx/upgrader:latest
+
+        - name: RECONHAWX_GITHUB_REPO
+          value: "ReconHawx/reconhawx"
+
         - name: RUNNER_SERVICE_ACCOUNT
           valueFrom:
             configMapKeyRef:

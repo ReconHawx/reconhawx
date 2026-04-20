@@ -1,0 +1,12 @@
+/* System upgrade page — mirrors system-maintenance theming */
+.system-upgrade-page .upgrade-section-card.card {
+  border-radius: 0.5rem;
+}
+
+.system-upgrade-page .upgrade-log-pre {
+  max-height: 22rem;
+  overflow: auto;
+  font-size: 0.75rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+}

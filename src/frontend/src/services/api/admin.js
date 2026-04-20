@@ -428,6 +428,44 @@ export const adminAPI = {
       `/admin/database/maintenance/restore/job/${encodeURIComponent(jobName)}`
     );
     return response.data;
+  },
+
+  // In-cluster Kubernetes upgrade (superuser)
+  getSystemUpgradeStatus: async () => {
+    const response = await api.get('/admin/system/upgrade/status');
+    return response.data;
+  },
+
+  stageSystemUpgrade: async (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await api.post('/admin/system/upgrade/stage', formData);
+    return response.data;
+  },
+
+  createSystemUpgradeJob: async (payload) => {
+    const response = await api.post('/admin/system/upgrade/job', payload);
+    return response.data;
+  },
+
+  listSystemUpgradeJobs: async () => {
+    const response = await api.get('/admin/system/upgrade/jobs');
+    return response.data;
+  },
+
+  getSystemUpgradeJobStatus: async (jobName) => {
+    const response = await api.get(
+      `/admin/system/upgrade/job/${encodeURIComponent(jobName)}`
+    );
+    return response.data;
+  },
+
+  getSystemUpgradeJobLogs: async (jobName, params = {}) => {
+    const response = await api.get(
+      `/admin/system/upgrade/job/${encodeURIComponent(jobName)}/logs`,
+      { params }
+    );
+    return response.data;
   }
 };
 
