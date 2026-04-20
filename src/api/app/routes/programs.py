@@ -805,11 +805,11 @@ async def import_from_yeswehack(
     current_user: UserResponse = Depends(get_current_user_from_middleware)
 ):
     """Import a program from YesWeHack API
-    
+
     This endpoint:
     1. Uses the provided JWT token to authenticate with YesWeHack
     2. Retrieves the program's scope details from YesWeHack
-    3. Converts scope items (URLs and wildcards) to regex patterns
+    3. Converts scope items (URLs, wildcards, API targets) to structured scope rows
     4. Creates a new program with name YWH_<slug>
     
     Note: Unlike HackerOne, YesWeHack uses JWT tokens that are provided
@@ -882,37 +882,42 @@ async def import_from_yeswehack(
                 detail=f"No scopes found for program '{program_slug}' on YesWeHack.",
             )
         
-        # Convert scopes to regex patterns and extract CIDR blocks
-        logger.info(f"Converting {len(scopes)} scope items to regex patterns...")
-        in_scope_regexes, out_of_scope_regexes, cidr_blocks, summary = ywh_service.convert_scopes_to_regex(scopes)
-        
-        if not in_scope_regexes and not cidr_blocks:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"No valid in-scope domains or CIDR blocks found for program '{program_slug}'. The program may not have any web application scopes.",
-            )
-        
-        # Create program with converted scope (YesWeHack: structured scope empty; regex + CIDR only).
-        # Sanitize anyway in case the converter is changed later to emit structured entries.
-        yw_in, yw_in_dropped = sanitize_scope_entries([])
-        yw_out, yw_out_dropped = sanitize_scope_entries([])
-        if yw_in_dropped or yw_out_dropped:
+        # Convert scopes to structured patterns and extract CIDR blocks
+        logger.info(f"Converting {len(scopes)} YesWeHack scope items to structured patterns...")
+        in_scope_sd, out_scope_sd, cidr_blocks, summary = ywh_service.convert_scopes_to_structured(scopes)
+
+        in_scope_sd, in_dropped = sanitize_scope_entries(in_scope_sd)
+        out_scope_sd, out_dropped = sanitize_scope_entries(out_scope_sd)
+        if in_dropped or out_dropped:
             logger.warning(
                 "YesWeHack import dropped invalid scope patterns for %s: in_scope=%s out_of_scope=%s",
-                program_name, yw_in_dropped, yw_out_dropped,
+                program_name, in_dropped, out_dropped,
             )
+
+        if not in_scope_sd and not cidr_blocks:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"No valid in-scope domains or CIDR blocks found for program '{program_slug}'. The program may not have any web/API application scopes.",
+            )
+
         program_create_data = {
             "name": program_name,
-            "scope_domains": yw_in,
-            "out_of_scope_domains": yw_out,
-            "domain_regex": in_scope_regexes,
-            "out_of_scope_regex": out_of_scope_regexes,
+            "scope_domains": in_scope_sd,
+            "out_of_scope_domains": out_scope_sd,
+            "domain_regex": [],
+            "out_of_scope_regex": [],
             "cidr_list": cidr_blocks,
             "safe_registrar": [],
-            "safe_ssl_issuer": []
+            "safe_ssl_issuer": [],
         }
-        
-        logger.info(f"Creating program '{program_name}' with {summary['in_scope']} in-scope, {summary['out_of_scope']} out-of-scope patterns, and {summary['cidr_blocks']} CIDR blocks...")
+
+        logger.info(
+            "Creating program '%s' with %s in-scope rows, %s out-of-scope rows, and %s CIDR blocks...",
+            program_name,
+            summary["in_scope"],
+            summary["out_of_scope"],
+            summary["cidr_blocks"],
+        )
         program_id = await ProgramRepository.create_program(program_create_data, restore_from_archive=False)
         
         if not program_id:
@@ -925,9 +930,11 @@ async def import_from_yeswehack(
         
         # Build descriptive message
         message_parts = []
-        if summary['in_scope'] > 0:
-            message_parts.append(f"{summary['in_scope']} in-scope domain{'s' if summary['in_scope'] != 1 else ''}")
-        if summary['cidr_blocks'] > 0:
+        if summary["in_scope"] > 0:
+            message_parts.append(
+                f"{summary['in_scope']} in-scope hostname pattern{'s' if summary['in_scope'] != 1 else ''}"
+            )
+        if summary["cidr_blocks"] > 0:
             message_parts.append(f"{summary['cidr_blocks']} CIDR block{'s' if summary['cidr_blocks'] != 1 else ''}")
         
         message = f"Successfully imported program '{program_name}' ({program_data.get('title', program_slug)})"
