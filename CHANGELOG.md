@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.18.0](https://github.com/ReconHawx/reconhawx/compare/v0.17.0...v0.18.0) (2026-04-20)
+
+
+### Features
+
+* **frontend:** add dashboard refresh and recent asset snapshots ([c42788a](https://github.com/ReconHawx/reconhawx/commit/c42788a31a6e803f7f0963a9bac53338dafc8ee0))
+
+
+### Bug Fixes
+
+* **api:** import YesWeHack programs with structured hostname scope ([ba47bf3](https://github.com/ReconHawx/reconhawx/commit/ba47bf30b6baade593b2318903c99bdb13a6f52d))
+* **api:** keep HackerOne out-of-scope URL assets when not bounty-eligible ([43ad551](https://github.com/ReconHawx/reconhawx/commit/43ad5518e6af90a19a1fb213447686ba911f3f89))
+* **frontend:** raise workflow sidebar overlays above the status bar ([0a96fca](https://github.com/ReconHawx/reconhawx/commit/0a96fcaa7c01272dab548db22b88c5b2cd60e8bc))
+
 ## [0.17.0](https://github.com/ReconHawx/reconhawx/compare/v0.16.1...v0.17.0) (2026-04-17)
 
 
