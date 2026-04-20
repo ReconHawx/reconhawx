@@ -6,9 +6,12 @@ selectors, job-status mapping, and job-CRD generation.
 
 from __future__ import annotations
 
+import re
 from unittest.mock import MagicMock
 
 import pytest
+
+import services.kubernetes as k8s_mod
 
 
 @pytest.fixture
@@ -81,6 +84,7 @@ def test_generate_job_crd_sets_labels_and_env(svc, monkeypatch) -> None:
         "workflow_id": "wf-1",
         "workflow_name": "my-wf",
         "program_name": "prog",
+        "program_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
         "task_name": "resolve_ip",
         "step_num": 1,
         "step_name": "resolve",
@@ -92,6 +96,9 @@ def test_generate_job_crd_sets_labels_and_env(svc, monkeypatch) -> None:
     crd = svc.generate_job_crd(job_params)
     assert crd.metadata.name == "worker-job-1"
     assert crd.metadata.labels["task-id"] == "job-1"
+    assert crd.metadata.labels.get("program-id") == "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    assert "program-name" not in crd.metadata.labels
+    assert crd.metadata.annotations.get("reconhawx.io/program-name") == "prog"
     assert crd.metadata.labels["kueue.x-k8s.io/queue-name"] == "recon-worker-queue"
     assert crd.spec.active_deadline_seconds == 1200
     assert crd.spec.suspend is True
@@ -103,7 +110,70 @@ def test_generate_job_crd_sets_labels_and_env(svc, monkeypatch) -> None:
     assert env_by_name["TASK_ID"] == "job-1"
     assert env_by_name["OUTPUT_QUEUE_SUBJECT"] == "tasks.output.wf-1"
     assert env_by_name["WORKFLOW_ID"] == "wf-1"
+    assert env_by_name["PROGRAM_NAME"] == "prog"
     assert env_by_name["STEP_NUM"] == "1"
+    tpl = crd.spec.template.metadata
+    assert tpl.labels.get("program-id") == "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    assert tpl.annotations.get("reconhawx.io/program-name") == "prog"
+
+
+def test_sanitize_k8s_label_value_removes_spaces() -> None:
+    out = k8s_mod._sanitize_k8s_label_value("Single Task Run - resolve_domain")
+    assert " " not in out
+    assert re.match(r"^[A-Za-z0-9].*[A-Za-z0-9]$", out)
+    assert len(out) <= 63
+
+
+def test_generate_job_crd_workflow_name_with_spaces_is_valid_label(svc, monkeypatch) -> None:
+    monkeypatch.setenv("API_URL", "http://api:8000")
+    monkeypatch.setenv("NATS_URL", "nats://nats:4222")
+    monkeypatch.setenv("IMAGE_PULL_POLICY", "IfNotPresent")
+    job_params = {
+        "job_id": "j-ws",
+        "workflow_id": "wf-ws",
+        "workflow_name": "Single Task Run - resolve_domain",
+        "program_name": "prog",
+        "task_name": "resolve_domain",
+        "step_num": 0,
+        "step_name": "step 1 / test",
+        "args": ["echo hi"],
+        "image": "img",
+        "job_name": "jn",
+        "timeout": 60,
+    }
+    crd = svc.generate_job_crd(job_params)
+    for k, v in crd.metadata.labels.items():
+        assert len(v) <= 63, k
+        if v:
+            assert re.match(r"^([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9]$", v), (k, v)
+    for k, v in crd.spec.template.metadata.labels.items():
+        assert len(v) <= 63, k
+        if v:
+            assert re.match(r"^([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9]$", v), (k, v)
+
+
+def test_generate_job_crd_long_program_name_not_in_labels(svc) -> None:
+    long_name = "YWH_programme-prive-de-prime-aux-bogues-du-gouvernement-du-quebec"
+    pid = "90c18002-e669-4bd8-a9f5-b7ecbb439b2f"
+    job_params = {
+        "job_id": "job-2",
+        "workflow_id": "wf-2",
+        "workflow_name": "wf",
+        "program_name": long_name,
+        "program_id": pid,
+        "task_name": "t",
+        "step_num": 0,
+        "step_name": "s",
+        "args": ["echo hi"],
+        "image": "img",
+        "job_name": "jn",
+        "timeout": 60,
+    }
+    crd = svc.generate_job_crd(job_params)
+    assert "program-name" not in crd.metadata.labels
+    assert all(len(v) <= 63 for v in crd.metadata.labels.values())
+    assert crd.metadata.annotations["reconhawx.io/program-name"] == long_name
+    assert crd.spec.template.metadata.labels.get("program-id") == pid
 
 
 def test_generate_job_crd_quotes_commands_with_pipes(svc) -> None:

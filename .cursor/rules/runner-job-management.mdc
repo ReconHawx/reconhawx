@@ -315,6 +315,12 @@ async def _process_message(self, msg):
 def generate_job_crd(self, job_params: Dict) -> client.V1Job:
     """Generate Kubernetes Job manifest"""
     
+    # Program: label `program-id` (UUID) + annotation `reconhawx.io/program-name` — never
+    # `program-name` as a label (Kubernetes max 63 chars per label value). See
+    # `KubernetesService._worker_program_k8s_fragments` in `src/runner/app/services/kubernetes.py`.
+    # `workflow-name`, `task-name`, `step-name` labels use `_sanitize_k8s_label_value` (allowed
+    # charset + 63-char cap) because `WORKFLOW_NAME` and step titles can contain spaces.
+    prog_labels, prog_ann = self._worker_program_k8s_fragments(job_params)
     metadata = client.V1ObjectMeta(
         name=f"worker-{job_params['job_id']}",
         labels={
@@ -322,10 +328,11 @@ def generate_job_crd(self, job_params: Dict) -> client.V1Job:
             "app": "worker",
             "task-id": job_params["job_id"],
             "workflow-id": job_params["workflow_id"],
-            "program-name": job_params["program_name"],
             "task-name": job_params["task_name"],
-            "step-name": job_params["step_name"]
-        }
+            "step-name": job_params["step_name"],
+            **prog_labels,
+        },
+        annotations=dict(prog_ann) if prog_ann else None,
     )
     
     container = client.V1Container(

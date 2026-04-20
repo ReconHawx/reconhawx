@@ -75,6 +75,13 @@ def test_make_rfc1123_compliant(mgr: WorkerJobManager, given: str, expected: str
     assert mgr._make_rfc1123_compliant(given) == expected
 
 
+def test_build_job_params_includes_program_id_when_set(mgr: WorkerJobManager, monkeypatch) -> None:
+    monkeypatch.setenv("PROGRAM_ID", "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+    mgr._refresh_environment_context()
+    params = mgr._build_job_params("resolve_ip", "echo hi")
+    assert params.get("program_id") == "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+
+
 def test_build_job_params_injects_required_env(mgr: WorkerJobManager, monkeypatch) -> None:
     monkeypatch.setenv("WORKER_IMAGE", "worker:0.1")
     params = mgr._build_job_params("resolve_ip", "echo hi", timeout=60, step_num=3)

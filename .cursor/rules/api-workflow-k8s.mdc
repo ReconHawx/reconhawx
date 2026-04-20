@@ -134,7 +134,15 @@ except ApiException as e:
 
 ### Job with Kueue Annotations
 
+Program names are not copied into **labels** (Kubernetes label values max 63 characters). Use label `program-id` (Postgres program UUID) and annotation `reconhawx.io/program-name` for the full name. `create_runner_job` resolves `program_id` from the DB when only `program_name` is present. Queue listing filters workloads with `program-id=<uuid>` after resolving the program row.
+
 ```python
+prog_labels, prog_ann = self._workflow_program_metadata_fragments(workflow_data)
+job_annotations = {
+    "kueue.x-k8s.io/queue-name": self.kueue_workflow_queue,
+    "kueue.x-k8s.io/priority-class": self.kueue_priority_class,
+    **prog_ann,
+}
 job = {
     "apiVersion": "batch/v1",
     "kind": "Job",
@@ -145,13 +153,10 @@ job = {
             "app": "workflow-runner",
             "execution-id": execution_id,
             "workflow-id": execution_id,
-            "program": workflow_data.get('program_name', ''),
-            "priority": priority
+            "priority": priority,
+            **prog_labels,
         },
-        "annotations": {
-            "kueue.x-k8s.io/queue-name": self.kueue_workflow_queue,
-            "kueue.x-k8s.io/priority-class": self.kueue_priority_class
-        }
+        "annotations": job_annotations,
     },
     "spec": {
         "parallelism": 1,

@@ -143,6 +143,7 @@ class WorkerJobManager:
         self.workflow_id = os.getenv('WORKFLOW_ID', 'unknown')
         self.execution_id = os.getenv('EXECUTION_ID', self.workflow_id)
         self.program_name = os.getenv('PROGRAM_NAME', 'default')
+        self.program_id = (os.getenv('PROGRAM_ID') or '').strip()
     
     def _ensure_k8s_service(self):
         """Lazily initialize KubernetesService if not provided"""
@@ -193,8 +194,9 @@ class WorkerJobManager:
         
         job_params = {
             "workflow_id": self.execution_id,  # Use execution_id for output routing
-            "workflow_name": self.program_name,
+            "workflow_name": os.getenv("WORKFLOW_NAME") or self.program_name,
             "program_name": self.program_name,
+            **({"program_id": self.program_id} if self.program_id else {}),
             "task_name": safe_task_name,
             "step_num": kwargs.get('step_num', 0),
             "step_name": kwargs.get('step_name', f"{safe_task_name}-{int(time.time())}"),

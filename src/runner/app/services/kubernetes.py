@@ -1,11 +1,48 @@
 import logging
+import re
 from kubernetes import client, config
 from kubernetes.client.rest import ApiException
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Tuple
 import os
 import uuid
 import asyncio
+
 logger = logging.getLogger(__name__)
+
+# Align with API workflow Jobs: label values max 63 chars — never put raw program name in labels.
+WORKFLOW_PROGRAM_NAME_ANNOTATION = "reconhawx.io/program-name"
+WORKFLOW_PROGRAM_ID_LABEL = "program-id"
+
+# Kubernetes label values: max 63 chars; must match
+# (([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])?  (non-empty must start/end alphanumeric).
+_K8S_LABEL_VALUE_MAX_LEN = 63
+
+
+def _sanitize_k8s_label_value(value: Any) -> str:
+    """Produce a valid Kubernetes label value for display-ish fields (workflow/step names)."""
+    s = "" if value is None else str(value)
+    if not s:
+        return ""
+    # Replace any run of invalid characters with a single hyphen
+    s = re.sub(r"[^A-Za-z0-9_.-]+", "-", s)
+    s = re.sub(r"-{2,}", "-", s).strip("-_.")
+    while s and (not s[0].isalnum() or not s[-1].isalnum()):
+        if not s[0].isalnum():
+            s = s[1:]
+        elif not s[-1].isalnum():
+            s = s[:-1]
+        else:
+            break
+    if not s:
+        return "na"
+    if len(s) > _K8S_LABEL_VALUE_MAX_LEN:
+        s = s[:_K8S_LABEL_VALUE_MAX_LEN]
+        while s and not s[-1].isalnum():
+            s = s[:-1]
+        if not s:
+            return "na"
+    return s
+
 
 class KubernetesService:
     def __init__(self):
@@ -18,7 +55,20 @@ class KubernetesService:
         self.core_api = client.CoreV1Api()
         self.kubernetes_namespace = os.getenv('KUBERNETES_NAMESPACE', '')
         self.docker_registry = os.getenv('DOCKER_REGISTRY', '')
-        
+
+    @staticmethod
+    def _worker_program_k8s_fragments(job_params: Dict[str, Any]) -> Tuple[Dict[str, str], Dict[str, str]]:
+        """Labels and annotations for program on worker Jobs (avoid long names in labels)."""
+        labels: Dict[str, str] = {}
+        annotations: Dict[str, str] = {}
+        program_name = (job_params.get("program_name") or "").strip()
+        program_id = job_params.get("program_id")
+        if program_id:
+            labels[WORKFLOW_PROGRAM_ID_LABEL] = str(program_id)
+        if program_name:
+            annotations[WORKFLOW_PROGRAM_NAME_ANNOTATION] = program_name
+        return labels, annotations
+
     def get_pod_logs(self, type: str, id: str) -> str:
         """Get logs from a pod even if it failed"""
         try:
@@ -158,6 +208,7 @@ class KubernetesService:
         """
         Generate an equivalent job CRD to sample-job.yaml
         """
+        prog_labels, prog_ann = self._worker_program_k8s_fragments(job_params)
         metadata = client.V1ObjectMeta(
             name=f"worker-{job_params['job_id']}",
             labels={
@@ -165,12 +216,13 @@ class KubernetesService:
                 "app": "worker",
                 "task-id": job_params["job_id"],
                 "workflow-id": job_params["workflow_id"],
-                "workflow-name": job_params["workflow_name"],
-                "program-name": job_params["program_name"],
-                "task-name": job_params["task_name"],
+                "workflow-name": _sanitize_k8s_label_value(job_params["workflow_name"]),
+                "task-name": _sanitize_k8s_label_value(job_params["task_name"]),
                 "step-num": str(job_params["step_num"]),
-                "step-name": job_params["step_name"]
-            }
+                "step-name": _sanitize_k8s_label_value(job_params["step_name"]),
+                **prog_labels,
+            },
+            annotations=dict(prog_ann) if prog_ann else None,
         )
 
         # Always use sh -c to avoid JSON marshaling issues with args array
@@ -241,18 +293,20 @@ class KubernetesService:
             }
         }
 
-        # Job template
+        # Job template (pod labels must also respect 63-char limit on values)
         template = client.V1PodTemplateSpec(
             metadata=client.V1ObjectMeta(
                 labels={
                     "app": "worker",
                     "task-id": job_params["job_id"],
                     "workflow-id": job_params["workflow_id"],
-                    "program-name": job_params["program_name"],
-                    "task-name": job_params["task_name"],
+                    "workflow-name": _sanitize_k8s_label_value(job_params["workflow_name"]),
+                    "task-name": _sanitize_k8s_label_value(job_params["task_name"]),
                     "step-num": str(job_params["step_num"]),
-                    "step-name": job_params["step_name"]
-                }
+                    "step-name": _sanitize_k8s_label_value(job_params["step_name"]),
+                    **prog_labels,
+                },
+                annotations=dict(prog_ann) if prog_ann else None,
             ),
             spec=client.V1PodSpec(
                 containers=[container],
