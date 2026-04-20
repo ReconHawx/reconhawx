@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.19.0](https://github.com/ReconHawx/reconhawx/compare/v0.18.0...v0.19.0) (2026-04-20)
+
+
+### Features
+
+* **programs:** allow renaming an existing program ([7529584](https://github.com/ReconHawx/reconhawx/commit/7529584f0dacc0f44c25c31b607fde817ba3df77))
+
+
+### Bug Fixes
+
+* **workflows:** allow long program names in Kubernetes workflow and worker jobs ([6975c81](https://github.com/ReconHawx/reconhawx/commit/6975c81d7aa6ad4e9e0807af946db905902a7099))
+
 ## [0.18.0](https://github.com/ReconHawx/reconhawx/compare/v0.17.0...v0.18.0) (2026-04-20)
 
 
