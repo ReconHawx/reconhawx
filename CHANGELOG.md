@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.0](https://github.com/ReconHawx/reconhawx/compare/v0.19.0...v0.20.0) (2026-04-20)
+
+
+### Features
+
+* **admin:** add in-cluster Kubernetes upgrade from the admin UI ([7c54fcb](https://github.com/ReconHawx/reconhawx/commit/7c54fcbfab8a9f9b94870f8d9df2d44fdc40e4b1))
+
 ## [0.19.0](https://github.com/ReconHawx/reconhawx/compare/v0.18.0...v0.19.0) (2026-04-20)
 
 
