@@ -1,0 +1,3 @@
+# Vendored by build.sh from repo root for docker build context (do not commit)
+reconhawx-k8s-common.sh
+reconhawx-kueue-quota-sync.py

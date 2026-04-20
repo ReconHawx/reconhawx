@@ -17,7 +17,9 @@ from services import maintenance_settings as maint_cfg
 ALLOWLIST_EXACT = frozenset({"/", "/status", "/auth/login", "/auth/refresh"})
 ALLOWLIST_PREFIX = (
     "/admin/database/",
+    "/admin/system/upgrade/",
     "/internal/database-restore/pull",
+    "/internal/upgrade/pull",
 )
 
 

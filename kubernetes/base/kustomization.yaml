@@ -15,6 +15,7 @@ resources:
   - nats
   - redis
   - kueue
+  - upgrader
   - api
   - frontend
   - headlamp

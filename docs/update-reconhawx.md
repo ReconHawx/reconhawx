@@ -4,6 +4,21 @@ This guide describes how to move an **existing** cluster to newer **manifests** 
 
 Upgrades are different from install: they do **not** reinstall Kueue, ingress-nginx, MetalLB, or relabel nodes. They **apply** the current ReconHawx kustomize bundle and **restart** application Deployments so new image tags take effect.
 
+## Upgrading from the Admin UI (in-cluster)
+
+Superusers can use **Admin → System upgrade** (`/admin/system-upgrade`) when the cluster already runs ReconHawx and the **`upgrader`** image is available in your registry. The API creates a Kubernetes **Job** (ServiceAccount **`upgrader-sa`**) that:
+
+1. Downloads the **GitHub release source tarball** for `latest` or a specific semver (or pulls a **staged tarball** you uploaded for air-gapped clusters),
+2. Runs **`kubernetes/base-update/pre-apply.d/`** hooks, then **`kubectl apply -k kubernetes/base-update/`**,
+3. Optionally runs **`reconhawx-kueue-quota-sync.py`** when “Resync Kueue quotas” is checked,
+4. **`kubectl rollout restart`** for **api**, **frontend**, **event-handler**, and **ct-monitor**, then waits for rollouts.
+
+**Use the UI when:** operators have superuser access, outbound GitHub (or staged tarball) is available from the cluster, and the bundled **`upgrader-sa` RBAC** is acceptable for your security model.
+
+**Prefer the CLI scripts** ([`update-kubernetes.sh`](../update-kubernetes.sh) / [`update-minikube.sh`](../update-minikube.sh)) when: you need a human-driven run from a laptop with kube credentials only, you are upgrading from a checkout without publishing images yet, or cluster policy forbids granting the upgrader Job’s cluster-scoped permissions.
+
+**First-time installs**, ingress/nginx/MetalLB/node labeling, or ad-hoc secret rotation are **not** covered by this Job — use install docs or controlled `kubectl apply` of specific manifests.
+
 ## What you need
 
 | Requirement | Notes |

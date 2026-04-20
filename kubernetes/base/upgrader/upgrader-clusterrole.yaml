@@ -1,0 +1,35 @@
+# Cluster-scoped resources touched by kubernetes/base-update/ (Kueue flavors, API↔ClusterQueue RBAC, Headlamp binding).
+# Does not grant node/namespace/PV write. Headlamp CRB references built-in cluster-admin — bind/escalate may be required.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: reconhawx-upgrader
+  labels:
+    app: reconhawx
+    component: upgrader
+rules:
+  - apiGroups: ["kueue.x-k8s.io"]
+    resources: ["resourceflavors", "clusterqueues", "workloadpriorityclasses"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["clusterroles", "clusterrolebindings"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete", "bind", "escalate"]
+  - apiGroups: ["apiextensions.k8s.io"]
+    resources: ["customresourcedefinitions"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: reconhawx-upgrader
+  labels:
+    app: reconhawx
+    component: upgrader
+subjects:
+  - kind: ServiceAccount
+    name: upgrader-sa
+    namespace: reconhawx
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: reconhawx-upgrader

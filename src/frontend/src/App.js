@@ -76,6 +76,7 @@ const Wordlists = lazy(() => import('./pages/admin/Wordlists'));
 const SystemSettings = lazy(() => import('./pages/admin/SystemSettings'));
 const SystemStatus = lazy(() => import('./pages/admin/SystemStatus'));
 const SystemMaintenance = lazy(() => import('./pages/admin/SystemMaintenance'));
+const SystemUpgrade = lazy(() => import('./pages/admin/SystemUpgrade'));
 
 function AppContent() {
   const hydrateTaskManifest = useTaskManifestStore((s) => s.hydrateFromApi);
@@ -386,6 +387,11 @@ function AppContent() {
                 <Route path="/admin/system-maintenance" element={
                   <ProtectedRoute requireSuperuser={true}>
                     <SystemMaintenance />
+                  </ProtectedRoute>
+                } />
+                <Route path="/admin/system-upgrade" element={
+                  <ProtectedRoute requireSuperuser={true}>
+                    <SystemUpgrade />
                   </ProtectedRoute>
                 } />
                 {/* Catch-all route - redirect unknown paths to dashboard */}

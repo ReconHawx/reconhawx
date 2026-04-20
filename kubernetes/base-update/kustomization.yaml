@@ -9,6 +9,7 @@ sortOptions:
   order: fifo
 
 resources:
+  - ../base/upgrader
   - ../base/config
   - ../base/postgresql
   - ../base/nats
