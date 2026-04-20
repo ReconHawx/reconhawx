@@ -10,6 +10,7 @@ import uuid
 import os
 
 from repository import WorkflowRepository, WorkflowDefinitionRepository
+from repository.program_repo import ProgramRepository
 from models.workflow import (
     WorkflowRequest,
     WorkflowCreateResponse,
@@ -1049,7 +1050,14 @@ async def list_queue_workloads(
 ):
     """List all workloads in the queue"""
     try:
-        workloads = k8s_service.list_workloads(program_name)
+        program_id = None
+        if program_name and program_name.strip():
+            prog = await ProgramRepository.get_program_by_name(program_name.strip())
+            if not prog:
+                return WorkloadListResponse(workloads=[], count=0)
+            program_id = prog["id"]
+
+        workloads = k8s_service.list_workloads(program_id=program_id)
         
         # Filter workloads based on user permissions
         accessible_workloads = []

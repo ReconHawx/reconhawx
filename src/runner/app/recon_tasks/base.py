@@ -1229,10 +1229,12 @@ class Task(ABC):
         safe_task_name = task_name.replace('_', '-').lower()
         job_name = kwargs.get('job_name', f"{safe_task_name}-{str(uuid.uuid4())[:8]}")
 
+        program_id = (os.getenv("PROGRAM_ID") or "").strip()
         job_params = {
             "workflow_id": execution_id,
-            "workflow_name": program_name,
+            "workflow_name": os.getenv("WORKFLOW_NAME") or program_name,
             "program_name": program_name,
+            **({"program_id": program_id} if program_id else {}),
             "task_name": safe_task_name,
             "step_num": kwargs.get('step_num', 0),
             "step_name": kwargs.get('step_name', f"{safe_task_name}-chunk"),
@@ -1316,10 +1318,12 @@ class Task(ABC):
             safe_step_name = f"{safe_task_name}-spawned-{int(time.time())}"
             safe_job_name = f"spawned-{safe_task_name}-{str(uuid.uuid4())[:8]}"
             
+            program_id_spawn = (os.getenv("PROGRAM_ID") or "").strip()
             job_params = {
                 "workflow_id": execution_id,  # Use execution_id for output routing
-                "workflow_name": program_name,
+                "workflow_name": os.getenv("WORKFLOW_NAME") or program_name,
                 "program_name": program_name,
+                **({"program_id": program_id_spawn} if program_id_spawn else {}),
                 "task_name": safe_task_name,
                 "step_num": 0,
                 "step_name": safe_step_name,

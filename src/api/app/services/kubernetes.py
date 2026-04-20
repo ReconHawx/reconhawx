@@ -4,10 +4,15 @@ from kubernetes.stream import stream
 import os
 import logging
 import json
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 from repository import AdminRepository
+from repository.program_repo import ProgramRepository
 
 logger = logging.getLogger(__name__)
+
+# Workflow Job/Workload: never put raw program name in labels (Kubernetes max 63 chars).
+WORKFLOW_PROGRAM_NAME_ANNOTATION = "reconhawx.io/program-name"
+WORKFLOW_PROGRAM_ID_LABEL = "program-id"
 
 # Suppress noisy filelock DEBUG logs and tldextract filelock logs
 logging.getLogger("kubernetes.client.rest").setLevel(logging.WARNING)
@@ -60,6 +65,31 @@ class KubernetesService:
         }
 
         logger.info(f"KubernetesService initialized - Kueue enabled: {self.kueue_enabled}")
+
+    @staticmethod
+    def _workflow_program_metadata_fragments(
+        workflow_data: Dict[str, Any],
+    ) -> Tuple[Dict[str, str], Dict[str, str]]:
+        """Extra labels/annotations for program on workflow Jobs and Kueue Workloads."""
+        labels: Dict[str, str] = {}
+        annotations: Dict[str, str] = {}
+        program_name = (workflow_data.get("program_name") or "").strip()
+        program_id = workflow_data.get("program_id")
+        if program_id:
+            labels[WORKFLOW_PROGRAM_ID_LABEL] = str(program_id)
+        if program_name:
+            annotations[WORKFLOW_PROGRAM_NAME_ANNOTATION] = program_name
+        return labels, annotations
+
+    @staticmethod
+    def _program_name_from_workload_metadata(metadata: Dict[str, Any]) -> str:
+        labels = (metadata or {}).get("labels") or {}
+        annotations = (metadata or {}).get("annotations") or {}
+        return (
+            annotations.get(WORKFLOW_PROGRAM_NAME_ANNOTATION)
+            or labels.get("program")
+            or ""
+        )
 
     async def _get_aws_credentials(self) -> Optional[Dict[str, str]]:
         """
@@ -240,7 +270,7 @@ class KubernetesService:
                     logger.error(f"Failed to create ConfigMap: {e}")
                     raise
             
-            # Create workload metadata
+            prog_labels, prog_ann = self._workflow_program_metadata_fragments(workflow_data)
             workload_metadata = {
                 "name": f"workflow-{execution_id}",
                 "namespace": namespace,
@@ -248,9 +278,10 @@ class KubernetesService:
                     "app": "workflow-runner",
                     "workflow-id": execution_id,
                     "execution-id": execution_id,
-                    "program": workflow_data['program_name'],
-                    "priority": priority
-                }
+                    "priority": priority,
+                    **prog_labels,
+                },
+                "annotations": dict(prog_ann),
             }
             
             # Create pod template (same as before but with resource requirements)
@@ -366,6 +397,9 @@ class KubernetesService:
             {"name": "TYPOSQUAT_CACHE_TTL", "value": os.getenv('TYPOSQUAT_CACHE_TTL', '2592000')},
             {"name": "TYPOSQUAT_USE_CACHE", "value": os.getenv('TYPOSQUAT_USE_CACHE', 'true')}
         ]
+        _program_uuid = workflow_data.get("program_id")
+        if _program_uuid:
+            env_vars.insert(3, {"name": "PROGRAM_ID", "value": str(_program_uuid)})
 
         # Add AWS credentials if available
         if aws_creds:
@@ -537,15 +571,15 @@ class KubernetesService:
             logger.error(f"Error getting queue position: {e}")
             return -1
 
-    def list_workloads(self, program_name: str = None) -> List[Dict[str, Any]]:
-        """List all workflow workloads with optional filtering"""
+    def list_workloads(self, program_id: Optional[str] = None) -> List[Dict[str, Any]]:
+        """List all workflow workloads with optional filtering by program UUID label."""
         try:
             namespace = os.getenv('KUBERNETES_NAMESPACE', 'default')
             
-            # Build label selector
+            # Build label selector (program name is not a label — use program-id)
             label_selector = "app=workflow-runner"
-            if program_name:
-                label_selector += f",program={program_name}"
+            if program_id:
+                label_selector += f",{WORKFLOW_PROGRAM_ID_LABEL}={program_id}"
             
             workloads = self.custom_objects_v1.list_namespaced_custom_object(
                 group="kueue.x-k8s.io",
@@ -561,10 +595,11 @@ class KubernetesService:
                 execution_id = workload.get('metadata', {}).get('name', '').replace('workflow-', '')
                 status_info = self.get_workload_status(execution_id)
                 
+                meta = workload.get('metadata', {}) or {}
                 processed_workload = {
                     'execution_id': execution_id,
-                    'workflow_id': workload.get('metadata', {}).get('labels', {}).get('workflow-id', ''),
-                    'program_name': workload.get('metadata', {}).get('labels', {}).get('program', ''),
+                    'workflow_id': (meta.get('labels') or {}).get('workflow-id', ''),
+                    'program_name': self._program_name_from_workload_metadata(meta),
                     'priority': workload.get('spec', {}).get('priority', 5),
                     'queue_name': workload.get('spec', {}).get('queueName', ''),
                     'created_at': workload.get('metadata', {}).get('creationTimestamp', ''),
@@ -679,6 +714,18 @@ class KubernetesService:
     async def create_runner_job(self, workflow_data: Dict[str, Any]):
         """Create a Kubernetes job for workflow execution with Kueue support"""
         try:
+            program_name = (workflow_data.get("program_name") or "").strip()
+            if program_name and not workflow_data.get("program_id"):
+                prog = await ProgramRepository.get_program_by_name(program_name)
+                if prog:
+                    workflow_data["program_id"] = prog["id"]
+                else:
+                    logger.warning(
+                        "No DB program for program_name=%r; omitting %s label on workflow Job",
+                        program_name,
+                        WORKFLOW_PROGRAM_ID_LABEL,
+                    )
+
             # If Kueue is enabled, create job with Kueue annotations
             if self.kueue_enabled:
                 logger.info("Kueue enabled, creating job with Kueue annotations")
@@ -758,6 +805,12 @@ class KubernetesService:
             
             # Create Kubernetes Job with Kueue annotations
             job_name = f"workflow-{execution_id}"
+            prog_labels, prog_ann = self._workflow_program_metadata_fragments(workflow_data)
+            job_annotations = {
+                "kueue.x-k8s.io/queue-name": self.kueue_workflow_queue,
+                "kueue.x-k8s.io/priority-class": self.kueue_priority_class,
+                **prog_ann,
+            }
             job = {
                 "apiVersion": "batch/v1",
                 "kind": "Job",
@@ -768,13 +821,10 @@ class KubernetesService:
                         "app": "workflow-runner",
                         "execution-id": execution_id,
                         "workflow-id": execution_id,
-                        "program": workflow_data.get('program_name', ''),
-                        "priority": workflow_data.get('priority', 'normal')
+                        "priority": workflow_data.get('priority', 'normal'),
+                        **prog_labels,
                     },
-                    "annotations": {
-                        "kueue.x-k8s.io/queue-name": self.kueue_workflow_queue,
-                        "kueue.x-k8s.io/priority-class": self.kueue_priority_class
-                    }
+                    "annotations": job_annotations,
                 },
                 "spec": {
                     "parallelism": 1,
@@ -878,7 +928,7 @@ class KubernetesService:
                     logger.error(f"Failed to create ConfigMap: {e}")
                     raise
             
-            # Create job metadata
+            prog_labels, prog_ann = self._workflow_program_metadata_fragments(workflow_data)
             metadata = client.V1ObjectMeta(
                 name=f"workflow-{execution_id}",
                 namespace=namespace,
@@ -886,8 +936,9 @@ class KubernetesService:
                     "app": "workflow-runner",
                     "workflow-id": execution_id,
                     "execution-id": execution_id,
-                    "program": workflow_data['program_name']
-                }
+                    **prog_labels,
+                },
+                annotations=dict(prog_ann) if prog_ann else None,
             )
             
             # Fetch AWS credentials from database
@@ -948,6 +999,9 @@ class KubernetesService:
                 client.V1EnvVar(name="TYPOSQUAT_CACHE_TTL", value=os.getenv('TYPOSQUAT_CACHE_TTL', '2592000')),
                 client.V1EnvVar(name="TYPOSQUAT_USE_CACHE", value=os.getenv('TYPOSQUAT_USE_CACHE', 'true'))
             ]
+            _program_uuid = workflow_data.get("program_id")
+            if _program_uuid:
+                env_vars.insert(3, client.V1EnvVar(name="PROGRAM_ID", value=str(_program_uuid)))
 
             # Add AWS credentials if available
             if aws_creds:
