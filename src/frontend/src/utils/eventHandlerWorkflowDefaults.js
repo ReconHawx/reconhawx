@@ -3,8 +3,13 @@
  * Aligns with src/event-handler/app/routing.py batch variables and global_default_event_handlers.yaml.
  */
 
+function firstEventTypeString(eventType) {
+  if (Array.isArray(eventType)) return (eventType[0] && String(eventType[0])) || '';
+  return typeof eventType === 'string' ? eventType : '';
+}
+
 export function getEventHandlerDirectInputDefaults(eventType) {
-  const t = typeof eventType === 'string' ? eventType : '';
+  const t = firstEventTypeString(eventType);
   if (t.startsWith('assets.ip')) {
     return { value_type: 'ips', values: '{ip_list_array}' };
   }
@@ -15,7 +20,7 @@ export function getEventHandlerDirectInputDefaults(eventType) {
 }
 
 export function getDefaultEventHandlerInputs(eventType) {
-  const t = typeof eventType === 'string' ? eventType : '';
+  const t = firstEventTypeString(eventType);
   if (t.startsWith('assets.ip')) {
     return {
       ips: {

@@ -30,6 +30,48 @@ _SYSTEM_YAML = _CONFIG_DIR / "system_event_handlers.yaml"
 _GLOBAL_DEFAULT_YAML = _CONFIG_DIR / "global_default_event_handlers.yaml"
 
 
+def _normalize_handler_event_type(handler: Dict[str, Any]) -> None:
+    """Coerce legacy string ``event_type`` to a non-empty string list (in place)."""
+    et = handler.get("event_type")
+    if isinstance(et, str):
+        s = et.strip()
+        handler["event_type"] = [s] if s else []
+    elif isinstance(et, list):
+        handler["event_type"] = [str(x).strip() for x in et if isinstance(x, str) and str(x).strip()]
+    else:
+        handler["event_type"] = []
+
+
+def _normalize_conditions_by_event_type(handler: Dict[str, Any]) -> None:
+    """Coerce ``conditions_by_event_type`` to a dict of str -> list of condition dicts (in place)."""
+    raw = handler.get("conditions_by_event_type")
+    if raw is None:
+        return
+    if not isinstance(raw, dict):
+        handler.pop("conditions_by_event_type", None)
+        return
+    allowed = set(handler.get("event_type") or [])
+    if not allowed:
+        handler.pop("conditions_by_event_type", None)
+        return
+    out: Dict[str, Any] = {}
+    for raw_key, raw_list in raw.items():
+        if not isinstance(raw_key, str):
+            continue
+        key = raw_key.strip()
+        if not key or key not in allowed:
+            continue
+        if not isinstance(raw_list, list):
+            continue
+        conds = [c for c in raw_list if isinstance(c, dict)]
+        if conds:
+            out[key] = conds
+    if out:
+        handler["conditions_by_event_type"] = out
+    else:
+        handler.pop("conditions_by_event_type", None)
+
+
 def _load_handlers_yaml(path: Path) -> List[Dict[str, Any]]:
     if not path.exists():
         logger.warning("Event handler YAML missing: %s", path)
@@ -40,7 +82,11 @@ def _load_handlers_yaml(path: Path) -> List[Dict[str, Any]]:
         with open(path, encoding="utf-8") as f:
             data = yaml.safe_load(f)
         handlers = data.get("handlers", []) if data else []
-        return [h for h in handlers if isinstance(h, dict) and h.get("id")]
+        out = [h for h in handlers if isinstance(h, dict) and h.get("id")]
+        for h in out:
+            _normalize_handler_event_type(h)
+            _normalize_conditions_by_event_type(h)
+        return out
     except Exception as e:
         logger.warning("Could not load %s: %s", path, e)
         return []

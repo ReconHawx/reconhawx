@@ -4,6 +4,12 @@ globs: ["src/event-handler/app/program_settings.py", "src/event-handler/app/disc
 
 # Event-Handler Integration
 
+## Handler config shape (API ↔ event-handler)
+
+- Each handler uses **`event_type` as a JSON list of strings** (e.g. `["assets.subdomain.created","assets.subdomain.updated"]`). Postgres stores them in `event_handler_configs.event_types` (`text[]`); the merged dict returned to the event-handler still uses the key `event_type` for the list.
+- Optional **`conditions_by_event_type`**: object mapping an event type string to a list of conditions (same types as `conditions`). Stored inside the handler’s **`config` JSONB** with `conditions` / `actions` (no separate DB column). The event-handler ANDs `conditions` first, then `conditions_by_event_type[event_data["event_type"]]` when that key exists.
+- The notifier registers the **same** `SimpleEventHandler` instance once per list entry so dispatch stays a single map lookup on the incoming event’s type string.
+
 ## API to Event-Handler Flow
 
 ```mermaid

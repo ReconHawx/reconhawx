@@ -10,6 +10,7 @@ from app.event_handlers import (
     SimpleEventHandler,
     SimpleBatchManager,
     SimpleHandlerRegistry,
+    _normalize_conditions_by_event_type,
 )
 
 
@@ -158,6 +159,100 @@ class TestSimpleEventHandler:
         assert "Unknown action" in results[0].message
 
 
+class TestNormalizeConditionsByEventType:
+    def test_none_and_non_dict(self):
+        assert _normalize_conditions_by_event_type(None) == {}
+        assert _normalize_conditions_by_event_type([]) == {}
+        assert _normalize_conditions_by_event_type("x") == {}
+
+    def test_coerces_drops_non_lists_and_empty(self):
+        assert _normalize_conditions_by_event_type(
+            {
+                "a.b": [{"type": "field_value", "field": "x"}],
+                "  trim  ": [],
+                "bad": "not-list",
+                123: [{"type": "field_value", "field": "y"}],
+            }
+        ) == {"a.b": [{"type": "field_value", "field": "x"}]}
+
+
+class TestConditionsByEventTypeMatching:
+    def test_per_type_branch_created_vs_updated(self):
+        cfg = {
+            "event_type": ["assets.subdomain.created", "assets.subdomain.updated"],
+            "conditions": [],
+            "conditions_by_event_type": {
+                "assets.subdomain.created": [
+                    {
+                        "type": "field_value",
+                        "field": "resolution_status",
+                        "operator": "equals",
+                        "expected_value": "created_resolved",
+                    },
+                ],
+                "assets.subdomain.updated": [
+                    {"type": "field_value", "field": "new_ip_count", "operator": "greater_than", "expected_value": 0},
+                    {"type": "field_value", "field": "previous_ip_count", "operator": "equals", "expected_value": 0},
+                ],
+            },
+            "actions": [{"type": "log"}],
+        }
+        h = SimpleEventHandler("merged", cfg)
+        assert h.check_conditions(
+            {"event_type": "assets.subdomain.created", "resolution_status": "created_resolved"}
+        )
+        assert not h.check_conditions(
+            {"event_type": "assets.subdomain.created", "resolution_status": "wrong"}
+        )
+        assert h.check_conditions(
+            {"event_type": "assets.subdomain.updated", "new_ip_count": 1, "previous_ip_count": 0}
+        )
+        assert not h.check_conditions(
+            {"event_type": "assets.subdomain.updated", "new_ip_count": 0, "previous_ip_count": 0}
+        )
+
+    def test_shared_conditions_then_per_type(self):
+        cfg = {
+            "event_type": ["a.created", "a.updated"],
+            "conditions": [
+                {"type": "field_value", "field": "program_name", "operator": "equals", "expected_value": "p1"},
+            ],
+            "conditions_by_event_type": {
+                "a.created": [{"type": "field_value", "field": "x", "operator": "equals", "expected_value": 1}],
+            },
+            "actions": [{"type": "log"}],
+        }
+        h = SimpleEventHandler("h", cfg)
+        assert h.check_conditions({"event_type": "a.updated", "program_name": "p1"})
+        assert not h.check_conditions({"event_type": "a.created", "program_name": "p1", "x": 2})
+        assert h.check_conditions({"event_type": "a.created", "program_name": "p1", "x": 1})
+
+    def test_missing_per_type_entry_no_extra_constraint(self):
+        cfg = {
+            "event_type": ["a.created", "a.updated"],
+            "conditions": [{"type": "field_exists", "field": "id"}],
+            "conditions_by_event_type": {
+                "a.created": [{"type": "field_value", "field": "x", "operator": "equals", "expected_value": 1}],
+            },
+            "actions": [{"type": "log"}],
+        }
+        h = SimpleEventHandler("h", cfg)
+        assert h.check_conditions({"event_type": "a.updated", "id": "1"})
+
+    def test_extra_map_keys_ignored_for_incoming_type(self):
+        cfg = {
+            "event_type": ["a.created"],
+            "conditions": [],
+            "conditions_by_event_type": {
+                "a.created": [{"type": "field_value", "field": "x", "operator": "equals", "expected_value": 1}],
+                "other.type": [{"type": "field_value", "field": "x", "operator": "equals", "expected_value": 99}],
+            },
+            "actions": [{"type": "log"}],
+        }
+        h = SimpleEventHandler("h", cfg)
+        assert h.check_conditions({"event_type": "a.created", "x": 1})
+
+
 class TestSimpleBatchManager:
     """Tests for SimpleBatchManager."""
 
@@ -214,6 +309,20 @@ class TestSimpleHandlerRegistry:
         handlers = registry.get_handlers("assets.subdomain.created")
         assert len(handlers) == 1
         assert handlers[0].handler_id == "subdomain_handler"
+
+    def test_register_multi_event_type_same_instance_get_handler_by_id(self):
+        registry = SimpleHandlerRegistry()
+        config = {
+            "event_type": ["assets.subdomain.created", "assets.subdomain.updated"],
+            "conditions": [],
+            "actions": [{"type": "log"}],
+        }
+        handler = SimpleEventHandler("merged", config)
+        registry.register_handler(handler)
+        assert registry.get_handler_by_id("merged") is handler
+        assert len(registry.get_handlers("assets.subdomain.created")) == 1
+        assert len(registry.get_handlers("assets.subdomain.updated")) == 1
+        assert registry.get_handlers("assets.subdomain.created")[0] is handler
 
     def test_get_handlers_empty_for_unknown_type(self):
         registry = SimpleHandlerRegistry()

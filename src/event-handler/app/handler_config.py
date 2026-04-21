@@ -14,6 +14,7 @@ from .event_handlers import (
     SimpleHandlerRegistry,
     SimpleBatchManager,
     ActionResult,
+    _normalize_handler_event_types,
 )
 
 logger = logging.getLogger(__name__)
@@ -23,14 +24,23 @@ def create_handlers_from_config(handlers_config: List[Dict[str, Any]], registry:
     """Create and register handlers from a config list into the given registry."""
     for handler_config in handlers_config:
         try:
-            event_type = handler_config.get("event_type")
-            if not event_type:
+            event_types = _normalize_handler_event_types(handler_config.get("event_type"))
+            if not event_types:
                 continue
-            handler_id = handler_config.get("id", event_type.replace(".", "_"))
+            handler_id = handler_config.get("id", event_types[0].replace(".", "_"))
             if not handler_config.get("actions"):
                 logger.warning(f"Handler '{handler_id}' has no actions, skipping")
                 continue
             handler = SimpleEventHandler(handler_id, handler_config)
+            declared = set(handler.event_types)
+            for per_type_key in handler.conditions_by_event_type:
+                if per_type_key not in declared:
+                    logger.warning(
+                        "Handler '%s' has conditions_by_event_type key '%s' not in event_type list %s",
+                        handler_id,
+                        per_type_key,
+                        sorted(declared),
+                    )
             registry.register_handler(handler)
         except Exception as e:
             logger.error(f"Failed to create handler: {e}")

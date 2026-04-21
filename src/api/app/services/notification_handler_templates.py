@@ -82,7 +82,7 @@ def get_notification_handler_templates() -> Dict[str, Dict[str, Any]]:
     return {
         "ct_alert": {
             "id": "notify_ct_alert",
-            "event_type": "typosquat.ct_alert",
+            "event_type": ["typosquat.ct_alert"],
             "description": "Discord notification for CT monitor alerts (critical/high)",
             "conditions": [
                 {"type": "field_value", "field": "priority", "operator": "in", "expected_value": ["critical", "high"]}
@@ -112,7 +112,7 @@ def get_notification_handler_templates() -> Dict[str, Dict[str, Any]]:
         },
         "subdomain_created_resolved": {
             "id": "notify_subdomain_created_resolved",
-            "event_type": "assets.subdomain.created",
+            "event_type": ["assets.subdomain.created"],
             "description": "Discord notification for subdomains created with IPs",
             "conditions": [
                 {"type": "field_exists", "field": "ip"},
@@ -132,7 +132,7 @@ def get_notification_handler_templates() -> Dict[str, Dict[str, Any]]:
         },
         "subdomain_resolved": {
             "id": "notify_subdomain_resolved",
-            "event_type": "assets.subdomain.updated",
+            "event_type": ["assets.subdomain.updated"],
             "description": "Discord notification for subdomains resolved via update",
             "conditions": [
                 {"type": "field_value", "field": "new_ip_count", "operator": "greater_than", "expected_value": 0},
@@ -151,7 +151,7 @@ def get_notification_handler_templates() -> Dict[str, Dict[str, Any]]:
         },
         "url_created": {
             "id": "notify_url_created",
-            "event_type": "assets.url.created",
+            "event_type": ["assets.url.created"],
             "description": "Discord notification for new URLs",
             "conditions": [],
             "action": {
@@ -167,7 +167,7 @@ def get_notification_handler_templates() -> Dict[str, Dict[str, Any]]:
         },
         "url_updated": {
             "id": "notify_url_updated",
-            "event_type": "assets.url.updated",
+            "event_type": ["assets.url.updated"],
             "description": "Discord notification for updated URLs",
             "conditions": [],
             "action": {
@@ -183,7 +183,7 @@ def get_notification_handler_templates() -> Dict[str, Dict[str, Any]]:
         },
         "ip_created": {
             "id": "notify_ip_created",
-            "event_type": "assets.ip.created",
+            "event_type": ["assets.ip.created"],
             "description": "Discord notification for new IPs",
             "conditions": [],
             "action": {
@@ -199,7 +199,7 @@ def get_notification_handler_templates() -> Dict[str, Dict[str, Any]]:
         },
         "ip_updated": {
             "id": "notify_ip_updated",
-            "event_type": "assets.ip.updated",
+            "event_type": ["assets.ip.updated"],
             "description": "Discord notification for updated IPs",
             "conditions": [],
             "action": {
@@ -215,7 +215,7 @@ def get_notification_handler_templates() -> Dict[str, Dict[str, Any]]:
         },
         "service_created": {
             "id": "notify_service_created",
-            "event_type": "assets.service.created",
+            "event_type": ["assets.service.created"],
             "description": "Discord notification for new services",
             "conditions": [],
             "action": {
@@ -231,7 +231,7 @@ def get_notification_handler_templates() -> Dict[str, Dict[str, Any]]:
         },
         "service_updated": {
             "id": "notify_service_updated",
-            "event_type": "assets.service.updated",
+            "event_type": ["assets.service.updated"],
             "description": "Discord notification for updated services",
             "conditions": [],
             "action": {
@@ -247,7 +247,7 @@ def get_notification_handler_templates() -> Dict[str, Dict[str, Any]]:
         },
         "certificate_created": {
             "id": "notify_certificate_created",
-            "event_type": "assets.certificate.created",
+            "event_type": ["assets.certificate.created"],
             "description": "Discord notification for new certificates",
             "conditions": [],
             "action": {
@@ -263,7 +263,7 @@ def get_notification_handler_templates() -> Dict[str, Dict[str, Any]]:
         },
         "certificate_updated": {
             "id": "notify_certificate_updated",
-            "event_type": "assets.certificate.updated",
+            "event_type": ["assets.certificate.updated"],
             "description": "Discord notification for updated certificates",
             "conditions": [],
             "action": {
@@ -417,7 +417,7 @@ def generate_handlers_from_notification_settings(
                     key = f"nuclei_{sev}"
                     h = {
                         "id": f"notify_nuclei_{sev}",
-                        "event_type": f"findings.nuclei.{sev}",
+                        "event_type": [f"findings.nuclei.{sev}"],
                         "description": f"Discord notification for Nuclei {sev} findings",
                         "conditions": [],
                         "actions": [{

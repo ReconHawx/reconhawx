@@ -21,8 +21,9 @@ Event-Handler Service (SimpleNotifierApp)
 │   ├── API-based settings fetch
 │   └── Redis caching (5 min TTL)
 ├── SimpleHandlerRegistry (event_handlers.py)
-│   ├── Handler registration
-│   ├── Event type matching
+│   ├── Handler registration (one handler instance registered under each entry in its `event_type` list)
+│   ├── Event type matching (incoming `event_type` string → O(1) lookup)
+│   ├── Condition evaluation: shared `conditions` plus optional `conditions_by_event_type[incoming type]`
 │   └── Action execution
 └── SimpleBatchManager (event_handlers.py)
     ├── Redis-backed batch storage

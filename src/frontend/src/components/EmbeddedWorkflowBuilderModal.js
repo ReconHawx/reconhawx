@@ -10,6 +10,11 @@ import VisualWorkflowBuilder from './VisualWorkflowBuilder';
 import { useWorkflowStore } from '../stores/workflowStore';
 import { getDefaultEventHandlerInputs } from '../utils/eventHandlerWorkflowDefaults';
 
+function firstEventTypeString(eventType) {
+  if (Array.isArray(eventType)) return (eventType[0] && String(eventType[0])) || '';
+  return typeof eventType === 'string' ? eventType : '';
+}
+
 function mergeParametersWithEventHandlerDefaults(parameters, eventType) {
   const p = parameters ? { ...parameters } : {};
   let inputs = p.inputs || {};
@@ -17,7 +22,7 @@ function mergeParametersWithEventHandlerDefaults(parameters, eventType) {
     inputs = p.definition.inputs || inputs;
   }
   if (Object.keys(inputs).length === 0) {
-    inputs = getDefaultEventHandlerInputs(eventType);
+    inputs = getDefaultEventHandlerInputs(firstEventTypeString(eventType));
   }
   const merged = { ...p, inputs };
   if (p.definition) {

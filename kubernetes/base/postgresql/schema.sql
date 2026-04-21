@@ -739,7 +739,7 @@ CREATE TABLE public.event_handler_configs (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     program_id uuid,
     handler_id character varying(100) NOT NULL,
-    event_type character varying(100) NOT NULL,
+    event_types text[] DEFAULT '{}'::text[] NOT NULL,
     config jsonb DEFAULT '{}'::jsonb NOT NULL,
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL
@@ -2468,10 +2468,10 @@ CREATE INDEX idx_certificates_tls_version ON public.certificates USING btree (tl
 
 
 --
--- Name: idx_ehc_event_type; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_ehc_event_types_gin; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_ehc_event_type ON public.event_handler_configs USING btree (event_type);
+CREATE INDEX idx_ehc_event_types_gin ON public.event_handler_configs USING gin (event_types);
 
 
 --

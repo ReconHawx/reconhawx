@@ -50,7 +50,7 @@ For complex PostgreSQL-only SQL (e.g. large `DO $$` blocks), add a revision with
 
 ## Naming
 
-- Prefer clear **revision ids** (e.g. `v005_add_widget_table`) in `revision = "..."` / `down_revision = "..."`.
+- Prefer clear **revision ids** (e.g. `v005_add_widget_table`) in `revision = "..."` / `down_revision = "..."`. **`alembic_version.version_num` is `VARCHAR(32)`** — revision strings longer than 32 characters will fail at stamp/update time.
 - File names: `0006_add_widget_table.py` (numeric prefix optional; keep ordering consistent with `down_revision` chain).
 
 ## Running Migrations

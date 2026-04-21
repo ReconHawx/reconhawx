@@ -13,7 +13,7 @@ Handler definitions are stored and edited via the API (effective config from `GE
 ```yaml
 handlers:
   - id: subdomain_resolved           # Unique handler ID
-    event_type: assets.subdomain.resolved  # Event type to match
+    event_type: [assets.subdomain.resolved]  # One or more event types (non-empty list)
     description: Handle resolved subdomains
     conditions:                      # All conditions must pass
       - type: field_exists
@@ -28,11 +28,45 @@ handlers:
 
 | Field | Required | Description |
 |-------|----------|-------------|
-| `id` | No | Unique identifier (defaults to event_type with dots replaced) |
-| `event_type` | Yes | Event type to match (e.g., `assets.subdomain.created`) |
+| `id` | No | Unique identifier (defaults to first `event_type` with dots replaced) |
+| `event_type` | Yes | Non-empty list of event types to match (e.g., `[assets.subdomain.created, assets.subdomain.updated]`). The API still accepts a legacy single string on writes and normalizes it to a one-element list. |
 | `description` | No | Human-readable description |
-| `conditions` | No | List of conditions that must all pass |
+| `conditions` | No | List of conditions that must all pass (shared for every matched event type) |
+| `conditions_by_event_type` | No | Map from event type string → list of conditions. When present for the **incoming** `event_type`, those conditions are ANDed after `conditions`. Types with no entry impose no extra checks. |
 | `actions` | Yes | List of actions to execute |
+
+### Per-event-type conditions (`conditions_by_event_type`)
+
+Use when one handler matches multiple `event_type` values but payloads differ (e.g. `assets.subdomain.created` vs `assets.subdomain.updated`). Evaluation order: every `conditions` entry must pass, then every entry in `conditions_by_event_type[incoming event_type]` must pass (if that key exists).
+
+```yaml
+- id: system_resolved_subdomain_recon
+  event_type:
+    - assets.subdomain.created
+    - assets.subdomain.updated
+  description: Trigger workflow when a subdomain just gained IPs
+  conditions: []
+  conditions_by_event_type:
+    assets.subdomain.created:
+      - type: field_value
+        field: resolution_status
+        operator: equals
+        expected_value: "created_resolved"
+    assets.subdomain.updated:
+      - type: field_value
+        field: new_ip_count
+        operator: greater_than
+        expected_value: 0
+      - type: field_value
+        field: previous_ip_count
+        operator: equals
+        expected_value: 0
+  actions:
+    - type: workflow_trigger
+      # ...
+```
+
+At load time, `handler_config.create_handlers_from_config` logs a **WARNING** if a map key is not listed in the handler’s `event_type` list (usually a typo).
 
 ## Condition Types
 

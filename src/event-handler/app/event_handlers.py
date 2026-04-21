@@ -16,6 +16,42 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
+
+def _normalize_handler_event_types(value: Any) -> List[str]:
+    """Normalize ``event_type`` from API config: must be a non-empty string list."""
+    if value is None:
+        return []
+    if isinstance(value, str):
+        s = value.strip()
+        return [s] if s else []
+    if isinstance(value, (list, tuple)):
+        out: List[str] = []
+        for item in value:
+            if isinstance(item, str) and item.strip():
+                out.append(item.strip())
+        return out
+    return []
+
+
+def _normalize_conditions_by_event_type(value: Any) -> Dict[str, List[Dict[str, Any]]]:
+    """Normalize ``conditions_by_event_type``: event_type string -> list of condition dicts."""
+    if value is None or not isinstance(value, dict):
+        return {}
+    out: Dict[str, List[Dict[str, Any]]] = {}
+    for raw_key, raw_list in value.items():
+        if not isinstance(raw_key, str):
+            continue
+        key = raw_key.strip()
+        if not key:
+            continue
+        if not isinstance(raw_list, list):
+            continue
+        conds = [c for c in raw_list if isinstance(c, dict)]
+        if conds:
+            out[key] = conds
+    return out
+
+
 # Shared async HTTP client for workflow/PhishLabs actions (reused to limit connections)
 _http_client: Optional[httpx.AsyncClient] = None
 
@@ -46,11 +82,14 @@ class ActionResult:
 
 class SimpleEventHandler:
     """Simplified event handler that processes events based on conditions and actions"""
-    
+
     def __init__(self, handler_id: str, config: Dict[str, Any]):
         self.handler_id = handler_id
-        self.event_type = config.get('event_type', '')
+        self.event_types: List[str] = _normalize_handler_event_types(config.get("event_type"))
         self.conditions = config.get('conditions', [])
+        self.conditions_by_event_type: Dict[str, List[Dict[str, Any]]] = _normalize_conditions_by_event_type(
+            config.get("conditions_by_event_type")
+        )
         self.actions = config.get('actions', [])
         self.description = config.get('description', '')
         
@@ -60,10 +99,23 @@ class SimpleEventHandler:
             if 'batching' in action:
                 self.batch_config = action['batching']
                 break
-    
+
+    @property
+    def event_type(self) -> str:
+        """First declared event type (logs, batch trigger metadata when payload lacks it)."""
+        return self.event_types[0] if self.event_types else ""
+
     def check_conditions(self, event_data: Dict[str, Any]) -> bool:
-        """Check if all conditions are met"""
+        """Check shared conditions, then per-``event_type`` conditions if defined for this event."""
         for condition in self.conditions:
+            if not self._evaluate_condition(condition, event_data):
+                return False
+        incoming = event_data.get("event_type")
+        if not isinstance(incoming, str):
+            incoming = str(incoming).strip() if incoming is not None else ""
+        else:
+            incoming = incoming.strip()
+        for condition in self.conditions_by_event_type.get(incoming, []):
             if not self._evaluate_condition(condition, event_data):
                 return False
         return True
@@ -1145,11 +1197,19 @@ class SimpleHandlerRegistry:
         self.batch_manager: Optional[SimpleBatchManager] = None
     
     def register_handler(self, handler: SimpleEventHandler):
-        """Register a handler"""
-        if handler.event_type not in self.handlers:
-            self.handlers[handler.event_type] = []
-        self.handlers[handler.event_type].append(handler)
-        logger.info(f"Registered handler '{handler.handler_id}' for event type '{handler.event_type}'")
+        """Register a handler under each of its ``event_types`` (same instance per key)."""
+        if not handler.event_types:
+            logger.warning("Handler '%s' has no event_type entries, skipping registration", handler.handler_id)
+            return
+        for et in handler.event_types:
+            if et not in self.handlers:
+                self.handlers[et] = []
+            self.handlers[et].append(handler)
+        logger.info(
+            "Registered handler '%s' for event types %s",
+            handler.handler_id,
+            handler.event_types,
+        )
     
     def set_batch_manager(self, batch_manager: SimpleBatchManager):
         """Set the batch manager"""
@@ -1159,9 +1219,13 @@ class SimpleHandlerRegistry:
         if not hasattr(batch_manager, '_handler_timeouts'):
             batch_manager._handler_timeouts = {}
         
-        # Store timeout info from all handlers
+        # Store timeout info from all handlers (dedupe: same handler may be under multiple types)
+        seen_ids: set = set()
         for handlers_list in self.handlers.values():
             for handler in handlers_list:
+                if handler.handler_id in seen_ids:
+                    continue
+                seen_ids.add(handler.handler_id)
                 if handler.batch_config and 'max_delay_seconds' in handler.batch_config:
                     timeout = handler.batch_config['max_delay_seconds']
                     batch_manager._handler_timeouts[handler.handler_id] = timeout
@@ -1236,12 +1300,13 @@ class SimpleHandlerRegistry:
                 logger.debug(f"Batched events: {batched_events}")
                 # Create trigger event with proper context
                 first_event = batched_events[0] if batched_events else {}
+                trigger_et = first_event.get("event_type") or handler.event_type
                 trigger_event = {
                     'program_name': program_name,
                     'expired_batch': True,
                     'batch_age': age,
-                    'event_type': handler.event_type,
-                    'event_family': handler.event_type,
+                    'event_type': trigger_et,
+                    'event_family': trigger_et,
                     'api_base_url': first_event.get('api_base_url', 'http://api:8000'),
                     'internal_api_key': first_event.get('internal_api_key', ''),
                     'program_settings': first_event.get('program_settings', {}),

@@ -18,7 +18,7 @@ def _cfg(**overrides):
 
 def test_get_handlers_cache_hit_no_api_call():
     redis_client = MagicMock()
-    handlers = [{"id": "h1", "event_type": "test.created"}]
+    handlers = [{"id": "h1", "event_type": ["test.created"]}]
     redis_client.get.return_value = json.dumps(handlers).encode("utf-8")
     provider = ApiConfigProvider(_cfg(api_url="http://api", internal_service_api_key="k"), redis_client)
 
@@ -33,7 +33,7 @@ def test_get_handlers_cache_hit_no_api_call():
 def test_get_handlers_cache_miss_api_success_sets_redis():
     redis_client = MagicMock()
     redis_client.get.return_value = None
-    handlers = [{"id": "x", "event_type": "assets.subdomain.created"}]
+    handlers = [{"id": "x", "event_type": ["assets.subdomain.created"]}]
     mock_resp = MagicMock()
     mock_resp.status_code = 200
     mock_resp.json.return_value = {"handlers": handlers}

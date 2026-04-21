@@ -27,7 +27,7 @@ class TestGenerateTyposquatConfig:
         assert len(config["handlers"]) >= 1
         handler = config["handlers"][0]
         assert "event_type" in handler
-        assert handler["event_type"] == "findings.nuclei.typosquat"
+        assert handler["event_type"] == ["findings.nuclei.typosquat"]
         assert "conditions" in handler
         assert "actions" in handler
 
@@ -49,7 +49,7 @@ class TestGenerateCriticalFindingsConfig:
 
     def test_event_type_is_critical(self):
         config = generate_critical_findings_config()
-        assert config["handlers"][0]["event_type"] == "findings.nuclei.critical"
+        assert config["handlers"][0]["event_type"] == ["findings.nuclei.critical"]
 
     def test_conditions_check_severity(self):
         config = generate_critical_findings_config()
@@ -68,7 +68,10 @@ class TestGenerateAssetDiscoveryConfig:
 
     def test_includes_subdomain_and_domain_handlers(self):
         config = generate_asset_discovery_config()
-        event_types = [h["event_type"] for h in config["handlers"]]
+        event_types = []
+        for h in config["handlers"]:
+            et = h["event_type"]
+            event_types.extend(et if isinstance(et, list) else [et])
         assert "assets.subdomain.created" in event_types
         assert "assets.domain.created" in event_types
 
@@ -78,7 +81,10 @@ class TestGenerateComprehensiveConfig:
 
     def test_includes_all_handler_types(self):
         config = generate_comprehensive_config(include_examples=False)
-        event_types = [h["event_type"] for h in config["handlers"]]
+        event_types = []
+        for h in config["handlers"]:
+            et = h["event_type"]
+            event_types.extend(et if isinstance(et, list) else [et])
         assert "findings.nuclei.typosquat" in event_types
         assert "findings.nuclei.critical" in event_types
         assert "assets.subdomain.created" in event_types
@@ -90,7 +96,10 @@ class TestGenerateComprehensiveConfig:
 
     def test_examples_include_high_and_ip_handlers(self):
         config = generate_comprehensive_config(include_examples=True)
-        event_types = [h["event_type"] for h in config["handlers"]]
+        event_types = []
+        for h in config["handlers"]:
+            et = h["event_type"]
+            event_types.extend(et if isinstance(et, list) else [et])
         assert "findings.nuclei.high" in event_types
         assert "assets.ip.created" in event_types
 
@@ -101,7 +110,7 @@ class TestSaveConfig:
     def test_save_config_creates_file(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             filepath = os.path.join(tmpdir, "handlers.yaml")
-            config = {"handlers": [{"event_type": "test.event", "actions": []}]}
+            config = {"handlers": [{"event_type": ["test.event"], "actions": []}]}
             result = save_config(config, filepath)
             assert result is True
             assert os.path.exists(filepath)
@@ -121,8 +130,8 @@ class TestSaveConfig:
         with tempfile.NamedTemporaryFile(suffix=".yaml", delete=False) as f:
             filepath = f.name
         try:
-            config1 = {"handlers": [{"event_type": "old"}]}
-            config2 = {"handlers": [{"event_type": "new"}]}
+            config1 = {"handlers": [{"event_type": ["old"]}]}
+            config2 = {"handlers": [{"event_type": ["new"]}]}
             save_config(config1, filepath)
             result = save_config(config2, filepath, overwrite=True)
             assert result is True

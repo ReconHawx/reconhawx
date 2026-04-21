@@ -6,6 +6,12 @@
 import React, { useState } from 'react';
 import { Form, Row, Col, Button, Card, Badge } from 'react-bootstrap';
 import EmbeddedWorkflowBuilderModal from './EmbeddedWorkflowBuilderModal';
+import {
+  coerceHandlerEventTypesList,
+  primaryEventTypeFromHandler,
+  coerceConditionsByEventType,
+  pruneConditionsByEventType,
+} from '../utils/eventHandlerTypes';
 
 // Parsed event_type values (see event-handler routing + API NATS subjects). Includes alternate
 // subject shapes some repos still publish (e.g. events.findings.created.nuclei).
@@ -362,8 +368,53 @@ function ActionEditor({ action, onChange, onRemove, eventType }) {
 }
 
 export default function EventHandlerForm({ handler, onChange }) {
-  const h = handler || { id: '', event_type: '', description: '', conditions: [], actions: [] };
-  const update = (key, value) => onChange({ ...h, [key]: value });
+  const defaults = {
+    id: '',
+    event_type: [],
+    description: '',
+    conditions: [],
+    actions: [],
+    conditions_by_event_type: {},
+  };
+  const base = { ...defaults, ...(handler || {}) };
+  const coercedEt = coerceHandlerEventTypesList(base);
+  const h = {
+    ...coercedEt,
+    conditions_by_event_type: coerceConditionsByEventType(
+      base.conditions_by_event_type,
+      coercedEt.event_type || []
+    ),
+  };
+  const update = (key, value) => {
+    const next = { ...h, [key]: value };
+    if (key === 'event_type') {
+      const et = coerceHandlerEventTypesList({ ...next, event_type: value }).event_type || [];
+      next.conditions_by_event_type = pruneConditionsByEventType(h.conditions_by_event_type || {}, et);
+    }
+    const etFinal = coerceHandlerEventTypesList(next);
+    onChange({
+      ...etFinal,
+      conditions_by_event_type: coerceConditionsByEventType(
+        next.conditions_by_event_type,
+        etFinal.event_type || []
+      ),
+    });
+  };
+  const [customEtInput, setCustomEtInput] = useState('');
+
+  const togglePresetEventType = (et) => {
+    const cur = [...(h.event_type || [])];
+    if (cur.includes(et)) update('event_type', cur.filter((x) => x !== et));
+    else update('event_type', [...cur, et]);
+  };
+
+  const addCustomEventType = () => {
+    const v = (customEtInput || '').trim();
+    if (!v) return;
+    const cur = [...(h.event_type || [])];
+    if (!cur.includes(v)) update('event_type', [...cur, v]);
+    setCustomEtInput('');
+  };
 
   const addCondition = () => update('conditions', [...(h.conditions || []), emptyCondition()]);
   const addAction = () => update('actions', [...(h.actions || []), emptyAction()]);
@@ -378,27 +429,57 @@ export default function EventHandlerForm({ handler, onChange }) {
               <Form.Label>Handler ID</Form.Label>
               <Form.Control value={h.id || ''} onChange={(e) => update('id', e.target.value)} placeholder="my_handler_id" />
             </Col>
-            <Col md={4}>
-              <Form.Label>Event Type</Form.Label>
-              <Form.Select
-                value={EVENT_TYPES.includes(h.event_type) ? h.event_type : '__custom__'}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  if (v === '__custom__') {
-                    // Leaving a preset for custom: clear so the select stays on Custom and the text field appears.
-                    // Already-custom values: keep the typed event_type.
-                    const next = EVENT_TYPES.includes(h.event_type) ? '' : (h.event_type || '');
-                    update('event_type', next);
-                  } else {
-                    update('event_type', v);
-                  }
-                }}
-              >
-                {EVENT_TYPES.map(et => <option key={et} value={et}>{et}</option>)}
-                <option value="__custom__">Custom…</option>
-              </Form.Select>
-              {!EVENT_TYPES.includes(h.event_type) && (
-                <Form.Control size="sm" className="mt-1" value={h.event_type || ''} onChange={(e) => update('event_type', e.target.value)} placeholder="e.g. assets.subdomain.created" />
+            <Col md={8}>
+              <Form.Label>Event types</Form.Label>
+              <div className="border rounded p-2 mb-2" style={{ maxHeight: 220, overflowY: 'auto' }}>
+                {EVENT_TYPES.map((et) => (
+                  <Form.Check
+                    key={et}
+                    type="checkbox"
+                    id={`eh-et-${et.replace(/[^a-zA-Z0-9._-]/g, '_')}`}
+                    label={et}
+                    checked={(h.event_type || []).includes(et)}
+                    onChange={() => togglePresetEventType(et)}
+                  />
+                ))}
+              </div>
+              <div className="d-flex gap-2 mb-2 align-items-start">
+                <Form.Control
+                  size="sm"
+                  value={customEtInput}
+                  onChange={(e) => setCustomEtInput(e.target.value)}
+                  placeholder="Custom event type (e.g. findings.nuclei.low)"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      addCustomEventType();
+                    }
+                  }}
+                />
+                <Button size="sm" variant="outline-secondary" type="button" onClick={addCustomEventType}>
+                  Add
+                </Button>
+              </div>
+              {(h.event_type || []).length > 0 ? (
+                <div className="d-flex flex-wrap gap-1">
+                  {(h.event_type || []).map((et) => (
+                    <Badge key={et} bg="secondary" className="d-flex align-items-center gap-1 py-1">
+                      <span className="small">{et}</span>
+                      <Button
+                        variant="link"
+                        className="text-white p-0 lh-1"
+                        style={{ fontSize: '0.85rem', textDecoration: 'none' }}
+                        type="button"
+                        aria-label={`Remove ${et}`}
+                        onClick={() => update('event_type', (h.event_type || []).filter((x) => x !== et))}
+                      >
+                        ×
+                      </Button>
+                    </Badge>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-muted small mb-0">Select at least one event type.</p>
               )}
             </Col>
           </Row>
@@ -434,6 +515,64 @@ export default function EventHandlerForm({ handler, onChange }) {
         </Card.Body>
       </Card>
 
+      {(h.event_type || []).length > 0 && (
+        <Card className="rh-elevated-card mb-3">
+          <Card.Header>Per-event-type conditions</Card.Header>
+          <Card.Body>
+            <p className="text-muted small">
+              These conditions are ANDed with the shared conditions above, but only when the incoming
+              event matches the given type.
+            </p>
+            {(h.event_type || []).map((et) => {
+              const perList = (h.conditions_by_event_type && h.conditions_by_event_type[et]) || [];
+              const addPerTypeCondition = () => {
+                const map = { ...(h.conditions_by_event_type || {}) };
+                map[et] = [...(map[et] || []), emptyCondition()];
+                update('conditions_by_event_type', map);
+              };
+              return (
+                <Card key={et} className="mb-3 border-secondary">
+                  <Card.Header className="py-2 d-flex justify-content-between align-items-center">
+                    <span className="small">
+                      When event is <code>{et}</code>
+                    </span>
+                    <Button variant="outline-primary" size="sm" type="button" onClick={addPerTypeCondition}>
+                      + Add Condition
+                    </Button>
+                  </Card.Header>
+                  <Card.Body className="py-2">
+                    {perList.length === 0 ? (
+                      <p className="text-muted small mb-0">No per-type conditions.</p>
+                    ) : (
+                      perList.map((c, i) => (
+                        <ConditionEditor
+                          key={`${et}-${i}`}
+                          condition={c}
+                          onChange={(nc) => {
+                            const map = { ...(h.conditions_by_event_type || {}) };
+                            const arr = [...(map[et] || [])];
+                            arr[i] = nc;
+                            map[et] = arr;
+                            update('conditions_by_event_type', map);
+                          }}
+                          onRemove={() => {
+                            const map = { ...(h.conditions_by_event_type || {}) };
+                            const arr = (map[et] || []).filter((_, j) => j !== i);
+                            if (arr.length) map[et] = arr;
+                            else delete map[et];
+                            update('conditions_by_event_type', map);
+                          }}
+                        />
+                      ))
+                    )}
+                  </Card.Body>
+                </Card>
+              );
+            })}
+          </Card.Body>
+        </Card>
+      )}
+
       <Card className="rh-elevated-card mb-3">
         <Card.Header className="d-flex justify-content-between align-items-center">
           <span>Actions</span>
@@ -447,7 +586,7 @@ export default function EventHandlerForm({ handler, onChange }) {
               <ActionEditor
                 key={i}
                 action={a}
-                eventType={h.event_type}
+                eventType={primaryEventTypeFromHandler(h)}
                 onChange={(na) => {
                   const arr = [...(h.actions || [])];
                   arr[i] = na;

@@ -17,7 +17,7 @@ def generate_typosquat_config() -> Dict[str, Any]:
     return {
         "handlers": [
             {
-                "event_type": "findings.nuclei.typosquat",
+                "event_type": ["findings.nuclei.typosquat"],
                 "description": "Handle typosquat domain findings with workflow trigger and Discord notifications",
                 "conditions": [
                     {
@@ -71,7 +71,7 @@ def generate_critical_findings_config() -> Dict[str, Any]:
     return {
         "handlers": [
             {
-                "event_type": "findings.nuclei.critical",
+                "event_type": ["findings.nuclei.critical"],
                 "description": "Handle critical severity nuclei findings",
                 "conditions": [
                     {
@@ -109,7 +109,7 @@ def generate_asset_discovery_config() -> Dict[str, Any]:
     return {
         "handlers": [
             {
-                "event_type": "assets.subdomain.created",
+                "event_type": ["assets.subdomain.created"],
                 "description": "Log new subdomain discoveries",
                 "conditions": [
                     {
@@ -126,7 +126,7 @@ def generate_asset_discovery_config() -> Dict[str, Any]:
                 ]
             },
             {
-                "event_type": "assets.domain.created",
+                "event_type": ["assets.domain.created"],
                 "description": "Handle new domain discoveries with optional notifications",
                 "conditions": [
                     {
@@ -173,7 +173,7 @@ def generate_comprehensive_config(include_examples: bool = True) -> Dict[str, An
         # Add example handlers with comments
         config["handlers"].extend([
             {
-                "event_type": "findings.nuclei.high",
+                "event_type": ["findings.nuclei.high"],
                 "description": "Example: Handle high severity nuclei findings",
                 "conditions": [
                     {
@@ -194,7 +194,7 @@ def generate_comprehensive_config(include_examples: bool = True) -> Dict[str, An
                 ]
             },
             {
-                "event_type": "assets.ip.created",
+                "event_type": ["assets.ip.created"],
                 "description": "Example: Handle new IP address discoveries",
                 "conditions": [
                     {
@@ -277,7 +277,9 @@ def main():
     if success:
         print(f"\nGenerated {args.type} configuration with {len(config['handlers'])} handlers:")
         for handler in config["handlers"]:
-            print(f"  - {handler['event_type']}: {handler['description']}")
+            et = handler["event_type"]
+            et_display = ", ".join(et) if isinstance(et, list) else str(et)
+            print(f"  - {et_display}: {handler['description']}")
 
 
 if __name__ == "__main__":

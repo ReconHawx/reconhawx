@@ -23,6 +23,12 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useProgramFilter } from '../../contexts/ProgramFilterContext';
 import { formatDate } from '../../utils/dateUtils';
 import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
+import {
+  coerceHandlersList,
+  formatEventTypesCell,
+  sanitizeHandlerForSave,
+  sanitizeHandlersList,
+} from '../../utils/eventHandlerTypes';
 
 const DEFAULT_NOTIFICATION_SETTINGS = {
   enabled: false,
@@ -230,7 +236,7 @@ function ProgramDetail() {
       setEventHandlerLoading(true);
       const response = await programAPI.getEventHandlerConfig(programName);
       setEventHandlerUseGlobal(response.use_global !== false);
-      setEventHandlerHandlers(response.handlers || []);
+      setEventHandlerHandlers(coerceHandlersList(response.handlers || []));
       setEventHandlerAddonMode(response.event_handler_addon_mode === true);
     } catch (err) {
       console.error('Failed to load event handler config:', err);
@@ -499,7 +505,7 @@ function ProgramDetail() {
       setError('');
       await programAPI.updateEventHandlerConfig(
         programName,
-        eventHandlerHandlers,
+        sanitizeHandlersList(coerceHandlersList(eventHandlerHandlers)),
         eventHandlerAddonMode
       );
       setSuccess('Event handler config updated');
@@ -2628,7 +2634,7 @@ function ProgramDetail() {
                         <thead>
                           <tr>
                             <th>ID</th>
-                            <th>Event Type</th>
+                            <th>Event types</th>
                             <th>Description</th>
                             {isUserManager && <th style={{ width: 120 }}>Actions</th>}
                           </tr>
@@ -2637,7 +2643,7 @@ function ProgramDetail() {
                           {eventHandlerHandlers.map((h, i) => (
                             <tr key={i}>
                               <td><code>{h.id || '-'}</code></td>
-                              <td><Badge bg="secondary">{h.event_type || '-'}</Badge></td>
+                              <td><Badge bg="secondary" className="text-wrap text-start" style={{ maxWidth: 420 }}>{formatEventTypesCell(h)}</Badge></td>
                               <td>{h.description || '-'}</td>
                               {isUserManager && (
                                 <td>
@@ -2651,7 +2657,7 @@ function ProgramDetail() {
                       </Table>
                       <div className="d-flex flex-wrap gap-2 mb-2">
                         {isUserManager && (
-                          <Button variant="outline-primary" size="sm" onClick={() => { setEventHandlerEditingIndex(null); setEventHandlerEditingHandler({ id: 'new_handler', event_type: 'assets.subdomain.created', description: 'New handler', conditions: [], actions: [{ type: 'log', level: 'info', message_template: 'Event: {event_type}' }] }); setShowEventHandlerFormModal(true); }}>
+                          <Button variant="outline-primary" size="sm" onClick={() => { setEventHandlerEditingIndex(null); setEventHandlerEditingHandler({ id: 'new_handler', event_type: ['assets.subdomain.created'], description: 'New handler', conditions: [], conditions_by_event_type: {}, actions: [{ type: 'log', level: 'info', message_template: 'Event: {event_type}' }] }); setShowEventHandlerFormModal(true); }}>
                             Add Handler
                           </Button>
                         )}
@@ -3309,10 +3315,12 @@ function ProgramDetail() {
           <Button variant="primary" onClick={() => {
             if (!eventHandlerEditingHandler?.id?.trim()) { setError('Handler ID is required'); return; }
             if (!(eventHandlerEditingHandler?.actions?.length > 0)) { setError('At least one action is required'); return; }
+            const coerced = sanitizeHandlerForSave(eventHandlerEditingHandler);
+            if (!(coerced.event_type?.length > 0)) { setError('At least one event type is required'); return; }
             setError('');
             const next = [...eventHandlerHandlers];
-            if (eventHandlerEditingIndex !== null) next[eventHandlerEditingIndex] = eventHandlerEditingHandler;
-            else next.push(eventHandlerEditingHandler);
+            if (eventHandlerEditingIndex !== null) next[eventHandlerEditingIndex] = coerced;
+            else next.push(coerced);
             setEventHandlerHandlers(next);
             setShowEventHandlerFormModal(false);
           }}>Save</Button>
@@ -3338,7 +3346,7 @@ function ProgramDetail() {
             try {
               const parsed = JSON.parse(eventHandlerEditJson);
               if (!Array.isArray(parsed)) throw new Error('Must be an array of handlers');
-              setEventHandlerHandlers(parsed);
+              setEventHandlerHandlers(coerceHandlersList(parsed));
               setShowEventHandlerEditModal(false);
             } catch (e) {
               setError('Invalid JSON: ' + e.message);

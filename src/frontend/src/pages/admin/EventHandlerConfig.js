@@ -12,6 +12,12 @@ import {
 import { adminAPI } from '../../services/api';
 import EventHandlerForm from '../../components/EventHandlerForm';
 import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
+import {
+  coerceHandlersList,
+  formatEventTypesCell,
+  sanitizeHandlerForSave,
+  sanitizeHandlersList,
+} from '../../utils/eventHandlerTypes';
 
 export function EventHandlerConfigInner({ embedded = false }) {
   const [handlers, setHandlers] = useState([]);
@@ -36,8 +42,8 @@ export function EventHandlerConfigInner({ embedded = false }) {
         adminAPI.getEventHandlerConfig(),
         adminAPI.getEventHandlerSystemConfig()
       ]);
-      setHandlers(globalRes.handlers || []);
-      setSystemHandlers(systemRes.handlers || []);
+      setHandlers(coerceHandlersList(globalRes.handlers || []));
+      setSystemHandlers(coerceHandlersList(systemRes.handlers || []));
     } catch (err) {
       setError('Failed to load event handler config: ' + (err.response?.data?.detail || err.message));
     } finally {
@@ -50,7 +56,7 @@ export function EventHandlerConfigInner({ embedded = false }) {
       setSaving(true);
       setError('');
       setSuccess('');
-      await adminAPI.updateEventHandlerConfig(handlers);
+      await adminAPI.updateEventHandlerConfig(sanitizeHandlersList(coerceHandlersList(handlers)));
       setSuccess('Event handler config saved successfully');
     } catch (err) {
       setError('Failed to save: ' + (err.response?.data?.detail || err.message));
@@ -66,7 +72,7 @@ export function EventHandlerConfigInner({ embedded = false }) {
       setError('');
       setSuccess('');
       const response = await adminAPI.getEventHandlerConfigDefaults();
-      const defaults = response.handlers || [];
+      const defaults = coerceHandlersList(response.handlers || []);
       setHandlers(defaults);
       await adminAPI.updateEventHandlerConfig(defaults);
       setSuccess(`Reset to defaults (${defaults.length} handlers)`);
@@ -93,12 +99,17 @@ export function EventHandlerConfigInner({ embedded = false }) {
       setError('At least one action is required');
       return;
     }
+    const coerced = sanitizeHandlerForSave(editingHandler);
+    if (!(coerced.event_type?.length > 0)) {
+      setError('At least one event type is required');
+      return;
+    }
     setError('');
     const newHandlers = [...handlers];
     if (editingIndex !== null) {
-      newHandlers[editingIndex] = editingHandler;
+      newHandlers[editingIndex] = coerced;
     } else {
-      newHandlers.push(editingHandler);
+      newHandlers.push(coerced);
     }
     setHandlers(newHandlers);
     setShowEditModal(false);
@@ -107,9 +118,10 @@ export function EventHandlerConfigInner({ embedded = false }) {
   const handleAddHandler = () => {
     const newHandler = {
       id: 'new_handler',
-      event_type: 'assets.subdomain.created',
+      event_type: ['assets.subdomain.created'],
       description: 'New handler',
       conditions: [],
+      conditions_by_event_type: {},
       actions: [{ type: 'log', level: 'info', message_template: 'Event: {event_type}' }]
     };
     setEditingIndex(null);
@@ -153,7 +165,7 @@ export function EventHandlerConfigInner({ embedded = false }) {
             <thead>
               <tr>
                 <th>ID</th>
-                <th>Event Type</th>
+                <th>Event types</th>
                 <th>Description</th>
               </tr>
             </thead>
@@ -161,7 +173,7 @@ export function EventHandlerConfigInner({ embedded = false }) {
               {systemHandlers.map((h, i) => (
                 <tr key={i}>
                   <td><code>{h.id || '-'}</code></td>
-                  <td><Badge bg="dark">{h.event_type || '-'}</Badge></td>
+                  <td><Badge bg="dark" className="text-wrap text-start" style={{ maxWidth: 420 }}>{formatEventTypesCell(h)}</Badge></td>
                   <td>{h.description || '-'}</td>
                 </tr>
               ))}
@@ -196,7 +208,7 @@ export function EventHandlerConfigInner({ embedded = false }) {
             <thead>
               <tr>
                 <th>ID</th>
-                <th>Event Type</th>
+                <th>Event types</th>
                 <th>Description</th>
                 <th style={{ width: 100 }}>Actions</th>
               </tr>
@@ -205,7 +217,7 @@ export function EventHandlerConfigInner({ embedded = false }) {
               {handlers.map((h, i) => (
                 <tr key={i}>
                   <td><code>{h.id || '-'}</code></td>
-                  <td><Badge bg="secondary">{h.event_type || '-'}</Badge></td>
+                  <td><Badge bg="secondary" className="text-wrap text-start" style={{ maxWidth: 420 }}>{formatEventTypesCell(h)}</Badge></td>
                   <td>{h.description || '-'}</td>
                   <td>
                     <Button variant="link" size="sm" className="p-0 me-2" onClick={() => openEditModal(i)}>Edit</Button>

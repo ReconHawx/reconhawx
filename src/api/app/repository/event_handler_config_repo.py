@@ -61,12 +61,28 @@ def get_default_handlers() -> List[Dict[str, Any]]:
     return list(get_global_bootstrap_handlers())
 
 
+def _normalize_event_types(value: Any) -> List[str]:
+    """Accept legacy string or list of strings; return non-empty strings only."""
+    if value is None:
+        return []
+    if isinstance(value, str):
+        s = value.strip()
+        return [s] if s else []
+    if isinstance(value, (list, tuple)):
+        out: List[str] = []
+        for item in value:
+            if isinstance(item, str) and item.strip():
+                out.append(item.strip())
+        return out
+    return []
+
+
 def _handler_to_row(handler: Dict[str, Any]) -> Dict[str, Any]:
-    """Extract handler_id, event_type, config from handler dict."""
+    """Extract handler_id, event_types, config from handler dict."""
     handler_id = handler.get("id") or ""
-    event_type = handler.get("event_type") or ""
-    config = {k: v for k, v in handler.items() if k not in ("id", "event_type")}
-    return {"handler_id": handler_id, "event_type": event_type, "config": config}
+    event_types = _normalize_event_types(handler.get("event_type"))
+    config = {k: v for k, v in handler.items() if k not in ("id", "event_type", "event_types")}
+    return {"handler_id": handler_id, "event_types": event_types, "config": config}
 
 
 def _rows_to_handlers(rows: List[EventHandlerConfig]) -> List[Dict[str, Any]]:
@@ -123,11 +139,14 @@ class EventHandlerConfigRepository:
                         if not h.get("id"):
                             continue
                         rd = _handler_to_row(h)
+                        if not rd["event_types"]:
+                            logger.warning("Skipping global seed handler %s: no event_type", rd["handler_id"])
+                            continue
                         db.add(
                             EventHandlerConfig(
                                 program_id=None,
                                 handler_id=rd["handler_id"],
-                                event_type=rd["event_type"],
+                                event_types=rd["event_types"],
                                 config=rd["config"],
                             )
                         )
@@ -149,11 +168,14 @@ class EventHandlerConfigRepository:
                 if not h.get("id"):
                     continue
                 rd = _handler_to_row(h)
+                if not rd["event_types"]:
+                    logger.warning("Skipping global handler %s: no event_type", rd["handler_id"])
+                    continue
                 db.add(
                     EventHandlerConfig(
                         program_id=None,
                         handler_id=rd["handler_id"],
-                        event_type=rd["event_type"],
+                        event_types=rd["event_types"],
                         config=rd["config"],
                     )
                 )
@@ -206,11 +228,14 @@ class EventHandlerConfigRepository:
                 if not h.get("id"):
                     continue
                 rd = _handler_to_row(h)
+                if not rd["event_types"]:
+                    logger.warning("Skipping program handler %s: no event_type", rd["handler_id"])
+                    continue
                 db.add(
                     EventHandlerConfig(
                         program_id=program_id,
                         handler_id=rd["handler_id"],
-                        event_type=rd["event_type"],
+                        event_types=rd["event_types"],
                         config=rd["config"],
                     )
                 )

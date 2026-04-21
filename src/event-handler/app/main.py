@@ -263,12 +263,13 @@ class SimpleNotifierApp:
         """Run batch actions for events already removed from Redis."""
         first_event = batched_events[0] if batched_events else {}
         program_settings = self.settings_provider.get_program_settings(program_name)
+        trigger_et = first_event.get("event_type") or handler.event_type
         trigger_event = {
             "program_name": program_name,
             "expired_batch": True,
             "batch_age": batch_age,
-            "event_type": handler.event_type,
-            "event_family": handler.event_type,
+            "event_type": trigger_et,
+            "event_family": trigger_et,
             "api_base_url": first_event.get("api_base_url", "http://api:8000"),
             "internal_api_key": first_event.get("internal_api_key", ""),
             **first_event,

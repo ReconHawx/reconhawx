@@ -1,8 +1,176 @@
 # System (mandatory) event handlers — loaded only by the API, not editable via UI.
 # Effective config order: system → global (DB) → program addons → notification handlers (ephemeral).
 handlers:
+  # Subdomains without IPs - trigger resolution workflow
+  - id: system_new_unresolved_subdomain_resolution
+    event_type: [assets.subdomain.created]
+    description: Trigger workflow to resolve new subdomains without IPs
+    conditions:
+      - type: field_value
+        field: resolution_status
+        operator: null_or_empty
+    actions:
+      - type: workflow_trigger
+        api_url: "{api_base_url}"
+        api_key: "{internal_api_key}"
+        use_custom_payload: true
+        batching:
+          max_events: 50
+          max_delay_seconds: 300
+        parameters:
+          workflow_name: "subdomain_resolution"
+          program_name: "{program_name}"
+          description: "Batch resolution of subdomains without IPs"
+          steps:
+            - name: "resolve_domains"
+              tasks:
+                - name: "resolve_domain"
+                  force: true
+                  task_type: "resolve_domain"
+                  params: {}
+                  input_mapping:
+                    domains: "inputs.domains"
+          inputs:
+            domains:
+              type: "direct"
+              values: "{domain_list_array}"
+              value_type: "domains"
+          variables: {}
+  
+  - id: system_resolved_subdomain_recon
+    event_type:
+      - assets.subdomain.created
+      - assets.subdomain.updated
+    description: Trigger recon workflow on subdomains that just gained IPs (new or updated)
+    conditions: []
+    conditions_by_event_type:
+      assets.subdomain.created:
+        - type: field_value
+          field: resolution_status
+          operator: equals
+          expected_value: "created_resolved"
+      assets.subdomain.updated:
+        - type: field_value
+          field: new_ip_count
+          operator: greater_than
+          expected_value: 0
+        - type: field_value
+          field: previous_ip_count
+          operator: equals
+          expected_value: 0
+    actions:
+      - type: workflow_trigger
+        api_url: "{api_base_url}"
+        api_key: "{internal_api_key}"
+        use_custom_payload: true
+        batching:
+          max_events: 25
+          max_delay_seconds: 300
+        parameters:
+          workflow_name: "resolved_subdomain_recon"
+          program_name: "{program_name}"
+          description: "Batch recon of subdomains with IPs"
+          steps:
+            - name: "test_http"
+              tasks:
+                - name: "test_http"
+                  task_type: "test_http"
+                  params: {}
+                  input_mapping:
+                    domains: "inputs.domains"
+          inputs:
+            domains:
+              type: "direct"
+              values: "{domain_list_array}"
+              value_type: "domains"
+          variables: {}
+  ### IP HANDLERS #
+  # IP without PTR resolution
+  - id: system_new_ip_without_ptr_resolve
+    event_type: [assets.ip.created]
+    description: Trigger workflow to resolve IPs without PTR records
+    conditions:
+      - type: field_value
+        field: ptr_record
+        operator: not_exists
+    actions:
+      - type: workflow_trigger
+        api_url: "{api_base_url}"
+        api_key: "{internal_api_key}"
+        use_custom_payload: true
+        batching:
+          max_events: 50
+          max_delay_seconds: 300
+        parameters:
+          workflow_name: "ip_handling"
+          program_name: "{program_name}"
+          description: "Batch resolution of IPs without PTR records"
+          steps:
+            - name: "resolve_ips"
+              tasks:
+                - name: "resolve_ip"
+                  task_type: "resolve_ip"
+                  params: {}
+                  input_mapping:
+                    ips: "inputs.ips"
+            - name: "port_scan"
+              tasks:
+                - name: "port_scan"
+                  task_type: "port_scan"
+                  params: {}
+                  input_mapping:
+                    ips: "inputs.ips"
+          inputs:
+            ips:
+              type: "direct"
+              values: "{ip_list_array}"
+              value_type: "ips"
+          variables: {}
+    
+  - id: system_new_url_recon
+    event_type: [assets.url.created]
+    description: Trigger workflow to recon new URLs
+    conditions:
+      - type: field_value
+        field: path
+        operator: equals
+        expected_value: "/"
+    actions:
+      - type: workflow_trigger
+        api_url: "{api_base_url}"
+        api_key: "{internal_api_key}"
+        use_custom_payload: true
+        batching:
+          max_events: 15
+          max_delay_seconds: 300
+        parameters:
+          workflow_name: "url_recon"
+          program_name: "{program_name}"
+          description: "Batch recon of new URLs"
+          steps:
+            - name: "nuclei_scan"
+              tasks:
+                - name: "nuclei_scan"
+                  task_type: "nuclei_scan"
+                  params: {"cmd_args": ["-as"]}
+                  input_mapping:
+                    domains: "inputs.urls"
+            - name: "screenshot_website"
+              tasks:
+                - name: "screenshot_website"
+                  task_type: "screenshot_website"
+                  params: {}
+                  input_mapping:
+                    domains: "inputs.urls"
+          inputs:
+            urls:
+              type: "direct"
+              values: "{url_list_array}"
+              value_type: "urls"
+          variables: {}
+
   - id: system_ct_typosquat_alert_analysis
-    event_type: typosquat.ct_alert
+    event_type: [typosquat.ct_alert]
     description: Trigger immediate typosquat analysis when CT monitor detects suspicious certificate
     conditions:
       - type: field_value
@@ -45,7 +213,7 @@ handlers:
 
   # Typosquat domains without registration data - trigger analysis workflow
   - id: system_typosquat_without_whois_data
-    event_type: findings.typosquat_domain.created
+    event_type: [findings.typosquat_domain.created]
     description: Trigger analysis workflow for typosquat domains without WHOIS data
     conditions:
       - type: field_value
@@ -85,7 +253,7 @@ handlers:
           workflow_definition_id: ""
 
   - id: system_apex_domain_whois_backfill
-    event_type: assets.apex_domain.created
+    event_type: [assets.apex_domain.created]
     description: >-
       When an apex domain is created without WHOIS data, trigger whois_domain_check workflow.
       Requires a program workflow named apex_domain_whois (or adjust workflow_name to match yours).

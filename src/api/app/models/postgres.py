@@ -1081,16 +1081,16 @@ class EventHandlerConfig(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     program_id = Column(UUID(as_uuid=True), ForeignKey("programs.id", ondelete="CASCADE"), nullable=True)
     handler_id = Column(String(100), nullable=False)
-    event_type = Column(String(100), nullable=False)
+    event_types = Column(ARRAY(Text), nullable=False, default=[])
     config = Column(JSONB, nullable=False, default=dict)
     created_at = Column(DateTime, default=utcnow, nullable=False)
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
 
     def to_handler_dict(self) -> Dict[str, Any]:
-        """Convert row to handler object format: {id, event_type, conditions, actions, description, ...}"""
+        """Convert row to handler object format: {id, event_type: list[str], conditions, actions, ...}"""
         out = dict(self.config) if self.config else {}
         out["id"] = self.handler_id
-        out["event_type"] = self.event_type
+        out["event_type"] = list(self.event_types or [])
         return out
 
 
