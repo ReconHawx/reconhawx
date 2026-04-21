@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.21.0](https://github.com/ReconHawx/reconhawx/compare/v0.20.0...v0.21.0) (2026-04-21)
+
+
+### Features
+
+* **event-handler:** multi-type handlers with per-type conditions ([b4964c3](https://github.com/ReconHawx/reconhawx/commit/b4964c3e7644e1c216d77ca233dd6b58e2882746))
+
 ## [0.20.0](https://github.com/ReconHawx/reconhawx/compare/v0.19.0...v0.20.0) (2026-04-20)
 
 
