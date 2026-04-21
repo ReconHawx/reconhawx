@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Container, Row, Col, Card, Table, Badge, Button, Spinner, Alert, Pagination, ButtonGroup, Modal, Tabs, Tab } from 'react-bootstrap';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { Container, Row, Col, Card, Table, Badge, Button, Spinner, Alert, Pagination, ButtonGroup, Modal, Tabs, Tab, Form } from 'react-bootstrap';
 import { Link, useSearchParams } from 'react-router-dom';
 import { workflowAPI } from '../../services/api';
 import { formatDate, calculateDuration } from '../../utils/dateUtils';
@@ -28,13 +28,16 @@ export function WorkflowMonitoringPanel({ embedded = false }) {
   const [workflowToStop, setWorkflowToStop] = useState(null);
   const [sortField, setSortField] = useState('started_at');
   const [sortOrder, setSortOrder] = useState('desc');
+  const [pageSize, setPageSize] = useState(25);
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
+  const [showBulkStopModal, setShowBulkStopModal] = useState(false);
+  const selectAllCheckboxRef = useRef(null);
 
   const loadExecutions = useCallback(async (showLoading = true) => {
     try {
       if (showLoading) setLoading(true);
-      const response = await workflowAPI.getWorkflowStatus(currentPage, 25, null, sortField, sortOrder);
-      
-      
+      const response = await workflowAPI.getWorkflowStatus(currentPage, pageSize, null, sortField, sortOrder);
+
       setExecutions(response.executions || []);
       setTotalPages(response.total_pages || 1);
       setError(null);
@@ -44,7 +47,11 @@ export function WorkflowMonitoringPanel({ embedded = false }) {
     } finally {
       if (showLoading) setLoading(false);
     }
-  }, [currentPage, sortField, sortOrder]);
+  }, [currentPage, pageSize, sortField, sortOrder]);
+
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [currentPage, sortField, sortOrder, pageSize]);
 
   useEffect(() => {
     loadExecutions();
@@ -116,6 +123,87 @@ export function WorkflowMonitoringPanel({ embedded = false }) {
   const canStopWorkflow = (status) => {
     const stoppableStatuses = ['running', 'started', 'pending'];
     return stoppableStatuses.includes(status?.toLowerCase());
+  };
+
+  const stoppableOnPage = useMemo(() => {
+    const stoppableStatuses = ['running', 'started', 'pending'];
+    return executions.filter(
+      (e) =>
+        stoppableStatuses.includes(e.status?.toLowerCase()) &&
+        !stoppingWorkflows.has(e.id)
+    );
+  }, [executions, stoppingWorkflows]);
+
+  useEffect(() => {
+    const el = selectAllCheckboxRef.current;
+    if (!el) return;
+    const ids = stoppableOnPage.map((e) => e.id);
+    const selectedCount = ids.filter((id) => selectedIds.has(id)).length;
+    el.indeterminate = selectedCount > 0 && selectedCount < ids.length;
+  }, [stoppableOnPage, selectedIds]);
+
+  const toggleRowSelection = (execution) => {
+    if (!canStopWorkflow(execution.status) || stoppingWorkflows.has(execution.id)) return;
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(execution.id)) next.delete(execution.id);
+      else next.add(execution.id);
+      return next;
+    });
+  };
+
+  const toggleSelectAllOnPage = () => {
+    const ids = stoppableOnPage.map((e) => e.id);
+    const allSelected = ids.length > 0 && ids.every((id) => selectedIds.has(id));
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (allSelected) {
+        ids.forEach((id) => next.delete(id));
+      } else {
+        ids.forEach((id) => next.add(id));
+      }
+      return next;
+    });
+  };
+
+  const handleOpenBulkStop = () => {
+    if (selectedIds.size === 0) return;
+    setShowBulkStopModal(true);
+  };
+
+  const confirmBulkStopWorkflows = async () => {
+    const ids = [...selectedIds];
+    if (ids.length === 0) return;
+
+    setStoppingWorkflows((prev) => new Set([...prev, ...ids]));
+    setShowBulkStopModal(false);
+
+    const results = await Promise.allSettled(ids.map((id) => workflowAPI.stopWorkflow(id)));
+    const failures = [];
+    results.forEach((result, i) => {
+      const id = ids[i];
+      if (result.status === 'rejected') {
+        const msg = result.reason?.message || String(result.reason);
+        failures.push(`${id}: ${msg}`);
+      }
+    });
+
+    if (failures.length > 0) {
+      setError(`Failed to stop some workflows: ${failures.join('; ')}`);
+    } else {
+      setError(null);
+    }
+
+    await loadExecutions(false);
+    setSelectedIds(new Set());
+
+    setTimeout(() => {
+      setStoppingWorkflows((prev) => {
+        const next = new Set(prev);
+        ids.forEach((id) => next.delete(id));
+        return next;
+      });
+    }, 5000);
   };
 
   const getStatusBadge = (status) => {
@@ -243,16 +331,23 @@ export function WorkflowMonitoringPanel({ embedded = false }) {
       <Row>
         <Col>
           <Card>
-            <Card.Header className="d-flex justify-content-between align-items-center">
-              <div>
+            <Card.Header className="d-flex flex-wrap justify-content-between align-items-center gap-2">
+              <div className="flex-grow-1">
                 <h5 className="mb-0">Recent Workflow Executions</h5>
                 <small className="text-muted">
                   Sorted by: {sortField.replace('_', ' ')} ({sortOrder === 'asc' ? 'ascending' : 'descending'})
                 </small>
               </div>
-              {loading && (
-                <Spinner animation="border" size="sm" />
-              )}
+              <div className="d-flex align-items-center gap-2">
+                {selectedIds.size > 0 && (
+                  <Button variant="outline-danger" size="sm" onClick={handleOpenBulkStop}>
+                    ⏹️ Stop selected ({selectedIds.size})
+                  </Button>
+                )}
+                {loading && (
+                  <Spinner animation="border" size="sm" />
+                )}
+              </div>
             </Card.Header>
             <Card.Body className="p-0">
               {executions.length === 0 ? (
@@ -267,6 +362,20 @@ export function WorkflowMonitoringPanel({ embedded = false }) {
                   <Table responsive hover className="mb-0">
                     <thead>
                       <tr>
+                        <th style={{ width: '42px' }}>
+                          <input
+                            ref={selectAllCheckboxRef}
+                            type="checkbox"
+                            className="form-check-input"
+                            checked={
+                              stoppableOnPage.length > 0 &&
+                              stoppableOnPage.every((e) => selectedIds.has(e.id))
+                            }
+                            onChange={toggleSelectAllOnPage}
+                            disabled={stoppableOnPage.length === 0}
+                            aria-label="Select all stoppable workflows on this page"
+                          />
+                        </th>
                         <th 
                           style={sortableHeaderStyle}
                           onClick={() => handleSort('workflow_name')}
@@ -304,6 +413,18 @@ export function WorkflowMonitoringPanel({ embedded = false }) {
                     <tbody>
                       {executions.map((execution) => (
                         <tr key={execution.id}>
+                          <td>
+                            <Form.Check
+                              type="checkbox"
+                              checked={selectedIds.has(execution.id)}
+                              onChange={() => toggleRowSelection(execution)}
+                              disabled={
+                                !canStopWorkflow(execution.status) ||
+                                stoppingWorkflows.has(execution.id)
+                              }
+                              aria-label={`Select workflow ${execution.workflow_name || execution.id}`}
+                            />
+                          </td>
                           <td>
                             <strong>{execution.workflow_name}</strong>
                             <br />
@@ -373,10 +494,25 @@ export function WorkflowMonitoringPanel({ embedded = false }) {
                     </tbody>
                   </Table>
 
-                  {/* Pagination */}
-                  {totalPages > 1 && (
-                    <div className="d-flex justify-content-center p-3">
-                      <Pagination>
+                  {/* Pagination + page size */}
+                  <div className="d-flex justify-content-center align-items-center gap-3 p-3 flex-wrap">
+                    <Form.Select
+                      size="sm"
+                      value={pageSize}
+                      onChange={(e) => {
+                        setPageSize(parseInt(e.target.value, 10));
+                        setCurrentPage(1);
+                      }}
+                      style={{ width: 'auto' }}
+                      aria-label="Items per page"
+                    >
+                      <option value={10}>10 per page</option>
+                      <option value={25}>25 per page</option>
+                      <option value={50}>50 per page</option>
+                      <option value={100}>100 per page</option>
+                    </Form.Select>
+                    {totalPages > 1 && (
+                      <Pagination className="mb-0">
                         <Pagination.First
                           onClick={() => handlePageChange(1)}
                           disabled={currentPage === 1}
@@ -385,11 +521,11 @@ export function WorkflowMonitoringPanel({ embedded = false }) {
                           onClick={() => handlePageChange(currentPage - 1)}
                           disabled={currentPage === 1}
                         />
-                        
+
                         {[...Array(Math.min(5, totalPages))].map((_, idx) => {
                           const page = currentPage <= 3 ? idx + 1 : currentPage - 2 + idx;
                           if (page > totalPages) return null;
-                          
+
                           return (
                             <Pagination.Item
                               key={page}
@@ -400,7 +536,7 @@ export function WorkflowMonitoringPanel({ embedded = false }) {
                             </Pagination.Item>
                           );
                         })}
-                        
+
                         <Pagination.Next
                           onClick={() => handlePageChange(currentPage + 1)}
                           disabled={currentPage === totalPages}
@@ -410,8 +546,8 @@ export function WorkflowMonitoringPanel({ embedded = false }) {
                           disabled={currentPage === totalPages}
                         />
                       </Pagination>
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </>
               )}
             </Card.Body>
@@ -448,6 +584,55 @@ export function WorkflowMonitoringPanel({ embedded = false }) {
           </Button>
           <Button variant="danger" onClick={confirmStopWorkflow}>
             ⏹️ Stop Workflow
+          </Button>
+        </Modal.Footer>
+      </Modal>
+
+      {/* Bulk stop confirmation */}
+      <Modal show={showBulkStopModal} onHide={() => setShowBulkStopModal(false)}>
+        <Modal.Header closeButton>
+          <Modal.Title>Stop workflows</Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          <p>
+            Are you sure you want to stop{' '}
+            <strong>{selectedIds.size}</strong> workflow{selectedIds.size === 1 ? '' : 's'}?
+          </p>
+          <div
+            className="d-flex flex-column gap-2"
+            style={{ maxHeight: '240px', overflowY: 'auto' }}
+          >
+            {[...selectedIds].map((id) => {
+              const ex = executions.find((e) => e.id === id);
+              return (
+                <div key={id} className="card rh-elevated-card border">
+                  <div className="card-body py-2">
+                    <strong>{ex?.workflow_name ?? 'Unknown'}</strong>
+                    <br />
+                    <small className="text-muted">ID: {id}</small>
+                    {ex && (
+                      <>
+                        <br />
+                        <Badge bg={getStatusBadge(ex.status)}>{ex.status}</Badge>
+                      </>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <div className="mt-3">
+            <Alert variant="warning" className="mb-0">
+              <strong>⚠️ Warning:</strong> This will immediately stop all running tasks and cancel pending jobs. This action cannot be undone.
+            </Alert>
+          </div>
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="secondary" onClick={() => setShowBulkStopModal(false)}>
+            Cancel
+          </Button>
+          <Button variant="danger" onClick={confirmBulkStopWorkflows}>
+            ⏹️ Stop {selectedIds.size} workflow{selectedIds.size === 1 ? '' : 's'}
           </Button>
         </Modal.Footer>
       </Modal>
