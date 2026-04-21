@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.22.0](https://github.com/ReconHawx/reconhawx/compare/v0.21.0...v0.22.0) (2026-04-21)
+
+
+### Features
+
+* **frontend:** bulk stop workflows and page size on status monitor ([e3dec71](https://github.com/ReconHawx/reconhawx/commit/e3dec71ab686d013722ca0c9b9b15bf46a7ba55b))
+
 ## [0.21.0](https://github.com/ReconHawx/reconhawx/compare/v0.20.0...v0.21.0) (2026-04-21)
 
 
