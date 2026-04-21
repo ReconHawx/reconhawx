@@ -40,9 +40,9 @@ async def receive_wpscan_findings(request: Request):
         logger.info(f"Received WPScan data with keys: {list(data.keys())}")
 
         # Validate required fields
-        program_name = data.get("program_name")
-        if not program_name:
-            raise HTTPException(status_code=400, detail="program_name is required")
+        program_id = data.get("program_id")
+        if not program_id or not str(program_id).strip():
+            raise HTTPException(status_code=400, detail="program_id is required")
 
         # Extract and prepare WPScan data only
         wpscan_data = await _extract_wpscan_data(data)
@@ -56,7 +56,7 @@ async def receive_wpscan_findings(request: Request):
 
         # Use unified findings processor - always async, never blocks API
         job_id = await unified_findings_processor.process_findings_unified(
-            wpscan_data, program_name
+            wpscan_data, str(program_id).strip()
         )
 
         logger.info(f"Started unified WPScan processing job {job_id} with {total_wpscan} findings")
@@ -91,7 +91,9 @@ async def _extract_wpscan_data(data: Dict[str, Any]) -> Dict[str, List]:
             logger.info("Processing WPScan findings")
             for finding in findings["wpscan"]:
                 if isinstance(finding, dict):
-                    # Add program name to finding if available
+                    # Add program id/name to finding if available (repos resolve name from id)
+                    if data.get("program_id"):
+                        finding["program_id"] = data["program_id"]
                     if "program_name" in data:
                         finding["program_name"] = data["program_name"]
                     try:

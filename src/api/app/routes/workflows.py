@@ -361,6 +361,18 @@ async def run_workflow(
                 status_code=400, 
                 detail=f"Invalid priority. Must be one of: {', '.join(valid_priorities)}"
             )
+
+        program_id_resolved: Optional[str] = None
+        if workflow_request.program_name and str(workflow_request.program_name).strip():
+            prog = await ProgramRepository.get_program_by_name(
+                str(workflow_request.program_name).strip()
+            )
+            if not prog:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Program not found: {workflow_request.program_name}",
+                )
+            program_id_resolved = str(prog["id"])
         
         # The new frontend sends a complete, runnable definition.
         # We just need to ensure it's structured correctly for the runner.
@@ -368,6 +380,7 @@ async def run_workflow(
             "workflow_id": workflow_id,  # Use workflow definition ID (or None for custom workflows)
             "execution_id": execution_id,  # Pass the execution ID separately
             "program_name": workflow_request.program_name,
+            "program_id": program_id_resolved,
             "name": workflow_request.workflow_name,
             "description": workflow_request.description,
             "priority": priority,  # Add priority to workflow data
@@ -400,6 +413,7 @@ async def run_workflow(
             "execution_id": execution_id,
             "workflow_name": workflow_request.workflow_name,
             "program_name": workflow_request.program_name,
+            "program_id": program_id_resolved,
             "workflow_definition_id": workflow_id,
             "result": "pending",
             "workflow_steps": [],

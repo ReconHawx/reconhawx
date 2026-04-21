@@ -213,7 +213,8 @@ class BrokenLink(BaseModel):
     )
 
 class BrokenLinkCreate(BaseModel):
-    program_name: str
+    program_id: str = Field(..., description="Program UUID (ingestion identifier)")
+    program_name: Optional[str] = Field(None, description="Optional display name; ignored for identification")
     link_type: str  # social_media or general
     media_type: Optional[str] = None  # facebook, instagram, twitter, x, linkedin (for social_media)
     domain: Optional[str] = None  # Domain name (for general)

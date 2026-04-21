@@ -8,6 +8,7 @@ from models.postgres import (
     BrokenLink, Program
 )
 from db import get_db_session
+from utils.program_resolve import resolve_program_from_payload
 from utils.query_filters import ProgramAccessMixin
 from services.event_publisher import publisher
 
@@ -23,9 +24,7 @@ class BrokenLinksRepository(ProgramAccessMixin):
         async with get_db_session() as db:
             try:
                 # Find program by name
-                program = db.query(Program).filter(Program.name == finding_data.get('program_name')).first()
-                if not program:
-                    raise ValueError(f"Program '{finding_data.get('program_name')}' not found")
+                program = resolve_program_from_payload(db, finding_data)
                 
                 # Check if finding already exists based on unique constraint (program_id, url)
                 url = finding_data.get('url')

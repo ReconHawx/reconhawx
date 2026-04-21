@@ -322,6 +322,7 @@ class JobSchedulerService:
         """Run one Kubernetes workflow runner per program on this scheduled job."""
         from services.kubernetes import KubernetesService
         from repository import WorkflowDefinitionRepository
+        from repository.program_repo import ProgramRepository
 
         k8s_service = KubernetesService()
         workflow_repo = WorkflowDefinitionRepository()
@@ -388,6 +389,10 @@ class JobSchedulerService:
         for program_name, spec in zip(target_program_names, workflow_specs):
             job_id = str(uuid.uuid4())
             spec["program_name"] = program_name
+            prog_row = await ProgramRepository.get_program_by_name(program_name)
+            if not prog_row:
+                raise ValueError(f"Program not found for scheduled workflow: {program_name!r}")
+            spec["program_id"] = str(prog_row["id"])
             spec["execution_id"] = job_id
             job_payload = {
                 "job_id": job_id,

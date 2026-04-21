@@ -90,7 +90,7 @@ def _merge_san(existing: Optional[List[str]], new: Optional[List[str]]) -> Optio
     return merged if merged else None
 
 
-def upsert_certificates_chunk(program_name: str, items: List[Dict[str, Any]]) -> Dict[str, Any]:
+def upsert_certificates_chunk(program_id: str, items: List[Dict[str, Any]]) -> Dict[str, Any]:
     session = BatchSessionLocal()
     success_count = failed_count = 0
     created_count = updated_count = skipped_count = 0
@@ -100,11 +100,14 @@ def upsert_certificates_chunk(program_name: str, items: List[Dict[str, Any]]) ->
     t0 = time.perf_counter()
 
     try:
-        program = session.execute(
-            select(Program).where(Program.name == program_name)
-        ).scalar_one_or_none()
+        try:
+            pid = uuid.UUID(str(program_id))
+        except ValueError as e:
+            raise ValueError(f"Invalid program_id: {program_id!r}") from e
+        program = session.execute(select(Program).where(Program.id == pid)).scalar_one_or_none()
         if not program:
-            raise ValueError(f"Program {program_name!r} not found")
+            raise ValueError(f"Program id {program_id!r} not found")
+        program_name_disp = program.name
 
         now_naive = datetime.now(timezone.utc).replace(tzinfo=None)
 
@@ -113,13 +116,13 @@ def upsert_certificates_chunk(program_name: str, items: List[Dict[str, Any]]) ->
         for raw in items:
             item = dict(raw)
             if not item.get("program_name"):
-                item["program_name"] = program_name
+                item["program_name"] = program_name_disp
             if not item.get("subject_dn"):
                 failed_count += 1
                 skipped_assets.append(
                     {
                         "subject_dn": "unknown",
-                        "program_name": program_name,
+                        "program_name": program_name_disp,
                         "error": "missing_subject_dn",
                     }
                 )
@@ -269,7 +272,7 @@ def upsert_certificates_chunk(program_name: str, items: List[Dict[str, Any]]) ->
                         "asset_type": "certificate",
                         "record_id": str(sid),
                         "subject_dn": item.get("subject_dn"),
-                        "program_name": program_name,
+                        "program_name": program_name_disp,
                         "subject_cn": item.get("subject_cn"),
                         "issuer_cn": item.get("issuer_cn"),
                         "valid_from": item.get("valid_from"),
@@ -285,7 +288,7 @@ def upsert_certificates_chunk(program_name: str, items: List[Dict[str, Any]]) ->
                         "asset_type": "certificate",
                         "record_id": str(sid),
                         "subject_dn": item.get("subject_dn"),
-                        "program_name": program_name,
+                        "program_name": program_name_disp,
                         "subject_cn": item.get("subject_cn"),
                         "issuer_cn": item.get("issuer_cn"),
                         "valid_from": item.get("valid_from"),
@@ -299,7 +302,7 @@ def upsert_certificates_chunk(program_name: str, items: List[Dict[str, Any]]) ->
                     {
                         "record_id": str(sid),
                         "subject_dn": item.get("subject_dn"),
-                        "program_name": program_name,
+                        "program_name": program_name_disp,
                         "reason": "duplicate",
                     }
                 )
@@ -313,8 +316,8 @@ def upsert_certificates_chunk(program_name: str, items: List[Dict[str, Any]]) ->
         session.close()
 
     logger.info(
-        "bulk_sql certificates chunk program=%s items=%s created=%s updated=%s skipped=%s wall_ms=%.1f",
-        program_name,
+        "bulk_sql certificates chunk program_id=%s items=%s created=%s updated=%s skipped=%s wall_ms=%.1f",
+        program_id,
         len(items),
         created_count,
         updated_count,
@@ -360,7 +363,7 @@ def _pack(
 
 async def bulk_create_or_update_certificates_all(
     certificates: List[Dict[str, Any]],
-    program_name: str,
+    program_id: str,
 ) -> Tuple[int, int, int, int, int, List[Dict], List[Dict], List[Dict]]:
     import asyncio
 
@@ -371,7 +374,7 @@ async def bulk_create_or_update_certificates_all(
     sa: List[Dict] = []
     for i in range(0, len(certificates), chunk_sz):
         p = await asyncio.to_thread(
-            upsert_certificates_chunk, program_name, certificates[i : i + chunk_sz]
+            upsert_certificates_chunk, program_id, certificates[i : i + chunk_sz]
         )
         sc += p["success_count"]
         fc += p["failed_count"]

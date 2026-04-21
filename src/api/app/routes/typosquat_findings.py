@@ -376,6 +376,8 @@ async def _extract_typosquat_domain_data(data: Dict[str, Any]) -> Dict[str, List
             for finding in findings["typosquat_domain"]:
                 if isinstance(finding, dict):
                     # Add program name to finding if available
+                    if data.get("program_id"):
+                        finding["program_id"] = data["program_id"]
                     if "program_name" in data:
                         finding["program_name"] = data["program_name"]
                     try:
@@ -403,10 +405,9 @@ async def create_typosquat_finding(
         # Get raw request body to handle both single objects and arrays
         data = await request.json()
         logger.info(f"Received typosquat data with keys: {list(data.keys())}")
-        # Validate program_name
-        program_name = data.get("program_name")
-        if not program_name:
-            raise HTTPException(status_code=400, detail="program_name is required")
+        program_id = data.get("program_id")
+        if not program_id or not str(program_id).strip():
+            raise HTTPException(status_code=400, detail="program_id is required")
         
         # Extract and prepare typosquat domain data
         typosquat_domain_data = await _extract_typosquat_domain_data(data)
@@ -417,7 +418,7 @@ async def create_typosquat_finding(
             raise HTTPException(status_code=400, detail="No typosquat domain findings provided for processing")
 
         # Use unified processor - always async, never blocks API
-        job_id = await unified_findings_processor.process_findings_unified(typosquat_domain_data, program_name)
+        job_id = await unified_findings_processor.process_findings_unified(typosquat_domain_data, str(program_id).strip())
 
 
         return TyposquatProcessingResponse(
@@ -3054,7 +3055,8 @@ class TyposquatURLCreateRequest(BaseModel):
     redirect_chain: Optional[Dict[str, Any]] = Field(None, description="Redirect chain")
     chain_status_codes: Optional[List[int]] = Field(None, description="Chain status codes")
     extracted_links: Optional[List[str]] = Field(None, description="Extracted links")
-    program_name: str = Field(..., description="Program name")
+    program_id: str = Field(..., description="Program UUID")
+    program_name: Optional[str] = Field(None, description="Optional display name (ignored for identification)")
     typosquat_domain: Optional[str] = Field(None, description="Typosquat domain name to associate with this URL")
     typosquat_domain_id: Optional[str] = Field(None, description="Typosquat domain ID to associate with this URL")
     typosquat_certificate_id: Optional[str] = Field(None, description="Typosquat certificate ID to associate with this URL")
@@ -3405,7 +3407,8 @@ async def get_typosquat_certificate_by_id(
 @router.post("/typosquat-screenshot", response_model=Dict[str, Any])
 async def upload_typosquat_screenshot(
     file: UploadFile = File(...),
-    program_name: Optional[str] = Form(None),
+    program_id: str = Form(..., description="Program UUID (required for ingestion)"),
+    program_name: Optional[str] = Form(None, description="Optional display name; ignored for identification"),
     url: Optional[str] = Form(None),
     workflow_id: Optional[str] = Form(None),
     step_name: Optional[str] = Form(None),
@@ -3444,6 +3447,7 @@ async def upload_typosquat_screenshot(
             image_data=file_content,
             filename=file.filename,
             content_type=file.content_type,
+            program_id=program_id,
             program_name=program_name,
             url=url,
             workflow_id=workflow_id,

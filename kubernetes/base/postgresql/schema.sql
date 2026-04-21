@@ -1084,6 +1084,7 @@ CREATE TABLE public.screenshots (
     created_at timestamp without time zone NOT NULL,
     step_name character varying(255),
     program_name character varying(255),
+    program_id uuid,
     extracted_text text
 );
 
@@ -1474,6 +1475,7 @@ CREATE TABLE public.typosquat_screenshots (
     created_at timestamp without time zone NOT NULL,
     step_name character varying(255),
     program_name character varying(255),
+    program_id uuid,
     extracted_text text,
     source_created_at timestamp without time zone,
     source character varying(255)
@@ -3133,6 +3135,13 @@ CREATE INDEX ix_screenshots_program_name ON public.screenshots USING btree (prog
 
 
 --
+-- Name: ix_screenshots_program_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_screenshots_program_id ON public.screenshots USING btree (program_id);
+
+
+--
 -- Name: ix_screenshots_step_name; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3319,6 +3328,13 @@ CREATE INDEX ix_typosquat_screenshots_last_captured_at ON public.typosquat_scree
 --
 
 CREATE INDEX ix_typosquat_screenshots_program_name ON public.typosquat_screenshots USING btree (program_name);
+
+
+--
+-- Name: ix_typosquat_screenshots_program_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_typosquat_screenshots_program_id ON public.typosquat_screenshots USING btree (program_id);
 
 
 --
@@ -3774,6 +3790,14 @@ ALTER TABLE ONLY public.screenshots
 
 
 --
+-- Name: screenshots screenshots_program_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.screenshots
+    ADD CONSTRAINT screenshots_program_id_fkey FOREIGN KEY (program_id) REFERENCES public.programs(id) ON DELETE SET NULL;
+
+
+--
 -- Name: services services_ip_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3875,6 +3899,14 @@ ALTER TABLE ONLY public.typosquat_screenshots
 
 ALTER TABLE ONLY public.typosquat_screenshots
     ADD CONSTRAINT typosquat_screenshots_url_id_fkey FOREIGN KEY (url_id) REFERENCES public.typosquat_urls(id) ON DELETE CASCADE;
+
+
+--
+-- Name: typosquat_screenshots typosquat_screenshots_program_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.typosquat_screenshots
+    ADD CONSTRAINT typosquat_screenshots_program_id_fkey FOREIGN KEY (program_id) REFERENCES public.programs(id) ON DELETE SET NULL;
 
 
 --

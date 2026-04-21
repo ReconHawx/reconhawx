@@ -10,6 +10,7 @@ from models.postgres import (
 from db import get_db_session
 # Direct import to avoid circular import
 from utils.query_filters import QueryFilterUtils, ProgramAccessMixin
+from utils.program_resolve import resolve_program_from_payload
 from services.event_publisher import publisher
 
 logger = logging.getLogger(__name__)
@@ -23,10 +24,7 @@ class NucleiFindingsRepository(ProgramAccessMixin):
         Returns (finding_id, action) where action is 'created', 'updated', or 'skipped'."""
         async with get_db_session() as db:
             try:
-                # Find program by name
-                program = db.query(Program).filter(Program.name == finding_data.get('program_name')).first()
-                if not program:
-                    raise ValueError(f"Program '{finding_data.get('program_name')}' not found")
+                program = resolve_program_from_payload(db, finding_data)
                 
                 # Find IP if provided
                 ip = None

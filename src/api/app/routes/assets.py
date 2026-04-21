@@ -75,10 +75,10 @@ async def receive_asset(request: Request, background_tasks: BackgroundTasks):
     try:
         data = await request.json()
 
-        # Validate required fields
-        program_name = data.get("program_name")
-        if not program_name:
-            raise HTTPException(status_code=400, detail="program_name is required")
+        # Validate required fields (program_id is the ingestion key; program_name is ignored for identification)
+        program_id = data.get("program_id")
+        if not program_id or not str(program_id).strip():
+            raise HTTPException(status_code=400, detail="program_id is required")
 
         # Extract and prepare asset data
         asset_data = await _extract_asset_data(data)
@@ -90,7 +90,7 @@ async def receive_asset(request: Request, background_tasks: BackgroundTasks):
             raise HTTPException(status_code=400, detail="No assets provided for processing")
 
         # Use unified processor - always async, never blocks API
-        job_id = await unified_asset_processor.process_assets_unified(asset_data, program_name)
+        job_id = await unified_asset_processor.process_assets_unified(asset_data, str(program_id).strip())
 
         logger.info(f"Started unified asset processing job {job_id} with {total_assets} assets")
 

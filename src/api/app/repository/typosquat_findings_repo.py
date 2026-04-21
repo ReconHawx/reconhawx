@@ -32,6 +32,7 @@ from db import get_db_session
 from repository.program_repo import ProgramRepository
 from repository.apexdomain_assets_repo import ApexDomainAssetsRepository
 from utils.query_filters import QueryFilterUtils, ProgramAccessMixin
+from utils.program_resolve import resolve_program_from_payload
 from services.recordedfuture_api_client import change_playbook_alert_status
 from services.protected_domain_similarity_service import ProtectedDomainSimilarityService
 from services.typosquat_auto_resolve_service import TyposquatAutoResolveService, _compute_auto_resolve
@@ -486,10 +487,7 @@ class TyposquatFindingsRepository(ProgramAccessMixin):
         """Create or update a typosquat domain. Returns (record_id, action, event_data) where event_data contains rich payload data."""
         async with get_db_session() as db:
             try:
-                # Find program by name
-                program = db.query(Program).filter(Program.name == typosquat_data.get('program_name')).first()
-                if not program:
-                    raise ValueError(f"Program '{typosquat_data.get('program_name')}' not found")
+                program = resolve_program_from_payload(db, typosquat_data)
                 
                 # Check if typosquat domain already exists (filter by both domain and program for accuracy)
                 existing = db.query(TyposquatDomain).filter(
@@ -4724,10 +4722,7 @@ class TyposquatFindingsRepository(ProgramAccessMixin):
                
                 # TyposquatURL is already imported at the top
                 normalized_url = normalize_url_for_storage(url_data.get('url'))
-                # Find program by name
-                program = db.query(Program).filter(Program.name == url_data.get('program_name')).first()
-                if not program:
-                    raise ValueError(f"Program '{url_data.get('program_name')}' not found")
+                program = resolve_program_from_payload(db, url_data)
 
                 asset_apex_domains = await ApexDomainAssetsRepository.get_apex_domain_names_for_program(
                     program.name
@@ -5099,18 +5094,28 @@ class TyposquatFindingsRepository(ProgramAccessMixin):
                 raise
 
     @staticmethod
-    async def store_typosquat_screenshot(image_data: bytes, filename: str, content_type: str, program_name: Optional[str] = None, url: Optional[str] = None, workflow_id: Optional[str] = None, step_name: Optional[str] = None, extracted_text: Optional[str] = None, source_created_at: Optional[str] = None, source: Optional[str] = None) -> str:
-        """Store typosquat screenshot"""
+    async def store_typosquat_screenshot(
+        image_data: bytes,
+        filename: str,
+        content_type: str,
+        program_id: str,
+        program_name: Optional[str] = None,
+        url: Optional[str] = None,
+        workflow_id: Optional[str] = None,
+        step_name: Optional[str] = None,
+        extracted_text: Optional[str] = None,
+        source_created_at: Optional[str] = None,
+        source: Optional[str] = None,
+    ) -> str:
+        """Store typosquat screenshot (``program_id`` is required)."""
         async with get_db_session() as db:
             try:
-                # Validate required parameters
                 if not url or not url.strip():
                     raise ValueError("URL is required for screenshot storage")
-                
-                if not program_name or not program_name.strip():
-                    raise ValueError("Program name is required for screenshot storage")
-                
-                # These models are already imported at the top
+
+                program = resolve_program_from_payload(db, {"program_id": program_id, "program_name": program_name})
+                display_name = program.name
+
                 url = normalize_url_for_storage(url)
                 import hashlib
                 image_hash = hashlib.sha256(image_data).hexdigest()
@@ -5136,9 +5141,6 @@ class TyposquatFindingsRepository(ProgramAccessMixin):
                         parsed = urlparse(url)
                         hostname = parsed.hostname or ""
 
-                        # Find program by name
-                        program = db.query(Program).filter(Program.name == program_name).first() if program_name else None
-
                         # Check if the domain exists; if not, check filtering before auto-creating
                         if hostname and program:
                             existing_domain = db.query(TyposquatDomain).filter(
@@ -5149,7 +5151,7 @@ class TyposquatFindingsRepository(ProgramAccessMixin):
                                 protected_prefixes = getattr(program, 'protected_subdomain_prefixes', None) or []
                                 filtering_settings = getattr(program, 'typosquat_filtering_settings', None) or {}
                                 asset_apex_domains = await ApexDomainAssetsRepository.get_apex_domain_names_for_program(
-                                    program_name
+                                    display_name
                                 )
 
                                 passes_filter, filter_reason = TyposquatFilteringService.should_insert_domain(
@@ -5167,7 +5169,7 @@ class TyposquatFindingsRepository(ProgramAccessMixin):
                             port=parsed.port or (443 if parsed.scheme == "https" else 80),
                             path=parsed.path or "/",
                             scheme=parsed.scheme or "http",
-                            program_id=program.id if program else None
+                            program_id=program.id,
                         )
                         db.add(url_record)
                         db.flush()  # Get the ID
@@ -5197,8 +5199,8 @@ class TyposquatFindingsRepository(ProgramAccessMixin):
                         existing_screenshot.workflow_id = workflow_id
                     if step_name:
                         existing_screenshot.step_name = step_name
-                    if program_name:
-                        existing_screenshot.program_name = program_name
+                    existing_screenshot.program_name = display_name
+                    existing_screenshot.program_id = program.id
                     if extracted_text is not None:
                         existing_screenshot.extracted_text = extracted_text
                     if parsed_source_created_at is not None and existing_screenshot.source_created_at is None:
@@ -5226,7 +5228,8 @@ class TyposquatFindingsRepository(ProgramAccessMixin):
                     "image_hash": image_hash,
                     "workflow_id": workflow_id,
                     "step_name": step_name,
-                    "program_name": program_name,
+                    "program_name": display_name,
+                    "program_id": program.id,
                     "capture_count": 1,
                     "last_captured_at": utcnow(),  # Set the required last_captured_at field
                     "extracted_text": extracted_text,

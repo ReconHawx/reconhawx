@@ -10,6 +10,8 @@ description: SQLAlchemy models, repositories, query helpers, database patterns
 
 Project hub: repository root `AGENTS.md`. Use `api-core` for app/auth context and `api-http` when routes or services must align with repository changes.
 
+**Program scoping:** runner and internal clients send **`program_id`** (UUID) for asset/finding ingestion. Repositories resolve the `Program` row by id (`utils/program_resolve.resolve_program_from_payload`); do not use `program_name` as the identifier on ingest paths.
+
 # API Database Patterns
 
 ## Database Architecture

@@ -280,6 +280,7 @@ class TaskExecutor:
         self.execution_id = os.getenv('EXECUTION_ID')
         self.workflow_id = os.getenv('WORKFLOW_ID')
         self.program_name = None  # Will be set when executing tasks
+        self.program_id = None  # UUID string for API ingestion (workflow snapshot)
         self.asset_store = AssetStore()
         self.task_registry = TaskRegistry
         self.task_outputs = {}
@@ -499,6 +500,12 @@ class TaskExecutor:
         
         # Set program name for use in _prepare_input_data
         self.program_name = program_name
+        ingest_pid = (self.program_id or "").strip()
+        if not ingest_pid:
+            raise ValueError(
+                "program_id is required for runner→API ingestion. "
+                "Ensure the workflow ConfigMap includes program_id (API dispatch upgrade)."
+            )
         # Track current step name so _finalize_input_data_async can record a
         # structured input-validation summary keyed by step.
         self._current_step_name = step_name
@@ -609,7 +616,7 @@ class TaskExecutor:
                     logger.info(f"Processing {len(typosquat_domains)} typosquat domains")
                     if self.execution_id:
                         success = self.data_api_client._send_typosquat_assets(
-                            typosquat_domains, program_name
+                            typosquat_domains, ingest_pid
                         )
                         if success:
                             logger.info("Successfully sent typosquat domains to findings endpoint")
@@ -793,7 +800,7 @@ class TaskExecutor:
                                 workflow_context['execution_id'] = self.execution_id
 
                             nuclei_response = await self.data_api_client.post_nuclei_findings_unified(
-                                nuclei_findings, program_name,
+                                nuclei_findings, ingest_pid,
                                 workflow_id=workflow_context.get('workflow_id'),
                                 step_name=step_name,
                                 execution_id=workflow_context.get('execution_id')
@@ -830,7 +837,7 @@ class TaskExecutor:
                         
                         try:
                             broken_link_success = self.data_api_client.post_broken_link_findings(
-                                broken_link_findings, program_name
+                                broken_link_findings, ingest_pid
                             )
                             if not broken_link_success:
                                 logger.warning("Failed to send broken link findings to dedicated endpoint")
@@ -854,7 +861,7 @@ class TaskExecutor:
                                 workflow_context['execution_id'] = self.execution_id
 
                             wpscan_response = await self.data_api_client.post_wpscan_findings_unified(
-                                wpscan_findings, program_name,
+                                wpscan_findings, ingest_pid,
                                 workflow_id=workflow_context.get('workflow_id'),
                                 step_name=step_name,
                                 execution_id=workflow_context.get('execution_id')
@@ -898,7 +905,7 @@ class TaskExecutor:
                                 converted_assets[str(k)] = v
 
                         success, api_response = self.data_api_client.send_assets(
-                            step_name, program_name, self.execution_id, converted_assets, self.asset_processor
+                            step_name, ingest_pid, self.execution_id, converted_assets, self.asset_processor
                         )
                         if success:
                             # Store API response data for workflow status updates
@@ -963,7 +970,7 @@ class TaskExecutor:
                                 converted_assets[str(k)] = v
 
                         success, api_response = self.data_api_client.send_assets(
-                            step_name, program_name, self.execution_id, converted_assets, self.asset_processor
+                            step_name, ingest_pid, self.execution_id, converted_assets, self.asset_processor
                         )
                         logger.debug(f"DEBUT SENDING ASSETS: {success}")
                         if success:
@@ -991,7 +998,7 @@ class TaskExecutor:
                                 workflow_context['execution_id'] = self.execution_id
 
                             nuclei_response = await self.data_api_client.post_nuclei_findings_unified(
-                                nuclei_findings, program_name,
+                                nuclei_findings, ingest_pid,
                                 workflow_id=workflow_context.get('workflow_id'),
                                 step_name=step_name,
                                 execution_id=workflow_context.get('execution_id')
@@ -1035,7 +1042,7 @@ class TaskExecutor:
                         logger.info(f"🔍 TYPOSQUAT: Sending {len(typosquat_findings)} typosquat findings to dedicated endpoint (fallback)")
 
                         typosquat_success, typosquat_response = self.data_api_client.send_typosquat_findings(
-                            step_name, program_name, self.execution_id, typosquat_findings, self.asset_processor
+                            step_name, ingest_pid, self.execution_id, typosquat_findings, self.asset_processor
                         )
                         logger.info(f"🔍 TYPOSQUAT SENDING RESULT (fallback): {typosquat_success}")
                         if typosquat_success:
@@ -1051,7 +1058,7 @@ class TaskExecutor:
                         logger.info(f"📤 Sending {len(broken_link_findings)} broken link findings to dedicated endpoint (fallback)")
                         try:
                             broken_link_success = self.data_api_client.post_broken_link_findings(
-                                broken_link_findings, program_name
+                                broken_link_findings, ingest_pid
                             )
                             if not broken_link_success:
                                 logger.warning("Failed to send broken link findings to dedicated endpoint (fallback)")
@@ -2928,8 +2935,8 @@ class TaskExecutor:
                                 continue
                         
                         # Ensure program_name is set
-                        if not url_data.get('program_name'):
-                            url_data['program_name'] = program_name
+                        if not url_data.get('program_id'):
+                            url_data['program_id'] = (self.program_id or "").strip()
                         
                         # Clean API metadata
                         url_data.pop('_id', None)
@@ -3000,12 +3007,13 @@ class TaskExecutor:
                             continue
                         
                         # Prepare form data and send to /findings/typosquat-screenshot
+                        pid = (self.program_id or "").strip()
                         response = requests.post(
                             f"{self.data_api_client.base_url}/findings/typosquat-screenshot",
                             files={'file': (filename, image_data, content_type)},
                             data={
                                 'url': screenshot_data.get('url', ''),
-                                'program_name': screenshot_data.get('program_name', program_name),
+                                'program_id': screenshot_data.get('program_id', pid),
                                 'workflow_id': screenshot_data.get('workflow_id', ''),
                                 'step_name': screenshot_data.get('step_name', step_name)
                             }
@@ -3125,8 +3133,13 @@ class TaskExecutor:
                         }
 
                         # Use the data API client's screenshot method
+                        pid = (self.program_id or "").strip()
+                        if not pid:
+                            logger.error("program_id missing; cannot upload screenshot")
+                            success = False
+                            continue
                         success = self.data_api_client._send_screenshot_assets(
-                            [screenshot_asset], program_name, workflow_id, step_name
+                            [screenshot_asset], pid, workflow_id, step_name
                         ) and success
 
                         if success:
@@ -3407,6 +3420,7 @@ class TaskExecutor:
             context = {
                 "step_name": step_name,
                 "program_name": program_name,
+                "program_id": (self.program_id or "").strip(),
                 "task_def": task_def,
                 "task_queue_client": self.task_queue_client,
                 "job_manager": self.job_manager,
@@ -3422,7 +3436,10 @@ class TaskExecutor:
                 if synthetic:
                     output_mode = getattr(task_def, "output_mode", None)
                     if output_mode == "typosquat_findings":
-                        return task_instance.transform_to_findings(synthetic, {"program_name": program_name})
+                        return task_instance.transform_to_findings(
+                            synthetic,
+                            {"program_name": program_name, "program_id": (self.program_id or "").strip()},
+                        )
                     return synthetic
                 return {}
 
@@ -3552,7 +3569,8 @@ class TaskExecutor:
             output_mode = getattr(task_def, "output_mode", None)
             if output_mode == "typosquat_findings" and aggregated_assets:
                 return task_instance.transform_to_findings(
-                    aggregated_assets, {"program_name": program_name}
+                    aggregated_assets,
+                    {"program_name": program_name, "program_id": (self.program_id or "").strip()},
                 )
 
             return aggregated_assets
@@ -4011,6 +4029,10 @@ class TaskExecutor:
     async def _send_batch_assets_progressively(self, assets_and_findings: Dict, program_name: str, step_name: str, task_id: Optional[str] = None) -> int:
         """Send batch assets progressively during execution"""
         assets_sent = 0
+        ingest_pid = (self.program_id or "").strip()
+        if not ingest_pid:
+            logger.error("program_id not set on TaskExecutor; cannot post assets/findings")
+            return 0
         try:
             # Check if assets were already sent for this task (prevents duplicate sends)
             # For worker jobs, include task_id to allow each job to send its own assets
@@ -4063,7 +4085,7 @@ class TaskExecutor:
             if assets and any(assets.values()):  # Check if dict is not empty AND contains actual asset lists
                 try:
                     api_response = await self.async_data_api_client.post_assets_unified(
-                        assets, program_name, self.execution_id, step_name
+                        assets, ingest_pid, self.execution_id, step_name
                     )
                     assets_success = api_response.get("status") != "error"
 
@@ -4085,7 +4107,7 @@ class TaskExecutor:
                 try:
                     logger.info(f"Progressively sending {len(screenshots)} screenshots to dedicated endpoint")
                     screenshot_response = await self.async_data_api_client._send_screenshot_assets(
-                        screenshots, program_name, self.execution_id, step_name
+                        screenshots, ingest_pid, self.execution_id, step_name
                     )
                     screenshot_success = screenshot_response[0]  # Returns (success, responses)
                     if screenshot_success:
@@ -4111,7 +4133,7 @@ class TaskExecutor:
             if nuclei_findings:
                 try:
                     nuclei_response = await self.async_data_api_client.post_nuclei_findings_unified(
-                        nuclei_findings, program_name,
+                        nuclei_findings, ingest_pid,
                         workflow_id=None, step_name=step_name, execution_id=self.execution_id
                     )
                     nuclei_success = nuclei_response.get("status") != "error"
@@ -4158,7 +4180,7 @@ class TaskExecutor:
                 try:
                     logger.info(f"Progressively sending {len(typosquat_domain_findings)} typosquat domain findings to /findings/typosquat")
                     typosquat_domain_response = await self.async_data_api_client.post_typosquat_domain_findings(
-                        typosquat_domain_findings, program_name
+                        typosquat_domain_findings, ingest_pid
                     )
                     domain_success = typosquat_domain_response.get("status") != "error"
 
@@ -4179,7 +4201,7 @@ class TaskExecutor:
                 try:
                     logger.info(f"Progressively sending {len(typosquat_url_findings)} typosquat URL findings to /findings/typosquat-url")
                     typosquat_url_response = await self.async_data_api_client.post_typosquat_url_findings(
-                        typosquat_url_findings, program_name
+                        typosquat_url_findings, ingest_pid
                     )
                     url_success = typosquat_url_response.get("status") != "error"
 
@@ -4202,7 +4224,7 @@ class TaskExecutor:
                 try:
                     logger.info(f"Progressively sending {len(typosquat_screenshot_findings)} typosquat screenshot findings to /findings/typosquat-screenshot")
                     typosquat_screenshot_response = await self.async_data_api_client.post_typosquat_screenshot_findings(
-                        typosquat_screenshot_findings, program_name
+                        typosquat_screenshot_findings, ingest_pid
                     )
                     screenshot_success = typosquat_screenshot_response.get("status") != "error"
 
@@ -4226,7 +4248,7 @@ class TaskExecutor:
                 try:
                     logger.info(f"Progressively sending {len(broken_link_findings)} broken link findings to /findings/broken-links")
                     broken_link_success = await self.async_data_api_client.post_broken_link_findings(
-                        broken_link_findings, program_name
+                        broken_link_findings, ingest_pid
                     )
                     if broken_link_success:
                         logger.info(f"Progressively sent {len(broken_link_findings)} broken link findings")
@@ -4243,7 +4265,7 @@ class TaskExecutor:
                 try:
                     logger.info(f"Progressively sending {len(wpscan_findings)} WPScan findings to /findings/wpscan")
                     wpscan_response = await self.async_data_api_client.post_wpscan_findings_unified(
-                        wpscan_findings, program_name,
+                        wpscan_findings, ingest_pid,
                         workflow_id=None, step_name=step_name, execution_id=self.execution_id
                     )
                     wpscan_success = wpscan_response.get("status") != "error"

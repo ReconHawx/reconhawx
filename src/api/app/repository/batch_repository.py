@@ -23,6 +23,7 @@ import asyncio
 import logging
 from typing import List, Dict, Tuple
 
+from repository.program_repo import ProgramRepository
 from repository.subdomain_assets_repo import SubdomainAssetsRepository
 from repository.ip_assets_repo import IPAssetsRepository
 from repository.service_assets_repo import ServiceAssetsRepository
@@ -117,7 +118,7 @@ class BatchRepository:
     async def bulk_create_or_update_subdomains(
         cls,
         subdomains: List[Dict],
-        program_name: str,
+        program_id: str,
     ) -> Tuple[int, int, int, int, int, List[Dict], List[Dict], List[Dict], List[Dict]]:
         """
         Enhanced bulk create or update subdomains with rich event data collection
@@ -127,6 +128,11 @@ class BatchRepository:
             skipped_count, created_assets, updated_assets, skipped_assets,
             implicit_apex_created_events)
         """
+        prog = await ProgramRepository.get_program(program_id)
+        if not prog:
+            raise ValueError(f"Program id {program_id!r} not found")
+        program_name = prog["name"]
+
         success_count = 0
         failed_count = 0
         created_count = 0
@@ -140,7 +146,7 @@ class BatchRepository:
 
         if bulk_sql_subdomains_enabled():
             return await bulk_subdomains.bulk_create_or_update_subdomains_all(
-                subdomains, program_name
+                subdomains, program_id
             )
 
         chunk_results = await _process_items_in_thread_chunks(
@@ -235,7 +241,7 @@ class BatchRepository:
     async def bulk_create_or_update_ips(
         cls,
         ips: List[Dict],
-        program_name: str,
+        program_id: str,
     ) -> Tuple[int, int, int, int, int, List[Dict], List[Dict], List[Dict]]:
         """
         Enhanced bulk create or update IPs with rich event data collection
@@ -244,6 +250,11 @@ class BatchRepository:
             Tuple of (success_count, failed_count, created_count, updated_count,
             skipped_count, created_assets, updated_assets, skipped_assets)
         """
+        prog = await ProgramRepository.get_program(program_id)
+        if not prog:
+            raise ValueError(f"Program id {program_id!r} not found")
+        program_name = prog["name"]
+
         success_count = 0
         failed_count = 0
         created_count = 0
@@ -255,7 +266,7 @@ class BatchRepository:
         skipped_assets: List[Dict] = []
 
         if bulk_sql_ips_enabled():
-            return await bulk_ips.bulk_create_or_update_ips_all(ips, program_name)
+            return await bulk_ips.bulk_create_or_update_ips_all(ips, program_id)
 
         chunk_results = await _process_items_in_thread_chunks(
             ips,
@@ -344,7 +355,7 @@ class BatchRepository:
     async def bulk_create_or_update_services(
         cls,
         services: List[Dict],
-        program_name: str,
+        program_id: str,
     ) -> Tuple[int, int, int, int, int, List[Dict], List[Dict], List[Dict]]:
         """
         Enhanced bulk create or update services with rich event data collection
@@ -353,6 +364,11 @@ class BatchRepository:
             Tuple of (success_count, failed_count, created_count, updated_count,
             skipped_count, created_assets, updated_assets, skipped_assets)
         """
+        prog = await ProgramRepository.get_program(program_id)
+        if not prog:
+            raise ValueError(f"Program id {program_id!r} not found")
+        program_name = prog["name"]
+
         success_count = 0
         failed_count = 0
         created_count = 0
@@ -364,7 +380,7 @@ class BatchRepository:
 
         if bulk_sql_services_enabled():
             return await bulk_services.bulk_create_or_update_services_all(
-                services, program_name
+                services, program_id
             )
 
         chunk_results = await _process_items_in_thread_chunks(
@@ -469,7 +485,7 @@ class BatchRepository:
     async def bulk_create_or_update_urls(
         cls,
         urls: List[Dict],
-        program_name: str,
+        program_id: str,
     ) -> Tuple[int, int, int, int, int, List[Dict], List[Dict], List[Dict]]:
         """
         Enhanced bulk create or update URLs with rich event data collection
@@ -478,6 +494,11 @@ class BatchRepository:
             Tuple of (success_count, failed_count, created_count, updated_count,
             skipped_count, created_assets, updated_assets, skipped_assets)
         """
+        prog = await ProgramRepository.get_program(program_id)
+        if not prog:
+            raise ValueError(f"Program id {program_id!r} not found")
+        program_name = prog["name"]
+
         success_count = 0
         failed_count = 0
         created_count = 0
@@ -488,7 +509,7 @@ class BatchRepository:
         skipped_assets: List[Dict] = []
 
         if bulk_sql_urls_enabled() and not bulk_urls.urls_require_full_orm(urls):
-            return await bulk_urls.bulk_create_or_update_urls_all(urls, program_name)
+            return await bulk_urls.bulk_create_or_update_urls_all(urls, program_id)
 
         chunk_results = await _process_items_in_thread_chunks(
             urls,
@@ -590,7 +611,7 @@ class BatchRepository:
     async def bulk_create_or_update_certificates(
         cls,
         certificates: List[Dict],
-        program_name: str,
+        program_id: str,
     ) -> Tuple[int, int, int, int, int, List[Dict], List[Dict], List[Dict]]:
         """
         Enhanced bulk create or update certificates with rich event data collection
@@ -599,6 +620,11 @@ class BatchRepository:
             Tuple of (success_count, failed_count, created_count, updated_count,
             skipped_count, created_assets, updated_assets, skipped_assets)
         """
+        prog = await ProgramRepository.get_program(program_id)
+        if not prog:
+            raise ValueError(f"Program id {program_id!r} not found")
+        program_name = prog["name"]
+
         success_count = 0
         failed_count = 0
         created_count = 0
@@ -610,7 +636,7 @@ class BatchRepository:
 
         if bulk_sql_certificates_enabled():
             return await bulk_certificates.bulk_create_or_update_certificates_all(
-                certificates, program_name
+                certificates, program_id
             )
 
         chunk_results = await _process_items_in_thread_chunks(
@@ -713,7 +739,7 @@ class BatchRepository:
     async def bulk_create_or_update_apex_domains(
         cls,
         apex_domains: List[Dict],
-        program_name: str,
+        program_id: str,
     ) -> Tuple[int, int, int, int, int, List[Dict], List[Dict], List[Dict]]:
         """
         Enhanced bulk create or update apex domains with rich event data collection
@@ -722,6 +748,11 @@ class BatchRepository:
             Tuple of (success_count, failed_count, created_count, updated_count,
             skipped_count, created_assets, updated_assets, skipped_assets)
         """
+        prog = await ProgramRepository.get_program(program_id)
+        if not prog:
+            raise ValueError(f"Program id {program_id!r} not found")
+        program_name = prog["name"]
+
         success_count = 0
         failed_count = 0
         created_count = 0
@@ -733,7 +764,7 @@ class BatchRepository:
 
         if bulk_sql_apex_domains_enabled():
             return await bulk_apex.bulk_create_or_update_apex_domains_all(
-                apex_domains, program_name
+                apex_domains, program_id
             )
 
         chunk_results = await _process_items_in_thread_chunks(

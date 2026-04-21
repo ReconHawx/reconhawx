@@ -112,11 +112,19 @@ class ProgressiveStreamingConfig:
 class ProgressiveAssetStreamer:
     """Unified progressive streaming with asset/findings separation and step coordination"""
     
-    def __init__(self, data_api_client, asset_processor, config: Optional[ProgressiveStreamingConfig] = None, program_name: str = None):
+    def __init__(
+        self,
+        data_api_client,
+        asset_processor,
+        config: Optional[ProgressiveStreamingConfig] = None,
+        program_name: str = None,
+        program_id: str = None,
+    ):
         self.data_api_client = data_api_client
         self.asset_processor = asset_processor
         self.config = config or ProgressiveStreamingConfig.from_environment()
         self.program_name = program_name
+        self.program_id = (program_id or "").strip()
         self.send_semaphore = asyncio.Semaphore(self.config.max_concurrent_sends)
         self.sent_assets_count = 0
         self.failed_sends = 0
@@ -223,7 +231,7 @@ class ProgressiveAssetStreamer:
                 
                 response = await self.data_api_client.post_assets_unified(
                     regular_assets,
-                    program_name,
+                    self.program_id,
                     workflow_id,
                     step_name
                 )
@@ -243,7 +251,7 @@ class ProgressiveAssetStreamer:
                 
                 screenshot_response = await self.data_api_client._send_screenshot_assets(
                     screenshots, 
-                    program_name, 
+                    self.program_id, 
                     workflow_id, 
                     step_name
                 )
@@ -256,7 +264,7 @@ class ProgressiveAssetStreamer:
                 
                 findings_response = await self.data_api_client.post_nuclei_findings_unified(
                     nuclei_findings, 
-                    program_name, 
+                    self.program_id, 
                     workflow_id=workflow_id, 
                     step_name=step_name
                 )
@@ -449,9 +457,13 @@ class TaskExecutionManager:
         self.progressive_streamer = None  # Will be set when progressive streaming is enabled
         self.background_tasks = set()  # Track background tasks for proper cleanup
 
-    def enable_progressive_streaming(self, data_api_client, asset_processor, program_name: str = None):
+    def enable_progressive_streaming(
+        self, data_api_client, asset_processor, program_name: str = None, program_id: str = None
+    ):
         """Enable unified progressive streaming for this task execution manager"""
-        self.progressive_streamer = ProgressiveAssetStreamer(data_api_client, asset_processor, program_name=program_name)
+        self.progressive_streamer = ProgressiveAssetStreamer(
+            data_api_client, asset_processor, program_name=program_name, program_id=program_id
+        )
         # Progressive streaming initialized with step coordination
     
     async def wait_for_step_completion(self, step_name: str, timeout: Optional[int] = None) -> bool:
@@ -1265,7 +1277,7 @@ class AsyncDataApiClient:
             logger.error(f"Error fetching typosquat domains for program {program_name}: {e}")
             return {"items": [], "pagination": {}}
 
-    async def send_assets(self, step_name: str, program_name: str, workflow_id: str,
+    async def send_assets(self, step_name: str, program_id: str, workflow_id: str,
                          assets: Dict[str, List[Any]], asset_processor: AssetProcessor) -> tuple[bool, Dict[str, Any]]:
         """Send assets to the data-api service in chunks"""
         if not self.session:
@@ -1300,16 +1312,16 @@ class AsyncDataApiClient:
                 
                 # Handle special asset types differently
                 if asset_type == "screenshot":
-                    screenshot_success, screenshot_responses = await self._send_screenshot_assets(asset_list, program_name, workflow_id, step_name)
+                    screenshot_success, screenshot_responses = await self._send_screenshot_assets(asset_list, program_id, workflow_id, step_name)
                     success = screenshot_success and success
                     api_responses.extend(screenshot_responses)
                 elif asset_type == "typosquat_domain":
                     # Typosquat domains go to the findings endpoint
-                    success = await self._send_typosquat_assets(asset_list, program_name, workflow_id, step_name) and success
+                    success = await self._send_typosquat_assets(asset_list, program_id, workflow_id, step_name) and success
                 else:
                     # Add program_name to each asset and clean metadata
                     for asset in asset_list:
-                        asset['program_name'] = program_name
+                        asset['program_id'] = program_id
                         asset.pop('_id', None)
                         asset.pop('created_at', None)
                         asset.pop('updated_at', None)
@@ -1318,7 +1330,7 @@ class AsyncDataApiClient:
                     for i in range(0, len(asset_list), self.DATA_API_CHUNK_SIZE):
                         chunk = asset_list[i:i + self.DATA_API_CHUNK_SIZE]
                         chunk_payload = {
-                            "program_name": program_name,
+                            "program_id": program_id,
                             "workflow_id": workflow_id,
                             "step_name": step_name,
                             "assets": {asset_type: chunk}
@@ -1405,7 +1417,7 @@ class AsyncDataApiClient:
         logger.debug(f"Aggregated {len(api_responses)} API responses into combined summary")
         return aggregated
 
-    async def _send_screenshot_assets(self, asset_list: List[Any], program_name: str,
+    async def _send_screenshot_assets(self, asset_list: List[Any], program_id: str,
                                     workflow_id: str, step_name: str) -> tuple[bool, List[Dict[str, Any]]]:
         """Send screenshot assets to the specific screenshot endpoint"""
         try:
@@ -1436,7 +1448,7 @@ class AsyncDataApiClient:
                 data = aiohttp.FormData()
                 data.add_field('file', image_bytes, filename=filename, content_type='image/png')
                 data.add_field('url', url)
-                data.add_field('program_name', program_name)
+                data.add_field('program_id', program_id)
                 data.add_field('workflow_id', workflow_id)
                 data.add_field('step_name', step_name)
                 data.add_field('bucket_type', 'findings')
@@ -1579,7 +1591,7 @@ class AsyncDataApiClient:
             logger.error(f"Error in batch typosquat URL storage: {e}")
             return False
 
-    async def _send_typosquat_assets(self, asset_list: List[Any], program_name: str, 
+    async def _send_typosquat_assets(self, asset_list: List[Any], program_id: str,
                                     workflow_id: str, step_name: str) -> bool:
         """Send typosquat assets to the findings API endpoint"""
         try:
@@ -1596,7 +1608,7 @@ class AsyncDataApiClient:
                     continue
                 
                 # Add metadata
-                asset_dict['program_name'] = program_name
+                asset_dict['program_id'] = program_id
                 asset_dict.pop('_id', None)
                 asset_dict.pop('created_at', None)
                 asset_dict.pop('updated_at', None)
@@ -1775,7 +1787,7 @@ class SyncDataApiClient:
             logger.error(f"Error fetching {asset_type} assets for {program_name}: {e}")
             return {"items": [], "pagination": {}}
     
-    def send_assets(self, step_name: str, program_name: str, workflow_id: str,
+    def send_assets(self, step_name: str, program_id: str, workflow_id: str,
                    assets: Dict[str, List[Any]], asset_processor: AssetProcessor) -> tuple[bool, Dict[str, Any]]:
         """Send assets to the data-api service in chunks (synchronous version)"""
         try:
@@ -1810,11 +1822,11 @@ class SyncDataApiClient:
                 
                 # Handle special asset types differently
                 if asset_type == "screenshot":
-                    screenshot_success, screenshot_responses = self._send_screenshot_assets(asset_list, program_name, workflow_id, step_name)
+                    screenshot_success, screenshot_responses = self._send_screenshot_assets(asset_list, program_id, workflow_id, step_name)
                     success = screenshot_success and success
                     api_responses.extend(screenshot_responses)
                 elif asset_type == "typosquat_domain":
-                    success = self._send_typosquat_assets(asset_list, program_name, workflow_id, step_name) and success
+                    success = self._send_typosquat_assets(asset_list, program_id, workflow_id, step_name) and success
                 else:
                     # Add program_name to each asset and clean metadata
                     # for asset in asset_list:
@@ -1827,7 +1839,7 @@ class SyncDataApiClient:
                     for i in range(0, len(asset_list), self.DATA_API_CHUNK_SIZE):
                         chunk = asset_list[i:i + self.DATA_API_CHUNK_SIZE]
                         chunk_payload = {
-                            "program_name": program_name,
+                            "program_id": program_id,
                             "assets": {asset_type: chunk}
                         }
                         
@@ -1863,7 +1875,7 @@ class SyncDataApiClient:
             logger.error(f"Failed to send assets to data-api: {str(e)}")
             return False, {}
     
-    def send_typosquat_findings(self, step_name: str, program_name: str, workflow_id: str,
+    def send_typosquat_findings(self, step_name: str, program_id: str, workflow_id: str,
                                typosquat_findings: List[Any], asset_processor: AssetProcessor) -> tuple[bool, Dict[str, Any]]:
         """Send typosquat findings to dedicated typosquat findings endpoint (synchronous version)"""
         try:
@@ -1883,9 +1895,9 @@ class SyncDataApiClient:
                 if hasattr(finding, '__dict__'):
                     finding = asset_processor.serialize_asset(finding)
 
-            # Add program_name to each finding
+            # Add program_id to each finding
             for finding in typosquat_findings:
-                finding['program_name'] = program_name
+                finding['program_id'] = program_id
 
             # Determine batch size
             batch_size = min(self.DATA_API_CHUNK_SIZE, 100)
@@ -1898,10 +1910,10 @@ class SyncDataApiClient:
                 chunk = typosquat_findings[i:i + batch_size]
 
                 chunk_payload = {
-                    "program_name": program_name,
+                    "program_id": program_id,
                     "workflow_id": workflow_id,
                     "step_name": step_name,
-                    "findings": chunk
+                    "findings": {"typosquat_domain": chunk},
                 }
 
                 # Validate JSON serialization before sending
@@ -1918,7 +1930,7 @@ class SyncDataApiClient:
                     import requests
                     url = f"{self.base_url}/findings/typosquat"
                     headers = {
-                        "Authorization": f"Bearer {self.api_key}",
+                        "Authorization": f"Bearer {self.internal_api_key}",
                         "Content-Type": "application/json"
                     }
 
@@ -1954,8 +1966,8 @@ class SyncDataApiClient:
             logger.error(f"Failed to send typosquat findings to typosquat endpoint: {str(e)}")
             return False, {}
     
-    def _send_screenshot_assets(self, asset_list: List[Any], program_name: str,
-                               workflow_id: str, step_name: str) -> tuple[bool, List[Dict[str, Any]]]:
+    def _send_screenshot_assets(self, asset_list: List[Any], program_id: str,
+                                    workflow_id: str, step_name: str) -> tuple[bool, List[Dict[str, Any]]]:
         """Send screenshot assets to the specific screenshot endpoint"""
         try:
             success = True
@@ -1984,7 +1996,7 @@ class SyncDataApiClient:
                 files = {'file': (filename, image_bytes, 'image/png')}
                 data = {
                     'url': url,
-                    'program_name': program_name,
+                    'program_id': program_id,
                     'workflow_id': workflow_id,
                     'step_name': step_name,
                     'bucket_type': 'findings'
@@ -2066,7 +2078,7 @@ class SyncDataApiClient:
             logger.error(f"Error sending screenshot assets: {e}")
             return False, []
 
-    def _send_typosquat_assets(self, asset_list: List[Any], program_name: str) -> bool:
+    def _send_typosquat_assets(self, asset_list: List[Any], program_id: str, workflow_id: str = None, step_name: str = None) -> bool:
         """Send typosquat assets to the findings API endpoint (synchronous version)"""
         try:
             success = True
@@ -2088,10 +2100,14 @@ class SyncDataApiClient:
             # Clean the payload for JSON serialization BEFORE validation
             #asset_dict = self._deep_clean_payload_for_json(asset_dict)
             # Validate JSON serialization after cleaning
-            payload = {
-                "program_name": program_name,
-                "findings": {"typosquat_domain": asset_list}
+            payload: Dict[str, Any] = {
+                "program_id": program_id,
+                "findings": {"typosquat_domain": asset_list},
             }
+            if workflow_id:
+                payload["workflow_id"] = workflow_id
+            if step_name:
+                payload["step_name"] = step_name
             # try:
             #     import json
             #     json.dumps(asset_dict)

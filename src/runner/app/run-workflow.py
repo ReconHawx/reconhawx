@@ -410,6 +410,8 @@ def _serialize_input_data(input_data: Any) -> Any:
 
 async def _log_task_execution(
     execution_id: str,
+    program_id: str,
+    program_name: Optional[str],
     step_name: str,
     task_def,
     task_start_time: datetime,
@@ -466,8 +468,11 @@ async def _log_task_execution(
         
         log_object = {
             "execution_id": execution_id,
-            "task_execution_logs": [task_log_entry]
+            "program_id": program_id,
+            "task_execution_logs": [task_log_entry],
         }
+        if program_name:
+            log_object["program_name"] = program_name
         
         requests.post(
             f"{os.getenv('API_URL')}/workflows/executions/{execution_id}/logs",
@@ -480,7 +485,7 @@ async def _log_task_execution(
         # Don't fail workflow if logging fails
 
 
-async def run_step(task_executor, program_name, workflow_id, step_num, step, step_outputs):
+async def run_step(task_executor, program_id: str, program_name, workflow_id, step_num, step, step_outputs):
     """Run all tasks in a step concurrently and coordinate with asset processing"""
     execution_id = os.getenv('EXECUTION_ID')
     
@@ -488,7 +493,8 @@ async def run_step(task_executor, program_name, workflow_id, step_num, step, ste
     task_futures = []
     task_metadata = []  # Track task metadata for logging
     
-    # Set program_name early so _prepare_input_data_async can use it for logging
+    # Set program context early so _prepare_input_data_async can use it for logging
+    task_executor.program_id = program_id
     task_executor.program_name = program_name
     
     for task_def in step.tasks:
@@ -550,6 +556,8 @@ async def run_step(task_executor, program_name, workflow_id, step_num, step, ste
                 if execution_id:
                     await _log_task_execution(
                         execution_id,
+                        program_id,
+                        program_name,
                         step.name,
                         task_def,
                         task_start_time,
@@ -573,6 +581,8 @@ async def run_step(task_executor, program_name, workflow_id, step_num, step, ste
                     if execution_id:
                         await _log_task_execution(
                             execution_id,
+                            program_id,
+                            program_name,
                             step.name,
                             task_def,
                             task_start_time,
@@ -588,6 +598,8 @@ async def run_step(task_executor, program_name, workflow_id, step_num, step, ste
                     if execution_id:
                         await _log_task_execution(
                             execution_id,
+                            program_id,
+                            program_name,
                             step.name,
                             task_def,
                             task_start_time,
@@ -604,6 +616,8 @@ async def run_step(task_executor, program_name, workflow_id, step_num, step, ste
                 if execution_id:
                     await _log_task_execution(
                         execution_id,
+                        program_id,
+                        program_name,
                         step.name,
                         task_def,
                         task_start_time,
@@ -780,6 +794,13 @@ async def run_workflow(workflow_data):
         
         workflow = Workflow(**workflow_data)
 
+        wf_program_id = (workflow_data.get("program_id") or "").strip()
+        if not wf_program_id:
+            raise ValueError(
+                "workflow_data must include program_id (UUID). "
+                "Upgrade the API/workflow snapshot; name-only workflows are no longer supported for runner ingestion."
+            )
+
         # Debug: Check if output_mode and use_proxy are preserved after parsing
         for step_idx, step in enumerate(workflow.steps):
             logger.info(f"  Step {step_idx}: {step.name}")
@@ -827,13 +848,17 @@ async def run_workflow(workflow_data):
         
         # Set workflow context for input mapping resolution
         task_executor.set_workflow_context(workflow)
-        
+        task_executor.program_id = wf_program_id
+
         # Enable unified progressive streaming in task execution manager
         if hasattr(task_executor, 'execution_manager') and task_executor.execution_manager:
-            task_executor.execution_manager.enable_progressive_streaming(api_client, None, workflow.program_name)
+            task_executor.execution_manager.enable_progressive_streaming(
+                api_client, None, workflow.program_name, wf_program_id
+            )
         
         workflow_outputs = {
             "program_name": workflow.program_name,
+            "program_id": wf_program_id,
             "workflow_name": workflow.name,
             "workflow_id": workflow_id,  # Can be None for custom workflows
             "execution_id": execution_id,  # Always valid
@@ -884,6 +909,7 @@ async def run_workflow(workflow_data):
             try:
                 step_outputs[step.name] = await run_step(
                     task_executor,
+                    wf_program_id,
                     workflow.program_name,
                     workflow_id,
                     step_num,
@@ -999,8 +1025,22 @@ async def run_workflow(workflow_data):
                 
                 log_object = {
                     "execution_id": execution_id,
-                    "runner_pod_output": f"\n--- Final Workflow Output ---\n{final_pod_output}\n\n--- End Workflow ---\n"
+                    "runner_pod_output": f"\n--- Final Workflow Output ---\n{final_pod_output}\n\n--- End Workflow ---\n",
                 }
+                _pod_pid = (
+                    workflow_outputs.get("program_id")
+                    if isinstance(workflow_outputs, dict)
+                    else None
+                ) or (os.getenv("PROGRAM_ID") or "").strip()
+                if _pod_pid:
+                    log_object["program_id"] = str(_pod_pid)
+                _pod_pname = (
+                    workflow_outputs.get("program_name")
+                    if isinstance(workflow_outputs, dict)
+                    else None
+                ) or os.getenv("PROGRAM_NAME")
+                if _pod_pname:
+                    log_object["program_name"] = _pod_pname
                 try:
                     requests.post(
                         f"{os.getenv('API_URL')}/workflows/executions/{execution_id}/logs",

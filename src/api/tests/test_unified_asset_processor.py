@@ -15,7 +15,11 @@ from services.unified_asset_processor import (
 async def test_publish_completion_emits_implicit_apex_domain_created():
     """Subdomain batches can carry implicit apex creates; they must publish apex_domain.created."""
     processor = UnifiedAssetProcessor()
-    result = UnifiedProcessingResult(job_id="job-test", program_name="prog-a")
+    result = UnifiedProcessingResult(
+        job_id="job-test",
+        program_id="00000000-0000-0000-0000-0000000000aa",
+        program_name="prog-a",
+    )
     result.asset_results["subdomain"] = AssetBatchResult(
         asset_type="subdomain",
         total_count=1,

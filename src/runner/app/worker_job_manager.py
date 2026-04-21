@@ -217,6 +217,8 @@ class WorkerJobManager:
             {"name": "WORKFLOW_ID", "value": self.workflow_id},
             {"name": "PROGRAM_NAME", "value": self.program_name}
         ]
+        if self.program_id:
+            required_env.append({"name": "PROGRAM_ID", "value": self.program_id})
         
         for env_var in required_env:
             # Only add if not already present

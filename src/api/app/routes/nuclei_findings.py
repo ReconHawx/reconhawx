@@ -47,9 +47,9 @@ async def receive_nuclei_findings(request: Request, background_tasks: Background
         logger.info(f"Received nuclei data with keys: {list(data.keys())}")
 
         # Validate required fields
-        program_name = data.get("program_name")
-        if not program_name:
-            raise HTTPException(status_code=400, detail="program_name is required")
+        program_id = data.get("program_id")
+        if not program_id or not str(program_id).strip():
+            raise HTTPException(status_code=400, detail="program_id is required")
 
         # Extract and prepare nuclei data only
         nuclei_data = await _extract_nuclei_data(data)
@@ -63,7 +63,7 @@ async def receive_nuclei_findings(request: Request, background_tasks: Background
 
         # Use unified findings processor - always async, never blocks API
         job_id = await unified_findings_processor.process_findings_unified(
-            nuclei_data, program_name
+            nuclei_data, str(program_id).strip()
         )
 
         logger.info(f"Started unified nuclei processing job {job_id} with {total_nuclei} findings")
@@ -98,7 +98,8 @@ async def _extract_nuclei_data(data: Dict[str, Any]) -> Dict[str, List]:
             logger.info("Processing nuclei findings")
             for finding in findings["nuclei"]:
                 if isinstance(finding, dict):
-                    # Add program name to finding if available
+                    if data.get("program_id"):
+                        finding["program_id"] = data["program_id"]
                     if "program_name" in data:
                         finding["program_name"] = data["program_name"]
                     try:

@@ -357,7 +357,7 @@ class KubernetesService:
             # Core workflow configuration
             {"name": "WORKFLOW_ID", "value": workflow_data.get('workflow_id', '')},
             {"name": "EXECUTION_ID", "value": execution_id},
-            {"name": "PROGRAM_NAME", "value": workflow_data['program_name']},
+            {"name": "PROGRAM_NAME", "value": (workflow_data.get("program_name") or "")},
             {"name": "WORKFLOW_NAME", "value": workflow_data['name']},
             {"name": "WORKFLOW_STEPS", "value": str(workflow_data['steps'])},
 
@@ -958,7 +958,7 @@ class KubernetesService:
                 # Core workflow configuration
                 client.V1EnvVar(name="WORKFLOW_ID", value=workflow_data.get('workflow_id', '')),
                 client.V1EnvVar(name="EXECUTION_ID", value=execution_id),
-                client.V1EnvVar(name="PROGRAM_NAME", value=workflow_data['program_name']),
+                client.V1EnvVar(name="PROGRAM_NAME", value=(workflow_data.get("program_name") or "")),
                 client.V1EnvVar(name="WORKFLOW_NAME", value=workflow_data['name']),
                 client.V1EnvVar(name="WORKFLOW_STEPS", value=str(workflow_data['steps'])),
 

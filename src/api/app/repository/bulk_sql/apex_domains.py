@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
+import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Tuple
 
@@ -18,7 +19,7 @@ from repository.bulk_sql.scope import domain_in_scope
 logger = logging.getLogger(__name__)
 
 
-def upsert_apex_domains_chunk(program_name: str, items: List[Dict[str, Any]]) -> Dict[str, Any]:
+def upsert_apex_domains_chunk(program_id: str, items: List[Dict[str, Any]]) -> Dict[str, Any]:
     session = BatchSessionLocal()
     success_count = failed_count = 0
     created_count = updated_count = skipped_count = 0
@@ -28,11 +29,14 @@ def upsert_apex_domains_chunk(program_name: str, items: List[Dict[str, Any]]) ->
     t0 = time.perf_counter()
 
     try:
-        program = session.execute(
-            select(Program).where(Program.name == program_name)
-        ).scalar_one_or_none()
+        try:
+            pid = uuid.UUID(str(program_id))
+        except ValueError as e:
+            raise ValueError(f"Invalid program_id: {program_id!r}") from e
+        program = session.execute(select(Program).where(Program.id == pid)).scalar_one_or_none()
         if not program:
-            raise ValueError(f"Program {program_name!r} not found")
+            raise ValueError(f"Program id {program_id!r} not found")
+        program_name_disp = program.name
 
         domain_regex = program.domain_regex or []
         oos_regex = program.out_of_scope_regex or []
@@ -45,12 +49,12 @@ def upsert_apex_domains_chunk(program_name: str, items: List[Dict[str, Any]]) ->
         for raw in items:
             item = dict(raw)
             if not item.get("program_name"):
-                item["program_name"] = program_name
+                item["program_name"] = program_name_disp
             nm = item.get("name")
             if not nm:
                 failed_count += 1
                 skipped_assets.append(
-                    {"name": "unknown", "program_name": program_name, "error": "missing_name"}
+                    {"name": "unknown", "program_name": program_name_disp, "error": "missing_name"}
                 )
                 continue
             if nm not in dedup:
@@ -85,7 +89,7 @@ def upsert_apex_domains_chunk(program_name: str, items: List[Dict[str, Any]]) ->
                     skipped_assets.append(
                         {
                             "name": nm,
-                            "program_name": program_name,
+                            "program_name": program_name_disp,
                             "error": "out_of_scope",
                         }
                     )
@@ -113,7 +117,7 @@ def upsert_apex_domains_chunk(program_name: str, items: List[Dict[str, Any]]) ->
                         "asset_type": "apex_domain",
                         "record_id": str(ad.id),
                         "name": nm,
-                        "program_name": program_name,
+                        "program_name": program_name_disp,
                         "notes": item.get("notes"),
                         "whois_status": item.get("whois_status"),
                     }
@@ -142,7 +146,7 @@ def upsert_apex_domains_chunk(program_name: str, items: List[Dict[str, Any]]) ->
                             "asset_type": "apex_domain",
                             "record_id": str(ex.id),
                             "name": nm,
-                            "program_name": program_name,
+                            "program_name": program_name_disp,
                             "notes": item.get("notes"),
                             "whois_status": item.get("whois_status"),
                         }
@@ -154,7 +158,7 @@ def upsert_apex_domains_chunk(program_name: str, items: List[Dict[str, Any]]) ->
                         {
                             "record_id": str(ex.id),
                             "name": nm,
-                            "program_name": program_name,
+                            "program_name": program_name_disp,
                             "reason": "duplicate",
                         }
                     )
@@ -168,8 +172,8 @@ def upsert_apex_domains_chunk(program_name: str, items: List[Dict[str, Any]]) ->
         session.close()
 
     logger.info(
-        "bulk_sql apex chunk program=%s items=%s created=%s updated=%s skipped=%s wall_ms=%.1f",
-        program_name,
+        "bulk_sql apex chunk program_id=%s items=%s created=%s updated=%s skipped=%s wall_ms=%.1f",
+        program_id,
         len(items),
         created_count,
         updated_count,
@@ -191,7 +195,7 @@ def upsert_apex_domains_chunk(program_name: str, items: List[Dict[str, Any]]) ->
 
 async def bulk_create_or_update_apex_domains_all(
     apex_domains: List[Dict[str, Any]],
-    program_name: str,
+    program_id: str,
 ) -> Tuple[int, int, int, int, int, List[Dict], List[Dict], List[Dict]]:
     import asyncio
 
@@ -201,7 +205,7 @@ async def bulk_create_or_update_apex_domains_all(
     ua: List[Dict] = []
     sa: List[Dict] = []
     for i in range(0, len(apex_domains), chunk_sz):
-        p = await asyncio.to_thread(upsert_apex_domains_chunk, program_name, apex_domains[i : i + chunk_sz])
+        p = await asyncio.to_thread(upsert_apex_domains_chunk, program_id, apex_domains[i : i + chunk_sz])
         sc += p["success_count"]
         fc += p["failed_count"]
         cc += p["created_count"]

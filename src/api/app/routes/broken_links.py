@@ -3,6 +3,7 @@ from typing import Dict, Any, Optional, List
 import logging
 from models.findings import BrokenLink, BrokenLinkCreate, BrokenLinkUpdate, BrokenLinkSearchRequest
 from repository.broken_links_repo import BrokenLinksRepository
+from repository.program_repo import ProgramRepository
 from auth.dependencies import get_current_user_from_middleware, get_user_accessible_programs, require_admin_or_manager
 from models.user_postgres import UserResponse
 
@@ -16,10 +17,14 @@ async def create_broken_link(
 ):
     """Create a new broken link finding or update if exists"""
     try:
-        # Check program access
+        prog = await ProgramRepository.get_program(finding.program_id)
+        if not prog:
+            raise HTTPException(status_code=400, detail="Program not found for program_id")
+
+        # Check program access (permissions are keyed by program name)
         accessible = get_user_accessible_programs(current_user)
         if not current_user.is_superuser and 'admin' not in current_user.roles:
-            if finding.program_name not in (accessible or []):
+            if prog.get("name") not in (accessible or []):
                 raise HTTPException(status_code=403, detail="Access denied to this program")
         
         finding_dict = finding.model_dump()

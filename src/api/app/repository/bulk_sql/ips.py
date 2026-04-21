@@ -19,7 +19,7 @@ from repository.bulk_sql.scope import domain_in_scope
 logger = logging.getLogger(__name__)
 
 
-def upsert_ips_chunk(program_name: str, items: List[Dict[str, Any]]) -> Dict[str, Any]:
+def upsert_ips_chunk(program_id: str, items: List[Dict[str, Any]]) -> Dict[str, Any]:
     session = BatchSessionLocal()
     success_count = failed_count = 0
     created_count = updated_count = skipped_count = out_of_scope_count = 0
@@ -29,11 +29,14 @@ def upsert_ips_chunk(program_name: str, items: List[Dict[str, Any]]) -> Dict[str
     t0 = time.perf_counter()
 
     try:
-        program = session.execute(
-            select(Program).where(Program.name == program_name)
-        ).scalar_one_or_none()
+        try:
+            pid = uuid.UUID(str(program_id))
+        except ValueError as e:
+            raise ValueError(f"Invalid program_id: {program_id!r}") from e
+        program = session.execute(select(Program).where(Program.id == pid)).scalar_one_or_none()
         if not program:
-            raise ValueError(f"Program {program_name!r} not found")
+            raise ValueError(f"Program id {program_id!r} not found")
+        program_name_disp = program.name
 
         now_naive = datetime.now(timezone.utc).replace(tzinfo=None)
         domain_regex = program.domain_regex or []
@@ -46,14 +49,14 @@ def upsert_ips_chunk(program_name: str, items: List[Dict[str, Any]]) -> Dict[str
         for raw in items:
             item = dict(raw)
             if not item.get("program_name"):
-                item["program_name"] = program_name
+                item["program_name"] = program_name_disp
             addr = item.get("ip")
             if not addr:
                 failed_count += 1
                 skipped_assets.append(
                     {
                         "ip_address": "unknown",
-                        "program_name": program_name,
+                        "program_name": program_name_disp,
                         "error": "missing_ip",
                     }
                 )
@@ -80,7 +83,7 @@ def upsert_ips_chunk(program_name: str, items: List[Dict[str, Any]]) -> Dict[str
                 skipped_assets.append(
                     {
                         "ip_address": saddr,
-                        "program_name": program_name,
+                        "program_name": program_name_disp,
                         "reason": "out_of_scope",
                     }
                 )
@@ -189,7 +192,7 @@ def upsert_ips_chunk(program_name: str, items: List[Dict[str, Any]]) -> Dict[str
                         "asset_type": "ip",
                         "record_id": str(iid),
                         "ip_address": addr,
-                        "program_name": program_name,
+                        "program_name": program_name_disp,
                         "ptr_record": item.get("ptr"),
                         "service_provider": item.get("service_provider"),
                         "notes": item.get("notes"),
@@ -203,7 +206,7 @@ def upsert_ips_chunk(program_name: str, items: List[Dict[str, Any]]) -> Dict[str
                         "asset_type": "ip",
                         "record_id": str(iid),
                         "ip_address": addr,
-                        "program_name": program_name,
+                        "program_name": program_name_disp,
                         "ptr_record": item.get("ptr"),
                         "service_provider": item.get("service_provider"),
                         "notes": item.get("notes"),
@@ -215,7 +218,7 @@ def upsert_ips_chunk(program_name: str, items: List[Dict[str, Any]]) -> Dict[str
                     {
                         "record_id": str(iid),
                         "ip_address": addr,
-                        "program_name": program_name,
+                        "program_name": program_name_disp,
                         "reason": "duplicate",
                     }
                 )
@@ -229,8 +232,8 @@ def upsert_ips_chunk(program_name: str, items: List[Dict[str, Any]]) -> Dict[str
         session.close()
 
     logger.info(
-        "bulk_sql ips chunk program=%s items=%s created=%s updated=%s skipped=%s oos=%s wall_ms=%.1f",
-        program_name,
+        "bulk_sql ips chunk program_id=%s items=%s created=%s updated=%s skipped=%s oos=%s wall_ms=%.1f",
+        program_id,
         len(items),
         created_count,
         updated_count,
@@ -280,14 +283,14 @@ def _pack(
 
 async def bulk_create_or_update_ips_all(
     ips: List[Dict[str, Any]],
-    program_name: str,
+    program_id: str,
 ) -> Tuple[int, int, int, int, int, List[Dict], List[Dict], List[Dict]]:
     import asyncio
 
     chunk_sz = sql_chunk_size()
     agg = _empty_ip_agg()
     for i in range(0, len(ips), chunk_sz):
-        part = await asyncio.to_thread(upsert_ips_chunk, program_name, ips[i : i + chunk_sz])
+        part = await asyncio.to_thread(upsert_ips_chunk, program_id, ips[i : i + chunk_sz])
         _merge_ip_agg(agg, part)
         await asyncio.sleep(0)
     return (

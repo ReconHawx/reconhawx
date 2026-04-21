@@ -9,6 +9,7 @@ from models.postgres import (
     URL, Screenshot, ScreenshotFile
 )
 from db import get_db_session
+from utils.program_resolve import resolve_program_from_payload
 from utils.query_filters import ProgramAccessMixin
 
 logger = logging.getLogger(__name__)
@@ -223,10 +224,24 @@ class ScreenshotRepository(ProgramAccessMixin):
                 raise
 
     @staticmethod
-    async def store_screenshot(image_data: bytes, filename: str, content_type: str, program_name: Optional[str] = None, url: Optional[str] = None, workflow_id: Optional[str] = None, step_name: Optional[str] = None, extracted_text: Optional[str] = None) -> str:
-        """Store screenshot"""
+    async def store_screenshot(
+        image_data: bytes,
+        filename: str,
+        content_type: str,
+        program_id: str,
+        program_name: Optional[str] = None,
+        url: Optional[str] = None,
+        workflow_id: Optional[str] = None,
+        step_name: Optional[str] = None,
+        extracted_text: Optional[str] = None,
+    ) -> str:
+        """Store screenshot (``program_id`` is required; ``program_name`` is optional override for display)."""
         async with get_db_session() as db:
             try:
+                program = resolve_program_from_payload(db, {"program_id": program_id, "program_name": program_name})
+                pname = program.name
+                pid = program.id
+
                 import hashlib
                 image_hash = hashlib.sha256(image_data).hexdigest()
                 
@@ -244,7 +259,7 @@ class ScreenshotRepository(ProgramAccessMixin):
                             port=parsed.port or (443 if parsed.scheme == "https" else 80),
                             path=parsed.path or "/",
                             scheme=parsed.scheme or "http",
-                            program_id=None  # No program association for screenshots
+                            program_id=pid,
                         )
                         db.add(url_record)
                         db.flush()
@@ -268,8 +283,8 @@ class ScreenshotRepository(ProgramAccessMixin):
                         existing_screenshot.workflow_id = workflow_id
                     if step_name:
                         existing_screenshot.step_name = step_name
-                    if program_name:
-                        existing_screenshot.program_name = program_name
+                    existing_screenshot.program_id = pid
+                    existing_screenshot.program_name = pname
                     if extracted_text is not None:
                         existing_screenshot.extracted_text = extracted_text
                     
@@ -293,7 +308,8 @@ class ScreenshotRepository(ProgramAccessMixin):
                     image_hash=image_hash,
                     workflow_id=workflow_id,
                     step_name=step_name,
-                    program_name=program_name,
+                    program_name=pname,
+                    program_id=pid,
                     capture_count=1,
                     extracted_text=extracted_text
                 )

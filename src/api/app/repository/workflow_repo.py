@@ -146,16 +146,30 @@ class WorkflowRepository:
         if "workflow_name" in log_object:
             mapped_data["workflow_name"] = log_object["workflow_name"]
         
-        # Map program_name to program_id
-        if "program_name" in log_object:
+        # Map program_id (preferred) or program_name to workflow_logs.program_id
+        if log_object.get("program_id"):
+            import uuid as _uuid
+
+            raw_pid = log_object["program_id"]
+            try:
+                mapped_data["program_id"] = (
+                    _uuid.UUID(str(raw_pid)) if not isinstance(raw_pid, _uuid.UUID) else raw_pid
+                )
+            except ValueError as e:
+                logger.error("Invalid program_id on workflow log: %r", raw_pid)
+                raise ValueError(f"Invalid program_id: {raw_pid!r}") from e
+        elif log_object.get("program_name"):
             program_name = log_object["program_name"]
-            # Look up program by name to get program_id
             program = db_session.query(Program).filter(Program.name == program_name).first()
             if program:
                 mapped_data["program_id"] = program.id
             else:
                 logger.error(f"Program not found with name: {program_name}")
                 raise ValueError(f"Program not found with name: {program_name}")
+        elif existing_log is not None and getattr(existing_log, "program_id", None):
+            mapped_data["program_id"] = existing_log.program_id
+        else:
+            raise ValueError("workflow log requires program_id or program_name")
         
         # Map result to status
         if "result" in log_object:

@@ -68,6 +68,7 @@ class Workflow(BaseModel):
     """Base workflow model - supports both old and new formats"""
     name: str
     program_name: Optional[str] = None  # Optional for workflow definitions, null means global
+    program_id: Optional[str] = None  # UUID string; required at run time for API ingestion
     steps: List[Union[Step, WorkflowStep]]
     
     # New format fields

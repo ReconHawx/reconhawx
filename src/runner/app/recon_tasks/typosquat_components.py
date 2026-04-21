@@ -843,6 +843,7 @@ class ScreenshotProcessor:
     
     def __init__(self):
         self.program_name = os.getenv('PROGRAM_NAME', 'default')
+        self.program_id = (os.getenv('PROGRAM_ID') or '').strip()
     
     async def upload_screenshot(self, session: aiohttp.ClientSession, screenshot_path: str, url: str, headers: Dict[str, str], api_url: str, extracted_text: Optional[str] = None):
         """Upload a screenshot to the typosquat-screenshot endpoint"""
@@ -861,7 +862,9 @@ class ScreenshotProcessor:
         try:
             form_data = aiohttp.FormData()
             form_data.add_field('file', screenshot_data, filename=os.path.basename(screenshot_path), content_type='image/png')
-            form_data.add_field('program_name', self.program_name)
+            if not self.program_id:
+                raise RuntimeError("PROGRAM_ID is required for typosquat screenshot uploads")
+            form_data.add_field('program_id', self.program_id)
             form_data.add_field('url', url)
             form_data.add_field('workflow_id', os.getenv('WORKFLOW_ID', 'unknown'))
             form_data.add_field('step_name', 'typosquat_detection')

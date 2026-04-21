@@ -4,6 +4,8 @@ globs: ["src/runner/app/recon_tasks/*.py", "src/runner/app/task_executor.py"]
 
 # Runner Task Implementation Patterns
 
+**Ingestion:** tasks and `DataAPIClient` / `SyncDataApiClient` must pass **`program_id`** (from `TaskExecutor.program_id` / env `PROGRAM_ID`) to the API for assets and findings—not `program_name` alone.
+
 ## Task Architecture
 
 Tasks are the core execution units in the workflow runner. Each task:

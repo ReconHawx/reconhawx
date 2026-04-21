@@ -444,12 +444,13 @@ class Screenshot(Base):
     image_hash = Column(String(255), nullable=False, index=True)  # For deduplication
     workflow_id = Column(String(255), index=True)  # Track which workflow captured it
     step_name = Column(String(255), index=True)  # Step name that captured it
-    program_name = Column(String(255), index=True)  # Associated program name
+    program_name = Column(String(255), index=True)  # Associated program name (display / legacy)
+    program_id = Column(UUID(as_uuid=True), ForeignKey("programs.id", ondelete="SET NULL"), nullable=True, index=True)
     capture_count = Column(Integer, default=1)  # How many times this exact image was captured
     last_captured_at = Column(DateTime, default=utcnow, nullable=False)
     created_at = Column(DateTime, default=utcnow, nullable=False)
     extracted_text = Column(Text, nullable=True)  # HTML-derived page text from gowitness JSONL
-    
+
     # Relationships
     url = relationship("URL", back_populates="screenshots")
     file = relationship("ScreenshotFile", back_populates="screenshot", uselist=False)
@@ -1355,6 +1356,7 @@ class TyposquatScreenshot(Base):
     created_at = Column(DateTime, default=utcnow, nullable=False, index=True)
     step_name = Column(String(255), nullable=True, index=True)
     program_name = Column(String(255), nullable=True, index=True)
+    program_id = Column(UUID(as_uuid=True), ForeignKey("programs.id", ondelete="SET NULL"), nullable=True, index=True)
     extracted_text = Column(Text, nullable=True)  # HTML-derived page text from gowitness JSONL
     source_created_at = Column(DateTime, nullable=True, index=True)  # When screenshot was taken at source (e.g. RecordedFuture)
     source = Column(String(255), nullable=True, index=True)  # Source of screenshot (e.g. "recordedfuture")

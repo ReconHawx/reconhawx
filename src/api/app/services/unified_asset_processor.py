@@ -24,6 +24,7 @@ from repository.service_assets_repo import ServiceAssetsRepository
 from repository.certificate_assets_repo import CertificateAssetsRepository
 from repository.url_assets_repo import UrlAssetsRepository
 from repository.batch_repository import BatchRepository
+from repository.program_repo import ProgramRepository
 from .event_publisher import publisher
 
 logger = logging.getLogger(__name__)
@@ -63,7 +64,8 @@ class AssetBatchResult:
 class UnifiedProcessingResult:
     """Complete result of unified asset processing"""
     job_id: str
-    program_name: str
+    program_id: str
+    program_name: Optional[str] = None
     status: str = "processing"
     total_assets: int = 0
     processed_assets: int = 0
@@ -102,33 +104,33 @@ class UnifiedAssetProcessor:
     async def process_assets_unified(
         self,
         asset_data: Dict[str, List],
-        program_name: str
+        program_id: str
     ) -> str:
         """
         Main unified processing method.
 
         Args:
             asset_data: Dict with asset types as keys and lists of assets as values
-            program_name: Name of the program these assets belong to
+            program_id: UUID of the program these assets belong to
 
         Returns:
             job_id: Unique identifier for tracking the processing job
         """
-        if not program_name:
-            raise ValueError("program_name is required for asset processing")
+        if not program_id or not str(program_id).strip():
+            raise ValueError("program_id is required for asset processing")
 
         # Generate job ID and create result object
         job_id = str(uuid.uuid4())
         result = UnifiedProcessingResult(
             job_id=job_id,
-            program_name=program_name,
+            program_id=str(program_id).strip(),
             total_assets=self._calculate_total_assets(asset_data)
         )
 
         self.active_jobs[job_id] = result
 
         # Start async processing
-        asyncio.create_task(self._process_assets_async(job_id, asset_data, program_name))
+        asyncio.create_task(self._process_assets_async(job_id, asset_data, str(program_id).strip()))
 
         logger.info(f"Started unified asset processing job {job_id} with {result.total_assets} assets")
         return job_id
@@ -165,6 +167,7 @@ class UnifiedAssetProcessor:
 
         response = {
             "job_id": result.job_id,
+            "program_id": result.program_id,
             "program_name": result.program_name,
             "status": result.status,
             "total_assets": result.total_assets,
@@ -210,13 +213,19 @@ class UnifiedAssetProcessor:
         self,
         job_id: str,
         asset_data: Dict[str, List],
-        program_name: str
+        program_id: str
     ):
         """Internal async processing method"""
         start_time = time.time()
         result = self.active_jobs[job_id]
 
         try:
+            prog = await ProgramRepository.get_program(program_id)
+            if not prog:
+                raise ValueError(f"Program id {program_id!r} not found")
+            program_name = prog["name"]
+            result.program_name = program_name
+
             # Process asset types in optimal order
             for asset_type in self._get_processing_order():
                 if asset_type in asset_data and asset_data[asset_type]:
@@ -224,7 +233,7 @@ class UnifiedAssetProcessor:
 
                     # Process this asset type
                     batch_result = await self._process_asset_type(
-                        asset_type, assets, program_name
+                        asset_type, assets, program_id, program_name
                     )
 
                     result.asset_results[asset_type] = batch_result
@@ -257,7 +266,8 @@ class UnifiedAssetProcessor:
         self,
         asset_type: str,
         assets: List[Dict],
-        program_name: str
+        program_id: str,
+        program_name: str,
     ) -> AssetBatchResult:
         """Process a single asset type"""
         result = AssetBatchResult(asset_type=asset_type, total_count=len(assets))
@@ -271,7 +281,7 @@ class UnifiedAssetProcessor:
                 return result
 
             # Always use bulk processing for rich event data collection
-            await self._process_bulk(handler, assets, program_name, result)
+            await self._process_bulk(handler, assets, program_id, result)
 
         except Exception as e:
             logger.error(f"Error processing {asset_type} batch: {e}")
@@ -284,13 +294,13 @@ class UnifiedAssetProcessor:
         self,
         handler: Callable,
         assets: List[Dict],
-        program_name: str,
+        program_id: str,
         result: AssetBatchResult
     ):
         """Process assets using bulk operations"""
         try:
             # Use bulk repository methods for large batches
-            bulk_result = await handler(assets, program_name, bulk=True)
+            bulk_result = await handler(assets, program_id, bulk=True)
 
             # Handle different return formats based on asset type
             if len(bulk_result) == 9:
@@ -623,14 +633,14 @@ class UnifiedAssetProcessor:
             logger.error(f"Failed to publish {action} asset events for {asset_type}: {e}")
 
     # Asset type handlers
-    async def _handle_ip_assets(self, assets: List[Dict], program_name: str, bulk: bool = False) -> Tuple:
+    async def _handle_ip_assets(self, assets: List[Dict], program_id: str, bulk: bool = False) -> Tuple:
         """Handle IP asset processing"""
         # Handle the case where assets is a single dict instead of a list
         if isinstance(assets, dict):
             assets = [assets]
 
         if bulk:
-            return await BatchRepository.bulk_create_or_update_ips(assets, program_name)
+            return await BatchRepository.bulk_create_or_update_ips(assets, program_id)
         else:
             result_tuple = await IPAssetsRepository.create_or_update_ip(assets[0])
             if len(result_tuple) == 3:
@@ -641,25 +651,25 @@ class UnifiedAssetProcessor:
                 event_data = None
             return record_id, action, event_data
 
-    async def _handle_subdomain_assets(self, assets: List[Dict], program_name: str, bulk: bool = False) -> Tuple:
+    async def _handle_subdomain_assets(self, assets: List[Dict], program_id: str, bulk: bool = False) -> Tuple:
         """Handle subdomain asset processing"""
         # Handle the case where assets is a single dict instead of a list
         if isinstance(assets, dict):
             assets = [assets]
 
         if bulk:
-            return await BatchRepository.bulk_create_or_update_subdomains(assets, program_name)
+            return await BatchRepository.bulk_create_or_update_subdomains(assets, program_id)
         else:
             return await SubdomainAssetsRepository.create_or_update_subdomain(assets[0])
 
-    async def _handle_url_assets(self, assets: List[Dict], program_name: str, bulk: bool = False) -> Tuple:
+    async def _handle_url_assets(self, assets: List[Dict], program_id: str, bulk: bool = False) -> Tuple:
         """Handle URL asset processing"""
         # Handle the case where assets is a single dict instead of a list
         if isinstance(assets, dict):
             assets = [assets]
 
         if bulk:
-            return await BatchRepository.bulk_create_or_update_urls(assets, program_name)
+            return await BatchRepository.bulk_create_or_update_urls(assets, program_id)
         else:
             result_tuple = await UrlAssetsRepository.create_or_update_url(assets[0])
             if len(result_tuple) == 3:
@@ -670,14 +680,14 @@ class UnifiedAssetProcessor:
                 event_data = None
             return record_id, action, event_data
 
-    async def _handle_service_assets(self, assets: List[Dict], program_name: str, bulk: bool = False) -> Tuple:
+    async def _handle_service_assets(self, assets: List[Dict], program_id: str, bulk: bool = False) -> Tuple:
         """Handle service asset processing"""
         # Handle the case where assets is a single dict instead of a list
         if isinstance(assets, dict):
             assets = [assets]
 
         if bulk:
-            return await BatchRepository.bulk_create_or_update_services(assets, program_name)
+            return await BatchRepository.bulk_create_or_update_services(assets, program_id)
         else:
             result_tuple = await ServiceAssetsRepository.create_or_update_service(assets[0])
             if len(result_tuple) == 3:
@@ -688,14 +698,14 @@ class UnifiedAssetProcessor:
                 event_data = None
             return record_id, action, event_data
 
-    async def _handle_certificate_assets(self, assets: List[Dict], program_name: str, bulk: bool = False) -> Tuple:
+    async def _handle_certificate_assets(self, assets: List[Dict], program_id: str, bulk: bool = False) -> Tuple:
         """Handle certificate asset processing"""
         # Handle the case where assets is a single dict instead of a list
         if isinstance(assets, dict):
             assets = [assets]
 
         if bulk:
-            return await BatchRepository.bulk_create_or_update_certificates(assets, program_name)
+            return await BatchRepository.bulk_create_or_update_certificates(assets, program_id)
         else:
             result_tuple = await CertificateAssetsRepository.create_or_update_certificate(assets[0])
             if len(result_tuple) == 3:
@@ -707,14 +717,14 @@ class UnifiedAssetProcessor:
             return record_id, action, event_data
 
 
-    async def _handle_apex_domain_assets(self, assets: List[Dict], program_name: str, bulk: bool = False) -> Tuple:
+    async def _handle_apex_domain_assets(self, assets: List[Dict], program_id: str, bulk: bool = False) -> Tuple:
         """Handle apex domain asset processing"""
         # Handle the case where assets is a single dict instead of a list
         if isinstance(assets, dict):
             assets = [assets]
 
         if bulk:
-            return await BatchRepository.bulk_create_or_update_apex_domains(assets, program_name)
+            return await BatchRepository.bulk_create_or_update_apex_domains(assets, program_id)
         else:
             result_tuple = await ApexDomainAssetsRepository.create_or_update_apex_domain(assets[0])
             if len(result_tuple) == 3:

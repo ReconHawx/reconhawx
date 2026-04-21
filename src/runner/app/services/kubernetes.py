@@ -272,6 +272,16 @@ class KubernetesService:
                     name="PROGRAM_NAME",
                     value=job_params["program_name"]
                 ),
+                *(
+                    [
+                        client.V1EnvVar(
+                            name="PROGRAM_ID",
+                            value=str(job_params["program_id"]),
+                        )
+                    ]
+                    if job_params.get("program_id")
+                    else []
+                ),
                 client.V1EnvVar(
                     name="STEP_NUM",
                     value=str(job_params["step_num"])

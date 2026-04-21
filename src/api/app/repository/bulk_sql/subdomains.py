@@ -100,7 +100,7 @@ def _merge_subdomain_row(
     }
 
 
-def upsert_subdomains_chunk(program_name: str, items: List[Dict[str, Any]]) -> Dict[str, Any]:
+def upsert_subdomains_chunk(program_id: str, items: List[Dict[str, Any]]) -> Dict[str, Any]:
     """
     Process one chunk synchronously inside a worker thread.
 
@@ -116,11 +116,14 @@ def upsert_subdomains_chunk(program_name: str, items: List[Dict[str, Any]]) -> D
     implicit_apex_created_events: List[Dict] = []
 
     try:
-        program = session.execute(
-            select(Program).where(Program.name == program_name)
-        ).scalar_one_or_none()
+        try:
+            pid = uuid.UUID(str(program_id))
+        except ValueError as e:
+            raise ValueError(f"Invalid program_id: {program_id!r}") from e
+        program = session.execute(select(Program).where(Program.id == pid)).scalar_one_or_none()
         if not program:
-            raise ValueError(f"Program {program_name!r} not found")
+            raise ValueError(f"Program id {program_id!r} not found")
+        program_name_disp = program.name
 
         domain_regex = program.domain_regex or []
         oos_regex = program.out_of_scope_regex or []
@@ -131,14 +134,14 @@ def upsert_subdomains_chunk(program_name: str, items: List[Dict[str, Any]]) -> D
         for raw in items:
             item = dict(raw)
             if not item.get("program_name"):
-                item["program_name"] = program_name
+                item["program_name"] = program_name_disp
             hostname = item.get("name")
             if not hostname:
                 failed_count += 1
                 skipped_assets.append(
                     {
                         "name": "unknown",
-                        "program_name": program_name,
+                        "program_name": program_name_disp,
                         "error": "missing_name",
                     }
                 )
@@ -150,7 +153,7 @@ def upsert_subdomains_chunk(program_name: str, items: List[Dict[str, Any]]) -> D
                 skipped_assets.append(
                     {
                         "name": hostname,
-                        "program_name": program_name,
+                        "program_name": program_name_disp,
                         "error": "invalid_domain",
                     }
                 )
@@ -167,7 +170,7 @@ def upsert_subdomains_chunk(program_name: str, items: List[Dict[str, Any]]) -> D
                 skipped_assets.append(
                     {
                         "name": hostname,
-                        "program_name": program_name,
+                        "program_name": program_name_disp,
                         "reason": "out_of_scope",
                     }
                 )
@@ -225,7 +228,7 @@ def upsert_subdomains_chunk(program_name: str, items: List[Dict[str, Any]]) -> D
                     "asset_type": "apex_domain",
                     "record_id": str(row.id),
                     "name": row.name,
-                    "program_name": program_name,
+                    "program_name": program_name_disp,
                     "notes": None,
                     "whois_status": None,
                 }
@@ -258,7 +261,7 @@ def upsert_subdomains_chunk(program_name: str, items: List[Dict[str, Any]]) -> D
                 skipped_assets.append(
                     {
                         "name": hostname,
-                        "program_name": program_name,
+                        "program_name": program_name_disp,
                         "error": "apex_resolution_failed",
                     }
                 )
@@ -335,7 +338,7 @@ def upsert_subdomains_chunk(program_name: str, items: List[Dict[str, Any]]) -> D
             apex_label = item.get("apex_domain") or extract_apex_domain(hostname)
             base_event = {
                 "name": hostname,
-                "program_name": program_name,
+                "program_name": program_name_disp,
                 "apex_domain": apex_label,
                 "ip": item.get("ip", []),
                 "cname_record": item.get("cname_record"),
@@ -396,7 +399,7 @@ def upsert_subdomains_chunk(program_name: str, items: List[Dict[str, Any]]) -> D
                     {
                         "record_id": str(sid),
                         "name": hostname,
-                        "program_name": program_name,
+                        "program_name": program_name_disp,
                         "reason": "duplicate",
                     }
                 )
@@ -407,7 +410,7 @@ def upsert_subdomains_chunk(program_name: str, items: List[Dict[str, Any]]) -> D
                     {
                         "record_id": str(sid),
                         "name": hostname,
-                        "program_name": program_name,
+                        "program_name": program_name_disp,
                         "reason": "duplicate",
                     }
                 )
@@ -443,7 +446,7 @@ def upsert_subdomains_chunk(program_name: str, items: List[Dict[str, Any]]) -> D
     dt = time.perf_counter() - t0
     logger.info(
         "bulk_sql subdomains chunk: program=%s items=%s wall_ms=%.1f created=%s updated=%s skipped=%s oos=%s failed=%s",
-        program_name,
+        program_id,
         len(items),
         dt * 1000,
         created_count,
@@ -567,7 +570,7 @@ def _bulk_link_subdomain_ips(
 
 async def bulk_create_or_update_subdomains_all(
     subdomains: List[Dict[str, Any]],
-    program_name: str,
+    program_id: str,
 ) -> Tuple[int, int, int, int, int, List[Dict], List[Dict], List[Dict], List[Dict]]:
     """Split into SQL chunks and run each in a worker thread."""
     import asyncio
@@ -586,7 +589,7 @@ async def bulk_create_or_update_subdomains_all(
 
     for i in range(0, len(subdomains), chunk_sz):
         chunk = subdomains[i : i + chunk_sz]
-        part = await asyncio.to_thread(upsert_subdomains_chunk, program_name, chunk)
+        part = await asyncio.to_thread(upsert_subdomains_chunk, program_id, chunk)
         success_count += part["success_count"]
         failed_count += part["failed_count"]
         created_count += part["created_count"]
@@ -600,8 +603,8 @@ async def bulk_create_or_update_subdomains_all(
         await asyncio.sleep(0)
 
     logger.info(
-        "bulk_sql subdomains total: program=%s rows=%s success=%s failed=%s created=%s updated=%s skipped=%s oos=%s",
-        program_name,
+        "bulk_sql subdomains total: program_id=%s rows=%s success=%s failed=%s created=%s updated=%s skipped=%s oos=%s",
+        program_id,
         len(subdomains),
         success_count,
         failed_count,

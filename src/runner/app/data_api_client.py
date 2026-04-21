@@ -205,14 +205,14 @@ class DataAPIClient:
             logger.debug(f"Converting unknown type {type(obj)} to string: {obj}")
             return str(obj)
     
-    async def post_assets_unified(self, assets: Dict[Any, List[Any]], program_name: str,
+    async def post_assets_unified(self, assets: Dict[Any, List[Any]], program_id: str,
                                  workflow_id: str = None, step_name: str = None) -> Dict[str, Any]:
         """
         Post assets using the new unified API endpoint.
 
         Args:
             assets: Dictionary of assets by type (keys can be AssetType enums)
-            program_name: Name of the program for the assets
+            program_id: UUID of the program for the assets
             workflow_id: Optional workflow ID for tracking
             step_name: Optional step name for tracking
 
@@ -230,7 +230,7 @@ class DataAPIClient:
 
             # Prepare the unified request payload
             payload = {
-                "program_name": program_name,
+                "program_id": program_id,
                 "assets": serializable_assets
             }
 
@@ -244,7 +244,7 @@ class DataAPIClient:
             total_asset_count = sum(len(asset_list) for asset_list in serializable_assets.values())
             dynamic_timeout = self._calculate_timeout_for_assets(total_asset_count)
 
-            logger.debug(f"Posting {total_asset_count} assets to unified API for program: {program_name} with {dynamic_timeout}s timeout")
+            logger.debug(f"Posting {total_asset_count} assets to unified API for program_id={program_id} with {dynamic_timeout}s timeout")
 
             # Create timeout config for this specific request
             timeout = aiohttp.ClientTimeout(total=dynamic_timeout)
@@ -269,14 +269,14 @@ class DataAPIClient:
             logger.exception(f"Unexpected error posting assets to unified API: {e}")
             raise
     
-    async def post_wpscan_findings_unified(self, wpscan_findings: List[Any], program_name: str,
+    async def post_wpscan_findings_unified(self, wpscan_findings: List[Any], program_id: str,
                                           workflow_id: str = None, step_name: str = None, execution_id: str = None) -> Dict[str, Any]:
         """
         Post WPScan findings using the dedicated WPScan findings API endpoint.
 
         Args:
             wpscan_findings: List of WPScan findings to post
-            program_name: Name of the program for the findings
+            program_id: UUID of the program for the findings
             workflow_id: Optional workflow ID for tracking
             step_name: Optional step name for tracking
             execution_id: Optional workflow execution ID for tracking
@@ -284,7 +284,7 @@ class DataAPIClient:
         Returns:
             API response containing processing mode and job_id if background processing
         """
-        logger.info(f"🔄 WPSCAN API CLIENT: post_wpscan_findings_unified called with {len(wpscan_findings)} findings, program_name={program_name}")
+        logger.info(f"🔄 WPSCAN API CLIENT: post_wpscan_findings_unified called with {len(wpscan_findings)} findings, program_id={program_id}")
         await self.initialize()
 
         try:
@@ -313,7 +313,7 @@ class DataAPIClient:
 
             # Prepare the WPScan findings request payload
             payload = {
-                "program_name": program_name,
+                "program_id": program_id,
                 "findings": {"wpscan": serializable_findings}
             }
 
@@ -340,7 +340,7 @@ class DataAPIClient:
             finding_count = len(serializable_findings)
             dynamic_timeout = self._calculate_timeout_for_assets(finding_count)
 
-            logger.debug(f"Posting {finding_count} WPScan findings to dedicated API for program: {program_name} with {dynamic_timeout}s timeout")
+            logger.debug(f"Posting {finding_count} WPScan findings to dedicated API for program_id={program_id} with {dynamic_timeout}s timeout")
 
             # Create timeout config for this specific request
             timeout = aiohttp.ClientTimeout(total=dynamic_timeout)
@@ -365,14 +365,14 @@ class DataAPIClient:
             logger.exception(f"Unexpected error posting WPScan findings to dedicated API: {e}")
             raise
 
-    async def post_nuclei_findings_unified(self, nuclei_findings: List[Any], program_name: str,
+    async def post_nuclei_findings_unified(self, nuclei_findings: List[Any], program_id: str,
                                           workflow_id: str = None, step_name: str = None, execution_id: str = None) -> Dict[str, Any]:
         """
         Post nuclei findings using the dedicated nuclei findings API endpoint.
 
         Args:
             nuclei_findings: List of nuclei findings to post
-            program_name: Name of the program for the findings
+            program_id: UUID of the program for the findings
             workflow_id: Optional workflow ID for tracking
             step_name: Optional step name for tracking
             execution_id: Optional workflow execution ID for tracking
@@ -380,7 +380,7 @@ class DataAPIClient:
         Returns:
             API response containing processing mode and job_id if background processing
         """
-        logger.info(f"🔄 NUCLEI API CLIENT: post_nuclei_findings_unified called with {len(nuclei_findings)} findings, program_name={program_name}")
+        logger.info(f"🔄 NUCLEI API CLIENT: post_nuclei_findings_unified called with {len(nuclei_findings)} findings, program_id={program_id}")
         await self.initialize()
 
         try:
@@ -407,7 +407,7 @@ class DataAPIClient:
 
             # Prepare the nuclei findings request payload
             payload = {
-                "program_name": program_name,
+                "program_id": program_id,
                 "findings": {"nuclei": serializable_findings}
             }
 
@@ -450,7 +450,7 @@ class DataAPIClient:
             finding_count = len(serializable_findings)
             dynamic_timeout = self._calculate_timeout_for_assets(finding_count)
 
-            logger.debug(f"Posting {finding_count} nuclei findings to dedicated API for program: {program_name} with {dynamic_timeout}s timeout")
+            logger.debug(f"Posting {finding_count} nuclei findings to dedicated API for program_id={program_id} with {dynamic_timeout}s timeout")
 
             # Create timeout config for this specific request
             timeout = aiohttp.ClientTimeout(total=dynamic_timeout)
@@ -475,13 +475,13 @@ class DataAPIClient:
             logger.exception(f"Unexpected error posting nuclei findings to dedicated API: {e}")
             raise
 
-    async def post_typosquat_domain_findings(self, typosquat_findings: List[Any], program_name: str) -> Dict[str, Any]:
+    async def post_typosquat_domain_findings(self, typosquat_findings: List[Any], program_id: str) -> Dict[str, Any]:
         """
         Post typosquat domain findings to /findings/typosquat endpoint.
 
         Args:
             typosquat_findings: List of typosquat domain findings to post
-            program_name: Name of the program for the findings
+            program_id: UUID of the program for the findings
 
         Returns:
             API response with job status or error information
@@ -507,14 +507,14 @@ class DataAPIClient:
                     serializable_findings.append(self._deep_clean_for_json(finding))
 
             payload = {
-                "program_name": program_name,
+                "program_id": program_id,
                 "findings": {"typosquat_domain": serializable_findings}
             }
 
             finding_count = len(serializable_findings)
             dynamic_timeout = min(max(30, finding_count * 2), 300)
 
-            logger.debug(f"Posting {finding_count} typosquat domain findings to /findings/typosquat for program: {program_name}")
+            logger.debug(f"Posting {finding_count} typosquat domain findings to /findings/typosquat for program_id={program_id}")
 
             async with self.session.post(
                 f"{self.base_url}/findings/typosquat",
@@ -537,13 +537,13 @@ class DataAPIClient:
             logger.exception(f"Unexpected error posting typosquat domain findings: {e}")
             return {"status": "error", "error": f"Unexpected error: {e}"}
 
-    async def post_broken_link_findings(self, broken_link_findings: List[Any], program_name: str) -> bool:
+    async def post_broken_link_findings(self, broken_link_findings: List[Any], program_id: str) -> bool:
         """
         Post broken link findings to /findings/broken-links endpoint.
 
         Args:
             broken_link_findings: List of broken link findings to post
-            program_name: Name of the program for the findings
+            program_id: UUID of the program for the findings
 
         Returns:
             True if successful, False otherwise
@@ -573,13 +573,13 @@ class DataAPIClient:
             finding_count = len(serializable_findings)
             dynamic_timeout = min(max(30, finding_count * 2), 300)
 
-            logger.debug(f"Posting {finding_count} broken link findings to /findings/broken-links for program: {program_name}")
+            logger.debug(f"Posting {finding_count} broken link findings to /findings/broken-links for program_id={program_id}")
 
             # Post each finding individually
             success_count = 0
             for finding in serializable_findings:
                 try:
-                    finding['program_name'] = program_name
+                    finding['program_id'] = program_id
                     async with self.session.post(
                         f"{self.base_url}/findings/broken-links",
                         json=finding,
@@ -607,14 +607,14 @@ class DataAPIClient:
             logger.exception(f"Unexpected error posting broken link findings: {e}")
             return False
 
-    async def post_typosquat_url_findings(self, typosquat_findings: List[Any], program_name: str) -> Dict[str, Any]:
+    async def post_typosquat_url_findings(self, typosquat_findings: List[Any], program_id: str) -> Dict[str, Any]:
         """
         Post typosquat URL findings to /findings/typosquat-url endpoint.
         This endpoint accepts one finding at a time, so we send each individually.
 
         Args:
             typosquat_findings: List of typosquat URL findings to post
-            program_name: Name of the program for the findings
+            program_id: UUID of the program for the findings
 
         Returns:
             API response with job status or error information (aggregated from all individual posts)
@@ -627,7 +627,7 @@ class DataAPIClient:
 
         try:
             finding_count = len(typosquat_findings)
-            logger.debug(f"Posting {finding_count} typosquat URL findings individually to /findings/typosquat-url for program: {program_name}")
+            logger.debug(f"Posting {finding_count} typosquat URL findings individually to /findings/typosquat-url for program_id={program_id}")
 
             success_count = 0
             failed_count = 0
@@ -658,8 +658,7 @@ class DataAPIClient:
                             errors.append(f"Finding {idx+1}: missing typosquat domain reference")
                             continue
 
-                    # Add program_name to each finding
-                    finding_dict['program_name'] = program_name
+                    finding_dict['program_id'] = program_id
 
                     # Post individual finding
                     async with self.session.post(
@@ -706,14 +705,13 @@ class DataAPIClient:
             logger.exception(f"Unexpected error posting typosquat URL findings: {e}")
             return {"status": "error", "error": f"Unexpected error: {e}"}
 
-    async def post_typosquat_screenshot_findings(self, typosquat_findings: List[Any], program_name: str) -> Dict[str, Any]:
+    async def post_typosquat_screenshot_findings(self, typosquat_findings: List[Any], program_id: str) -> Dict[str, Any]:
         """
-        Post typosquat screenshot findings to /findings/typosquat-screenshot endpoint.
-        This endpoint accepts one finding at a time, so we send each individually.
+        Post typosquat screenshot findings to /findings/typosquat-screenshot (multipart form, one request per finding).
 
         Args:
-            typosquat_findings: List of typosquat screenshot findings to post
-            program_name: Name of the program for the findings
+            typosquat_findings: List of dict-like findings with url and base64 image_data (or nested screenshot_data)
+            program_id: UUID of the program for the findings
 
         Returns:
             API response with job status or error information (aggregated from all individual posts)
@@ -724,77 +722,108 @@ class DataAPIClient:
 
         await self.initialize()
 
-        try:
-            finding_count = len(typosquat_findings)
-            logger.debug(f"Posting {finding_count} typosquat screenshot findings individually to /findings/typosquat-screenshot for program: {program_name}")
+        import base64
 
-            success_count = 0
-            failed_count = 0
-            errors = []
+        finding_count = len(typosquat_findings)
+        logger.debug(
+            f"Posting {finding_count} typosquat screenshot findings to /findings/typosquat-screenshot for program_id={program_id}"
+        )
 
-            # Post each finding individually
-            for idx, finding in enumerate(typosquat_findings):
+        success_count = 0
+        failed_count = 0
+        errors: List[str] = []
+
+        headers = {}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+
+        for idx, finding in enumerate(typosquat_findings):
+            try:
+                if hasattr(finding, "model_dump"):
+                    finding_dict = finding.model_dump(by_alias=True, exclude_none=True)
+                    finding_dict = self._deep_clean_for_json(finding_dict)
+                elif hasattr(finding, "to_dict"):
+                    finding_dict = self._deep_clean_for_json(finding.to_dict())
+                elif hasattr(finding, "__dict__"):
+                    finding_dict = self._deep_clean_for_json(finding.__dict__)
+                else:
+                    finding_dict = self._deep_clean_for_json(finding)
+
+                url = finding_dict.get("url") or ""
+                image_b64 = finding_dict.get("image_data")
+                if not image_b64 and isinstance(finding_dict.get("screenshot_data"), dict):
+                    image_b64 = finding_dict["screenshot_data"].get("image_data")
+                filename = finding_dict.get("filename") or "screenshot.png"
+                if isinstance(finding_dict.get("screenshot_data"), dict) and finding_dict["screenshot_data"].get("filename"):
+                    filename = finding_dict["screenshot_data"]["filename"]
+
+                if not url or not image_b64:
+                    failed_count += 1
+                    errors.append(f"Finding {idx+1}: missing url or image_data")
+                    continue
+
                 try:
-                    # Convert finding to dictionary
-                    if hasattr(finding, 'model_dump'):
-                        finding_dict = finding.model_dump(by_alias=True, exclude_none=True)
-                        finding_dict = self._deep_clean_for_json(finding_dict)
-                    elif hasattr(finding, 'to_dict'):
-                        finding_dict = self._deep_clean_for_json(finding.to_dict())
-                    elif hasattr(finding, '__dict__'):
-                        finding_dict = self._deep_clean_for_json(finding.__dict__)
-                    else:
-                        finding_dict = self._deep_clean_for_json(finding)
-
-                    # Add program_name to each finding
-                    finding_dict['program_name'] = program_name
-
-                    # Post individual finding
-                    async with self.session.post(
-                        f"{self.base_url}/findings/typosquat-screenshot",
-                        json=finding_dict,
-                        timeout=aiohttp.ClientTimeout(total=30)
-                    ) as response:
-                        if response.status == 200:
-                            result = await response.json()
-                            success_count += 1
-                            logger.debug(f"Typosquat screenshot finding {idx+1}/{finding_count} posted successfully")
-                        else:
-                            error_text = await response.text()
-                            failed_count += 1
-                            errors.append(f"Finding {idx+1}: {response.status} - {error_text}")
-                            logger.error(f"API error posting typosquat screenshot finding {idx+1}/{finding_count}: {response.status} - {error_text}")
-
+                    image_bytes = base64.b64decode(image_b64)
                 except Exception as e:
                     failed_count += 1
-                    errors.append(f"Finding {idx+1}: {str(e)}")
-                    logger.error(f"Error posting typosquat screenshot finding {idx+1}/{finding_count}: {e}")
+                    errors.append(f"Finding {idx+1}: invalid base64 image_data ({e})")
+                    continue
 
-            # Return aggregated result
-            if success_count > 0:
-                logger.info(f"Posted {success_count}/{finding_count} typosquat screenshot findings successfully")
-                return {
-                    "status": "success" if failed_count == 0 else "partial",
-                    "processing_mode": "sync",
-                    "summary": {
-                        "total": finding_count,
-                        "successful": success_count,
-                        "failed": failed_count,
-                        "errors": errors if errors else []
-                    }
-                }
-            else:
-                return {
-                    "status": "error",
-                    "error": f"Failed to post all {finding_count} findings",
-                    "errors": errors
-                }
+                data = aiohttp.FormData()
+                data.add_field("file", image_bytes, filename=filename, content_type="image/png")
+                data.add_field("url", url)
+                data.add_field("program_id", program_id)
+                if finding_dict.get("workflow_id"):
+                    data.add_field("workflow_id", str(finding_dict["workflow_id"]))
+                if finding_dict.get("step_name"):
+                    data.add_field("step_name", str(finding_dict["step_name"]))
+                if finding_dict.get("extracted_text"):
+                    data.add_field("extracted_text", str(finding_dict["extracted_text"]))
+                if finding_dict.get("source_created_at"):
+                    data.add_field("source_created_at", str(finding_dict["source_created_at"]))
+                if finding_dict.get("source"):
+                    data.add_field("source", str(finding_dict["source"]))
 
-        except Exception as e:
-            logger.exception(f"Unexpected error posting typosquat screenshot findings: {e}")
-            return {"status": "error", "error": f"Unexpected error: {e}"}
-    
-    async def _send_screenshot_assets(self, asset_list: List[Any], program_name: str,
+                async with self.session.post(
+                    f"{self.base_url}/findings/typosquat-screenshot",
+                    data=data,
+                    headers=headers,
+                    timeout=aiohttp.ClientTimeout(total=120),
+                ) as response:
+                    if response.status == 200:
+                        success_count += 1
+                        logger.debug(f"Typosquat screenshot finding {idx+1}/{finding_count} posted successfully")
+                    else:
+                        error_text = await response.text()
+                        failed_count += 1
+                        errors.append(f"Finding {idx+1}: {response.status} - {error_text}")
+                        logger.error(
+                            f"API error posting typosquat screenshot finding {idx+1}/{finding_count}: {response.status} - {error_text}"
+                        )
+            except Exception as e:
+                failed_count += 1
+                errors.append(f"Finding {idx+1}: {str(e)}")
+                logger.error(f"Error posting typosquat screenshot finding {idx+1}/{finding_count}: {e}")
+
+        if success_count > 0:
+            logger.info(f"Posted {success_count}/{finding_count} typosquat screenshot findings successfully")
+            return {
+                "status": "success" if failed_count == 0 else "partial",
+                "processing_mode": "sync",
+                "summary": {
+                    "total": finding_count,
+                    "successful": success_count,
+                    "failed": failed_count,
+                    "errors": errors if errors else [],
+                },
+            }
+        return {
+            "status": "error",
+            "error": f"Failed to post all {finding_count} findings",
+            "errors": errors,
+        }
+
+    async def _send_screenshot_assets(self, asset_list: List[Any], program_id: str,
                                     workflow_id: str, step_name: str) -> tuple[bool, List[Dict[str, Any]]]:
         """Send screenshot assets to the specific screenshot endpoint"""
         try:
@@ -826,7 +855,7 @@ class DataAPIClient:
                 data = aiohttp.FormData()
                 data.add_field('file', image_bytes, filename=filename, content_type='image/png')
                 data.add_field('url', url)
-                data.add_field('program_name', program_name)
+                data.add_field('program_id', program_id)
                 data.add_field('workflow_id', workflow_id)
                 data.add_field('step_name', step_name)
                 data.add_field('bucket_type', 'findings')

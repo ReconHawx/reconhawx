@@ -18,7 +18,7 @@ from repository.bulk_sql.config import sql_chunk_size
 logger = logging.getLogger(__name__)
 
 
-def upsert_services_chunk(program_name: str, items: List[Dict[str, Any]]) -> Dict[str, Any]:
+def upsert_services_chunk(program_id: str, items: List[Dict[str, Any]]) -> Dict[str, Any]:
     session = BatchSessionLocal()
     success_count = failed_count = 0
     created_count = updated_count = skipped_count = 0
@@ -28,11 +28,14 @@ def upsert_services_chunk(program_name: str, items: List[Dict[str, Any]]) -> Dic
     t0 = time.perf_counter()
 
     try:
-        program = session.execute(
-            select(Program).where(Program.name == program_name)
-        ).scalar_one_or_none()
+        try:
+            pid = uuid.UUID(str(program_id))
+        except ValueError as e:
+            raise ValueError(f"Invalid program_id: {program_id!r}") from e
+        program = session.execute(select(Program).where(Program.id == pid)).scalar_one_or_none()
         if not program:
-            raise ValueError(f"Program {program_name!r} not found")
+            raise ValueError(f"Program id {program_id!r} not found")
+        program_name_disp = program.name
 
         now_naive = datetime.now(timezone.utc).replace(tzinfo=None)
 
@@ -41,7 +44,7 @@ def upsert_services_chunk(program_name: str, items: List[Dict[str, Any]]) -> Dic
         for raw in items:
             item = dict(raw)
             if not item.get("program_name"):
-                item["program_name"] = program_name
+                item["program_name"] = program_name_disp
             ip_s = item.get("ip")
             port = item.get("port")
             if ip_s is None or port is None:
@@ -50,7 +53,7 @@ def upsert_services_chunk(program_name: str, items: List[Dict[str, Any]]) -> Dic
                     {
                         "ip": str(ip_s),
                         "port": str(port),
-                        "program_name": program_name,
+                        "program_name": program_name_disp,
                         "error": "missing_ip_or_port",
                     }
                 )
@@ -63,7 +66,7 @@ def upsert_services_chunk(program_name: str, items: List[Dict[str, Any]]) -> Dic
                     {
                         "ip": str(ip_s),
                         "port": str(port),
-                        "program_name": program_name,
+                        "program_name": program_name_disp,
                         "error": "invalid_port",
                     }
                 )
@@ -132,7 +135,7 @@ def upsert_services_chunk(program_name: str, items: List[Dict[str, Any]]) -> Dic
                     {
                         "ip": ip_s,
                         "port": port_i,
-                        "program_name": program_name,
+                        "program_name": program_name_disp,
                         "error": "ip_resolution_failed",
                     }
                 )
@@ -260,7 +263,7 @@ def upsert_services_chunk(program_name: str, items: List[Dict[str, Any]]) -> Dic
                         "record_id": str(sid),
                         "ip": item.get("ip"),
                         "port": item.get("port"),
-                        "program_name": program_name,
+                        "program_name": program_name_disp,
                         "service_name": item.get("service_name"),
                         "protocol": item.get("protocol", "tcp"),
                         "banner": item.get("banner"),
@@ -275,7 +278,7 @@ def upsert_services_chunk(program_name: str, items: List[Dict[str, Any]]) -> Dic
                         "record_id": str(sid),
                         "ip": item.get("ip"),
                         "port": item.get("port"),
-                        "program_name": program_name,
+                        "program_name": program_name_disp,
                         "service_name": item.get("service_name"),
                         "protocol": item.get("protocol", "tcp"),
                         "banner": item.get("banner"),
@@ -288,7 +291,7 @@ def upsert_services_chunk(program_name: str, items: List[Dict[str, Any]]) -> Dic
                         "record_id": str(sid),
                         "ip": item.get("ip"),
                         "port": item.get("port"),
-                        "program_name": program_name,
+                        "program_name": program_name_disp,
                         "reason": "duplicate",
                     }
                 )
@@ -302,8 +305,8 @@ def upsert_services_chunk(program_name: str, items: List[Dict[str, Any]]) -> Dic
         session.close()
 
     logger.info(
-        "bulk_sql services chunk program=%s items=%s created=%s updated=%s skipped=%s wall_ms=%.1f",
-        program_name,
+        "bulk_sql services chunk program_id=%s items=%s created=%s updated=%s skipped=%s wall_ms=%.1f",
+        program_id,
         len(items),
         created_count,
         updated_count,
@@ -349,7 +352,7 @@ def _pack(
 
 async def bulk_create_or_update_services_all(
     services: List[Dict[str, Any]],
-    program_name: str,
+    program_id: str,
 ) -> Tuple[int, int, int, int, int, List[Dict], List[Dict], List[Dict]]:
     import asyncio
 
@@ -359,7 +362,7 @@ async def bulk_create_or_update_services_all(
     ua: List[Dict] = []
     sa: List[Dict] = []
     for i in range(0, len(services), chunk_sz):
-        p = await asyncio.to_thread(upsert_services_chunk, program_name, services[i : i + chunk_sz])
+        p = await asyncio.to_thread(upsert_services_chunk, program_id, services[i : i + chunk_sz])
         sc += p["success_count"]
         fc += p["failed_count"]
         cc += p["created_count"]

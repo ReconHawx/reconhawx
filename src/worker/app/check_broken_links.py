@@ -337,9 +337,11 @@ async def check_broken_links():
     api_base_url = os.getenv("API_URL", "http://api:8000")
     internal_api_key = os.getenv("INTERNAL_SERVICE_API_KEY", "")
     program_name = os.getenv("PROGRAM_NAME", "")
+    program_id = (os.getenv("PROGRAM_ID") or "").strip()
     logger.info(f"API base URL: {api_base_url}")
     logger.info(f"Internal API key: {internal_api_key}")
     logger.info(f"Program name: {program_name}")
+    logger.info(f"Program id: {program_id}")
     logger.info(f"Inputs: {inputs}")
     results = []
     
@@ -382,7 +384,10 @@ async def check_broken_links():
         # Collect valid findings
         for finding in findings_list:
             if finding and isinstance(finding, dict):
-                finding["program_name"] = program_name
+                if not program_id:
+                    logger.error("PROGRAM_ID is not set; skipping broken link finding (cannot ingest)")
+                    continue
+                finding["program_id"] = program_id
                 results.append(finding)
             elif isinstance(finding, Exception):
                 logger.error(f"Exception in URL processing: {finding}")

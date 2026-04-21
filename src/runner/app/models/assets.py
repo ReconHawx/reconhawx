@@ -8,6 +8,7 @@ class Ip(BaseModel):
     ip: str
     ptr: Optional[str] = None
     service_provider: Optional[str] = None
+    program_id: Optional[str] = Field(None, description="Program UUID when posting to API")
     program_name: Optional[str] = None
     notes: Optional[str] = None
     # Hostname whose DNS A-records yielded this IP (runner → API scope gate; not persisted on IP row)
@@ -49,6 +50,7 @@ class Domain(BaseModel):
     cname_record: Optional[str] = None
     is_wildcard: Optional[bool] = None
     wildcard_type: Optional[List[str]] = None
+    program_id: Optional[str] = Field(None, description="Program UUID when posting to API")
     program_name: Optional[str] = None
     notes: Optional[str] = None
     created_at: Optional[SerializedDatetime] = Field(default_factory=utcnow)

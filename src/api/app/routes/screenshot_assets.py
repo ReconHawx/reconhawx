@@ -111,7 +111,8 @@ class DistinctRequest(BaseModel):
 @router.post("/screenshot", response_model=Dict[str, Any])
 async def upload_screenshot(
     file: UploadFile = File(...),
-    program_name: Optional[str] = Form(None),
+    program_id: str = Form(..., description="Program UUID (required for ingestion)"),
+    program_name: Optional[str] = Form(None, description="Optional display name; ignored for identification"),
     url: Optional[str] = Form(None),
     workflow_id: Optional[str] = Form(None),
     step_name: Optional[str] = Form(None),
@@ -123,7 +124,8 @@ async def upload_screenshot(
     
     Args:
         file: The screenshot image file to upload
-        program_name: Associated program name
+        program_id: Program UUID
+        program_name: Optional display name only
         url: URL associated with the screenshot
         workflow_id: Workflow ID that generated the screenshot
         step_name: Step name that generated the screenshot
@@ -174,6 +176,7 @@ async def upload_screenshot(
             image_data=file_content,
             filename=file.filename or "screenshot.png",
             content_type=file.content_type,
+            program_id=program_id,
             program_name=program_name,
             url=url,
             workflow_id=workflow_id,

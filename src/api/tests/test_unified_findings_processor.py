@@ -12,9 +12,9 @@ from services.unified_findings_processor import (
 
 
 @pytest.mark.asyncio
-async def test_process_findings_requires_program_name():
+async def test_process_findings_requires_program_id():
     proc = UnifiedFindingsProcessor()
-    with pytest.raises(ValueError, match="program_name is required"):
+    with pytest.raises(ValueError, match="program_id is required"):
         await proc.process_findings_unified({"nuclei": []}, "")
 
 
@@ -30,6 +30,7 @@ async def test_get_job_status_returns_summary():
     job_id = "job-test-1"
     result = UnifiedFindingsProcessingResult(
         job_id=job_id,
+        program_id="00000000-0000-0000-0000-000000000099",
         program_name="prog-x",
         status="completed",
         total_findings=1,
@@ -46,6 +47,7 @@ async def test_get_job_status_returns_summary():
         st = await proc.get_job_status(job_id)
         assert st is not None
         assert st["job_id"] == job_id
+        assert st["program_id"] == "00000000-0000-0000-0000-000000000099"
         assert st["program_name"] == "prog-x"
         assert st["summary"]["finding_types"]["nuclei"] == 1
     finally:
@@ -55,7 +57,7 @@ async def test_get_job_status_returns_summary():
 @pytest.mark.asyncio
 async def test_publish_completion_uses_publish_immediate_for_rich_events():
     proc = UnifiedFindingsProcessor()
-    result = UnifiedFindingsProcessingResult(job_id="j1", program_name="p1")
+    result = UnifiedFindingsProcessingResult(job_id="j1", program_id="00000000-0000-0000-0000-000000000001", program_name="p1")
     result.finding_results["nuclei"] = FindingBatchResult(
         finding_type="nuclei",
         created_findings=[

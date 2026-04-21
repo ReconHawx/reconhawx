@@ -26,6 +26,10 @@ Workflow Runner (run-workflow.py)
     └── Finding models
 ```
 
+## Program context (ingestion)
+
+Workflow `workflow_data` must include **`program_id`** (UUID). The runner sets `TaskExecutor.program_id` and sends it on all **`POST /assets`** / **`POST /findings/*`** payloads; worker jobs get **`PROGRAM_ID`** in the pod env (alongside **`PROGRAM_NAME`** for name-based API reads).
+
 ## Recon task parameters (runner bootstrap)
 
 Before executing steps, the runner loads the full effective-parameter manifest from the Data API:

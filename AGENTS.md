@@ -21,6 +21,8 @@ Runner `Task.input_type` and `Task.output_types` are the source of truth for eac
 
 At dispatch time, [`src/runner/app/utils/input_validation.py`](src/runner/app/utils/input_validation.py) drops values that don't match the task's declared `input_type` (e.g. non-URL strings for `crawl_website`), logs a structured WARNING, and records a per-step summary that surfaces on the workflow step status as `input_validation: {kept, dropped, by_type, samples}`. Accept-all types (`STRING`, `SERVICE`, `CERTIFICATE`, `SCREENSHOT`) short-circuit; `IP`/`CIDR` use stdlib `ipaddress` for IPv4+IPv6. Operators can disable the filter with `RUNNER_INPUT_VALIDATION=off` on the runner pod.
 
+**Runner → API ingestion:** workflow snapshots and HTTP bodies identify the program with **`program_id`** (UUID). Ingest routes (`POST /assets`, `POST /findings/*`, screenshot uploads) require `program_id`; `program_name` is optional display-only. The runner and worker pods receive **`PROGRAM_ID`** (and still **`PROGRAM_NAME`** for API reads keyed by name).
+
 ### API asset bulk SQL (optional)
 
 Large `POST /assets` batches use chunked PostgreSQL `INSERT … ON CONFLICT` via [`src/api/app/repository/bulk_sql/`](src/api/app/repository/bulk_sql/) by default instead of per-row ORM. Per-asset opt-out: set `ASSET_BULK_SQL_SUBDOMAINS`, `ASSET_BULK_SQL_IPS`, `ASSET_BULK_SQL_APEX_DOMAINS`, `ASSET_BULK_SQL_SERVICES`, `ASSET_BULK_SQL_CERTIFICATES`, or `ASSET_BULK_SQL_URLS` to `false` / `0` / `off` / `no`. Chunk size: `ASSET_BULK_SQL_CHUNK_SIZE` (default 1000, minimum 50). The URL fast path is not used when any row includes `technologies` or `extracted_links` (full ORM path for that request list).
