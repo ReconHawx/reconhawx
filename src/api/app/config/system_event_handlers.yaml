@@ -254,9 +254,7 @@ handlers:
 
   - id: system_apex_domain_whois_backfill
     event_type: [assets.apex_domain.created]
-    description: >-
-      When an apex domain is created without WHOIS data, trigger whois_domain_check workflow.
-      Requires a program workflow named apex_domain_whois (or adjust workflow_name to match yours).
+    description: Trigger whois check workflow for new apex domains without WHOIS data
     conditions:
       - type: field_value
         field: whois_status
