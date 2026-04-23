@@ -972,6 +972,7 @@ class TyposquatFindingsRepository(ProgramAccessMixin):
                     'fuzzers': typosquat.fuzzer_types,
                     'info': {},  # info_data column removed
                     'timestamp': typosquat.detected_at.isoformat() if typosquat.detected_at else None,
+                    'program_id': str(typosquat.program_id) if typosquat.program_id else None,
                     'program_name': typosquat.program.name if typosquat.program else None,
                     'status': typosquat.status,
                     'assigned_to': typosquat.assigned_to,
