@@ -30,6 +30,10 @@ Public deployment uses `kubectl apply -k kubernetes/base/` directly (see `kubern
 
 When applying infra manually, respect ordering: core datastores and messaging (e.g. postgresql, redis, nats), **Kueue** if used, config, then application deployments, then job templates. Details are in the k8s deployment rule.
 
+## Observability (Helm)
+
+Install and scripted upgrade helpers ([`install-kubernetes.sh`](../../install-kubernetes.sh), [`update-kubernetes.sh`](../../update-kubernetes.sh), Minikube variants) source [`reconhawx-observability-helm.sh`](../../reconhawx-observability-helm.sh) when it sits next to those scripts. Set **`RECONHAWX_OBSERVABILITY=0`** to skip Loki / Alloy / kube-prometheus-stack (air-gapped or no Helm). In-cluster **Admin → System upgrade** can pass **`upgrade_observability: true`** so the Job runs the same Helm step with **`RECONHAWX_OBSERVABILITY=1`**.
+
 ## After changes
 
 If deploy flags, overlay paths, or ordering change, update **`AGENTS.md`** and/or the relevant README or `.mdc` in the same change (see PR template).

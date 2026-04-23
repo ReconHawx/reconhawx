@@ -35,6 +35,12 @@ _COMMON="$REPO_ROOT/reconhawx-k8s-common.sh"
 # shellcheck source=/dev/null
 source "$_COMMON"
 
+_OBS_LIB="${REPO_ROOT}/reconhawx-observability-helm.sh"
+if [[ -f "$_OBS_LIB" ]]; then
+  # shellcheck source=/dev/null
+  source "$_OBS_LIB"
+fi
+
 if [[ -t 1 ]] && [[ -z "${RECONHAWX_NO_COLOR:-}" ]]; then
   _B=$'\e[1m'
   _D=$'\e[2m\e[38;2;142;173;191m'
@@ -169,6 +175,7 @@ Environment:
   RECONHAWX_NS             Namespace (default: reconhawx).
   INSTALL_STAGING_DIR      Git clones only: copied manifests before apply (default: /tmp/reconhawx); removed after success.
   RECONHAWX_KUEUE_RESYNC_QUOTAS  Set to 1 to re-run reconhawx-kueue-quota-sync.py after apply (e.g. after adding nodes).
+  RECONHAWX_OBSERVABILITY  unset/1 = after rollouts, upgrade Helm observability stack when helm and tree exist; 0 = skip.
 EOF
 }
 
@@ -272,6 +279,10 @@ main() {
   tool_stream mk rollout status deploy/event-handler -n "$RECONHAWX_NS" --timeout=5m
   tool_stream mk rollout status deploy/ct-monitor -n "$RECONHAWX_NS" --timeout=5m
   ui_ok "Rollouts complete"
+
+  if declare -F reconhawx_observability_helm_apply &>/dev/null; then
+    reconhawx_observability_helm_apply
+  fi
 
   printf '\n'
   _ui_box_top "$_G" "$_Z"

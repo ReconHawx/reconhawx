@@ -1,0 +1,29 @@
+# Example Ingress for Grafana (kube-prometheus-stack subchart).
+# Adjust:
+#   - host
+#   - spec.rules[0].http.paths[0].backend.service.name (depends on Helm release name, e.g. kps-grafana)
+#   - TLS secretName if terminating TLS at the ingress
+#
+#   kubectl get svc -n monitoring | grep -i grafana
+#
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: grafana
+  namespace: monitoring
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: grafana.recon.example.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: kps-grafana
+                port:
+                  number: 80
+  tls: []

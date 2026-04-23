@@ -13,7 +13,7 @@ Use this file as a **first stop** for how the repo is laid out and how to run co
 | CT-Monitor | Certificate transparency log monitoring | [`src/ct-monitor/`](src/ct-monitor/) |
 | Event handler | Event consumers / handlers | [`src/event-handler/`](src/event-handler/) |
 | Migrations | PostgreSQL schema migrations (SQL + CLI) | [`src/migrations/`](src/migrations/) |
-| Kubernetes | Base manifests and Kueue (`kubectl apply -k kubernetes/base/`); user lifecycle: [`docs/install-on-kubernetes.md`](docs/install-on-kubernetes.md), [`docs/update-reconhawx.md`](docs/update-reconhawx.md), [`docs/uninstall-reconhawx.md`](docs/uninstall-reconhawx.md); scripts: [`.cursor/rules/k8s-cluster-lifecycle.mdc`](.cursor/rules/k8s-cluster-lifecycle.mdc) | [`kubernetes/`](kubernetes/) |
+| Kubernetes | Base manifests and Kueue (`kubectl apply -k kubernetes/base/`); optional Helm observability (Prometheus / Grafana / Loki / Alloy): [`kubernetes/observability/README.md`](kubernetes/observability/README.md); user lifecycle: [`docs/install-on-kubernetes.md`](docs/install-on-kubernetes.md), [`docs/update-reconhawx.md`](docs/update-reconhawx.md), [`docs/uninstall-reconhawx.md`](docs/uninstall-reconhawx.md); scripts: [`.cursor/rules/k8s-cluster-lifecycle.mdc`](.cursor/rules/k8s-cluster-lifecycle.mdc) | [`kubernetes/`](kubernetes/) |
 
 ### Recon task I/O types (single source of truth)
 

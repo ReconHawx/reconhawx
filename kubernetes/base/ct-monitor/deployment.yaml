@@ -2,7 +2,6 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: ct-monitor
-  namespace: recon
   labels:
     app: ct-monitor
     component: monitoring
