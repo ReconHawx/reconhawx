@@ -1,4 +1,4 @@
-FROM golang:1.25-bookworm AS builder
+FROM golang:1.26-bookworm AS builder
 
 WORKDIR /app
 
@@ -89,7 +89,7 @@ RUN ARCH=$(dpkg --print-architecture) && \
         arm64) GOARCH="arm64" ;; \
         *) echo "Unsupported architecture: ${ARCH}" && exit 1 ;; \
     esac && \
-    wget "https://go.dev/dl/go1.23.4.linux-${GOARCH}.tar.gz" -O /tmp/go.tar.gz && \
+    wget "https://go.dev/dl/go1.26.0.linux-${GOARCH}.tar.gz" -O /tmp/go.tar.gz && \
     tar -C /usr/local -xzf /tmp/go.tar.gz && \
     rm /tmp/go.tar.gz
 
