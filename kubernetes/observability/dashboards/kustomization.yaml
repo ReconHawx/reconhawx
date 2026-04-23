@@ -1,0 +1,16 @@
+# Grafana sidecar in kube-prometheus-stack watches ConfigMaps in monitoring with this label.
+# See: https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: monitoring
+
+generatorOptions:
+  disableNameSuffixHash: true
+  labels:
+    grafana_dashboard: "1"
+
+configMapGenerator:
+  - name: reconhawx-grafana-dashboard-workflow-logs
+    files:
+      - workflow-logs.json

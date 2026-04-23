@@ -1,0 +1,123 @@
+// Grafana Alloy: ship Kubernetes pod logs to Loki (in-cluster).
+// Only the reconhawx namespace (app workloads + runner/worker Jobs). Observability stack logs stay in-cluster only.
+//
+// discovery.relabel must copy __meta_kubernetes_* onto plain labels (namespace, pod, app, …) so Loki
+// exposes them in /loki/api/v1/labels and LogQL like {namespace="reconhawx"} works.
+// Init containers are dropped (avoids noisy reconnect loops on short-lived inits like grafana init-chown-data).
+
+logging {
+  level  = "info"
+  format = "logfmt"
+}
+
+discovery.kubernetes "pods" {
+  role = "pod"
+}
+
+discovery.relabel "filtered" {
+  targets = discovery.kubernetes.pods.targets
+
+  // Drop init containers (they exit quickly; tailing them spams reconnect logs).
+  rule {
+    source_labels = ["__meta_kubernetes_pod_container_init"]
+    regex         = "true"
+    action        = "drop"
+  }
+
+  rule {
+    source_labels = ["__meta_kubernetes_namespace"]
+    regex         = "reconhawx"
+    action        = "keep"
+  }
+
+  rule {
+    source_labels = ["__meta_kubernetes_namespace"]
+    regex         = "(.+)"
+    target_label  = "namespace"
+    action        = "replace"
+    replacement   = "${1}"
+  }
+
+  rule {
+    source_labels = ["__meta_kubernetes_pod_name"]
+    regex         = "(.+)"
+    target_label  = "pod"
+    action        = "replace"
+    replacement   = "${1}"
+  }
+
+  rule {
+    source_labels = ["__meta_kubernetes_pod_container_name"]
+    regex         = "(.+)"
+    target_label  = "container"
+    action        = "replace"
+    replacement   = "${1}"
+  }
+
+  // Reconhawx workflow runner/worker Jobs label workflow-id (execution id). K8s hyphens →
+  // __meta_kubernetes_pod_label_workflow_id (Prometheus SD). Loki label names cannot contain "-".
+  rule {
+    source_labels = ["__meta_kubernetes_pod_label_workflow_id"]
+    regex         = "(.+)"
+    target_label  = "workflow_id"
+    action        = "replace"
+    replacement   = "${1}"
+  }
+
+  // Runner pods also label execution-id (same value as workflow-id for runs).
+  rule {
+    source_labels = ["__meta_kubernetes_pod_label_execution_id"]
+    regex         = "(.+)"
+    target_label  = "execution_id"
+    action        = "replace"
+    replacement   = "${1}"
+  }
+
+  // Worker pods: Kubernetes label task-name → Loki task_name (hyphens not allowed in Loki label names).
+  rule {
+    source_labels = ["__meta_kubernetes_pod_label_task_name"]
+    regex         = "(.+)"
+    target_label  = "task_name"
+    action        = "replace"
+    replacement   = "${1}"
+  }
+
+  // Worker pods: Kubernetes label workflow-name → Loki workflow_name.
+  rule {
+    source_labels = ["__meta_kubernetes_pod_label_workflow_name"]
+    regex         = "(.+)"
+    target_label  = "workflow_name"
+    action        = "replace"
+    replacement   = "${1}"
+  }
+
+  // app.kubernetes.io/name (Helm charts) first…
+  rule {
+    source_labels = ["__meta_kubernetes_pod_label_app_kubernetes_io_name"]
+    regex         = "(.+)"
+    target_label  = "app"
+    action        = "replace"
+    replacement   = "${1}"
+  }
+
+  // …then plain `app=` overwrites when both exist (matches Reconhawx Deployments).
+  rule {
+    source_labels = ["__meta_kubernetes_pod_label_app"]
+    regex         = "(.+)"
+    target_label  = "app"
+    action        = "replace"
+    replacement   = "${1}"
+  }
+}
+
+loki.source.kubernetes "pod_logs" {
+  targets    = discovery.relabel.filtered.output
+  forward_to = [loki.write.default.receiver]
+}
+
+loki.write "default" {
+  endpoint {
+    url       = "http://loki-gateway.monitoring.svc.cluster.local/loki/api/v1/push"
+    tenant_id = "fake"
+  }
+}

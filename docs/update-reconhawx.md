@@ -2,7 +2,7 @@
 
 This guide describes how to move an **existing** cluster to newer **manifests** and **container images** after you already completed a first-time install ([`install-kubernetes.sh`](../install-kubernetes.sh) or [`install-minikube.sh`](../install-minikube.sh), or a manual `kubectl apply -k kubernetes/base/`).
 
-Upgrades are different from install: they do **not** reinstall Kueue, ingress-nginx, MetalLB, or relabel nodes. They **apply** the current ReconHawx kustomize bundle and **restart** application Deployments so new image tags take effect.
+Upgrades are different from install: they do **not** reinstall Kueue, ingress-nginx, MetalLB, or relabel nodes. They **apply** the current ReconHawx kustomize bundle and **restart** application Deployments so new image tags take effect. From a **full release tree** on disk, **[`update-kubernetes.sh`](../update-kubernetes.sh)** / **[`update-minikube.sh`](../update-minikube.sh)** can also refresh the **Helm observability** stack when **`helm`** is installed and **`RECONHAWX_OBSERVABILITY`** is not `0` (see script `--help` / environment sections).
 
 ## Upgrading from the Admin UI (in-cluster)
 
@@ -12,6 +12,7 @@ Superusers can use **Admin → System upgrade** (`/admin/system-upgrade`) when t
 2. Runs **`kubernetes/base-update/pre-apply.d/`** hooks, then **`kubectl apply -k kubernetes/base-update/`**,
 3. Optionally runs **`reconhawx-kueue-quota-sync.py`** when “Resync Kueue quotas” is checked,
 4. **`kubectl rollout restart`** for **api**, **frontend**, **event-handler**, and **ct-monitor**, then waits for rollouts.
+5. Optionally, when **“Upgrade observability stack”** is checked, runs **Helm** for **Loki**, **Alloy**, and **kube-prometheus-stack** in **`monitoring`** (same logic as [`reconhawx-observability-helm.sh`](../reconhawx-observability-helm.sh)); the Job sets **`RECONHAWX_OBSERVABILITY=1`** and needs **egress** to Helm chart repositories unless you mirror charts.
 
 **Use the UI when:** operators have superuser access, outbound GitHub (or staged tarball) is available from the cluster, and the bundled **`upgrader-sa` RBAC** is acceptable for your security model.
 
@@ -28,8 +29,9 @@ Superusers can use **Admin → System upgrade** (`/admin/system-upgrade`) when t
 | **`minikube`** (Minikube) | Update script uses `minikube … kubectl`; no standalone `kubectl` required. |
 | **`curl`** | Used to query GitHub `releases/latest` and to download release tarballs when you opt into the release path. |
 | **`jq` or `python3`** | Needed when resolving manifests from GitHub (API JSON and tarball URL). |
+| **`helm` (optional)** | For scripted upgrades: when present and **`RECONHAWX_OBSERVABILITY`** is enabled, [`reconhawx-observability-helm.sh`](../reconhawx-observability-helm.sh) runs after app rollouts. |
 
-Optional: set `RECONHAWX_NO_COLOR=1` for plain log output.
+Optional: set `RECONHAWX_NO_COLOR=1` for plain log output. Set **`RECONHAWX_OBSERVABILITY=0`** to skip Helm observability (e.g. air-gapped clusters without chart repo access).
 
 ## How versions work
 

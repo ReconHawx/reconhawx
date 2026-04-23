@@ -4,6 +4,7 @@
 
 - A **Kubernetes cluster** and **`kubectl`** configured (`kubectl get nodes` works).
 - The **source code archive** for a ReconHawx release from [GitHub Releases](https://github.com/ReconHawx/reconhawx/releases), extracted on the machine where you run the installer (preferred). The top-level folder must contain **`kubernetes/base`** and **`install-kubernetes.sh`**.
+- Optional **Helm v3** on the install host if you want the installer to apply the **observability** stack ([`kubernetes/observability/`](../kubernetes/observability/)); without Helm, that step is skipped (see **`RECONHAWX_OBSERVABILITY`** below).
 - **Nodes** you can label for **runner** and **worker** roles (one node can be both). The installer walks you through choosing them.
 - A way for your browser to resolve the **UI hostname** (default **`reconhawx.local`**; the installer can prompt for a **custom hostname** instead—then use that in **`/etc/hosts`** or DNS as usual).
 
@@ -17,7 +18,7 @@ Full prerequisite detail (secrets layout, Kueue, ingress, manifest tree) is in *
 ./install-kubernetes.sh
 ```
 
-The installer expects **`kubernetes/base`** next to the script. It installs **Kueue**, **ingress-nginx**, optionally **MetalLB**, labels nodes, writes secrets under **`kubernetes/base`**, applies manifests, syncs **ClusterQueue** quotas (needs **`python3`**), and can update **`/etc/hosts`**.
+The installer expects **`kubernetes/base`** next to the script. It installs **Kueue**, **ingress-nginx**, optionally **MetalLB**, labels nodes, writes secrets under **`kubernetes/base`**, applies manifests, then (when **`reconhawx-observability-helm.sh`** and **`kubernetes/observability/`** are present and **`RECONHAWX_OBSERVABILITY`** is not `0`) runs **Helm** for **Loki**, **Grafana Alloy**, and **kube-prometheus-stack** in the **`monitoring`** namespace. It syncs **ClusterQueue** quotas (needs **`python3`**) and can update **`/etc/hosts`**.
 
 **Alternative:** run the installer script straight from GitHub (pin a **tag or SHA** in the URL for reproducibility). It can fetch the **latest release** tarball for you when you do not already have `kubernetes/base` locally. That path needs **`curl`**, **`tar`**, and **`jq`** or **`python3`** for the GitHub API.
 
@@ -34,6 +35,7 @@ Piping into `bash` uses stdin for the script, so prompts are read from your **te
 | **`--from-release`** | Always use the **latest** published release tarball for manifests, even if you already have a local `kubernetes/base` directory. |
 | **`RECONHAWX_FROM_RELEASE`** | `1` = fetch release tarball; `0` = use the **`kubernetes/base`** next to the script; **unset** = use that directory when present, otherwise fetch a release. |
 | **`RECONHAWX_GITHUB_REPO`** | `owner/repo` for releases (default `ReconHawx/reconhawx`). |
+| **`RECONHAWX_OBSERVABILITY`** | Unset or `1` = run the Helm observability step when `helm` and repo files exist; `0` / `false` / `no` = skip. A raw **`curl \| bash`** of only the install script (no full tree) skips observability because the helper script is missing. |
 
 ## After install
 

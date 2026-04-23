@@ -8,7 +8,8 @@
 # `curl … | bash` still works without pulling a second file from the repo.
 # Upgrade scripts need the same GitHub release / local manifest resolution and
 # version introspection; this file holds that logic once so update-kubernetes.sh
-# and update-minikube.sh do not drift from each other.
+# and update-minikube.sh do not drift from each other. They may also source
+# reconhawx-observability-helm.sh (repo root) for optional Helm observability.
 #
 # Location
 # --------
