@@ -114,6 +114,7 @@ async def test_upgrade_job_creates(client: httpx.AsyncClient, superuser_override
     kw = inst.create_upgrade_job.call_args.kwargs
     assert kw["target_version"] == "latest"
     assert kw["kueue_resync_quotas"] is True
+    assert kw["upgrade_observability"] is False
 
 
 @pytest.mark.asyncio

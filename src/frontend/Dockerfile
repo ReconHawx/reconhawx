@@ -15,6 +15,10 @@ COPY . .
 ARG REACT_APP_GITHUB_RELEASES_REPO=ReconHawx/reconhawx
 ENV REACT_APP_GITHUB_RELEASES_REPO=$REACT_APP_GITHUB_RELEASES_REPO
 
+# Optional: Grafana origin for “Runner / Worker pod logs” links on workflow run pages (see kubernetes/observability/).
+ARG REACT_APP_GRAFANA_URL=
+ENV REACT_APP_GRAFANA_URL=$REACT_APP_GRAFANA_URL
+
 RUN npm run build
 
 # Slim variant: full nginx:alpine adds image-filter (libavif, libtiff) and curl.

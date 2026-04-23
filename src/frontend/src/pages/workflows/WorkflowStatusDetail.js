@@ -5,6 +5,7 @@ import { workflowAPI } from '../../services/api';
 import { formatDate, calculateDuration } from '../../utils/dateUtils';
 import './WorkflowStatusDetail.css';
 import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
+import { buildGrafanaLokiExploreUrl } from '../../utils/grafanaExplore';
 
 function WorkflowStatusDetail() {
   const { workflowId } = useParams();
@@ -403,6 +404,22 @@ function WorkflowStatusDetail() {
       return <p className="text-muted">No logs available</p>;
     }
 
+    const grafanaUrl = process.env.REACT_APP_GRAFANA_URL;
+    const execForLoki = logs.execution_id || logs.workflow_id || workflowId;
+    const canBuildGrafana = Boolean(grafanaUrl && execForLoki && execForLoki !== 'N/A');
+    const runnerExploreUrl = canBuildGrafana
+      ? buildGrafanaLokiExploreUrl(
+          grafanaUrl,
+          `{namespace="reconhawx", app="workflow-runner"} |= "${execForLoki}"`,
+        )
+      : null;
+    const workerExploreUrl = canBuildGrafana
+      ? buildGrafanaLokiExploreUrl(
+          grafanaUrl,
+          `{namespace="reconhawx", app="worker"} |= "${execForLoki}"`,
+        )
+      : null;
+
     return (
       <div>
         {/* Quick Stats Summary */}
@@ -443,6 +460,29 @@ function WorkflowStatusDetail() {
                 <div className="text-end">
                   <div className="text-muted small">Execution ID</div>
                   <code className="small">{logs.execution_id || logs.workflow_id || 'N/A'}</code>
+                  {runnerExploreUrl && workerExploreUrl && (
+                    <div className="mt-2">
+                      <div className="text-muted small mb-1">Container logs (Grafana / Loki)</div>
+                      <ButtonGroup size="sm" vertical className="d-block">
+                        <Button
+                          variant="outline-primary"
+                          href={runnerExploreUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          Runner pod logs
+                        </Button>
+                        <Button
+                          variant="outline-primary"
+                          href={workerExploreUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          Worker pod logs
+                        </Button>
+                      </ButtonGroup>
+                    </div>
+                  )}
                 </div>
               </div>
             </Card.Body>
