@@ -1774,14 +1774,16 @@ class KubernetesService:
         staging_id: Optional[str] = None,
         api_internal_base: Optional[str] = None,
         kueue_resync_quotas: bool = False,
+        upgrade_observability: bool = False,
         triggered_by_user_id: str = "",
     ) -> client.V1Job:
         """One-shot Job: apply kubernetes/base-update from a release tarball (or staged pull)."""
         namespace = _reconhawx_k8s_namespace()
 
+        work_limit = "1Gi" if upgrade_observability else "500Mi"
         work_vol = client.V1Volume(
             name="upgrade-work",
-            empty_dir=client.V1EmptyDirVolumeSource(size_limit="500Mi"),
+            empty_dir=client.V1EmptyDirVolumeSource(size_limit=work_limit),
         )
 
         env = [
@@ -1791,6 +1793,10 @@ class KubernetesService:
             client.V1EnvVar(
                 name="RECONHAWX_KUEUE_RESYNC_QUOTAS",
                 value="1" if kueue_resync_quotas else "0",
+            ),
+            client.V1EnvVar(
+                name="RECONHAWX_OBSERVABILITY",
+                value="1" if upgrade_observability else "0",
             ),
             client.V1EnvVar(name="TMPDIR", value="/work/tmp"),
         ]
@@ -1823,8 +1829,8 @@ class KubernetesService:
             env=env,
             volume_mounts=[client.V1VolumeMount(name="upgrade-work", mount_path="/work")],
             resources=client.V1ResourceRequirements(
-                requests={"cpu": "100m", "memory": "256Mi"},
-                limits={"cpu": "1", "memory": "1Gi"},
+                requests={"cpu": "200m", "memory": "512Mi" if upgrade_observability else "256Mi"},
+                limits={"cpu": "2", "memory": "2Gi" if upgrade_observability else "1Gi"},
             ),
         )
 

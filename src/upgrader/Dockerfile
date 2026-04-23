@@ -11,11 +11,13 @@ RUN apk add --no-cache \
     py3-pip \
     coreutils \
     kubectl \
+    helm \
+    openssl \
     && rm -rf /root/.kube
 
 WORKDIR /opt/reconhawx
 
-COPY upgrade.sh reconhawx-k8s-common.sh reconhawx-kueue-quota-sync.py ./
+COPY upgrade.sh reconhawx-k8s-common.sh reconhawx-kueue-quota-sync.py reconhawx-observability-helm.sh ./
 RUN chmod +x upgrade.sh
 
 ENTRYPOINT ["/opt/reconhawx/upgrade.sh"]

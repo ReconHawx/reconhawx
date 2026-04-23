@@ -132,7 +132,6 @@ reconhawx_download_release_by_semver() {
     "$api")" || die "curl failed: ${api}"
   url="$(reconhawx_json_tarball_url_from_api "$json")"
   tarpath="$(mktemp "${TMPDIR:-/tmp}/reconhawx-src.XXXXXX.tar.gz")"
-  echo $url
   curl -sSfL "$url" -o "$tarpath" || die "failed to download release tarball"
   _reconhawx_extract_tarball_to_base "$tarpath"
 }
@@ -221,6 +220,13 @@ main() {
   kubectl rollout status deploy/event-handler -n "$RECONHAWX_NS" --timeout=5m
   kubectl rollout status deploy/ct-monitor -n "$RECONHAWX_NS" --timeout=5m
   ui_ok "Upgrade complete"
+
+  if [[ "${RECONHAWX_OBSERVABILITY:-0}" == "1" ]]; then
+    require_cmd helm
+    # shellcheck source=/dev/null
+    source "${UPGRADER_ROOT}/reconhawx-observability-helm.sh"
+    reconhawx_observability_helm_apply strict
+  fi
 }
 
 main "$@"

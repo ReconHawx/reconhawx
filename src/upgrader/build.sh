@@ -10,6 +10,7 @@ repo_root="$(cd "$here/../.." && pwd)"
 
 cp -f "$repo_root/reconhawx-k8s-common.sh" "$here/reconhawx-k8s-common.sh"
 cp -f "$repo_root/reconhawx-kueue-quota-sync.py" "$here/reconhawx-kueue-quota-sync.py"
+cp -f "$repo_root/reconhawx-observability-helm.sh" "$here/reconhawx-observability-helm.sh"
 
 service_name=$(basename "$here")
 

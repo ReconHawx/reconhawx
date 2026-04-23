@@ -83,6 +83,7 @@ class UpgradeJobBody(BaseModel):
     version: str = Field(..., min_length=1)
     staging_id: Optional[str] = None
     kueue_resync_quotas: bool = False
+    upgrade_observability: bool = False
     confirm: str = Field(..., min_length=1)
 
 
@@ -229,6 +230,7 @@ async def upgrade_create_job(
             staging_id=staging_id,
             api_internal_base=api_base if pull_token else None,
             kueue_resync_quotas=body.kueue_resync_quotas,
+            upgrade_observability=body.upgrade_observability,
             triggered_by_user_id=str(current_user.id),
         )
     except ApiException as e:
