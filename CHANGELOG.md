@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.22.1](https://github.com/ReconHawx/reconhawx/compare/v0.22.0...v0.22.1) (2026-04-23)
+
+
+### Bug Fixes
+
+* **runner:** restore PhishLabs batch typosquat updates with program_id ([04a72e3](https://github.com/ReconHawx/reconhawx/commit/04a72e35bf71892a250bf33322e25277f6ca29ea))
+
 ## [0.22.0](https://github.com/ReconHawx/reconhawx/compare/v0.21.0...v0.22.0) (2026-04-21)
 
 
