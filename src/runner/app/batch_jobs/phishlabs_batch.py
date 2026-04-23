@@ -1,4 +1,5 @@
 import aiohttp
+import uuid
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timezone
 import logging
@@ -6,6 +7,16 @@ import os
 import asyncio
 
 logger = logging.getLogger(__name__)
+
+
+def _is_program_uuid(value: Any) -> bool:
+    if value is None or value == "":
+        return False
+    try:
+        uuid.UUID(str(value).strip())
+    except (ValueError, TypeError, AttributeError):
+        return False
+    return True
 
 class GoogleSafeBrowsingService:
     """Service for reporting domains to Google Safe Browsing in the runner environment"""
@@ -100,8 +111,8 @@ class PhishLabsBatchTask:
             total_findings = len(findings)
             processed_count = 0
 
-            for program_name, program_findings_list in program_findings.items():
-                await self.process_program_findings(program_name, program_findings_list)
+            for program_key, program_findings_list in program_findings.items():
+                await self.process_program_findings(program_key, program_findings_list)
                 processed_count += len(program_findings_list)
 
                 # Update progress
@@ -174,25 +185,65 @@ class PhishLabsBatchTask:
             return []
     
     def group_findings_by_program(self, findings: List[Dict]) -> Dict[str, List[Dict]]:
-        """Group findings by program name"""
-        program_findings = {}
+        """Group findings by program_id (preferred) or program name."""
+        program_findings: Dict[str, List[Dict]] = {}
         for finding in findings:
-            program_name = finding.get('program_name')
-            if not program_name:
-                logger.warning(f"Finding {finding.get('_id')} has no program_name, skipping")
+            pid = finding.get("program_id")
+            pnm = finding.get("program_name")
+            if pid:
+                key = str(pid).strip()
+            elif pnm:
+                key = str(pnm)
+            else:
+                logger.warning(
+                    f"Finding {finding.get('_id')} has no program_id or program_name, skipping"
+                )
                 continue
-            if program_name not in program_findings:
-                program_findings[program_name] = []
-            program_findings[program_name].append(finding)
+            if key not in program_findings:
+                program_findings[key] = []
+            program_findings[key].append(finding)
         return program_findings
+
+    @staticmethod
+    def _extract_phishlabs_api_key_from_program_payload(data: Any) -> Optional[str]:
+        if not isinstance(data, dict):
+            return None
+        if data.get("phishlabs_api_key"):
+            return data.get("phishlabs_api_key")
+        if data.get("status") == "success":
+            program_data = data.get("data", {})
+            if not program_data or not program_data.get("phishlabs_api_key"):
+                program_data = data
+            return program_data.get("phishlabs_api_key")
+        return data.get("phishlabs_api_key")
     
-    async def get_program_api_key(self, program_name: str) -> Optional[str]:
-        """Get PhishLabs API key for a program via API (with database fallback)"""
+    async def get_program_api_key(self, program_name_or_id: str) -> Optional[str]:
+        """Get PhishLabs API key for a program via API (by UUID or name; with database fallback)."""
         try:
             headers = {}
             if self.api_token:
                 headers["Authorization"] = f"Bearer {self.api_token}"
 
+            if _is_program_uuid(program_name_or_id):
+                id_url = f"{self.api_base_url}/programs/id/{str(program_name_or_id).strip()}"
+                logger.info(f"Fetching program API key from: {id_url}")
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(id_url, headers=headers) as response:
+                        if response.status == 200:
+                            data = await response.json()
+                            api_key = self._extract_phishlabs_api_key_from_program_payload(
+                                data
+                            )
+                            if api_key:
+                                return api_key
+                        else:
+                            text = await response.text()
+                            logger.warning(
+                                f"Program by id {program_name_or_id}: HTTP {response.status} - {text[:200]}"
+                            )
+                return None
+
+            program_name = program_name_or_id
             url = f"{self.api_base_url}/programs/{program_name}"
             logger.info(f"Fetching program API key from: {url}")
 
@@ -278,26 +329,26 @@ class PhishLabsBatchTask:
             logger.error(f"Full traceback: {traceback.format_exc()}")
             return None
     
-    async def process_program_findings(self, program_name: str, findings: List[Dict]):
-        """Process findings for a specific program"""
-        logger.info(f"Processing {len(findings)} findings for program '{program_name}'")
+    async def process_program_findings(self, program_key: str, findings: List[Dict]):
+        """Process findings for a specific program (key is program_id UUID or program name)."""
+        logger.info(f"Processing {len(findings)} findings for program key '{program_key}'")
 
         # Get program API key
-        api_key = await self.get_program_api_key(program_name)
-        logger.info(f"Program '{program_name}' API key result: {'Found' if api_key else 'Not found'}")
+        api_key = await self.get_program_api_key(program_key)
+        logger.info(f"Program '{program_key}' API key result: {'Found' if api_key else 'Not found'}")
 
         if not api_key:
-            logger.error(f"No API key found for program '{program_name}', skipping {len(findings)} findings")
+            logger.error(f"No API key found for program '{program_key}', skipping {len(findings)} findings")
             for finding in findings:
                 finding_id = str(finding.get('_id', 'Unknown'))
                 typo_domain = finding.get('typo_domain', 'Unknown')
-                logger.warning(f"Finding {finding_id} ({typo_domain}) failed: No API key for program '{program_name}'")
+                logger.warning(f"Finding {finding_id} ({typo_domain}) failed: No API key for program '{program_key}'")
 
                 self.results["error_count"] += 1
                 self.results["errors"].append({
                     "finding_id": finding_id,
                     "typo_domain": typo_domain,
-                    "error": f"Program '{program_name}' does not have a PhishLabs API key"
+                    "error": f"Program '{program_key}' does not have a PhishLabs API key"
                 })
             return
         
@@ -667,7 +718,7 @@ class PhishLabsBatchTask:
             # Only send the specific PhishLabs fields that need to be updated
             # This prevents overwriting other data like threatstream_data
             
-            # We need to include the typo_domain and program_name for the API to identify the record
+            # We need typo_domain and program_id (and optional program_name) for the API
             headers = {"Content-Type": "application/json"}
             if self.api_token:
                 headers["Authorization"] = f"Bearer {self.api_token}"
@@ -695,22 +746,32 @@ class PhishLabsBatchTask:
 
                     logger.info(f"Successfully fetched finding identifiers for {finding_id}")
 
+            program_id = finding_data.get("program_id")
+            if not program_id or not str(program_id).strip():
+                raise Exception(
+                    f"Finding {finding_id} has no program_id; re-fetch after API upgrade or fix finding row"
+                )
+            program_id = str(program_id).strip()
             # Prepare finding data with PhishLabs updates in the format expected by the API
             finding_with_updates = {
                 "typo_domain": finding_data["typo_domain"],
-                "program_name": finding_data["program_name"]
+                "program_id": program_id,
             }
+            if finding_data.get("program_name"):
+                finding_with_updates["program_name"] = finding_data["program_name"]
             
             # Add only the PhishLabs fields we want to update
             finding_with_updates.update(update_data)
             
             # Structure data in format expected by the API endpoint
             selective_update_data = {
-                "program_name": finding_data["program_name"],
+                "program_id": program_id,
                 "findings": {
                     "typosquat_domain": [finding_with_updates]
                 }
             }
+            if finding_data.get("program_name"):
+                selective_update_data["program_name"] = finding_data["program_name"]
 
             logger.info(f"Structured update data for finding {finding_id} with {len(update_data)} PhishLabs fields")
 
