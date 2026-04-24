@@ -81,6 +81,47 @@ kubectl port-forward -n monitoring svc/kps-grafana 3000:80
 # open http://127.0.0.1:3000 — user admin, password from --set above
 ```
 
+## Completely uninstalling
+
+[`reconhawx-observability-helm.sh`](../../reconhawx-observability-helm.sh) installs three Helm releases in **`monitoring`**: **`kps`** (kube-prometheus-stack), **`alloy`**, **`loki`**, then applies built-in dashboard ConfigMaps from [`dashboards/`](dashboards/).
+
+1. **Remove Reconhawx dashboard ConfigMaps** (optional first if you want Grafana gone before sidecar noise):
+
+   ```bash
+   kubectl delete -k kubernetes/observability/dashboards/
+   ```
+
+   Prune any leftover ConfigMaps you added manually (`kubectl get cm -n monitoring -l grafana_dashboard=1`).
+
+2. **Uninstall Helm releases** (order avoids leaving operator-managed objects in a weird state; release names match the script):
+
+   ```bash
+   helm uninstall kps -n monitoring
+   helm uninstall alloy -n monitoring
+   helm uninstall loki -n monitoring
+   ```
+
+3. **Delete PVCs** if Helm left them (default for many charts — data persists until you delete claims):
+
+   ```bash
+   kubectl get pvc -n monitoring
+   kubectl delete pvc --all -n monitoring
+   ```
+
+4. **Drop the namespace** if **`monitoring`** is only for this stack (this **deletes everything** still in the namespace):
+
+   ```bash
+   kubectl delete namespace monitoring
+   ```
+
+   If you keep the namespace, delete stray **Secrets**, **Services**, and **ClusterRoleBindings** that namespaced Helm hooks may have created (rare); `kubectl get all -n monitoring`.
+
+5. **Cluster-scoped CRDs** (optional, **dangerous** on shared clusters): `kube-prometheus-stack` installs Prometheus Operator CRDs (`Prometheus`, `ServiceMonitor`, `PodMonitor`, `PrometheusRule`, etc.). `helm uninstall` does **not** remove CRDs. Only remove them if nothing else in the cluster uses those APIs (other monitoring stacks, GitOps). See the chart’s “Uninstall” / CRD notes and `kubectl get crd | grep monitoring.coreos.com` before deleting.
+
+6. **Reconhawx app layer**: remove the **`/grafana/`** proxy from [`kubernetes/base/frontend/nginx-config.yaml`](../base/frontend/nginx-config.yaml) and any **`REACT_APP_GRAFANA_URL`** build args if you no longer want the UI to link to Grafana (optional cleanup, not required for cluster removal).
+
+7. **Stop re-installing**: set **`RECONHAWX_OBSERVABILITY=0`** (or unset) for future [`install-kubernetes.sh`](../../install-kubernetes.sh) / [`update-kubernetes.sh`](../../update-kubernetes.sh) runs, and remove **`kubernetes/base/monitoring-namespace.yaml`** from [`kubernetes/base/kustomization.yaml`](../base/kustomization.yaml) if you do not want `kubectl apply -k kubernetes/base/` to recreate **`monitoring`**.
+
 ## Ingress, TLS, and SSO (production)
 
 - Example Ingress: `[examples/grafana-ingress.yaml](examples/grafana-ingress.yaml)` — patch `host` and `service.name` to match your release.
