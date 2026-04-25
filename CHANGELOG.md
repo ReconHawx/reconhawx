@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.1](https://github.com/ReconHawx/reconhawx/compare/v0.24.0...v0.24.1) (2026-04-25)
+
+
+### Bug Fixes
+
+* **api:** added a node_selector to upgrade jobs ([01e4fad](https://github.com/ReconHawx/reconhawx/commit/01e4fad58950bcc4ef7dc7a6b4132a118162286d))
+
 ## [0.24.0](https://github.com/ReconHawx/reconhawx/compare/v0.23.2...v0.24.0) (2026-04-25)
 
 
