@@ -1,5 +1,6 @@
 # monitoring namespace (cluster-scoped). Included from kubernetes/base so kustomize load restrictor
 # stays within the base root; Helm observability also applies this file before charts.
+# Mirror: kubernetes/base-update/monitoring-namespace.yaml (must stay in sync; base-update cannot ../-reference this file).
 apiVersion: v1
 kind: Namespace
 metadata:

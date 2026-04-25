@@ -1,0 +1,10 @@
+# Same manifest as kubernetes/base/monitoring-namespace.yaml. Kept here because
+# `kubectl apply -k kubernetes/base-update/` enforces LoadRestrictionsRootOnly:
+# resource file paths must be under kubernetes/base-update/ (../base/foo.yaml is rejected).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: monitoring
+  labels:
+    app.kubernetes.io/name: reconhawx-observability
+    app.kubernetes.io/part-of: recon-platform
