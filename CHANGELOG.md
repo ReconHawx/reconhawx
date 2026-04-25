@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.0](https://github.com/ReconHawx/reconhawx/compare/v0.23.2...v0.24.0) (2026-04-25)
+
+
+### Features
+
+* **k8s:** always refresh observability on in-cluster system upgrade ([7bbc60d](https://github.com/ReconHawx/reconhawx/commit/7bbc60d12be6f780edf0e18b5690088795665d98))
+
 ## [0.23.2](https://github.com/ReconHawx/reconhawx/compare/v0.23.1...v0.23.2) (2026-04-25)
 
 
