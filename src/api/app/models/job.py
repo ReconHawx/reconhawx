@@ -193,12 +193,16 @@ class ScheduledJobRequest(BaseModel):
             raise ValueError("Name cannot exceed 100 characters")
         return v.strip()
 
-    @model_validator(mode="after")
-    def validate_programs(self):
-        job_type = self.job_type
-        names_param = self.program_names
-        single = self.program_name
+    @model_validator(mode="before")
+    @classmethod
+    def validate_programs(cls, data: Any) -> Any:
+        """Normalize program_name / program_names from input dict (Pydantic v2 before-validator)."""
+        if not isinstance(data, dict):
+            return data
 
+        names_param = data.get("program_names")
+        single = data.get("program_name")
+        job_type = data.get("job_type")
         jt_val = job_type.value if hasattr(job_type, "value") else job_type
 
         if names_param is not None:
@@ -215,11 +219,11 @@ class ScheduledJobRequest(BaseModel):
                     clean.append(s)
             if jt_val != JobType.WORKFLOW.value and len(clean) > 1:
                 raise ValueError("Multiple programs are only supported for workflow scheduled jobs")
-            return self.model_copy(update={"program_names": clean, "program_name": clean[0]})
+            return {**data, "program_names": clean, "program_name": clean[0]}
 
         if not single or not str(single).strip():
             raise ValueError("program_name is required when program_names is not set")
-        return self.model_copy(update={"program_name": str(single).strip()})
+        return {**data, "program_name": str(single).strip()}
 
 class ScheduledJobResponse(BaseModel):
     """Response model for scheduled jobs"""
