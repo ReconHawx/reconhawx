@@ -32,13 +32,11 @@
         "y": 0
       },
       "id": 1,
-      "description": "Runner logs are one JSON object per line (type=application). Expand a row for fields; in Explore use | json for a table of attributes.",
       "options": {
         "dedupStrategy": "none",
         "enableInfiniteScrolling": false,
         "enableLogDetails": true,
-        "showControls": false,
-        "showLabels": false,
+        "showControls": true,
         "showTime": true,
         "sortOrder": "Ascending",
         "unwrappedColumns": false,
@@ -52,8 +50,8 @@
             "name": "Loki"
           },
           "direction": "forward",
-          "editorMode": "builder",
-          "expr": "{app=\"workflow-runner\", workflow_id=\"$workflow_id\"} |= ``",
+          "editorMode": "code",
+          "expr": "{app=\"workflow-runner\", workflow_id=\"$workflow_id\"} | json | line_format \"{{.logger}} : {{.message}}\"",
           "queryType": "range",
           "refId": "A"
         }
@@ -115,15 +113,15 @@
       "pluginVersion": "12.4.3",
       "targets": [
         {
+          "datasource": {
+            "type": "loki",
+            "name": "Loki"
+          },
           "direction": "backward",
           "editorMode": "code",
           "expr": "count(\n  sum by (pod) (\n    count_over_time({pod=~\"$workers\", workflow_id=\"$workflow_id\"}[$__auto])\n  )\n)",
           "queryType": "range",
-          "refId": "A",
-          "datasource": {
-            "type": "loki",
-            "name": "Loki"
-          }
+          "refId": "A"
         }
       ],
       "title": "Workers Count",
@@ -141,14 +139,12 @@
         "y": 4
       },
       "id": 2,
-      "description": "Worker logs are one JSON object per line on stderr (type=application). Expand a row for fields; in Explore use | json for a table of attributes.",
       "options": {
         "dedupStrategy": "none",
         "enableInfiniteScrolling": false,
         "enableLogDetails": true,
         "showControls": false,
-        "showLabels": false,
-        "showTime": true,
+        "showTime": false,
         "sortOrder": "Ascending",
         "unwrappedColumns": false,
         "wrapLogMessage": false
@@ -163,8 +159,8 @@
             "name": "Loki"
           },
           "direction": "forward",
-          "editorMode": "builder",
-          "expr": "{app=\"worker\", workflow_id=\"$workflow_id\", pod=\"$workers\"} |= ``",
+          "editorMode": "code",
+          "expr": "{app=\"worker\", workflow_id=\"$workflow_id\", pod=\"$workers\"} | json | line_format \"{{.logger}} : {{.message}}\"",
           "queryType": "range",
           "refId": "A"
         }
@@ -223,11 +219,31 @@
         "regex": "",
         "regexApplyTo": "value",
         "type": "query"
+      },
+      {
+        "current": {},
+        "datasource": {
+          "type": "loki",
+          "name": "Loki"
+        },
+        "definition": "",
+        "name": "Task",
+        "options": [],
+        "query": {
+          "label": "task_name",
+          "refId": "LokiVariableQueryEditor-VariableQuery",
+          "stream": "{workflow_id=\"$workflow_id\"}",
+          "type": 1
+        },
+        "refresh": 1,
+        "regex": "",
+        "regexApplyTo": "value",
+        "type": "query"
       }
     ]
   },
   "time": {
-    "from": "now-24h",
+    "from": "now-2d",
     "to": "now"
   },
   "timepicker": {},
