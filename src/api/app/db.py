@@ -95,11 +95,9 @@ def init_database():
 def test_connection():
     """Test database connection"""
     try:
-        logger.debug(f"Testing database connection to: {POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}")
         db = SessionLocal()
         db.execute(text("SELECT 1"))
         db.close()
-        logger.debug("Database connection test successful")
         return True
     except Exception as e:
         logger.error(f"Database connection test failed: {str(e)}")
