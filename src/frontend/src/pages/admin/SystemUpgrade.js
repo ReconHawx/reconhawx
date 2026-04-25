@@ -47,7 +47,6 @@ function SystemUpgrade() {
   const [stageFile, setStageFile] = useState(null);
   const [stageLoading, setStageLoading] = useState(false);
   const [kueueResync, setKueueResync] = useState(false);
-  const [upgradeObservability, setUpgradeObservability] = useState(false);
   const [allowWithoutHold, setAllowWithoutHold] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [confirmText, setConfirmText] = useState('');
@@ -189,7 +188,6 @@ function SystemUpgrade() {
       const body = {
         version: ver,
         kueue_resync_quotas: kueueResync,
-        upgrade_observability: upgradeObservability,
         confirm: 'UPGRADE_RECONHAWX'
       };
       const sid = stagingId.trim();
@@ -220,7 +218,8 @@ function SystemUpgrade() {
           <h4 className="mb-0">System upgrade</h4>
           <p className="text-muted small mb-0 mt-1">
             Superuser-only. Applies <code>kubernetes/base-update</code> from a GitHub release tarball (or staged upload)
-            inside the cluster, then rolls API / frontend / event-handler / ct-monitor. See{' '}
+            inside the cluster, rolls API / frontend / event-handler / ct-monitor, then upgrades the observability Helm
+            stack in <code>monitoring</code>. See{' '}
             <Link to="/admin/system-maintenance">System maintenance</Link> to Hold Kueue first.
           </p>
         </Col>
@@ -350,14 +349,6 @@ function SystemUpgrade() {
                   checked={kueueResync}
                   onChange={(e) => setKueueResync(e.target.checked)}
                 />
-                <Form.Check
-                  type="checkbox"
-                  id="upgrade-observability"
-                  className="mt-2"
-                  label="Upgrade observability stack (Helm: Loki, Alloy, kube-prometheus-stack in monitoring). Requires chart repo egress and expanded upgrader RBAC."
-                  checked={upgradeObservability}
-                  onChange={(e) => setUpgradeObservability(e.target.checked)}
-                />
               </Form.Group>
               <hr />
               <h6 className="text-muted">Air-gapped: stage tarball</h6>
@@ -463,9 +454,9 @@ function SystemUpgrade() {
         </Modal.Header>
         <Modal.Body>
           <p className="small">
-            This creates a Kubernetes Job that runs <code>kubectl apply -k kubernetes/base-update/</code> and
-            restarts application Deployments. If you checked “Upgrade observability stack”, the Job also runs Helm
-            for Loki / Alloy / kube-prometheus-stack. Type <strong>UPGRADE_RECONHAWX</strong> to confirm.
+            This creates a Kubernetes Job that runs <code>kubectl apply -k kubernetes/base-update/</code>,
+            restarts application Deployments, then runs Helm for Loki / Alloy / kube-prometheus-stack in{' '}
+            <code>monitoring</code> (requires chart repo egress). Type <strong>UPGRADE_RECONHAWX</strong> to confirm.
           </p>
           <Form.Control
             value={confirmText}

@@ -97,30 +97,9 @@ def test_create_upgrade_job_build(k8s_no_config, monkeypatch):
     assert "RECONHAWX_VERSION" in env_names
     assert "RECONHAWX_GITHUB_REPO" in env_names
     env_by_name = {e.name: e.value for e in body.spec.template.spec.containers[0].env}
-    assert env_by_name.get("RECONHAWX_OBSERVABILITY") == "0"
-    ed = body.spec.template.spec.volumes[0].empty_dir
-    assert ed is not None and str(ed.size_limit) == "500Mi"
-    assert str(body.spec.template.spec.containers[0].resources.limits["memory"]) == "1Gi"
-
-
-def test_create_upgrade_job_with_observability(k8s_no_config, monkeypatch):
-    monkeypatch.setenv("KUBERNETES_NAMESPACE", "reconhawx")
-    svc = k8s_no_config
-    svc.batch_v1 = MagicMock()
-    svc.batch_v1.create_namespaced_job.return_value = MagicMock()
-
-    svc.create_upgrade_job(
-        "reconhawx-upgrade-obs",
-        upgrader_image="ghcr.io/o/reconhawx/upgrader:0.1.0",
-        target_version="latest",
-        github_repo="ReconHawx/reconhawx",
-        upgrade_observability=True,
-    )
-
-    body = svc.batch_v1.create_namespaced_job.call_args[1]["body"]
-    env_by_name = {e.name: e.value for e in body.spec.template.spec.containers[0].env}
     assert env_by_name.get("RECONHAWX_OBSERVABILITY") == "1"
-    assert str(body.spec.template.spec.volumes[0].empty_dir.size_limit) == "1Gi"
+    ed = body.spec.template.spec.volumes[0].empty_dir
+    assert ed is not None and str(ed.size_limit) == "1Gi"
     assert str(body.spec.template.spec.containers[0].resources.limits["memory"]) == "2Gi"
 
 

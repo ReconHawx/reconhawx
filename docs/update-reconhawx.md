@@ -12,7 +12,7 @@ Superusers can use **Admin → System upgrade** (`/admin/system-upgrade`) when t
 2. Runs **`kubernetes/base-update/pre-apply.d/`** hooks, then **`kubectl apply -k kubernetes/base-update/`**,
 3. Optionally runs **`reconhawx-kueue-quota-sync.py`** when “Resync Kueue quotas” is checked,
 4. **`kubectl rollout restart`** for **api**, **frontend**, **event-handler**, and **ct-monitor**, then waits for rollouts.
-5. Optionally, when **“Upgrade observability stack”** is checked, runs **Helm** for **Loki**, **Alloy**, and **kube-prometheus-stack** in **`monitoring`** (same logic as [`reconhawx-observability-helm.sh`](../reconhawx-observability-helm.sh)); the Job sets **`RECONHAWX_OBSERVABILITY=1`** and needs **egress** to Helm chart repositories unless you mirror charts.
+5. Runs **Helm** for **Loki**, **Alloy**, and **kube-prometheus-stack** in **`monitoring`** (same logic as [`reconhawx-observability-helm.sh`](../reconhawx-observability-helm.sh), **strict** mode: the Job fails if `helm` or `kubernetes/observability` is missing). Needs **egress** to Helm chart repositories unless you mirror charts.
 
 **Use the UI when:** operators have superuser access, outbound GitHub (or staged tarball) is available from the cluster, and the bundled **`upgrader-sa` RBAC** is acceptable for your security model.
 
@@ -29,9 +29,9 @@ Superusers can use **Admin → System upgrade** (`/admin/system-upgrade`) when t
 | **`minikube`** (Minikube) | Update script uses `minikube … kubectl`; no standalone `kubectl` required. |
 | **`curl`** | Used to query GitHub `releases/latest` and to download release tarballs when you opt into the release path. |
 | **`jq` or `python3`** | Needed when resolving manifests from GitHub (API JSON and tarball URL). |
-| **`helm` (optional)** | For scripted upgrades: when present and **`RECONHAWX_OBSERVABILITY`** is enabled, [`reconhawx-observability-helm.sh`](../reconhawx-observability-helm.sh) runs after app rollouts. |
+| **`helm` (optional)** | **CLI** [`update-kubernetes.sh`](../update-kubernetes.sh) / [`update-minikube.sh`](../update-minikube.sh): when `helm` is present and **`RECONHAWX_OBSERVABILITY`** is not `0`, [`reconhawx-observability-helm.sh`](../reconhawx-observability-helm.sh) runs after app rollouts. **In-cluster** upgrade: the **`upgrader`** image ships `helm`; the Job always runs the observability Helm step (use CLI upgrades if you must skip Helm). |
 
-Optional: set `RECONHAWX_NO_COLOR=1` for plain log output. Set **`RECONHAWX_OBSERVABILITY=0`** to skip Helm observability (e.g. air-gapped clusters without chart repo access).
+Optional: set `RECONHAWX_NO_COLOR=1` for plain log output. For **scripted** upgrades only, set **`RECONHAWX_OBSERVABILITY=0`** to skip Helm observability (e.g. air-gapped clusters without chart repo access).
 
 ## How versions work
 

@@ -192,6 +192,8 @@ main() {
   ui_step "Pre-apply hooks"
   reconhawx_run_base_update_pre_apply_hooks "$BASE_SRC" "$RECONHAWX_NS" "${cluster_ver:-}" "${bundle_ver:-}" kubectl
 
+  reconhawx_bootstrap_upgrader_clusterrole "$BASE_SRC" kubectl
+
   local _attempt _max=6
   for _attempt in $(seq 1 "$_max"); do
     ui_step "kubectl apply -k base-update (attempt ${_attempt}/${_max})"
@@ -221,12 +223,10 @@ main() {
   kubectl rollout status deploy/ct-monitor -n "$RECONHAWX_NS" --timeout=5m
   ui_ok "Upgrade complete"
 
-  if [[ "${RECONHAWX_OBSERVABILITY:-0}" == "1" ]]; then
-    require_cmd helm
-    # shellcheck source=/dev/null
-    source "${UPGRADER_ROOT}/reconhawx-observability-helm.sh"
-    reconhawx_observability_helm_apply strict
-  fi
+  require_cmd helm
+  # shellcheck source=/dev/null
+  source "${UPGRADER_ROOT}/reconhawx-observability-helm.sh"
+  reconhawx_observability_helm_apply strict
 }
 
 main "$@"

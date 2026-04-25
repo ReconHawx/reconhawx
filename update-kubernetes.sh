@@ -260,6 +260,8 @@ main() {
   ui_step "Kubernetes: pre-apply hooks (if any)"
   reconhawx_run_base_update_pre_apply_hooks "$BASE_SRC" "$RECONHAWX_NS" "${cluster_ver:-}" "${bundle_ver:-}" kubectl
 
+  reconhawx_bootstrap_upgrader_clusterrole "$BASE_SRC" kubectl
+
   local _attempt _max=6
   for _attempt in $(seq 1 "$_max"); do
     ui_step "Kubernetes: apply upgrade bundle (attempt ${_attempt}/${_max})"

@@ -34,6 +34,8 @@
 #   release trees apply from the extracted path in place.
 # - Run kubernetes/base-update/pre-apply.d/[0-9]*.sh (reconhawx_run_base_update_pre_apply_hooks)
 #   before kubectl apply -k base-update so breaking manifest transitions stay idempotent.
+# - Call reconhawx_bootstrap_upgrader_clusterrole before kubectl apply -k so expanded ClusterRole
+#   rules are authoritative before parallel apply issues GET on Namespace objects (RBAC race).
 #
 # Usage
 # -----
@@ -248,6 +250,28 @@ reconhawx_base_update_dir() {
   upd="$(cd "$base_dir/.." && pwd)/base-update"
   [[ -d "$upd" ]] || die "missing ${upd} (kubernetes/base-update must sit next to kubernetes/base)"
   printf '%s' "$upd"
+}
+
+# Apply reconhawx-upgrader ClusterRole + ClusterRoleBinding before kubectl apply -k base-update.
+# A single apply -k can reconcile Namespace and RBAC concurrently; GET namespaces for Namespace
+# objects may run before the ClusterRole patch in the same transaction is visible to the authorizer,
+# causing Forbidden on the first attempt. Priming the ClusterRole avoids that race (in-cluster Job
+# and CLI upgrades).
+# Args: kubernetes/base path, kubectl argv prefix (e.g. kubectl or minikube -p PROFILE kubectl --).
+# Optional: ui_step / ui_ok for UX (defined by callers like update-kubernetes.sh).
+reconhawx_bootstrap_upgrader_clusterrole() {
+  local base_dir="$1"
+  local -a kube_prefix=( "${@:2}" )
+  [[ "${#kube_prefix[@]}" -ge 1 ]] || die "reconhawx_bootstrap_upgrader_clusterrole: missing kubectl argv prefix"
+  local cr_yaml="$base_dir/upgrader/upgrader-clusterrole.yaml"
+  [[ -f "$cr_yaml" ]] || die "missing ${cr_yaml}"
+  if declare -F ui_step &>/dev/null; then
+    ui_step "Bootstrap: upgrader ClusterRole (+ binding) before full apply bundle"
+  fi
+  "${kube_prefix[@]}" apply -f "$cr_yaml" || die "bootstrap apply failed: ${cr_yaml}"
+  if declare -F ui_ok &>/dev/null; then
+    ui_ok "Upgrader ClusterRole bootstrap applied"
+  fi
 }
 
 # Log pre-apply progress to stderr (same style as ui_note when _D/_Z are set).

@@ -1,6 +1,6 @@
 # Upgrader image
 
-One-shot Kubernetes **Job** image that applies `kubernetes/base-update/` and restarts app Deployments, matching [`update-kubernetes.sh`](../../update-kubernetes.sh).
+One-shot Kubernetes **Job** image that applies `kubernetes/base-update/`, restarts app Deployments, then runs the observability Helm stack (same as [`reconhawx-observability-helm.sh`](../../reconhawx-observability-helm.sh) in **strict** mode), matching [`update-kubernetes.sh`](../../update-kubernetes.sh).
 
 ## Environment (Job pod)
 
@@ -13,6 +13,7 @@ One-shot Kubernetes **Job** image that applies `kubernetes/base-update/` and res
 | `API_INTERNAL_URL` | with `PULL_TOKEN` | Base URL of API (e.g. `http://api:8000`). |
 | `INTERNAL_SERVICE_API_KEY` | with `PULL_TOKEN` | Bearer for internal pull. |
 | `RECONHAWX_KUEUE_RESYNC_QUOTAS` | no | Set to `1` to run `reconhawx-kueue-quota-sync.py` after apply. |
+| `RECONHAWX_OBSERVABILITY` | no | The API sets `1` for diagnostics; `upgrade.sh` always runs Helm after rollouts regardless. |
 
 ## Build
 
