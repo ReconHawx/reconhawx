@@ -77,7 +77,6 @@ pytest-asyncio==1.3.0
 python-dateutil==2.9.0.post0
 python-dotenv==1.0.1
 python-jose[cryptography]==3.3.0
-python-json-logger==3.3.0
 python-multipart==0.0.20
 python-whois==0.9.5
 pytz==2024.1

@@ -11,11 +11,6 @@ import asyncio
 import logging
 import os
 
-if os.getenv("LOG_LEVEL"):
-    logging.basicConfig(level=os.getenv("LOG_LEVEL"))
-else:
-    logging.basicConfig(level=logging.INFO)
-
 logger = logging.getLogger(__name__)
 
 app = FastAPI(

@@ -56,6 +56,32 @@ helm upgrade --install alloy grafana/alloy -n monitoring \
 
 Alloy collects logs **only from namespace `reconhawx`** (see `[alloy-config.river](alloy-config.river)`). To include other namespaces (e.g. `monitoring`), widen the `keep` regex there.
 
+**Structured application logs:** API, runner, ct-monitor, and event-handler images default to **`LOG_FORMAT=json`** (one JSON object per stdout line; **`RECON_SERVICE_NAME`** is embedded as a `service` field). **Worker** jobs use the same fields but write **app logs to stderr** (stdout is task output; runner sets `LOG_FORMAT` / `LOG_LEVEL` on the Job). The **frontend** `Deployment` is nginx: access lines are JSON in the **same** shape (including `level`, `logger` = `nginx`, `type` = `http_access`, and `message` = `METHOD URI STATUS`) and are sent to **stdout** (see [`kubernetes/base/frontend/nginx-config.yaml`](../base/frontend/nginx-config.yaml)) so Alloy ingests them—access logs in a file alone would not be collected. **Alloy** (see [`alloy-config.river`](alloy-config.river)) parses that JSON for workloads in `reconhawx`: the log **timestamp** in Loki comes from the JSON `timestamp` field, **`level`** is promoted to a **stream label** (low cardinality), and **`logger`**, **`type`**, **`method`**, and **`status`** are **structured metadata** (omit `service` as metadata—use the Kubernetes **`app`** label for the workload). The **stored** log line is the **raw JSON** (Explore shows the full object; expand a row for fields, or use **Table** view with `| json` for columns). Filter on `level` with a stream selector; use line filters or metadata filters for the rest. Examples in Grafana Explore:
+
+```logql
+{namespace="reconhawx", app="api", level="ERROR"}
+```
+
+```logql
+{namespace="reconhawx", app="api"} | logger="db"
+```
+
+```logql
+{namespace="reconhawx", app="api"} | type="http_access" | status="500"
+```
+
+```logql
+{namespace="reconhawx", app="api"} | type="application" | logger="db"
+```
+
+```logql
+{namespace="reconhawx"} | json | path=~"/api/jobs/.*"
+```
+
+Logs **ingested before** Alloy was parsing JSON (or with **`LOG_FORMAT=logfmt`**) may still be stored as a raw line—use `| json` or `| logfmt` in LogQL for those.
+
+For local debugging, set **`LOG_FORMAT=text`** on the workload or shell.
+
 ### 3) kube-prometheus-stack
 
 **Set a strong Grafana admin password** (recommended for every install):
@@ -206,7 +232,7 @@ If you use a **minimal Loki** with no gateway and `auth_enabled: false`, you may
 
 Reconhawx labels pods roughly as follows (see API/runner code): runner pods `app=workflow-runner` with `execution-id` / `workflow-id`; worker pods `app=worker` with `workflow-id` **equal to the execution id** used for NATS routing.
 
-**Alloy** copies Kubernetes pod labels into Loki stream labels (hyphens in K8s keys become underscores in Loki where needed): `workflow-id` → `**workflow_id`**, `execution-id` → `**execution_id**` (runner), `**task-name` → `task_name**`, `**workflow-name` → `workflow_name**` (worker pods when those labels exist). **New streams only:** logs shipped after you deploy the updated `[alloy-config.river](alloy-config.river)` carry these labels; older chunks keep whatever labels they had.
+**Alloy** copies Kubernetes pod labels into Loki stream labels (hyphens in K8s keys become underscores in Loki where needed): `workflow-id` → `**workflow_id`**, `execution-id` → `**execution_id**` (runner), `**task-name` → `task_name**`, `**workflow-name` → `workflow_name**` (worker pods when those labels exist). It also **parses** default JSON app logs in `reconhawx` and adds a **`level`** stream label (see **Structured application logs** above), not only `| json` in queries. **New streams only:** logs shipped after you deploy the updated [`alloy-config.river`](alloy-config.river) carry these labels; older chunks keep whatever labels and line format they had.
 
 `workflow_id` is **high-cardinality** (one value per workflow run). That is acceptable for many clusters; if Loki ingest grows too large, fall back to line filters `|= "<uuid>"` instead of indexing every run as a label.
 
@@ -222,8 +248,13 @@ Replace `EXECUTION_ID` with the workflow run id (same value shown in the UI as e
 | Worker by workflow name (label)                | `{namespace="reconhawx", app="worker", workflow_name="Single-Task-Run-subdomain_finder"}`                                            |
 | Same run (line filter, no `workflow_id` label) | Use Explore with selector `{namespace="reconhawx"}` plus a **line filter** for the UUID (LogQL `|=` operator); see code block below. |
 | API only                                       | `{namespace="reconhawx", app="api"}`                                                                                                 |
+| By log `level` (stream label, new ingest)     | `{namespace="reconhawx", app="api", level="ERROR"}`                                                                                  |
+| By `logger` (structured metadata)              | `{namespace="reconhawx", app="api"} | logger="db"`                                                                                    |
+| By `type` / `status` (structured metadata)     | `{namespace="reconhawx", app="api"} | type="http_access" | status="500"`                                                            |
+| Application logs only                          | `{namespace="reconhawx", app="api"} | type="application"`                                                                            |
 | CT monitor                                     | `{namespace="reconhawx", app="ct-monitor"}`                                                                                          |
 | Event handler                                  | `{namespace="reconhawx", app="event-handler"}`                                                                                       |
+| Frontend (nginx access JSON)                    | `{namespace="reconhawx", app="frontend"}` (access lines: `type="http_access"`, synthetic `message`)                                 |
 
 
 Line-filter example (UUID in log text; avoids `|` inside markdown tables):

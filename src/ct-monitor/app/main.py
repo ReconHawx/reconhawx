@@ -26,6 +26,7 @@ Per-program similarity thresholds: API ct_monitor_program_settings.similarity_th
 
 import asyncio
 import logging
+import os
 import signal
 import sys
 from contextlib import asynccontextmanager
@@ -47,11 +48,15 @@ from protected_domain_similarity import best_match_among_protected
 from alert_publisher import CTAlertPublisher
 from models import CertificateInfo, ProcessingStats, MatchResult
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout)]
+from recon_log_format import apply_service_logging, parse_log_level
+
+# Configure logging (LOG_LEVEL / LOG_FORMAT env; default JSON for Loki)
+apply_service_logging(
+    service="ct-monitor",
+    include_uvicorn=True,
+    log_format=os.getenv("LOG_FORMAT"),
+    root_level=parse_log_level(os.getenv("LOG_LEVEL"), logging.INFO),
+    text_format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 logger = logging.getLogger(__name__)
 
@@ -1132,7 +1137,9 @@ async def run_http_server(service: CTMonitorService):
         host=config.http_host,
         port=config.http_port,
         log_level=config.log_level.lower(),
-        access_log=False
+        access_log=False,
+        # Do not let Uvicorn re-dictConfig() over module-level apply_service_logging().
+        log_config=None,
     )
     server = uvicorn.Server(server_config)
     await server.serve()

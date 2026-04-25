@@ -13,14 +13,11 @@ import sys
 # Add the app directory to the path
 sys.path.insert(0, '/app')
 
-from typosquat_batch import TyposquatBatchTask
+from worker_logging import configure_worker_logging
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
+configure_worker_logging()
+
+from typosquat_batch import TyposquatBatchTask
 
 logger = logging.getLogger(__name__)
 

@@ -38,4 +38,8 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 ARG APP_VERSION=dev
 ENV APP_VERSION=${APP_VERSION}
 
+# Loki-friendly logs (json default); RECON_SERVICE_NAME is a static field on each line.
+ENV LOG_FORMAT=json
+ENV RECON_SERVICE_NAME=ct-monitor
+
 CMD ["python", "main.py"]

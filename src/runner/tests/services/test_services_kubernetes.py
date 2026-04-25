@@ -112,6 +112,8 @@ def test_generate_job_crd_sets_labels_and_env(svc, monkeypatch) -> None:
     assert env_by_name["WORKFLOW_ID"] == "wf-1"
     assert env_by_name["PROGRAM_NAME"] == "prog"
     assert env_by_name["STEP_NUM"] == "1"
+    assert env_by_name["LOG_FORMAT"] == "json"
+    assert env_by_name["LOG_LEVEL"] == "INFO"
     tpl = crd.spec.template.metadata
     assert tpl.labels.get("program-id") == "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
     assert tpl.annotations.get("reconhawx.io/program-name") == "prog"

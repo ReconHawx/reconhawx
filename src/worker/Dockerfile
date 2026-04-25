@@ -113,8 +113,9 @@ RUN pipx install urless
 
 RUN gem install wpscan
 
-# Copy the command wrapper script and entrypoint
-COPY ./app/command_wrapper.py /usr/local/bin/
+# Copy the command wrapper and shared logging (must live beside command_wrapper for imports)
+COPY ./app/recon_log_format.py ./app/worker_logging.py ./app/command_wrapper.py /usr/local/bin/
+COPY ./app/recon_log_format.py ./app/worker_logging.py /workspace/
 
 COPY ./app/utils/ /workspace/utils/
 

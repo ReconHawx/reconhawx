@@ -7,9 +7,14 @@ and examples for different types of event handlers.
 """
 
 import argparse
+import logging
 import os
 import yaml
 from typing import Dict, Any
+
+from .recon_log_format import apply_service_logging, parse_log_level
+
+logger = logging.getLogger(__name__)
 
 
 def generate_typosquat_config() -> Dict[str, Any]:
@@ -219,7 +224,7 @@ def save_config(config: Dict[str, Any], filepath: str, overwrite: bool = False):
     """Save configuration to file"""
 
     if os.path.exists(filepath) and not overwrite:
-        print(f"File {filepath} already exists. Use --overwrite to replace it.")
+        logger.warning("File %s already exists. Use --overwrite to replace it.", filepath)
         return False
 
     try:
@@ -228,15 +233,22 @@ def save_config(config: Dict[str, Any], filepath: str, overwrite: bool = False):
         with open(filepath, 'w') as f:
             yaml.dump(config, f, default_flow_style=False, indent=2, sort_keys=False)
 
-        print(f"Configuration saved to {filepath}")
+        logger.info("Configuration saved to %s", filepath)
         return True
 
     except Exception as e:
-        print(f"Error saving configuration: {e}")
+        logger.error("Error saving configuration: %s", e)
         return False
 
 
 def main():
+    apply_service_logging(
+        service="event-handler",
+        include_uvicorn=False,
+        log_format=os.getenv("LOG_FORMAT", "text"),
+        root_level=parse_log_level(os.getenv("LOG_LEVEL"), logging.INFO),
+        text_format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
     parser = argparse.ArgumentParser(description="Generate event handler configuration files")
     parser.add_argument("output", help="Output configuration file path")
     parser.add_argument(
@@ -268,18 +280,22 @@ def main():
     elif args.type == "comprehensive":
         config = generate_comprehensive_config(args.include_examples)
     else:
-        print(f"Unknown configuration type: {args.type}")
+        logger.error("Unknown configuration type: %s", args.type)
         return
 
     # Save configuration
     success = save_config(config, args.output, args.overwrite)
 
     if success:
-        print(f"\nGenerated {args.type} configuration with {len(config['handlers'])} handlers:")
+        logger.info(
+            "Generated %s configuration with %d handlers",
+            args.type,
+            len(config["handlers"]),
+        )
         for handler in config["handlers"]:
             et = handler["event_type"]
             et_display = ", ".join(et) if isinstance(et, list) else str(et)
-            print(f"  - {et_display}: {handler['description']}")
+            logger.info("  - %s: %s", et_display, handler["description"])
 
 
 if __name__ == "__main__":

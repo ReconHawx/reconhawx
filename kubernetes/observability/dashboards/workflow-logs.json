@@ -32,12 +32,14 @@
         "y": 0
       },
       "id": 1,
+      "description": "Runner logs are one JSON object per line (type=application). Expand a row for fields; in Explore use | json for a table of attributes.",
       "options": {
         "dedupStrategy": "none",
         "enableInfiniteScrolling": false,
         "enableLogDetails": true,
         "showControls": false,
-        "showTime": false,
+        "showLabels": false,
+        "showTime": true,
         "sortOrder": "Ascending",
         "unwrappedColumns": false,
         "wrapLogMessage": false
@@ -139,12 +141,14 @@
         "y": 4
       },
       "id": 2,
+      "description": "Worker logs are one JSON object per line on stderr (type=application). Expand a row for fields; in Explore use | json for a table of attributes.",
       "options": {
         "dedupStrategy": "none",
         "enableInfiniteScrolling": false,
         "enableLogDetails": true,
         "showControls": false,
-        "showTime": false,
+        "showLabels": false,
+        "showTime": true,
         "sortOrder": "Ascending",
         "unwrappedColumns": false,
         "wrapLogMessage": false
@@ -230,6 +234,6 @@
   "timezone": "browser",
   "title": "Workflow Logs",
   "uid": "reconhawx-workflow-logs",
-  "version": 2,
+  "version": 4,
   "weekStart": ""
 }

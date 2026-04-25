@@ -162,12 +162,23 @@ def set_sqlite_pragma(dbapi_connection, connection_record):
             cursor.execute("SET max_parallel_workers_per_gather = 2")
 
 if __name__ == "__main__":
+    # When run as a script, settings.py may not have run — configure logging here.
+    from recon_log_format import apply_service_logging, parse_log_level
+
+    _lvl = parse_log_level(os.getenv("LOG_LEVEL"), logging.INFO)
+    apply_service_logging(
+        service="api",
+        include_uvicorn=False,
+        log_format=os.getenv("LOG_FORMAT", "text"),
+        root_level=_lvl,
+        text_format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    )
     # Test database connection and initialization
     setup_db_logging()
     if test_connection():
-        print("✅ Database connection successful")
+        logger.info("Database connection successful")
         init_database()
-        print("✅ Database initialization completed")
+        logger.info("Database initialization completed")
     else:
-        print("❌ Database connection failed")
+        logger.error("Database connection failed")
         exit(1) 

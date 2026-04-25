@@ -1,6 +1,9 @@
 import logging
-from pydantic_settings import BaseSettings
 import os
+
+from pydantic_settings import BaseSettings
+
+from recon_log_format import apply_service_logging
 
 class Settings(BaseSettings):
     # API settings
@@ -25,8 +28,10 @@ class Settings(BaseSettings):
     DB_CONNECTION_POOL_SIZE: int = 20  # Increased pool size for batch operations
     DB_MAX_OVERFLOW: int = 40  # Increased overflow for batch operations
 
-    # Logging
+    # Logging: json|logfmt|text. With include_uvicorn, app uses JsonLineFormatter;
+    # uvicorn.access uses UvicornAccessJsonLineFormatter (type=http_access, method, path, status, …).
     LOG_LEVEL: str = "INFO"
+    LOG_FORMAT: str = "json"
 
     # Event Publisher Configuration
     EVENT_BATCH_SIZE: int = int(os.getenv("EVENT_BATCH_SIZE", "50"))
@@ -39,8 +44,17 @@ class Settings(BaseSettings):
 
 settings = Settings()
 
-# Configure logging
-logging.basicConfig(
-    level=settings.LOG_LEVEL,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-) 
+
+def _logging_level_int(name: str) -> int:
+    level = getattr(logging, str(name).upper(), None)
+    return level if isinstance(level, int) else logging.INFO
+
+
+# Single process-wide logging (root + uvicorn.* for JSON/logfmt/text)
+apply_service_logging(
+    service="api",
+    include_uvicorn=True,
+    log_format=settings.LOG_FORMAT,
+    root_level=_logging_level_int(settings.LOG_LEVEL),
+    text_format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)

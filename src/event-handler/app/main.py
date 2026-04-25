@@ -14,6 +14,8 @@ from typing import TYPE_CHECKING, Any, Dict, List
 if TYPE_CHECKING:
     from .event_handlers import SimpleEventHandler
 
+import os
+
 import redis
 import uvicorn
 
@@ -25,15 +27,19 @@ from .event_handlers import ActionResult, SimpleBatchManager, close_http_client
 from .routing import normalize_event_data, should_skip_event
 from .handler_config import HandlerSet
 from .api_config_provider import ApiConfigProvider
+from .recon_log_format import apply_service_logging, parse_log_level
 
 logger = logging.getLogger(__name__)
 
 
-def setup_logging(level: str):
-    """Setup logging configuration"""
-    logging.basicConfig(
-        level=getattr(logging, level.upper(), logging.INFO),
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s"
+def setup_logging(level: str, log_format: str | None = None) -> None:
+    """Configure root + uvicorn loggers (LOG_FORMAT / LOG_LEVEL)."""
+    apply_service_logging(
+        service="event-handler",
+        include_uvicorn=True,
+        log_format=log_format if log_format is not None else os.getenv("LOG_FORMAT"),
+        root_level=parse_log_level(level, logging.INFO),
+        text_format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
 
 
@@ -42,7 +48,7 @@ class SimpleNotifierApp:
     
     def __init__(self):
         self.cfg = NotifierConfig()
-        setup_logging(self.cfg.log_level)
+        setup_logging(self.cfg.log_level, self.cfg.log_format)
         
         # Core components
         self.redis = redis.from_url(self.cfg.redis_url)
@@ -95,6 +101,8 @@ class SimpleNotifierApp:
             port=self.cfg.http_port,
             log_level=self.cfg.log_level.lower(),
             access_log=False,
+            # Preserve logging from setup_logging() / apply_service_logging().
+            log_config=None,
         )
         self._uvicorn_server = uvicorn.Server(uvicorn_config)
         http_task = asyncio.create_task(self._uvicorn_server.serve())

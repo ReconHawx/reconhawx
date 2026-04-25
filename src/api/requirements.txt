@@ -10,7 +10,6 @@ kubernetes==35.0.0
 pydantic-settings==2.13.1
 typing-extensions==4.15.0
 docker
-python-json-logger
 PyYAML==6.0.3
 nats-py==2.14.0
 redis==7.4.0

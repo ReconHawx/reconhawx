@@ -289,7 +289,15 @@ class KubernetesService:
                 client.V1EnvVar(
                     name="TASK_NAME",
                     value=job_params["task_name"]
-                )
+                ),
+            client.V1EnvVar(
+                name="LOG_FORMAT",
+                value=os.getenv("LOG_FORMAT", "json"),
+            ),
+            client.V1EnvVar(
+                name="LOG_LEVEL",
+                value=os.getenv("LOG_LEVEL", "INFO"),
+            ),
         ]
 
         container.resources = {
