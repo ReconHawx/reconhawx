@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.1](https://github.com/ReconHawx/reconhawx/compare/v0.23.0...v0.23.1) (2026-04-25)
+
+
+### Bug Fixes
+
+* **k8s:** allow in-cluster upgrades to apply observability RBAC ([af654fa](https://github.com/ReconHawx/reconhawx/commit/af654facc2c04803af8d01c748c9fa62336cb5bb))
+
 ## [0.23.0](https://github.com/ReconHawx/reconhawx/compare/v0.22.1...v0.23.0) (2026-04-25)
 
 
