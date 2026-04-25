@@ -25,9 +25,7 @@ class InternalTokenService:
         """Test database connection and verify table exists"""
         try:
             from db import engine
-            
-            logger.debug("Testing database connection...")
-            
+
             # Test basic connection
             with engine.connect() as conn:
                 logger.debug("Basic database connection successful")

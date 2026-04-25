@@ -168,8 +168,6 @@ async def startup_event():
 def initialize_database():
     """Initialize database tables and default parameters"""
     try:
-        logger.debug("Testing database connection...")
-        
         # Test connection first
         if test_connection():
             logger.debug("Database connection test successful")
