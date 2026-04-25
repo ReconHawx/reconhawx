@@ -1,5 +1,6 @@
 # Cluster-scoped resources touched by kubernetes/base-update/ (Kueue flavors, API↔ClusterQueue RBAC, Headlamp binding).
-# Does not grant node/namespace/PV write. Headlamp CRB references built-in cluster-admin — bind/escalate may be required.
+# Does not grant node/PV write. Namespaces: get/list/watch/create/update/patch for monitoring bootstrap.
+# Headlamp CRB references built-in cluster-admin — bind/escalate may be required.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -32,6 +33,19 @@ rules:
   - apiGroups: ["coordination.k8s.io"]
     resources: ["leases"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # Superset of upgrader-helm-monitoring Role (monitoring ns) so upgrader-sa can create/update that Role without RBAC escalation.
+  - apiGroups: ["", "apps", "batch", "autoscaling", "networking.k8s.io", "policy", "discovery.k8s.io"]
+    resources: ["*"]
+    verbs: ["*"]
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["roles", "rolebindings"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete", "bind", "escalate"]
+  - apiGroups: ["collectors.grafana.com", "loki.grafana.com"]
+    resources: ["*"]
+    verbs: ["*"]
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

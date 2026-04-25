@@ -9,6 +9,7 @@ sortOptions:
   order: fifo
 
 resources:
+  - ../base/monitoring-namespace.yaml
   - ../base/upgrader
   - ../base/config
   - ../base/postgresql
