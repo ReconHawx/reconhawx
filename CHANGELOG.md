@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.23.0](https://github.com/ReconHawx/reconhawx/compare/v0.22.1...v0.23.0) (2026-04-25)
+
+
+### Features
+
+* **k8s:** add Helm observability stack and install-time wiring ([e8c9cd5](https://github.com/ReconHawx/reconhawx/commit/e8c9cd5abfe60e79ff548cbd7281985e3db7a367))
+* **observability:** add Grafana log dashboards for API, frontend, and services ([c4ae485](https://github.com/ReconHawx/reconhawx/commit/c4ae485936d681429d6d0bd0a8e05fde8084e70c))
+* **observability:** ship JSON logs to Loki with consistent fields across services ([a10483e](https://github.com/ReconHawx/reconhawx/commit/a10483e632edd3b9531ce0065868768a11d1d430))
+* **upgrader:** refresh observability from upgrade jobs and link Grafana Explore ([3d34e4d](https://github.com/ReconHawx/reconhawx/commit/3d34e4d17b7933fbd546bb2203de2b77f8778cf0))
+
+
+### Bug Fixes
+
+* **api:** validate scheduled job program fields on the raw request model ([f1a27c7](https://github.com/ReconHawx/reconhawx/commit/f1a27c7a1bc4f6105364516be1ac467493ce72ea))
+* **worker:** fixed go version for gowitness ([724105c](https://github.com/ReconHawx/reconhawx/commit/724105caa304788d7905f6b87380e96711d93721))
+
 ## [0.22.1](https://github.com/ReconHawx/reconhawx/compare/v0.22.0...v0.22.1) (2026-04-23)
 
 
