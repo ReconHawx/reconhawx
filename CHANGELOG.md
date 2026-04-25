@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.2](https://github.com/ReconHawx/reconhawx/compare/v0.23.1...v0.23.2) (2026-04-25)
+
+
+### Bug Fixes
+
+* **k8s:** keep monitoring namespace manifest inside base-update ([cbddee1](https://github.com/ReconHawx/reconhawx/commit/cbddee12ef19e2eae3dee96edc3df091c0a5b9aa))
+
 ## [0.23.1](https://github.com/ReconHawx/reconhawx/compare/v0.23.0...v0.23.1) (2026-04-25)
 
 
