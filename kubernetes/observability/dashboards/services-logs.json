@@ -1,0 +1,120 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "links": [],
+  "panels": [
+    {
+      "datasource": {
+        "type": "loki",
+        "name": "Loki"
+      },
+      "gridPos": {
+        "h": 16,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "options": {
+        "dedupStrategy": "none",
+        "enableInfiniteScrolling": false,
+        "enableLogDetails": true,
+        "showControls": true,
+        "showTime": true,
+        "sortOrder": "Ascending",
+        "unwrappedColumns": false,
+        "wrapLogMessage": false
+      },
+      "pluginVersion": "12.4.3",
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "name": "Loki"
+          },
+          "direction": "forward",
+          "editorMode": "code",
+          "expr": "{service_name=\"ct-monitor\"} | json | line_format \"{{.logger}} : {{.message}}\"",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
+      "title": "CT Monitor",
+      "type": "logs"
+    },
+    {
+      "datasource": {
+        "type": "loki",
+        "name": "Loki"
+      },
+      "gridPos": {
+        "h": 16,
+        "w": 24,
+        "x": 0,
+        "y": 16
+      },
+      "id": 2,
+      "options": {
+        "dedupStrategy": "none",
+        "enableInfiniteScrolling": false,
+        "enableLogDetails": true,
+        "showControls": true,
+        "showTime": true,
+        "sortOrder": "Ascending",
+        "unwrappedColumns": false,
+        "wrapLogMessage": false
+      },
+      "pluginVersion": "12.4.3",
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "name": "Loki"
+          },
+          "direction": "forward",
+          "editorMode": "code",
+          "expr": "{service_name=\"event-handler\"} | json | line_format \"{{.logger}} : {{.message}}\"",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
+      "title": "Event Handler",
+      "type": "logs"
+    }
+  ],
+  "preload": false,
+  "schemaVersion": 42,
+  "tags": [
+    "reconhawx"
+  ],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-15m",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Service Logs",
+  "uid": "reconhawx-services-logs",
+  "version": 1,
+  "weekStart": ""
+}

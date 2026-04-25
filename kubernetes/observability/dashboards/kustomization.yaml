@@ -14,3 +14,12 @@ configMapGenerator:
   - name: reconhawx-grafana-dashboard-workflow-logs
     files:
       - workflow-logs.json
+  - name: reconhawx-grafana-dashboard-api-logs
+    files:
+      - api-logs.json
+  - name: reconhawx-grafana-dashboard-services-logs
+    files:
+      - services-logs.json
+  - name: reconhawx-grafana-dashboard-frontend-logs
+    files:
+      - frontend-logs.json
