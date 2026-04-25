@@ -1839,8 +1839,10 @@ class KubernetesService:
         if staging_id:
             annotations["reconhawx.io/upgrade-staging-id"] = staging_id
 
+
         pod_spec = client.V1PodSpec(
             restart_policy="Never",
+            node_selector={"reconhawx.runner": "true"},
             service_account_name="upgrader-sa",
             automount_service_account_token=True,
             volumes=[work_vol],
