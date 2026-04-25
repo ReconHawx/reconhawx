@@ -11,8 +11,9 @@ import requests
 import tempfile
 import logging
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+from worker_logging import configure_worker_logging
+
+configure_worker_logging()
 logger = logging.getLogger(__name__)
 
 def is_remote_wordlist(wordlist_path):

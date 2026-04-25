@@ -112,7 +112,52 @@ discovery.relabel "filtered" {
 
 loki.source.kubernetes "pod_logs" {
   targets    = discovery.relabel.filtered.output
+  forward_to = [loki.process.parse_recon_json.receiver]
+}
+
+// Reconhawx app images emit one JSON object per line (LOG_FORMAT=json, see recon_log_format.py):
+// timestamp, level, logger, message, service, type (application | http_access). Worker uses the same
+// schema to stderr. Frontend nginx (kubernetes/base/frontend/nginx-config.yaml) matches these fields.
+// Parse for Loki: real event time, level label, structured metadata; stored log line = raw JSON.
+loki.process "parse_recon_json" {
   forward_to = [loki.write.default.receiver]
+
+  stage.match {
+    selector = "{namespace=\"reconhawx\"}"
+
+    stage.json {
+      expressions = {
+        ts     = "timestamp",
+        level  = "level",
+        logger = "logger",
+        type   = "type",
+        method = "method",
+        status = "status",
+      }
+    }
+
+    // RFC3339Nano matches e.g. "2026-04-24T19:20:13.038Z".
+    stage.timestamp {
+      source            = "ts"
+      format            = "RFC3339Nano"
+      action_on_failure = "skip"
+    }
+
+    // Low-cardinality label for LogQL and Grafana log-level coloring.
+    stage.labels {
+      values = { level = "level" }
+    }
+
+    // method/status omitted on application logs (missing JSON keys). Use app label, not service metadata.
+    stage.structured_metadata {
+      values = {
+        logger = "logger",
+        type   = "type",
+        method = "method",
+        status = "status",
+      }
+    }
+  }
 }
 
 loki.write "default" {

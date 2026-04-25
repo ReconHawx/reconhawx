@@ -15,6 +15,10 @@ import requests
 import datetime
 import redis
 from typing import Dict, Any
+
+from worker_logging import configure_worker_logging
+
+configure_worker_logging()
 logger = logging.getLogger(__name__)
 
 # Get script directory
@@ -168,7 +172,7 @@ def fetch_cdn77_cidr():
         
         return {"cdn77": {"cidr": prefixes, "asn": []}}
     except requests.RequestException as e:
-        print(f"Error fetching CDN77 data: {e}")
+        logger.warning("Error fetching CDN77 data: %s", e)
         return {"cdn77": {"cidr": [], "asn": ['60068']}}
 
 def fetch_fastly_cidr():
@@ -179,7 +183,7 @@ def fetch_fastly_cidr():
         data = response.json().get("addresses", [])
         return {"fastly": {"cidr": data, "asn": ['54113']}}
     except requests.RequestException as e:
-        print(f"Error fetching Fastly data: {e}")
+        logger.warning("Error fetching Fastly data: %s", e)
         return {}
 
 def build_providers_list():

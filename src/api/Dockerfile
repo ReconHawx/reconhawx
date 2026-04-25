@@ -38,4 +38,11 @@ ENV APP_VERSION=${APP_VERSION}
 
 EXPOSE 8000
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"] 
+# Loki-friendly logs: json (default), logfmt, or text. RECON_SERVICE_NAME is a static field on each line.
+ENV LOG_FORMAT=json
+ENV RECON_SERVICE_NAME=api
+
+# Set UVICORN_ACCESS_LOG=true or 1 to enable uvicorn HTTP access lines (noisy in Loki; default off).
+ENV UVICORN_ACCESS_LOG=false
+
+CMD ["sh", "-c", "if [ \"${UVICORN_ACCESS_LOG}\" = \"true\" ] || [ \"${UVICORN_ACCESS_LOG}\" = \"1\" ]; then exec uvicorn main:app --host 0.0.0.0 --port 8000; else exec uvicorn main:app --host 0.0.0.0 --port 8000 --no-access-log; fi"]

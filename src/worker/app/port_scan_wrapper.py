@@ -14,6 +14,9 @@ import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Dict, Any, Optional, Tuple
 
+from worker_logging import configure_worker_logging
+
+configure_worker_logging()
 logger = logging.getLogger(__name__)
 NERVA_TIMEOUT = 10
 NERVA_MAX_WORKERS = 10

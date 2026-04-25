@@ -13,8 +13,9 @@ class NotifierConfig:
     # Redis Configuration
     redis_url: str = os.getenv("REDIS_URL", "redis://redis:6379/0")
     
-    # Logging Configuration
+    # Logging Configuration (json | logfmt | text; json default in Dockerfile)
     log_level: str = os.getenv("LOG_LEVEL", "INFO")
+    log_format: str = os.getenv("LOG_FORMAT", "json")
         
     # Settings Configuration - API-based, no file needed
     # settings_file is kept for backward compatibility but not used

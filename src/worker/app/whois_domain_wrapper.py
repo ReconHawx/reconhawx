@@ -9,11 +9,9 @@ from typing import Any, Dict, Optional
 
 from utils.enhanced_whois_checker import DomainStatus, EnhancedWhoisChecker, WhoisInfo
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[logging.StreamHandler(sys.stderr)],
-)
+from worker_logging import configure_worker_logging
+
+configure_worker_logging()
 logger = logging.getLogger(__name__)
 
 _RAW_MAX = 500

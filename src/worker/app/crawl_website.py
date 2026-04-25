@@ -15,14 +15,11 @@ from utils import (
     is_same_domain
 )
 
+from worker_logging import configure_worker_logging
+
+configure_worker_logging()
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
-
-# Add a handler to output logs to stderr
-handler = logging.StreamHandler(sys.stderr)
-formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-handler.setFormatter(formatter)
-logger.addHandler(handler)
 
 def is_valid_domain(domain: str) -> bool:
     """

@@ -4,6 +4,32 @@ metadata:
   name: frontend-nginx-config
 data:
   default.conf: |
+    # JSON one line per request. Fields align with Alloy parse_recon_json in kubernetes/observability/alloy-config.river
+    # (level, logger, type=http_access, message = METHOD URI STATUS, …) and ship to stdout so Loki/Alloy ingests them.
+    log_format json_main escape=json
+      '{'
+        '"timestamp":"$time_iso8601",'
+        '"level":"INFO",'
+        '"logger":"nginx",'
+        '"message":"$request_method $request_uri $status",'
+        '"service":"frontend",'
+        '"type":"http_access",'
+        '"client":"$remote_addr",'
+        '"remote_user":"$remote_user",'
+        '"method":"$request_method",'
+        '"path":"$request_uri",'
+        '"http_version":"$server_protocol",'
+        '"status":$status,'
+        '"bytes_sent":$body_bytes_sent,'
+        '"referer":"$http_referer",'
+        '"user_agent":"$http_user_agent",'
+        '"x_forwarded_for":"$http_x_forwarded_for",'
+        '"request_time":$request_time,'
+        '"upstream_addr":"$upstream_addr",'
+        '"upstream_status":"$upstream_status",'
+        '"upstream_response_time":"$upstream_response_time"'
+      '}';
+
     map $http_upgrade $connection_upgrade {
         default upgrade;
         ''      close;
@@ -12,6 +38,8 @@ data:
     server {
         listen 80;
         server_name localhost;
+
+        access_log /dev/stdout json_main;
 
         # Large multipart uploads (e.g. admin database restore); align above API DATABASE_RESTORE_MAX_BYTES (default 5 GiB)
         client_max_body_size 6g;

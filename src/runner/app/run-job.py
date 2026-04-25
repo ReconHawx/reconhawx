@@ -1,20 +1,19 @@
 #!/usr/bin/env python3
 import sys
-import logging
 import json
 import os
 import asyncio
+
+from runner_logging import configure_runner_logging
+
+configure_runner_logging()
+
+import logging
 from batch_jobs.phishlabs_batch import PhishLabsBatchTask
 from batch_jobs.gather_api_findings import GatherApiFindingsTask
 from batch_jobs.sync_recordedfuture_data import SyncRecordedFutureDataTask
 from batch_jobs.ai_analysis_batch import AIAnalysisBatchTask
 
-# Set up logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
 logger = logging.getLogger(__name__)
 
 async def run_phishlabs_batch_job(job_data: dict):

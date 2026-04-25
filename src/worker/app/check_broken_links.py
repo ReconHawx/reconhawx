@@ -11,7 +11,9 @@ from datetime import datetime, timezone
 import logging
 from urllib.parse import urlparse
 
-logging.basicConfig(level=logging.INFO)
+from worker_logging import configure_worker_logging
+
+configure_worker_logging()
 logger = logging.getLogger(__name__)
 
 # Timeout configuration

@@ -17,16 +17,14 @@ from utils.enhanced_whois_checker import DomainStatus, EnhancedWhoisChecker
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# ------------------------------------------------------------
-# Logging setup – default to INFO but allow override via env
-# or the forthcoming --log-level CLI option.
-# ------------------------------------------------------------
-DEFAULT_LOG_LEVEL = os.getenv("TYPO_WORKER_LOG", "INFO").upper()
-logging.basicConfig(
-    level=getattr(logging, DEFAULT_LOG_LEVEL, logging.INFO),
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[logging.StreamHandler(sys.stderr)],
-)
+# Logging: same as cluster (LOG_FORMAT / LOG_LEVEL). Legacy TYPO_WORKER_LOG if set.
+_typo = os.getenv("TYPO_WORKER_LOG")
+if _typo:
+    os.environ["LOG_LEVEL"] = _typo.strip().upper()
+
+from worker_logging import configure_worker_logging
+
+configure_worker_logging()
 
 # Disable whois.whois logging
 logging.getLogger("whois.whois").setLevel(logging.CRITICAL + 1)

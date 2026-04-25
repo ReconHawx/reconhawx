@@ -33,7 +33,7 @@ def verify_password(password: str, hashed_password: str) -> bool:
         return bcrypt.checkpw(password.encode('utf-8'), hashed_password.encode('utf-8'))
             
     except Exception as e:
-        print(f"Password verification error: {e}")
+        logger.warning("Password verification error: %s", e)
         return False
 
 def hash_password(password: str) -> str:

@@ -1,9 +1,14 @@
 #!/usr/bin/env python3
 import sys
-import logging
 import json
 import os
 from typing import Dict, Any, List, Optional
+
+from runner_logging import configure_runner_logging
+
+configure_runner_logging()
+
+import logging
 from kubernetes import client, config
 import asyncio
 import requests
@@ -18,23 +23,7 @@ from recon_tasks.base import parameter_manager
 from data_api_client import DataAPIClient
 from services.kubernetes import KubernetesService
 
-# Set up logging for our application - keep DEBUG level for our code
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
 logger = logging.getLogger(__name__)
-
-# Set DEBUG level for task_executor module and its dependencies
-logging.getLogger('task_executor').setLevel(logging.DEBUG)
-logging.getLogger('recon_tasks').setLevel(logging.DEBUG)
-logging.getLogger('batch_jobs').setLevel(logging.DEBUG)
-logging.getLogger('task_queue_client').setLevel(logging.DEBUG)
-
-# Disable noisy Kubernetes client debug logs while keeping our app's debug logs
-logging.getLogger('kubernetes').setLevel(logging.WARNING)
-logging.getLogger('urllib3').setLevel(logging.WARNING)
 
 # Global flag to track if workflow was stopped externally
 workflow_stopped_externally = False
@@ -1098,7 +1087,7 @@ async def send_step_started_update(workflow_outputs, step_name, workflow_id, exe
 def main():
     # Check if workflow data was provided
     if len(sys.argv) != 2:
-        print("Usage: python run-workflow.py <workflow.json or JSON string>")
+        logger.error("Usage: python run-workflow.py <workflow.json or JSON string>")
         sys.exit(1)
     
     workflow_data = sys.argv[1]
