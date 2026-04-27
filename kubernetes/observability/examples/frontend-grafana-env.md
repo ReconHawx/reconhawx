@@ -26,7 +26,7 @@ If unset, the buttons are hidden.
 
 ## Grafana datasource name
 
-The Explore URL builder assumes the Loki datasource is named **`Loki`**, matching `additionalDataSources` in `kubernetes/observability/values-kube-prometheus-stack.yaml`. Rename either side if you change it.
+The Explore URL builder assumes the Loki datasource is named **`Loki`**, matching `datasources` in `kubernetes/observability/values-grafana.yaml`. Rename either side if you change it.
 
 ## CORS / cookies
 

@@ -1,7 +1,7 @@
-# Example Ingress for Grafana (kube-prometheus-stack subchart).
+# Example Ingress for Grafana (standalone grafana/grafana chart; Service kps-grafana).
 # Adjust:
 #   - host
-#   - spec.rules[0].http.paths[0].backend.service.name (depends on Helm release name, e.g. kps-grafana)
+#   - spec.rules[0].http.paths[0].backend.service.name (kps-grafana when using values-grafana.yaml fullnameOverride)
 #   - TLS secretName if terminating TLS at the ingress
 #
 #   kubectl get svc -n monitoring | grep -i grafana

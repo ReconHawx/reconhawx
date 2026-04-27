@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# reconhawx-observability-helm.sh — Helm apply for Loki, Grafana Alloy, kube-prometheus-stack.
+# reconhawx-observability-helm.sh — Helm apply for Loki, Grafana Alloy, Grafana (standalone).
 #
 # Sourced by install/update scripts and the in-cluster upgrader. Callers must define:
 #   die() require_cmd() ui_step() ui_ok() ui_note()
@@ -24,7 +24,7 @@ reconhawx_observability_resolve_dir() {
   for d in "${candidates[@]}"; do
     [[ -z "$d" ]] && continue
     obs="${d%/}/kubernetes/observability"
-    if [[ -d "$obs" && -f "$obs/values-loki.yaml" && -f "$obs/values-kube-prometheus-stack.yaml" ]]; then
+    if [[ -d "$obs" && -f "$obs/values-loki.yaml" && -f "$obs/values-grafana.yaml" ]]; then
       printf '%s' "$obs"
       return 0
     fi
@@ -100,8 +100,7 @@ reconhawx_observability_helm_apply() {
     return 0
   fi
 
-  ui_step "Observability: Helm repos (prometheus-community, grafana)"
-  helm repo add prometheus-community https://prometheus-community.github.io/helm-charts 2>/dev/null || true
+  ui_step "Observability: Helm repos (grafana)"
   helm repo add grafana https://grafana.github.io/helm-charts 2>/dev/null || true
   if declare -F run_tool_long &>/dev/null; then
     run_tool_long "Observability: helm repo update" helm repo update
@@ -127,9 +126,13 @@ reconhawx_observability_helm_apply() {
       --set-file "alloy.configMap.content=${obs_dir}/alloy-config.river"
 
   if reconhawx__helm_release_exists kps; then
-    reconhawx__helm_run "Observability: Helm upgrade — kube-prometheus-stack (kps)" \
-      helm upgrade --install kps prometheus-community/kube-prometheus-stack -n monitoring \
-        -f "${obs_dir}/values-kube-prometheus-stack.yaml"
+    ui_note "Observability: legacy Helm release kps (kube-prometheus-stack) is still installed. Uninstall it before standalone Grafana (same Service name kps-grafana): helm uninstall kps -n monitoring — see kubernetes/observability/README.md (Migrating from kube-prometheus-stack)."
+  fi
+
+  if reconhawx__helm_release_exists grafana; then
+    reconhawx__helm_run "Observability: Helm upgrade — grafana" \
+      helm upgrade --install grafana grafana/grafana -n monitoring \
+        -f "${obs_dir}/values-grafana.yaml"
   else
     require_cmd openssl
     local gpw pwf
@@ -137,11 +140,11 @@ reconhawx_observability_helm_apply() {
     pwf="$(mktemp "${TMPDIR:-/tmp}/rh-grafana-pw.XXXXXX")"
     printf '%s' "$gpw" >"$pwf"
     chmod 600 "$pwf" || true
-    ui_note "Grafana (release kps): initial admin password — save this value: ${gpw}"
-    reconhawx__helm_run "Observability: Helm install — kube-prometheus-stack (kps)" \
-      helm upgrade --install kps prometheus-community/kube-prometheus-stack -n monitoring \
-        -f "${obs_dir}/values-kube-prometheus-stack.yaml" \
-        --set-file "grafana.adminPassword=${pwf}"
+    ui_note "Grafana (release grafana, Service kps-grafana): initial admin password — save this value: ${gpw}"
+    reconhawx__helm_run "Observability: Helm install — grafana" \
+      helm upgrade --install grafana grafana/grafana -n monitoring \
+        -f "${obs_dir}/values-grafana.yaml" \
+        --set-file "adminPassword=${pwf}"
     rm -f "$pwf"
   fi
 

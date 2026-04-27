@@ -12,7 +12,7 @@ Superusers can use **Admin → System upgrade** (`/admin/system-upgrade`) when t
 2. Runs **`kubernetes/base-update/pre-apply.d/`** hooks, then **`kubectl apply -k kubernetes/base-update/`**,
 3. Optionally runs **`reconhawx-kueue-quota-sync.py`** when “Resync Kueue quotas” is checked,
 4. **`kubectl rollout restart`** for **api**, **frontend**, **event-handler**, and **ct-monitor**, then waits for rollouts.
-5. Runs **Helm** for **Loki**, **Alloy**, and **kube-prometheus-stack** in **`monitoring`** (same logic as [`reconhawx-observability-helm.sh`](../reconhawx-observability-helm.sh), **strict** mode: the Job fails if `helm` or `kubernetes/observability` is missing). Needs **egress** to Helm chart repositories unless you mirror charts.
+5. Runs **Helm** for **Loki**, **Alloy**, and **Grafana** in **`monitoring`** (same logic as [`reconhawx-observability-helm.sh`](../reconhawx-observability-helm.sh), **strict** mode: the Job fails if `helm` or `kubernetes/observability` is missing). Needs **egress** to the Grafana Helm chart repository unless you mirror charts.
 
 **Use the UI when:** operators have superuser access, outbound GitHub (or staged tarball) is available from the cluster, and the bundled **`upgrader-sa` RBAC** is acceptable for your security model.
 

@@ -1,17 +1,16 @@
-# Observability: Prometheus, Grafana, Loki, Grafana Alloy
+# Observability: Grafana, Loki, Grafana Alloy
 
-Self-hosted stack for **metrics** (Prometheus), **log aggregation** (Loki), and **Kubernetes pod log shipping** (Grafana Alloy DaemonSet). Use this after Reconhawx app manifests are running so you can query **historical** runner/worker container logs after Jobs are garbage-collected.
+Self-hosted stack for **log aggregation** (Loki), **log exploration** (Grafana), and **Kubernetes pod log shipping** (Grafana Alloy DaemonSet). Use this after Reconhawx app manifests are running so you can query **historical** runner/worker container logs after Jobs are garbage-collected. **Prometheus / node metrics are not installed** by default; optional `values-kube-prometheus-stack.yaml` is reference-only if you add metrics later.
 
 This path is **Helm-based** and lives in the `monitoring` namespace. The `**monitoring`** namespace object is included from `**kubernetes/base**`; chart installs are still **Helm**. `**[install-kubernetes.sh](../../install-kubernetes.sh)`** / `**[install-minikube.sh](../../install-minikube.sh)**` and `**[update-kubernetes.sh](../../update-kubernetes.sh)**` / `**update-minikube.sh**` run `**[reconhawx-observability-helm.sh](../../reconhawx-observability-helm.sh)**` when `**RECONHAWX_OBSERVABILITY**` is not disabled and `**helm**` is available (or use Argo CD / Helmfile with the same values).
 
 ## Prerequisites
 
 - `kubectl` and `helm` (v3) configured for the cluster.
-- Default **StorageClass** for PVCs (Loki chunks, Prometheus, Grafana, Alertmanager).
+- Default **StorageClass** for PVCs (Loki, Grafana).
 - Nodes reachable from your workstation if you use port-forward for Grafana.
-- **Helm repos:**
+- **Helm repo:**
   ```bash
-  helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
   helm repo add grafana https://grafana.github.io/helm-charts
   helm repo update
   ```
@@ -29,7 +28,34 @@ kubectl apply -f kubernetes/base/monitoring-namespace.yaml
 
 1. **Loki** (log store).
 2. **Grafana Alloy** (ships pod logs to Loki).
-3. **kube-prometheus-stack** (Prometheus + Grafana + Alertmanager + exporters). Grafana is pre-wired with a **Loki** datasource pointing at `http://loki.monitoring.svc.cluster.local:3100`.
+3. **Grafana** (standalone `grafana/grafana` chart). Pre-wired with a **Loki** datasource via `loki-gateway` and tenant header `X-Scope-OrgID: fake`.
+
+## Resource-constrained clusters
+
+[`values-loki.yaml`](values-loki.yaml) disables **chunks-cache** and **results-cache** (memcached pods that default to multi-gigabyte RAM). **Loki SingleBinary** and **Grafana** use `nodeSelector` **`reconhawx.runner: "true"`** so they schedule on a larger node; **Grafana Alloy** remains a DaemonSet on every node (including small workers) and is the only observability component that must run everywhere for log collection. There is no **prometheus-node-exporter** DaemonSet in this layout.
+
+## Migrating from kube-prometheus-stack (`kps`)
+
+If an older cluster still has **`helm release kps`** installed, remove it before relying on the standalone Grafana release (same `kps-grafana` Service name via `fullnameOverride`, but Helm release name becomes **`grafana`**):
+
+```bash
+helm uninstall kps -n monitoring
+# Optional: remove old Grafana PVC if you want a fresh Grafana DB (data loss for local dashboards).
+# kubectl get pvc -n monitoring | grep grafana
+# kubectl delete pvc <claim-name> -n monitoring
+```
+
+If `helm upgrade --install grafana …` then fails with **invalid ownership metadata** on **`ClusterRole` / `ClusterRoleBinding`** (for example `kps-grafana-clusterrole` still annotated for release **`kps`**), `kps` left cluster-scoped Grafana RBAC behind or was removed outside Helm. Delete the orphaned objects and retry:
+
+```bash
+kubectl get clusterrole,clusterrolebinding | grep kps-grafana || true
+kubectl delete clusterrole kps-grafana-clusterrole
+kubectl delete clusterrolebinding kps-grafana-clusterrolebinding  # name may differ; delete every kps-grafana binding from kubectl get
+```
+
+Then run [`reconhawx-observability-helm.sh`](../../reconhawx-observability-helm.sh) or `helm upgrade --install grafana …` as in step 3 below.
+
+The upstream **`grafana/grafana`** chart may print **deprecated**; installs still work—pin a chart version in production and watch Grafana’s chart migration notes if you move to OCI or a renamed chart later.
 
 ### 1) Loki
 
@@ -44,7 +70,7 @@ Confirm the Service (this repo assumes `**loki:3100**`):
 kubectl get svc -n monitoring -l app.kubernetes.io/name=loki
 ```
 
-If your chart revision exposes a different port or uses a gateway, update `[alloy-config.river](alloy-config.river)` `loki.write` URL and `[values-kube-prometheus-stack.yaml](values-kube-prometheus-stack.yaml)` `grafana.additionalDataSources[0].url` accordingly.
+If your chart revision exposes a different port or uses a gateway, update `[alloy-config.river](alloy-config.river)` `loki.write` URL and `[values-grafana.yaml](values-grafana.yaml)` `datasources.datasources.yaml.datasources[0].url` accordingly.
 
 ### 2) Grafana Alloy
 
@@ -82,19 +108,19 @@ Logs **ingested before** Alloy was parsing JSON (or with **`LOG_FORMAT=logfmt`**
 
 For local debugging, set **`LOG_FORMAT=text`** on the workload or shell.
 
-### 3) kube-prometheus-stack
+### 3) Grafana (standalone)
 
 **Set a strong Grafana admin password** (recommended for every install):
 
 ```bash
-helm upgrade --install kps prometheus-community/kube-prometheus-stack -n monitoring \
-  -f kubernetes/observability/values-kube-prometheus-stack.yaml \
-  --set grafana.adminPassword="$(openssl rand -base64 24)"
+helm upgrade --install grafana grafana/grafana -n monitoring \
+  -f kubernetes/observability/values-grafana.yaml \
+  --set adminPassword="$(openssl rand -base64 24)"
 ```
 
-If you omit `--set grafana.adminPassword`, the Grafana subchart default password applies (see upstream `kube-prometheus-stack` docs—change it immediately after first login in any environment beyond disposable dev clusters).
+If you omit `--set adminPassword`, the chart default password applies (see upstream Grafana chart docs—change it immediately after first login in any environment beyond disposable dev clusters).
 
-Discover the Grafana Service name (depends on Helm release name, default `kps`):
+The Service name is **`kps-grafana`** (`fullnameOverride` in [`values-grafana.yaml`](values-grafana.yaml)) so the frontend **`/grafana/`** proxy keeps working without renaming.
 
 ```bash
 kubectl get svc -n monitoring | grep -i grafana
@@ -109,7 +135,7 @@ kubectl port-forward -n monitoring svc/kps-grafana 3000:80
 
 ## Completely uninstalling
 
-[`reconhawx-observability-helm.sh`](../../reconhawx-observability-helm.sh) installs three Helm releases in **`monitoring`**: **`kps`** (kube-prometheus-stack), **`alloy`**, **`loki`**, then applies built-in dashboard ConfigMaps from [`dashboards/`](dashboards/).
+[`reconhawx-observability-helm.sh`](../../reconhawx-observability-helm.sh) installs three Helm releases in **`monitoring`**: **`grafana`**, **`alloy`**, **`loki`**, then applies built-in dashboard ConfigMaps from [`dashboards/`](dashboards/).
 
 1. **Remove Reconhawx dashboard ConfigMaps** (optional first if you want Grafana gone before sidecar noise):
 
@@ -119,10 +145,10 @@ kubectl port-forward -n monitoring svc/kps-grafana 3000:80
 
    Prune any leftover ConfigMaps you added manually (`kubectl get cm -n monitoring -l grafana_dashboard=1`).
 
-2. **Uninstall Helm releases** (order avoids leaving operator-managed objects in a weird state; release names match the script):
+2. **Uninstall Helm releases** (release names match the script):
 
    ```bash
-   helm uninstall kps -n monitoring
+   helm uninstall grafana -n monitoring
    helm uninstall alloy -n monitoring
    helm uninstall loki -n monitoring
    ```
@@ -142,7 +168,7 @@ kubectl port-forward -n monitoring svc/kps-grafana 3000:80
 
    If you keep the namespace, delete stray **Secrets**, **Services**, and **ClusterRoleBindings** that namespaced Helm hooks may have created (rare); `kubectl get all -n monitoring`.
 
-5. **Cluster-scoped CRDs** (optional, **dangerous** on shared clusters): `kube-prometheus-stack` installs Prometheus Operator CRDs (`Prometheus`, `ServiceMonitor`, `PodMonitor`, `PrometheusRule`, etc.). `helm uninstall` does **not** remove CRDs. Only remove them if nothing else in the cluster uses those APIs (other monitoring stacks, GitOps). See the chart’s “Uninstall” / CRD notes and `kubectl get crd | grep monitoring.coreos.com` before deleting.
+5. **Cluster-scoped CRDs**: this default stack does **not** install Prometheus Operator CRDs. If you previously used **`kube-prometheus-stack`** (`kps`), those CRDs may still exist; only remove them if nothing else uses them (`kubectl get crd | grep monitoring.coreos.com`).
 
 6. **Reconhawx app layer**: remove the **`/grafana/`** proxy from [`kubernetes/base/frontend/nginx-config.yaml`](../base/frontend/nginx-config.yaml) and any **`REACT_APP_GRAFANA_URL`** build args if you no longer want the UI to link to Grafana (optional cleanup, not required for cluster removal).
 
@@ -151,11 +177,10 @@ kubectl port-forward -n monitoring svc/kps-grafana 3000:80
 ## Ingress, TLS, and SSO (production)
 
 - Example Ingress: `[examples/grafana-ingress.yaml](examples/grafana-ingress.yaml)` — patch `host` and `service.name` to match your release.
-- Configure **Grafana OIDC / SAML** via kube-prometheus-stack chart values (`grafana.ini` or `grafana.env`) per your IdP.
+- Configure **Grafana OIDC / SAML** via the Grafana chart (`grafana.ini`, env, or extra secret mounts) per your IdP.
 - If you use **NetworkPolicies**, allow:
   - Alloy → Loki (TCP push port),
-  - Grafana → Loki + Prometheus,
-  - Prometheus → Kubernetes API and scrape targets.
+  - Grafana → Loki gateway (HTTP).
 
 ## Troubleshooting
 
@@ -163,14 +188,13 @@ kubectl port-forward -n monitoring svc/kps-grafana 3000:80
 
 The Grafana chart runs an `**init-chown-data`** initContainer to `chown` the PVC. That step often **fails on restricted nodes** (default-deny capabilities, read-only root filesystem, custom SCC/PSA profiles).
 
-This repo disables that init and relies on `**podSecurityContext.fsGroup: 472`** so Kubernetes sets volume group ownership instead (see `[values-kube-prometheus-stack.yaml](values-kube-prometheus-stack.yaml)`).
+This repo disables that init and relies on the chart default **`securityContext.fsGroup: 472`** so Kubernetes sets volume group ownership instead (see `[values-grafana.yaml](values-grafana.yaml)` `initChownData.enabled: false`).
 
 After changing values:
 
 ```bash
-helm upgrade --install kps prometheus-community/kube-prometheus-stack -n monitoring \
-  -f kubernetes/observability/values-kube-prometheus-stack.yaml \
-  --reuse-values
+helm upgrade --install grafana grafana/grafana -n monitoring \
+  -f kubernetes/observability/values-grafana.yaml
 kubectl -n monitoring rollout restart deploy/kps-grafana
 ```
 
@@ -180,15 +204,15 @@ If Grafana still cannot write to the PVC (main container error: permission denie
 
 The Loki **gateway** (and many default Helm installs) expect an `**X-Scope-OrgID`** tenant header. This repo sets:
 
-- **Grafana** Loki datasource: `X-Scope-OrgID: fake` via `jsonData` headers, URL `http://loki-gateway.monitoring.svc:80` (see `[values-kube-prometheus-stack.yaml](values-kube-prometheus-stack.yaml)`).
+- **Grafana** Loki datasource: `X-Scope-OrgID: fake` with `httpHeaderName1` in `jsonData` and `httpHeaderValue1` in `secureJsonData` (Grafana ignores header values in `jsonData` alone), URL `http://loki-gateway.monitoring.svc:80` (see `[values-grafana.yaml](values-grafana.yaml)`).
 - **Alloy** push: `tenant_id = "fake"` on `loki.write` (see `[alloy-config.river](alloy-config.river)`).
 
 After changing values, re-apply:
 
 ```bash
-helm upgrade --install kps prometheus-community/kube-prometheus-stack -n monitoring \
-  -f kubernetes/observability/values-kube-prometheus-stack.yaml \
-  --set grafana.adminPassword="$(kubectl -n monitoring get secret kps-grafana -o jsonpath='{.data.admin-password}' | base64 -d)"
+helm upgrade --install grafana grafana/grafana -n monitoring \
+  -f kubernetes/observability/values-grafana.yaml \
+  --set adminPassword="$(kubectl -n monitoring get secret kps-grafana -o jsonpath='{.data.admin-password}' | base64 -d)"
 helm upgrade --install alloy grafana/alloy -n monitoring \
   -f kubernetes/observability/values-alloy.yaml \
   --set-file alloy.configMap.content=kubernetes/observability/alloy-config.river
@@ -217,9 +241,8 @@ If you use a **minimal Loki** with no gateway and `auth_enabled: false`, you may
   ```
 3. **Re-apply chart values and restart Grafana** (picks up datasource changes; clears stale SQLite cache):
   ```bash
-   helm upgrade --install kps prometheus-community/kube-prometheus-stack -n monitoring \
-     -f kubernetes/observability/values-kube-prometheus-stack.yaml \
-     --reuse-values
+   helm upgrade --install grafana grafana/grafana -n monitoring \
+     -f kubernetes/observability/values-grafana.yaml
    kubectl -n monitoring rollout restart deploy/kps-grafana
   ```
 4. In **Explore**, pick datasource **Loki** (uid `reconhawx-loki` if shown), time range **Last 24 hours**, query:
@@ -269,7 +292,7 @@ Line-filter example (UUID in log text; avoids `|` inside markdown tables):
 
 ### Same-host proxy (`/grafana/`)
 
-The base frontend nginx ConfigMap proxies `**/grafana/`** to `**kps-grafana.monitoring.svc.cluster.local**` (see `[kubernetes/base/frontend/nginx-config.yaml](../base/frontend/nginx-config.yaml)`). Apply `**kubernetes/observability/values-kube-prometheus-stack.yaml**` so Grafana has `serve_from_sub_path` and `root_url` under `/grafana/`, then **Helm upgrade `kps`** and `**kubectl apply -k kubernetes/base/**` (or your overlay) for the frontend.
+The base frontend nginx ConfigMap proxies `**/grafana/`** to `**kps-grafana.monitoring.svc.cluster.local**` (see `[kubernetes/base/frontend/nginx-config.yaml](../base/frontend/nginx-config.yaml)`). Apply `**kubernetes/observability/values-grafana.yaml**` so Grafana has `serve_from_sub_path` and `root_url` under `/grafana/`, then **Helm upgrade `grafana`** and `**kubectl apply -k kubernetes/base/**` (or your overlay) for the frontend.
 
 Superusers open **Grafana** from **Administration** in the React app (same pattern as Headlamp).
 
@@ -289,20 +312,21 @@ See `[examples/frontend-grafana-env.md](examples/frontend-grafana-env.md)`.
 | `[values-loki.yaml](values-loki.yaml)`                                         | Loki SingleBinary + filesystem PVC                                                            |
 | `[values-alloy.yaml](values-alloy.yaml)`                                       | Alloy DaemonSet defaults                                                                      |
 | `[alloy-config.river](alloy-config.river)`                                     | Alloy pipeline → Loki                                                                         |
-| `[values-kube-prometheus-stack.yaml](values-kube-prometheus-stack.yaml)`       | Prometheus + Grafana + Loki datasource                                                        |
+| `[values-grafana.yaml](values-grafana.yaml)`                                   | Standalone Grafana + Loki datasource                                                          |
+| `[values-kube-prometheus-stack.yaml](values-kube-prometheus-stack.yaml)`       | Reference only — optional full Prometheus stack if you add metrics later                      |
 | `[dashboards/](dashboards/)`                                                   | Built-in Grafana dashboards (Kustomize → `ConfigMap`, sidecar label `grafana_dashboard: "1"`) |
 | `[examples/](examples/)`                                                       | Ingress template, frontend env notes                                                          |
 
 
 ## Dashboards
 
-kube-prometheus-stack ships default Kubernetes / node dashboards. **Reconhawx-built-in** dashboards live under `[dashboards/](dashboards/)`: JSON files plus `[dashboards/kustomization.yaml](dashboards/kustomization.yaml)` build `ConfigMap`s in `**monitoring`** with the label the Grafana sidecar expects. `[reconhawx-observability-helm.sh](../../reconhawx-observability-helm.sh)` runs `**kubectl apply -k**` on that folder **after** the `kps` Helm upgrade so Grafana picks them up.
+**Reconhawx-built-in** dashboards live under `[dashboards/](dashboards/)`: JSON files plus `[dashboards/kustomization.yaml](dashboards/kustomization.yaml)` build `ConfigMap`s in `**monitoring`** with the label the Grafana sidecar expects. `[reconhawx-observability-helm.sh](../../reconhawx-observability-helm.sh)` runs `**kubectl apply -k**` on that folder **after** the `grafana` Helm upgrade so Grafana picks them up.
 
 ### Export from Grafana (works on the next import)
 
 1. Open the dashboard → **Share** (or **Dashboard settings**) → **Export** → **Save to file**.
 2. Enable **Export for sharing externally** if Grafana added datasource/template inputs (`__inputs`, `${DS_LOKI}`, etc.) — the normalizer below strips those.
-3. From the repo root, run `**[reconhawx-grafana-dashboard-normalize.py](../../reconhawx-grafana-dashboard-normalize.py)`** so every `**datasource**` that targets **Loki** becomes `**{"type": "loki", "name": "Loki"}`** (matches Helm `additionalDataSources[].name`), `**__inputs` / `__requires` / `__elements**` are removed, optional `**reconhawx**` tag is added, and stray `**${DS_LOKI}**` strings are replaced:
+3. From the repo root, run `**[reconhawx-grafana-dashboard-normalize.py](../../reconhawx-grafana-dashboard-normalize.py)`** so every `**datasource**` that targets **Loki** becomes `**{"type": "loki", "name": "Loki"}`** (matches `values-grafana.yaml` datasource **name** `Loki`), `**__inputs` / `__requires` / `__elements**` are removed, optional `**reconhawx**` tag is added, and stray `**${DS_LOKI}**` strings are replaced:
 
 ```bash
 python3 reconhawx-grafana-dashboard-normalize.py ~/Downloads/my-dashboard.json \
@@ -324,12 +348,12 @@ To apply dashboards only (e.g. after editing JSON):
 kubectl apply -k kubernetes/observability/dashboards/
 ```
 
-If the sidecar label differs in your chart version, check `grafana.sidecar.dashboards` in the rendered `kps` values and align `kustomization.yaml` labels.
+If the sidecar label differs in your chart version, check `sidecar.dashboards` in the rendered Grafana values and align `kustomization.yaml` labels.
 
 ### Removing built-in dashboards
 
 1. Remove the JSON and the matching `configMapGenerator` entry from `[dashboards/kustomization.yaml](dashboards/kustomization.yaml)`, then `**kubectl delete configmap <name> -n monitoring**` for the old ConfigMap (apply alone does not prune it).
-2. **Why the UI can still show the dashboard:** Grafana keeps provisioned dashboards in its SQLite DB. The k8s-sidecar does not always remove the JSON file when the ConfigMap disappears ([grafana/helm-charts#19](https://github.com/grafana/helm-charts/issues/19)). The Grafana Helm chart reads `**grafana.sidecar.dashboards.provider.disableDelete`** and renders that as `**disableDeletion**` inside `sc-dashboardproviders.yaml` (a sibling key named `disableDeletion` under `provider` is **ignored**). This repo sets `**disableDelete: false`** in `[values-kube-prometheus-stack.yaml](values-kube-prometheus-stack.yaml)` so Grafana is *allowed* to drop dashboards when the JSON file is gone — but Grafana still does not always do it ([grafana/grafana#41085](https://github.com/grafana/grafana/issues/41085)). **Re-apply Helm** for `kps`, then restart Grafana.
+2. **Why the UI can still show the dashboard:** Grafana keeps provisioned dashboards in its SQLite DB. The k8s-sidecar does not always remove the JSON file when the ConfigMap disappears ([grafana/helm-charts#19](https://github.com/grafana/helm-charts/issues/19)). The Grafana Helm chart reads `**sidecar.dashboards.provider.disableDelete`** and renders that as `**disableDeletion**` inside `sc-dashboardproviders.yaml` (a sibling key named `disableDeletion` under `provider` is **ignored**). This repo sets `**disableDelete: false`** in `[values-grafana.yaml](values-grafana.yaml)` so Grafana is *allowed* to drop dashboards when the JSON file is gone — but Grafana still does not always do it ([grafana/grafana#41085](https://github.com/grafana/grafana/issues/41085)). **Re-apply Helm** for `grafana`, then restart Grafana.
 3. `**DELETE /api/dashboards/uid/...` will fail** with `{"message":"provisioned dashboard cannot be deleted"}` — that is expected. Do **not** use the HTTP API for sidecar dashboards.
 4. **Remove the JSON from disk** (only if it is still there). An **empty** `/tmp/dashboards` usually means the sidecar **already deleted** the file after the ConfigMap went away — that is normal. Grafana should then drop the provisioned row from its DB when the rendered provider has `**disableDeletion: false*`*; if the UI still shows the dashboard, treat it as a **stale DB row** (go to step 6).
   Container names vary by chart (`grafana-sc-dashboard` is common):
@@ -342,9 +366,9 @@ If the sidecar label differs in your chart version, check `grafana.sidecar.dashb
   ```
 6. **No JSON on disk but the dashboard still appears** (reload returns 200 but nothing changes):
   a. **Confirm the provider file Helm actually ships** (name is usually `*-grafana-config-dashboards`):
-   In the embedded `provider.yaml`, `**disableDeletion:` must be `false`**. If it is `true`, your `kps` values never set `**grafana.sidecar.dashboards.provider.disableDelete: false**` (upgrade `kps` with this repo’s `[values-kube-prometheus-stack.yaml](values-kube-prometheus-stack.yaml)`), then `**kubectl rollout restart deploy/kps-grafana -n monitoring**`.
+   In the embedded `provider.yaml`, `**disableDeletion:` must be `false`**. If it is `true`, your Helm values never set `**sidecar.dashboards.provider.disableDelete: false**` (upgrade `grafana` with this repo’s `[values-grafana.yaml](values-grafana.yaml)`), then `**kubectl rollout restart deploy/kps-grafana -n monitoring**`.
    b. `**POST .../api/admin/provisioning/dashboards/reload**` only re-reads config; it does **not** reliably garbage-collect orphaned rows when the JSON is already gone ([grafana/grafana#92319](https://github.com/grafana/grafana/issues/92319) and related). A restart is more useful than reload for that case.
-   c. **Last resort — SQLite** (Grafana bug / race: file removed, row left in `grafana.db`). **Back up first.** With Grafana at **0 replicas** and its pods gone, use [`examples/grafana-db-edit-pod.yaml`](examples/grafana-db-edit-pod.yaml): set **claimName** to your Grafana PVC (`kubectl get pvc -n monitoring | grep grafana`; release **kps** is often **kps-grafana**), **kubectl apply -f** that manifest, **kubectl wait --for=condition=Ready pod/grafana-db-edit -n monitoring --timeout=180s**, **kubectl exec -it -n monitoring pod/grafana-db-edit -- sh**, copy `/mnt/grafana/grafana.db` to a timestamped `.bak` beside it, run **sqlite3 /mnt/grafana/grafana.db** with the SQL below, **kubectl delete pod grafana-db-edit -n monitoring**, then scale **kps-grafana** back up. (Alternative without scaling to zero: edit `/var/lib/grafana/grafana.db` in the running **grafana** container only if you accept corruption risk.)
+   c. **Last resort — SQLite** (Grafana bug / race: file removed, row left in `grafana.db`). **Back up first.** With Grafana at **0 replicas** and its pods gone, use [`examples/grafana-db-edit-pod.yaml`](examples/grafana-db-edit-pod.yaml): set **claimName** to your Grafana PVC (`kubectl get pvc -n monitoring | grep grafana`; Helm release **`grafana`** still names the claim **`kps-grafana`** via `fullnameOverride`), **kubectl apply -f** that manifest, **kubectl wait --for=condition=Ready pod/grafana-db-edit -n monitoring --timeout=180s**, **kubectl exec -it -n monitoring pod/grafana-db-edit -- sh**, copy `/mnt/grafana/grafana.db` to a timestamped `.bak` beside it, run **sqlite3 /mnt/grafana/grafana.db** with the SQL below, **kubectl delete pod grafana-db-edit -n monitoring**, then scale **kps-grafana** back up. (Alternative without scaling to zero: edit `/var/lib/grafana/grafana.db` in the running **grafana** container only if you accept corruption risk.)
    **Grafana 11+ / 12+:** dashboards are often stored in SQLite tables **`resource`** and **`resource_history`** (unified storage). The legacy **`dashboard`** table may be **empty** even though the UI lists dashboards — use the queries in [`examples/grafana-db-edit-pod.yaml`](examples/grafana-db-edit-pod.yaml) (Grafana 11+ / 12+ section) to find rows, then edit or delete those (still with a backup).
 
    Legacy SQL (older Grafana / dual-write rows only) — replace `YOUR_DASHBOARD_UID` (for example `reconhawx-workflow-logs`):
