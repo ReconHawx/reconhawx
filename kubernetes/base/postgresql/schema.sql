@@ -2,8 +2,6 @@
 -- PostgreSQL database dump
 --
 
-\restrict pf5n8v8tnl1HSpoqLVWvdWmhKy9h1IxUcxyhgq1BPwMObTwaSUcrgKrrvK1EO2j
-
 -- Dumped from database version 15.15 (Debian 15.15-1.pgdg13+1)
 -- Dumped by pg_dump version 17.9
 
@@ -4041,5 +4039,4 @@ ALTER TABLE ONLY public.wpscan_findings
 -- PostgreSQL database dump complete
 --
 
-\unrestrict pf5n8v8tnl1HSpoqLVWvdWmhKy9h1IxUcxyhgq1BPwMObTwaSUcrgKrrvK1EO2j
 
