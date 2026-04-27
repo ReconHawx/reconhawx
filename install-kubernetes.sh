@@ -226,7 +226,7 @@ Environment:
   RECONHAWX_GITHUB_REPO    owner/repo (default: ReconHawx/reconhawx).
   INSTALL_STAGING_DIR      Git-clone installs only: staging copy (default: /tmp/reconhawx); deleted after success.
   INGRESS_HOST             Frontend URL hostname (default: reconhawx.local); also written to frontend-ingress when not default.
-  RECONHAWX_OBSERVABILITY  unset/1 = after core manifests, install Helm stack (Loki, Alloy, kube-prometheus-stack) when
+  RECONHAWX_OBSERVABILITY  unset/1 = after core manifests, install Helm stack (Loki, Alloy, Grafana) when
                            helm(1) and reconhawx-observability-helm.sh + kubernetes/observability exist; 0 = skip.
 
 Examples (no git clone):

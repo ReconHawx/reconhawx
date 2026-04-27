@@ -1,4 +1,4 @@
-# Namespaced permissions in monitoring for Helm (Loki, Alloy, kube-prometheus-stack) from the upgrader Job.
+# Namespaced permissions in monitoring for Helm (Loki, Alloy, Grafana) from the upgrader Job.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:

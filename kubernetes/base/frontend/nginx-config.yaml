@@ -78,8 +78,8 @@ data:
             proxy_send_timeout 3600s;
         }
 
-        # Grafana (kube-prometheus-stack; Helm release name kps → Service kps-grafana in namespace monitoring).
-        # Grafana must be configured with serve_from_sub_path and root_url (see kubernetes/observability/values-kube-prometheus-stack.yaml).
+        # Grafana (Helm release grafana; fullnameOverride → Service kps-grafana in namespace monitoring).
+        # Grafana must be configured with serve_from_sub_path and root_url (see kubernetes/observability/values-grafana.yaml).
         location = /grafana {
             return 302 $scheme://$http_host/grafana/;
         }

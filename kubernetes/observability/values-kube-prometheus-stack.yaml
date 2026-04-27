@@ -1,3 +1,6 @@
+# Reference only — not installed by reconhawx-observability-helm.sh (see values-grafana.yaml).
+# Optional kube-prometheus-stack values if you re-enable full metrics (Prometheus, Alertmanager, node-exporter).
+#
 # kube-prometheus-stack — Prometheus Operator, Prometheus, Grafana, kube-state-metrics, node-exporter.
 # Pin chart version in production (`helm search repo prometheus-community/kube-prometheus-stack --versions`).
 #
@@ -74,9 +77,10 @@ grafana:
       jsonData:
         maxLines: 5000
         timeout: 120
-        # Some Helm/Grafana paths do not apply secureJsonData for extra datasources.
-        # "fake" is the usual single-tenant Loki org; safe to keep in jsonData here.
+        # Grafana reads HTTP header names from jsonData and values from secureJsonData.
+        # "fake" is the usual single-tenant Loki org for loki-gateway (X-Scope-OrgID).
         httpHeaderName1: X-Scope-OrgID
+      secureJsonData:
         httpHeaderValue1: fake
 
 prometheus-node-exporter:

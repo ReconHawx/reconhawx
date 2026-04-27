@@ -108,7 +108,7 @@ The API image ships **PostgreSQL 15 client tools** (`postgresql-client-15`). The
 | **API** | FastAPI backend (init container runs **Alembic** migrations before the app starts) |
 | **Frontend** | React UI behind nginx |
 | **Headlamp** | In-cluster [Headlamp](https://headlamp.dev/) Kubernetes UI (`ghcr.io/headlamp-k8s/headlamp`); reached at **`/headlamp/`** on the same host as the frontend (nginx proxies to the `headlamp` Service). The pod loads a kubeconfig from the `headlamp-kubeconfig` ConfigMap that uses **`tokenFile`** pointed at the mounted **`headlamp-admin`** ServiceAccount token, so the UI does not require pasting a token for normal use. The optional **`headlamp-admin`** legacy token Secret remains for break-glass / tooling; see [in-cluster access](https://headlamp.dev/docs/latest/installation/in-cluster/). |
-| **Grafana (optional)** | When installed via Helm (**[`kubernetes/observability/`](observability/README.md)**), the frontend nginx proxies **`/grafana/`** to the `kps-grafana` Service in namespace **`monitoring`** (default Helm release name **`kps`**). Grafana must be configured with `serve_from_sub_path` (see [`values-kube-prometheus-stack.yaml`](observability/values-kube-prometheus-stack.yaml)). Superusers see **Grafana** under **Administration** in the UI. |
+| **Grafana (optional)** | When installed via Helm (**[`kubernetes/observability/`](observability/README.md)**), the frontend nginx proxies **`/grafana/`** to the `kps-grafana` Service in namespace **`monitoring`** (Helm release **`grafana`**, `fullnameOverride: kps-grafana`). Grafana must be configured with `serve_from_sub_path` (see [`values-grafana.yaml`](observability/values-grafana.yaml)). Superusers see **Grafana** under **Administration** in the UI. |
 | **Event Handler** | NATS event consumer |
 | **CT Monitor** | Certificate Transparency log watcher |
 | **Runner** | RBAC for workflow runner jobs (pods created dynamically by the API) |
@@ -116,7 +116,7 @@ The API image ships **PostgreSQL 15 client tools** (`postgresql-client-15`). The
 
 ## Observability (optional)
 
-For **Prometheus**, **Grafana**, **Loki**, and **Grafana Alloy** (historical pod logs after workflow Jobs finish), use Helm values and docs under **[`kubernetes/observability/README.md`](observability/README.md)**. That stack installs into the **`monitoring`** namespace and is separate from `kubectl apply -k kubernetes/base/`.
+For **Grafana**, **Loki**, and **Grafana Alloy** (historical pod logs after workflow Jobs finish), use Helm values and docs under **[`kubernetes/observability/README.md`](observability/README.md)**. That stack installs into the **`monitoring`** namespace and is separate from `kubectl apply -k kubernetes/base/`.
 
 ## Kueue Setup
 

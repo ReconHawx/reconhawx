@@ -1,5 +1,5 @@
-# Grafana sidecar in kube-prometheus-stack watches ConfigMaps in monitoring with this label.
-# See: https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack
+# Grafana chart sidecar watches ConfigMaps in monitoring with this label.
+# See: https://github.com/grafana/helm-charts/tree/main/charts/grafana
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 

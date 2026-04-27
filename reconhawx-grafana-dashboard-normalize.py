@@ -62,7 +62,7 @@ def _replace_placeholder_strings(obj: Any, placeholder: str, loki_name: str) -> 
 def main() -> int:
     p = argparse.ArgumentParser(
         description=(
-            "Normalize a Grafana dashboard export for kube-prometheus-stack: strip __inputs/__requires, "
+            "Normalize a Grafana dashboard export for this repo's Loki datasource: strip __inputs/__requires, "
             "rewrite Loki datasource refs to {type, name} (default name Loki), optional stable uid and tags."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,

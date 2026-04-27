@@ -14,6 +14,12 @@
 # Stable Service name `loki` regardless of Helm release name.
 fullnameOverride: loki
 
+# Memcached caches default to large RAM (e.g. chunks-cache -m 8192). Disable on small nodes.
+chunksCache:
+  enabled: false
+resultsCache:
+  enabled: false
+
 deploymentMode: SingleBinary
 
 minio:
@@ -38,6 +44,8 @@ loki:
 
 singleBinary:
   replicas: 1
+  nodeSelector:
+    reconhawx.runner: "true"
   persistence:
     enabled: true
     size: 20Gi
@@ -49,7 +57,7 @@ singleBinary:
       memory: "1Gi"
     limits:
       cpu: "2"
-      memory: "4Gi"
+      memory: "2Gi"
 
 backend:
   replicas: 0

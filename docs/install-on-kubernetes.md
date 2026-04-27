@@ -18,7 +18,7 @@ Full prerequisite detail (secrets layout, Kueue, ingress, manifest tree) is in *
 ./install-kubernetes.sh
 ```
 
-The installer expects **`kubernetes/base`** next to the script. It installs **Kueue**, **ingress-nginx**, optionally **MetalLB**, labels nodes, writes secrets under **`kubernetes/base`**, applies manifests, then (when **`reconhawx-observability-helm.sh`** and **`kubernetes/observability/`** are present and **`RECONHAWX_OBSERVABILITY`** is not `0`) runs **Helm** for **Loki**, **Grafana Alloy**, and **kube-prometheus-stack** in the **`monitoring`** namespace. It syncs **ClusterQueue** quotas (needs **`python3`**) and can update **`/etc/hosts`**.
+The installer expects **`kubernetes/base`** next to the script. It installs **Kueue**, **ingress-nginx**, optionally **MetalLB**, labels nodes, writes secrets under **`kubernetes/base`**, applies manifests, then (when **`reconhawx-observability-helm.sh`** and **`kubernetes/observability/`** are present and **`RECONHAWX_OBSERVABILITY`** is not `0`) runs **Helm** for **Loki**, **Grafana Alloy**, and **Grafana** (standalone chart) in the **`monitoring`** namespace. It syncs **ClusterQueue** quotas (needs **`python3`**) and can update **`/etc/hosts`**.
 
 **Alternative:** run the installer script straight from GitHub (pin a **tag or SHA** in the URL for reproducibility). It can fetch the **latest release** tarball for you when you do not already have `kubernetes/base` locally. That path needs **`curl`**, **`tar`**, and **`jq`** or **`python3`** for the GitHub API.
 

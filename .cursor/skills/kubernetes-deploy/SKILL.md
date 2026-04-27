@@ -32,7 +32,7 @@ When applying infra manually, respect ordering: core datastores and messaging (e
 
 ## Observability (Helm)
 
-Install and scripted upgrade helpers ([`install-kubernetes.sh`](../../install-kubernetes.sh), [`update-kubernetes.sh`](../../update-kubernetes.sh), Minikube variants) source [`reconhawx-observability-helm.sh`](../../reconhawx-observability-helm.sh) when it sits next to those scripts. Set **`RECONHAWX_OBSERVABILITY=0`** to skip Loki / Alloy / kube-prometheus-stack (air-gapped or no Helm). In-cluster **Admin → System upgrade** always runs the same Helm step after rollouts (**strict**; needs chart repo egress unless mirrored).
+Install and scripted upgrade helpers ([`install-kubernetes.sh`](../../install-kubernetes.sh), [`update-kubernetes.sh`](../../update-kubernetes.sh), Minikube variants) source [`reconhawx-observability-helm.sh`](../../reconhawx-observability-helm.sh) when it sits next to those scripts. Set **`RECONHAWX_OBSERVABILITY=0`** to skip Loki / Alloy / Grafana (air-gapped or no Helm). In-cluster **Admin → System upgrade** always runs the same Helm step after rollouts (**strict**; needs chart repo egress unless mirrored).
 
 ## After changes
 

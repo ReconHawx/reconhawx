@@ -455,7 +455,7 @@ function SystemUpgrade() {
         <Modal.Body>
           <p className="small">
             This creates a Kubernetes Job that runs <code>kubectl apply -k kubernetes/base-update/</code>,
-            restarts application Deployments, then runs Helm for Loki / Alloy / kube-prometheus-stack in{' '}
+            restarts application Deployments, then runs Helm for Loki / Alloy / Grafana in{' '}
             <code>monitoring</code> (requires chart repo egress). Type <strong>UPGRADE_RECONHAWX</strong> to confirm.
           </p>
           <Form.Control
