@@ -2,13 +2,14 @@
 
 import json
 import logging
+import shlex
 import sys
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 import recon_log_format
-from command_wrapper import publish_result
+from command_wrapper import publish_result, run_command
 from worker_logging import configure_worker_logging
 
 
@@ -49,6 +50,31 @@ def test_root_handler_uses_stderr(monkeypatch):
     configure_worker_logging()
     h = logging.getLogger().handlers[0]
     assert h.stream is sys.stderr
+
+
+def test_run_command_drains_large_stderr_without_deadlock(monkeypatch):
+    """Child must not block on a full stderr pipe while parent reads stdout only."""
+    monkeypatch.delenv("NATS_URL", raising=False)
+    monkeypatch.delenv("TASK_ID", raising=False)
+
+    def fake_exit(code=0):
+        raise SystemExit(code)
+
+    monkeypatch.setattr("command_wrapper.sys.exit", fake_exit)
+
+    # ~250KiB on stderr (multiple lines), single JSON line on stdout
+    py_code = (
+        "import json as j, sys\n"
+        "for _ in range(2500):\n"
+        "    print('x' * 100, file=sys.stderr)\n"
+        "print(j.dumps({'ok': True}))\n"
+    )
+    cmd = f"{sys.executable} -c {shlex.quote(py_code)}"
+
+    with pytest.raises(SystemExit) as exc_info:
+        run_command(cmd)
+
+    assert exc_info.value.code == 0
 
 
 @pytest.mark.asyncio
