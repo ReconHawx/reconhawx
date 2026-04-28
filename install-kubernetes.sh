@@ -226,8 +226,6 @@ Environment:
   RECONHAWX_GITHUB_REPO    owner/repo (default: ReconHawx/reconhawx).
   INSTALL_STAGING_DIR      Git-clone installs only: staging copy (default: /tmp/reconhawx); deleted after success.
   INGRESS_HOST             Frontend URL hostname (default: reconhawx.local); also written to frontend-ingress when not default.
-  RECONHAWX_OBSERVABILITY  unset/1 = after core manifests, install Helm stack (Loki, Alloy, Grafana) when
-                           helm(1) and reconhawx-observability-helm.sh + kubernetes/observability exist; 0 = skip.
 
 Examples (no git clone):
 
@@ -848,13 +846,6 @@ main() {
     ui_note "Apply failed (attempt ${_attempt}/${_max}); waiting 15s and retrying …"
     sleep 15
   done
-
-  local _obs_lib="${REPO_ROOT}/reconhawx-observability-helm.sh"
-  if [[ -f "$_obs_lib" ]]; then
-    # shellcheck source=/dev/null
-    source "$_obs_lib"
-    reconhawx_observability_helm_apply
-  fi
 
   local _qsync
   if [[ "${RECONHAWX_INSTALL_FROM_RELEASE}" -eq 1 ]]; then

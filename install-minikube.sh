@@ -218,7 +218,6 @@ Usage: install-minikube.sh [options]
   -h, --help        Show this help.
 
 Environment:
-  RECONHAWX_OBSERVABILITY  unset/1 = after core manifests, install Helm observability stack when helm and library exist; 0 = skip.
   RECONHAWX_FROM_RELEASE   unset = auto; 0 = local kubernetes/base only; 1 = release tarball only.
   RECONHAWX_GITHUB_REPO    owner/repo (default: ReconHawx/reconhawx).
   INSTALL_STAGING_DIR      Git-clone installs: staging copy (default: /tmp/reconhawx); deleted after success.
@@ -773,13 +772,6 @@ main() {
     ui_note "Apply failed (attempt ${_attempt}/${_max}); waiting 15s and retrying (ingress admission may still be starting) …"
     sleep 15
   done
-
-  local _obs_lib="${REPO_ROOT}/reconhawx-observability-helm.sh"
-  if [[ -f "$_obs_lib" ]]; then
-    # shellcheck source=/dev/null
-    source "$_obs_lib"
-    reconhawx_observability_helm_apply
-  fi
 
   local _qsync
   if [[ "${RECONHAWX_INSTALL_FROM_RELEASE}" -eq 1 ]]; then
