@@ -8,7 +8,6 @@ sortOptions:
   order: fifo
 
 resources:
-  - monitoring-namespace.yaml
   - config
   - secrets/jwt-secret.yaml
   - secrets/postgres-secret.yaml

@@ -4,7 +4,6 @@ metadata:
   name: ct-monitor
   labels:
     app: ct-monitor
-    component: monitoring
 spec:
   replicas: 1  # Single instance is sufficient for CT stream
   selector:
@@ -16,7 +15,6 @@ spec:
     metadata:
       labels:
         app: ct-monitor
-        component: monitoring
     spec:
       nodeSelector:
         reconhawx.runner: "true"

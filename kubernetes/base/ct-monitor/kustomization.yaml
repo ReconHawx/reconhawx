@@ -13,6 +13,5 @@ labels:
   - includeSelectors: true
     pairs:
       app.kubernetes.io/name: ct-monitor
-      app.kubernetes.io/component: monitoring
-      app.kubernetes.io/part-of: recon-platform
+      app.kubernetes.io/part-of: reconhawx
 
