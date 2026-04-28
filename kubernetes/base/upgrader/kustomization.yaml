@@ -5,4 +5,3 @@ resources:
   - upgrader-sa.yaml
   - upgrader-rbac.yaml
   - upgrader-clusterrole.yaml
-  - upgrader-monitoring-rbac.yaml
