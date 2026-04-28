@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.3](https://github.com/ReconHawx/reconhawx/compare/v0.24.2...v0.24.3) (2026-04-28)
+
+
+### Bug Fixes
+
+* **upgrader:** removed observability leftover ([72dfba7](https://github.com/ReconHawx/reconhawx/commit/72dfba7612cc8b073598db77b2ffc022d3a8a27c))
+
 ## [0.24.2](https://github.com/ReconHawx/reconhawx/compare/v0.24.1...v0.24.2) (2026-04-28)
 
 
