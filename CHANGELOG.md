@@ -5,7 +5,7 @@
 
 ### Bug Fixes
 
-* **k8s:** switch observability installs to standalone Grafana release ([1b942b9](https://github.com/ReconHawx/reconhawx/commit/1b942b92714e9fb4b23090cf7da98c95674b473b))
+* **k8s:** removed observability stack (make cluster unstable)
 * **worker:** keep task commands from stalling when subprocesses log heavily ([d80396d](https://github.com/ReconHawx/reconhawx/commit/d80396d3c4be667f66baf9a0cc9cd89f9ca5b635))
 
 ## [0.24.1](https://github.com/ReconHawx/reconhawx/compare/v0.24.0...v0.24.1) (2026-04-25)
