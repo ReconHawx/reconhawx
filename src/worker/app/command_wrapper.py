@@ -3,14 +3,16 @@
 NATS result publisher for worker tasks.
 
 INVARIANT: Child process stdout is the only stream forwarded to the runner
-(NATS ``output`` field). Application logs and subprocess stderr mirror must use
-stderr only, never print() to default stdout, or downstream JSON parsing breaks.
+(NATS ``output`` field). Child stderr is drained to ``sys.stderr`` as raw lines (not
+via the JSON logger) so nested tools can emit structured logs without double-encoding.
+Never write child stdout to ``sys.stderr`` or stdout, or downstream JSON parsing breaks.
 """
 import logging
 import subprocess
 import sys
 import os
 import json
+import threading
 import time
 import asyncio
 
@@ -394,6 +396,26 @@ async def send_chunked_output(output, success):
             log.error("Unable to report error to NATS")
 
 
+def _drain_stderr(stream, sink):
+    """Read child stderr in a thread so the pipe cannot fill and deadlock the child.
+
+    Relay each line to ``sys.stderr`` as-is (no ``logging`` call) so nested tasks that
+    already emit JSON logs (e.g. dnsx_wrapper) stay one JSON object per line instead of
+    being embedded in command_wrapper's ``message`` field. Stdout stays on the pipe only
+    for NATS; we never write child stdout to ``sys.stderr``.
+    """
+    if stream is None:
+        return
+    try:
+        for line in stream:
+            line = line.rstrip("\n")
+            if line:
+                sink.append(line)
+                print(line, file=sys.stderr, flush=True)
+    except Exception:  # noqa: BLE001
+        log.exception("Error draining subprocess stderr")
+
+
 def run_command(command):
     try:
         # Run the command and directly pass through stdout
@@ -409,7 +431,17 @@ def run_command(command):
         all_lines = []
         stderr_lines = []
 
-        # Read stdout
+        stderr_thread = None
+        if process.stderr is not None:
+            stderr_thread = threading.Thread(
+                target=_drain_stderr,
+                args=(process.stderr, stderr_lines),
+                daemon=True,
+            )
+            stderr_thread.start()
+
+        # Read stdout (must run concurrently with stderr drain or a verbose child
+        # can fill the 64KiB stderr pipe and block before emitting stdout / exiting).
         if process.stdout:
             for line in process.stdout:
                 line = line.rstrip("\n")
@@ -418,16 +450,14 @@ def run_command(command):
                     # Don't print stdout lines directly - they should go to NATS only
                     # print(line)  # Commented out to prevent stdout pollution
 
-        # Read stderr
-        # if process.stderr:
-        #     for line in process.stderr:
-        #         line = line.rstrip("\n")
-        #         if line:
-        #             stderr_lines.append(line)
-        #             log.info("stderr: %s", line)
-
         # Wait for the process to complete
         process.wait()
+        if stderr_thread is not None:
+            stderr_thread.join(timeout=5)
+            if stderr_thread.is_alive():
+                log.warning(
+                    "Subprocess stderr drain thread did not finish within 5s timeout"
+                )
         return_code = process.returncode
         success = return_code == 0
 
@@ -438,14 +468,10 @@ def run_command(command):
             # Join all stdout lines, which is probably JSON content
             output = "\n".join(all_lines)
 
-        # Log stderr separately, but don't include it in the actual output if we have stdout content
+        # Child stderr was relayed line-by-line to sys.stderr during the drain; avoid
+        # logging those lines again here (would re-wrap JSON in command_wrapper's log).
         if stderr_lines:
-            stderr_output = "\n".join(f"stderr: {line}" for line in stderr_lines)
-            log.info(
-                "Stderr content: %s%s",
-                stderr_output[:200],
-                "..." if len(stderr_output) > 200 else "",
-            )
+            log.info("Child wrote %s stderr line(s); stream relayed to worker stderr", len(stderr_lines))
 
         # CRITICAL: Only send stdout content to NATS, never mix in stderr
         # This prevents output pollution that breaks parsing
