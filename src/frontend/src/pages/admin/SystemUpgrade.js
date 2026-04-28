@@ -218,8 +218,7 @@ function SystemUpgrade() {
           <h4 className="mb-0">System upgrade</h4>
           <p className="text-muted small mb-0 mt-1">
             Superuser-only. Applies <code>kubernetes/base-update</code> from a GitHub release tarball (or staged upload)
-            inside the cluster, rolls API / frontend / event-handler / ct-monitor, then upgrades the observability Helm
-            stack in <code>monitoring</code>. See{' '}
+            inside the cluster, then rolls API / frontend / event-handler / ct-monitor. See{' '}
             <Link to="/admin/system-maintenance">System maintenance</Link> to Hold Kueue first.
           </p>
         </Col>
@@ -454,9 +453,8 @@ function SystemUpgrade() {
         </Modal.Header>
         <Modal.Body>
           <p className="small">
-            This creates a Kubernetes Job that runs <code>kubectl apply -k kubernetes/base-update/</code>,
-            restarts application Deployments, then runs Helm for Loki / Alloy / Grafana in{' '}
-            <code>monitoring</code> (requires chart repo egress). Type <strong>UPGRADE_RECONHAWX</strong> to confirm.
+            This creates a Kubernetes Job that runs <code>kubectl apply -k kubernetes/base-update/</code> and
+            restarts application Deployments. Type <strong>UPGRADE_RECONHAWX</strong> to confirm.
           </p>
           <Form.Control
             value={confirmText}

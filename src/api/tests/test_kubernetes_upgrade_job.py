@@ -96,11 +96,6 @@ def test_create_upgrade_job_build(k8s_no_config, monkeypatch):
     assert "RECONHAWX_NS" in env_names
     assert "RECONHAWX_VERSION" in env_names
     assert "RECONHAWX_GITHUB_REPO" in env_names
-    env_by_name = {e.name: e.value for e in body.spec.template.spec.containers[0].env}
-    assert env_by_name.get("RECONHAWX_OBSERVABILITY") == "1"
-    ed = body.spec.template.spec.volumes[0].empty_dir
-    assert ed is not None and str(ed.size_limit) == "1Gi"
-    assert str(body.spec.template.spec.containers[0].resources.limits["memory"]) == "2Gi"
 
 
 def test_create_upgrade_job_empty_k8s_namespace_falls_back(k8s_no_config, monkeypatch):

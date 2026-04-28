@@ -40,7 +40,7 @@ Use repo root **`update-kubernetes.sh`** or **`update-minikube.sh`**, or manuall
 
 ### In-cluster upgrade Job (`upgrader-sa`)
 
-The base manifests include **`kubernetes/base/upgrader/`**: ServiceAccount **`upgrader-sa`**, a namespaced **Role** for applying `base-update` workloads, a **Role** in **`monitoring`** for Helm-managed workloads, and a **ClusterRole** for Kueue, cluster RBAC, CRD / Prometheus-operator API groups needed when the Job runs optional **Helm** observability upgrades. Superusers can trigger upgrades from the UI (**System upgrade**); the API creates a **Job** whose pod runs the **`upgrader`** container image (`UPGRADER_IMAGE` on the API Deployment, semver-pinned like other services). Tune RBAC there if your policy requires a narrower set of verbs.
+The base manifests include **`kubernetes/base/upgrader/`**: ServiceAccount **`upgrader-sa`**, a namespaced **Role** for applying `base-update` workloads, and a scoped **ClusterRole** for Kueue cluster resources and RBAC objects the bundle touches. Superusers can trigger upgrades from the UI (**System upgrade**); the API creates a **Job** whose pod runs the **`upgrader`** container image (`UPGRADER_IMAGE` on the API Deployment, semver-pinned like other services). Tune RBAC there if your policy requires a narrower set of verbs.
 
 ### PostgreSQL: Deployment to StatefulSet (existing clusters)
 
@@ -108,15 +108,10 @@ The API image ships **PostgreSQL 15 client tools** (`postgresql-client-15`). The
 | **API** | FastAPI backend (init container runs **Alembic** migrations before the app starts) |
 | **Frontend** | React UI behind nginx |
 | **Headlamp** | In-cluster [Headlamp](https://headlamp.dev/) Kubernetes UI (`ghcr.io/headlamp-k8s/headlamp`); reached at **`/headlamp/`** on the same host as the frontend (nginx proxies to the `headlamp` Service). The pod loads a kubeconfig from the `headlamp-kubeconfig` ConfigMap that uses **`tokenFile`** pointed at the mounted **`headlamp-admin`** ServiceAccount token, so the UI does not require pasting a token for normal use. The optional **`headlamp-admin`** legacy token Secret remains for break-glass / tooling; see [in-cluster access](https://headlamp.dev/docs/latest/installation/in-cluster/). |
-| **Grafana (optional)** | When installed via Helm (**[`kubernetes/observability/`](observability/README.md)**), the frontend nginx proxies **`/grafana/`** to the `kps-grafana` Service in namespace **`monitoring`** (Helm release **`grafana`**, `fullnameOverride: kps-grafana`). Grafana must be configured with `serve_from_sub_path` (see [`values-grafana.yaml`](observability/values-grafana.yaml)). Superusers see **Grafana** under **Administration** in the UI. |
 | **Event Handler** | NATS event consumer |
 | **CT Monitor** | Certificate Transparency log watcher |
 | **Runner** | RBAC for workflow runner jobs (pods created dynamically by the API) |
 | **Config** | `recon-config` ConfigMap shared by all services |
-
-## Observability (optional)
-
-For **Grafana**, **Loki**, and **Grafana Alloy** (historical pod logs after workflow Jobs finish), use Helm values and docs under **[`kubernetes/observability/README.md`](observability/README.md)**. That stack installs into the **`monitoring`** namespace and is separate from `kubectl apply -k kubernetes/base/`.
 
 ## Kueue Setup
 

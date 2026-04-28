@@ -219,13 +219,6 @@ function Navigation() {
                       >
                         ☸️ Cluster Admin (Headlamp)
                       </Dropdown.Item>
-                      <Dropdown.Item
-                        href="/grafana/"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        📊 Grafana
-                      </Dropdown.Item>
                     </>
                   )}
                 </Dropdown.Menu>

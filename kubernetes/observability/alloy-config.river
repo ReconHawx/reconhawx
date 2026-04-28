@@ -1,5 +1,7 @@
 // Grafana Alloy: ship Kubernetes pod logs to Loki (in-cluster).
-// Only the reconhawx namespace (app workloads + runner/worker Jobs). Observability stack logs stay in-cluster only.
+// discovery.kubernetes is scoped to namespace reconhawx and pods with
+// app in (api,frontend,ct-monitor,event-handler,runner,workflow-runner,worker) only.
+// Observability stack logs stay in-cluster only.
 //
 // discovery.relabel must copy __meta_kubernetes_* onto plain labels (namespace, pod, app, …) so Loki
 // exposes them in /loki/api/v1/labels and LogQL like {namespace="reconhawx"} works.
@@ -12,6 +14,15 @@ logging {
 
 discovery.kubernetes "pods" {
   role = "pod"
+
+  namespaces {
+    names = ["reconhawx"]
+  }
+
+  selectors {
+    role  = "pod"
+    label = "app in (api,frontend,ct-monitor,event-handler,runner,workflow-runner,worker)"
+  }
 }
 
 discovery.relabel "filtered" {

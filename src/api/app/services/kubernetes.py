@@ -1781,7 +1781,7 @@ class KubernetesService:
 
         work_vol = client.V1Volume(
             name="upgrade-work",
-            empty_dir=client.V1EmptyDirVolumeSource(size_limit="1Gi"),
+            empty_dir=client.V1EmptyDirVolumeSource(size_limit="500Mi"),
         )
 
         env = [
@@ -1792,7 +1792,6 @@ class KubernetesService:
                 name="RECONHAWX_KUEUE_RESYNC_QUOTAS",
                 value="1" if kueue_resync_quotas else "0",
             ),
-            client.V1EnvVar(name="RECONHAWX_OBSERVABILITY", value="1"),
             client.V1EnvVar(name="TMPDIR", value="/work/tmp"),
         ]
         if pull_token and api_internal_base:
@@ -1824,8 +1823,8 @@ class KubernetesService:
             env=env,
             volume_mounts=[client.V1VolumeMount(name="upgrade-work", mount_path="/work")],
             resources=client.V1ResourceRequirements(
-                requests={"cpu": "200m", "memory": "512Mi"},
-                limits={"cpu": "2", "memory": "2Gi"},
+                requests={"cpu": "100m", "memory": "256Mi"},
+                limits={"cpu": "1", "memory": "1Gi"},
             ),
         )
 
@@ -1839,14 +1838,13 @@ class KubernetesService:
         if staging_id:
             annotations["reconhawx.io/upgrade-staging-id"] = staging_id
 
-
         pod_spec = client.V1PodSpec(
             restart_policy="Never",
-            node_selector={"reconhawx.runner": "true"},
             service_account_name="upgrader-sa",
             automount_service_account_token=True,
             volumes=[work_vol],
             containers=[container],
+            node_selector={"reconhawx.runner": "true"}
         )
         template = client.V1PodTemplateSpec(
             metadata=client.V1ObjectMeta(

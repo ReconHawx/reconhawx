@@ -132,6 +132,7 @@ reconhawx_download_release_by_semver() {
     "$api")" || die "curl failed: ${api}"
   url="$(reconhawx_json_tarball_url_from_api "$json")"
   tarpath="$(mktemp "${TMPDIR:-/tmp}/reconhawx-src.XXXXXX.tar.gz")"
+  echo $url
   curl -sSfL "$url" -o "$tarpath" || die "failed to download release tarball"
   _reconhawx_extract_tarball_to_base "$tarpath"
 }
@@ -192,8 +193,6 @@ main() {
   ui_step "Pre-apply hooks"
   reconhawx_run_base_update_pre_apply_hooks "$BASE_SRC" "$RECONHAWX_NS" "${cluster_ver:-}" "${bundle_ver:-}" kubectl
 
-  reconhawx_bootstrap_upgrader_clusterrole "$BASE_SRC" kubectl
-
   local _attempt _max=6
   for _attempt in $(seq 1 "$_max"); do
     ui_step "kubectl apply -k base-update (attempt ${_attempt}/${_max})"
@@ -222,11 +221,6 @@ main() {
   kubectl rollout status deploy/event-handler -n "$RECONHAWX_NS" --timeout=5m
   kubectl rollout status deploy/ct-monitor -n "$RECONHAWX_NS" --timeout=5m
   ui_ok "Upgrade complete"
-
-  require_cmd helm
-  # shellcheck source=/dev/null
-  source "${UPGRADER_ROOT}/reconhawx-observability-helm.sh"
-  reconhawx_observability_helm_apply strict
 }
 
 main "$@"
