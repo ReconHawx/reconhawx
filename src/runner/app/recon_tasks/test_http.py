@@ -9,6 +9,21 @@ from urllib.parse import urlparse
 import dns.resolver
 logger = logging.getLogger(__name__)
 
+# httpx `-p`: probe both schemes per port range via explicit http:/https: pairs — avoids shell `&`
+# when the runner passes the command through ``sh`` (Kubernetes worker Job).
+_HTTPX_DOMAIN_PORT_SPEC = (
+    "http:80-99,https:80-99,"
+    "http:443-449,https:443-449,"
+    "http:11443,https:11443,"
+    "http:8443-8449,https:8443-8449,"
+    "http:9000-9003,https:9000-9003,"
+    "http:8080-8089,https:8080-8089,"
+    "http:8801-8810,https:8801-8810,"
+    "http:3000,https:3000,"
+    "http:5000,https:5000"
+)
+
+
 class TestHTTP(Task):
     name = "test_http"
     description = "Test HTTP"
@@ -45,7 +60,9 @@ class TestHTTP(Task):
         if len(domains_to_process) > 0:
             domains_text = '\n'.join(domains_to_process)
             commands.append(
-                f"cat << 'EOF' | httpx -fr -maxr 10 -include-chain -silent -status-code -content-length -tech-detect -threads 50 -no-color -json -efqdn -tls-grab -pa -pipeline -http2 -bp -ip -cname -asn -random-agent -favicon -hash sha256 -p 80-99,443-449,11443,8443-8449,9000-9003,8080-8089,8801-8810,3000,5000\n{domains_text}\nEOF"
+                f"cat << 'EOF' | httpx -fr -maxr 10 -include-chain -silent -status-code -content-length -tech-detect -threads 50 -no-color -json -efqdn -tls-grab -pa -pipeline -http2 -bp -ip -cname -asn -random-agent -favicon -hash sha256 "
+                f"-p {_HTTPX_DOMAIN_PORT_SPEC} "
+                f"-fs 'The plain HTTP request was sent to HTTPS port'\n{domains_text}\nEOF"
             )
 
         # Return array of commands to spawn separate worker jobs

@@ -1,5 +1,6 @@
 import logging
 import re
+import shlex
 from kubernetes import client, config
 from kubernetes.client.rest import ApiException
 from typing import Dict, Any, List, Tuple
@@ -228,8 +229,8 @@ class KubernetesService:
         # Always use sh -c to avoid JSON marshaling issues with args array
         shell_command = job_params["args"][0] if job_params["args"] else ""
 
-        # Properly quote the shell command to handle pipes and special characters
-        quoted_command = f"'{shell_command}'" if '|' in shell_command or '&' in shell_command else shell_command
+        # Safe for ``sh -c``: embedded ``'`` (e.g. heredoc ``<< 'EOF'``), ``&``, ``|``, etc.
+        quoted_command = shlex.quote(shell_command)
 
         container = client.V1Container(
             image=job_params["image"],
