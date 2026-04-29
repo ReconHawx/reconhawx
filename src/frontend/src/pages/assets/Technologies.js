@@ -5,6 +5,34 @@ import { urlAPI } from '../../services/api';
 import { useProgramFilter } from '../../contexts/ProgramFilterContext';
 import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
 
+/** Module scope — inner components re-created each parent render break OverlayTrigger/popover focus. */
+function HeaderFilterPopover({ id, isActive, ariaLabel, children, show, onToggle }) {
+  const buttonVariant = isActive ? 'primary' : 'outline-secondary';
+  const overlay = (
+    <Popover id={id} style={{ minWidth: 260 }} onClick={(e) => e.stopPropagation()}>
+      <Popover.Body onClick={(e) => e.stopPropagation()}>
+        {children}
+      </Popover.Body>
+    </Popover>
+  );
+  return (
+    <OverlayTrigger
+      trigger="click"
+      rootClose
+      placement="bottom"
+      overlay={overlay}
+      show={show}
+      onToggle={onToggle}
+    >
+      <Button size="sm" variant={buttonVariant} aria-label={ariaLabel} onClick={(e) => e.stopPropagation()}>
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" style={{ marginRight: 4 }}>
+          <path d="M1.5 1.5a.5.5 0 0 0 0 1h13a.5.5 0 0 0 .4-.8L10 9.2V13a.5.5 0 0 1-.276.447l-2 1A.5.5 0 0 1 7 14V9.2L1.1 1.7a.5.5 0 0 0-.4-.2z" />
+        </svg>
+      </Button>
+    </OverlayTrigger>
+  );
+}
+
 function Technologies() {
   usePageTitle(formatPageTitle('Technologies'));
   const navigate = useNavigate();
@@ -46,19 +74,30 @@ function Technologies() {
     return saved.sortOrder || 'desc';
   });
   const [paginationState, setPaginationState] = useState({});
+  const [refreshing, setRefreshing] = useState(false);
   const [pageSize, setPageSize] = useState(() => {
     const saved = getSavedFilters();
     return saved.pageSize || 25;
   });
+  /** After first successful load; reset when program filter changes so switching programs still gets full-page load. */
+  const dataLoadedOnceRef = useRef(false);
+  const skipSearchDebounceRef = useRef(false);
+  const [techFilterOpen, setTechFilterOpen] = useState(false);
 
   const fetchTechnologies = useCallback(async (page = 1, size = null, search = null, sort = null, order = null) => {
     try {
-      setLoading(true);
+      const initialLoad = !dataLoadedOnceRef.current;
+      if (initialLoad) {
+        setLoading(true);
+      } else {
+        setRefreshing(true);
+      }
       setError(null);
       
       // Use provided parameters or current state values
       const requestSize = size || pageSize;
-      const requestSearch = search !== null ? search : searchFilter;
+      // null/undefined from omitted args use live searchFilter; explicit '' is kept (nullish coalescing)
+      const requestSearch = search ?? searchFilter;
       const requestSort = sort || sortBy;
       const requestOrder = order || sortOrder;
       
@@ -120,7 +159,8 @@ function Technologies() {
         has_next: false,
         has_prev: false
       });
-      
+      dataLoadedOnceRef.current = true;
+
     } catch (err) {
       if (err.message !== 'Operation cancelled') {
         console.error('Error fetching technologies:', err);
@@ -129,6 +169,7 @@ function Technologies() {
       }
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }, [selectedProgram, pageSize, searchFilter, sortBy, sortOrder]);
   
@@ -159,6 +200,7 @@ function Technologies() {
 
   // Fetch technologies when program filter changes or on initial mount
   useEffect(() => {
+    dataLoadedOnceRef.current = false;
     fetchTechnologies(1);
     isInitialMount.current = false;
   }, [selectedProgram]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -168,7 +210,11 @@ function Technologies() {
     if (isInitialMount.current) {
       return; // Skip on initial mount - let the selectedProgram effect handle it
     }
-    
+    if (skipSearchDebounceRef.current) {
+      skipSearchDebounceRef.current = false;
+      return;
+    }
+
     const timeoutId = setTimeout(() => {
       fetchTechnologies(1);
     }, 800); // Debounce search input - wait for user to finish typing
@@ -220,28 +266,6 @@ function Technologies() {
       return '⇅'; // Both arrows for unsorted
     }
     return sortOrder === 'asc' ? '↑' : '↓';
-  };
-
-  // Simple header popover filter for search (no per-row table here)
-  const HeaderFilterPopover = ({ id, isActive, ariaLabel, children }) => {
-    const buttonVariant = isActive ? 'primary' : 'outline-secondary';
-    const overlay = (
-      <Popover id={id} style={{ minWidth: 260 }} onClick={(e) => e.stopPropagation()}>
-        <Popover.Body onClick={(e) => e.stopPropagation()}>
-          {children}
-        </Popover.Body>
-      </Popover>
-    );
-    return (
-      <OverlayTrigger trigger="click" rootClose placement="bottom" overlay={overlay}>
-        <Button size="sm" variant={buttonVariant} aria-label={ariaLabel} onClick={(e) => e.stopPropagation()}>
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" style={{ marginRight: 4 }}>
-            <path d="M1.5 1.5a.5.5 0 0 0 0 1h13a.5.5 0 0 0 .4-.8L10 9.2V13a.5.5 0 0 1-.276.447l-2 1A.5.5 0 0 1 7 14V9.2L1.1 1.7a.5.5 0 0 0-.4-.2z" />
-          </svg>
-          {/* <span style={{ fontSize: '0.8rem' }}>Filter</span> */}
-        </Button>
-      </OverlayTrigger>
-    );
   };
 
   const WEBSITES_PER_PAGE = 10;
@@ -352,7 +376,13 @@ function Technologies() {
           <Alert.Heading>❌ Error Loading Technologies</Alert.Heading>
           <p>{error}</p>
           <hr />
-          <Button variant="outline-primary" onClick={fetchTechnologies}>
+          <Button
+            variant="outline-primary"
+            onClick={() => {
+              dataLoadedOnceRef.current = false;
+              fetchTechnologies(1);
+            }}
+          >
             🔄 Try Again
           </Button>
         </Alert>
@@ -372,8 +402,8 @@ function Technologies() {
               <Button 
                 variant="outline-primary" 
                 size="sm" 
-                onClick={fetchTechnologies}
-                disabled={loading}
+                onClick={() => fetchTechnologies(1)}
+                disabled={loading || refreshing}
               >
                 🔄 Refresh
               </Button>
@@ -385,7 +415,17 @@ function Technologies() {
       {/* Technologies List */}
       <Row>
         <Col>
-          <Card>
+          <Card className="position-relative">
+            {refreshing && (
+              <div
+                className="position-absolute top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center"
+                style={{ zIndex: 4, background: 'rgba(var(--bs-body-bg-rgb, 255,255,255), 0.65)', pointerEvents: 'none' }}
+                aria-hidden={false}
+              >
+                <Spinner animation="border" role="status" size="sm" />
+                <span className="visually-hidden">Refreshing…</span>
+              </div>
+            )}
             <Card.Header className="d-flex justify-content-between align-items-center">
               <div className="d-flex align-items-center gap-2 ms-auto">
                 <Badge bg="secondary">
@@ -423,7 +463,13 @@ function Technologies() {
                   className="fw-bold"
                 >
                   <span>Technology Name {getSortIcon('name')}</span>
-                  <HeaderFilterPopover id="tech-filter" ariaLabel="Filter technologies" isActive={!!searchFilter}>
+                  <HeaderFilterPopover
+                    id="tech-filter"
+                    ariaLabel="Filter technologies"
+                    isActive={!!searchFilter}
+                    show={techFilterOpen}
+                    onToggle={setTechFilterOpen}
+                  >
                     <div>
                       <Form.Group>
                         <Form.Label className="mb-1">Search Technologies</Form.Label>
@@ -432,12 +478,51 @@ function Technologies() {
                           placeholder="e.g., jquery, bootstrap, react"
                           value={searchFilter}
                           onChange={(e) => setSearchFilter(e.target.value)}
-                          onKeyDown={(e) => { if (e.key === 'Enter') fetchTechnologies(1); }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              const q = searchFilter.trim();
+                              skipSearchDebounceRef.current = true;
+                              setSearchFilter(q);
+                              fetchTechnologies(1, null, q);
+                              setTechFilterOpen(false);
+                            }
+                          }}
                         />
                       </Form.Group>
                       <div className="d-flex justify-content-end gap-2 mt-2">
-                        <Button size="sm" variant="secondary" onClick={() => { setSearchFilter(''); fetchTechnologies(1); }}>Clear</Button>
-                        <Button size="sm" variant="primary" onClick={() => fetchTechnologies(1)}>Apply</Button>
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            skipSearchDebounceRef.current = true;
+                            setSearchFilter('');
+                            fetchTechnologies(1, null, '');
+                            setTechFilterOpen(false);
+                          }}
+                        >
+                          Clear
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="primary"
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            const q = searchFilter.trim();
+                            skipSearchDebounceRef.current = true;
+                            setSearchFilter(q);
+                            fetchTechnologies(1, null, q);
+                            setTechFilterOpen(false);
+                          }}
+                        >
+                          Apply
+                        </Button>
                       </div>
                     </div>
                   </HeaderFilterPopover>
