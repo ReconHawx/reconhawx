@@ -849,14 +849,6 @@ function URLs() {
     return url.substring(0, maxLength) + '...';
   };
 
-  const getProtocolFromUrl = (url) => {
-    try {
-      return new URL(url).protocol.replace(':', '');
-    } catch (e) {
-      return 'unknown';
-    }
-  };
-
   const renderPagination = () => {
     if (totalPages <= 1) return null;
 
@@ -1070,11 +1062,11 @@ function URLs() {
                       </th>
                       <th style={{ cursor: 'pointer' }} onClick={() => handleSort('url')}>
                         <div className="d-flex align-items-center gap-2">
-                          <span>Protocol {getSortIcon('url')}</span>
-                          <ColumnFilterPopover id="filter-protocol" ariaLabel="Filter by protocol" isActive={!!protocolFilter}>
+                          <span>Scheme {getSortIcon('url')}</span>
+                          <ColumnFilterPopover id="filter-protocol" ariaLabel="Filter by scheme" isActive={!!protocolFilter}>
                             <div>
                               <Form.Group>
-                                <Form.Label className="mb-1">Protocol</Form.Label>
+                                <Form.Label className="mb-1">Scheme</Form.Label>
                                 <Form.Select value={protocolFilter} onChange={(e) => setProtocolFilter(e.target.value)}>
                                   <option value="">All</option>
                                   <option value="https">HTTPS</option>
@@ -1207,8 +1199,8 @@ function URLs() {
                           </code>
                         </td>
                         <td>
-                          <Badge bg={getProtocolFromUrl(url.url) === 'https' ? 'success' : 'warning'}>
-                            {getProtocolFromUrl(url.url)}
+                          <Badge bg={url.scheme === 'https' ? 'success' : 'warning'}>
+                            {url.scheme || 'unknown'}
                           </Badge>
                         </td>
                         <td>
