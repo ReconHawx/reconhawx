@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.24.4](https://github.com/ReconHawx/reconhawx/compare/v0.24.3...v0.24.4) (2026-04-29)
+
+
+### Bug Fixes
+
+* **frontend:** make technologies tech filter usable while typing ([be7aa0a](https://github.com/ReconHawx/reconhawx/commit/be7aa0a8d9a35b8cdfa9a807b882e5b5d6a5cc25))
+* **frontend:** show URL schemes from stored asset data ([f69aea7](https://github.com/ReconHawx/reconhawx/commit/f69aea7169cb58c184111fb695abb44d5d6acb79))
+* **runner:** quote worker shell commands safely for kubectl Jobs ([174f76b](https://github.com/ReconHawx/reconhawx/commit/174f76bffa9c64247bdbe2ea4436d30da0b0118a))
+
 ## [0.24.3](https://github.com/ReconHawx/reconhawx/compare/v0.24.2...v0.24.3) (2026-04-28)
 
 
