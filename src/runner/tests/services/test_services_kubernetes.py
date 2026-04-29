@@ -7,6 +7,7 @@ selectors, job-status mapping, and job-CRD generation.
 from __future__ import annotations
 
 import re
+import shlex
 from unittest.mock import MagicMock
 
 import pytest
@@ -117,6 +118,30 @@ def test_generate_job_crd_sets_labels_and_env(svc, monkeypatch) -> None:
     tpl = crd.spec.template.metadata
     assert tpl.labels.get("program-id") == "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
     assert tpl.annotations.get("reconhawx.io/program-name") == "prog"
+
+
+def test_generate_job_crd_escapes_worker_shell_command_with_shlex(svc, monkeypatch) -> None:
+    """Embedded ``'`` (heredoc / ``-fs``) must not break ``sh -c``; see worker Job + httpx."""
+    monkeypatch.setenv("API_URL", "http://api:8000")
+    monkeypatch.setenv("NATS_URL", "nats://nats:4222")
+    monkeypatch.setenv("IMAGE_PULL_POLICY", "IfNotPresent")
+    shell_like = "cat << 'EOF' | httpx -p 'a&b|c' -fs 'plain text'\nhost\nEOF"
+    job_params = {
+        "job_id": "jq-1",
+        "workflow_id": "wf-q",
+        "workflow_name": "w",
+        "program_name": "p",
+        "task_name": "t",
+        "step_num": 0,
+        "step_name": "s",
+        "args": [shell_like],
+        "image": "img",
+        "job_name": "jn",
+        "timeout": 60,
+    }
+    crd = svc.generate_job_crd(job_params)
+    quoted = shlex.quote(shell_like)
+    assert crd.spec.template.spec.containers[0].command[2].endswith(quoted)
 
 
 def test_sanitize_k8s_label_value_removes_spaces() -> None:
