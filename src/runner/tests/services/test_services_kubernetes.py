@@ -108,6 +108,16 @@ def test_generate_job_crd_sets_labels_and_env(svc, monkeypatch) -> None:
     assert container.image == "ghcr.io/org/worker:latest"
     assert container.command[:2] == ["sh", "-c"]
     env_by_name = {e.name: e.value for e in container.env}
+    downward = [
+        e
+        for e in container.env
+        if getattr(e, "value_from", None) and getattr(e.value_from, "field_ref", None)
+    ]
+    node_env = next((e for e in downward if e.name == "NODE_NAME"), None)
+    pod_env = next((e for e in downward if e.name == "POD_NAME"), None)
+    assert node_env is not None and node_env.value_from.field_ref.field_path == "spec.nodeName"
+    assert pod_env is not None and pod_env.value_from.field_ref.field_path == "metadata.name"
+
     assert env_by_name["TASK_ID"] == "job-1"
     assert env_by_name["OUTPUT_QUEUE_SUBJECT"] == "tasks.output.wf-1"
     assert env_by_name["WORKFLOW_ID"] == "wf-1"
@@ -201,6 +211,59 @@ def test_generate_job_crd_long_program_name_not_in_labels(svc) -> None:
     assert all(len(v) <= 63 for v in crd.metadata.labels.values())
     assert crd.metadata.annotations["reconhawx.io/program-name"] == long_name
     assert crd.spec.template.metadata.labels.get("program-id") == pid
+
+
+def test_generate_job_crd_extra_env_list_merged(svc, monkeypatch) -> None:
+    monkeypatch.setenv("API_URL", "http://api:8000")
+    monkeypatch.setenv("NATS_URL", "nats://nats:4222")
+    monkeypatch.setenv("IMAGE_PULL_POLICY", "IfNotPresent")
+    job_params = {
+        "job_id": "jx",
+        "workflow_id": "wf-x",
+        "workflow_name": "w",
+        "program_name": "p",
+        "task_name": "t",
+        "step_num": 0,
+        "step_name": "s",
+        "args": ["echo hi"],
+        "image": "img",
+        "job_name": "jn",
+        "timeout": 60,
+        "env": [{"name": "CUSTOM_WAF_PROBE", "value": "x"}],
+    }
+    crd = svc.generate_job_crd(job_params)
+    env_names = {(e.name, e.value) for e in crd.spec.template.spec.containers[0].env}
+    assert ("CUSTOM_WAF_PROBE", "x") in env_names
+
+
+def test_generate_job_crd_excluded_nodes_sets_affinity(svc, monkeypatch) -> None:
+    monkeypatch.setenv("API_URL", "http://api:8000")
+    monkeypatch.setenv("NATS_URL", "nats://nats:4222")
+    monkeypatch.setenv("IMAGE_PULL_POLICY", "IfNotPresent")
+    job_params = {
+        "job_id": "jx",
+        "workflow_id": "wf-x",
+        "workflow_name": "w",
+        "program_name": "p",
+        "task_name": "t",
+        "step_num": 0,
+        "step_name": "s",
+        "args": ["echo hi"],
+        "image": "img",
+        "job_name": "jn",
+        "timeout": 60,
+        "excluded_nodes": ["node-a", "node-b"],
+    }
+    crd = svc.generate_job_crd(job_params)
+    aff = crd.spec.template.spec.affinity
+    assert aff is not None
+    term = (
+        aff.node_affinity.required_during_scheduling_ignored_during_execution.node_selector_terms[0]
+    )
+    expr = term.match_expressions[0]
+    assert expr.operator == "NotIn"
+    assert expr.key == k8s_mod.WAF_NODE_AFFINITY_KEY
+    assert set(expr.values) == {"node-a", "node-b"}
 
 
 def test_generate_job_crd_quotes_commands_with_pipes(svc) -> None:

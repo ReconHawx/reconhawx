@@ -11,7 +11,9 @@ from models.assets import Ip, Service as AssetService
 from models.workflow import TaskDefinition, AssetStore
 from task_queue_client import TaskQueueClient
 from services.kubernetes import KubernetesService
-from worker_job_manager import WorkerJobManager
+from services.waf_reputation import WafReputation, target_key as waf_canonical_target_key
+from services import waf_detection
+from worker_job_manager import WorkerJobManager, BatchResult
 import redis
 from datetime import datetime
 from pydantic import BaseModel
@@ -19,7 +21,6 @@ import asyncio
 import base64
 from utils.utils import extract_apex_domain
 from scope_patterns import discovery_targets_from_scope
-
 
 logger = logging.getLogger('task_executor')
 
@@ -319,6 +320,9 @@ class TaskExecutor:
         self._step_timing = {}
         # Per-step input validation summaries (populated by _finalize_input_data_async)
         self._step_input_validation: Dict[str, Dict[str, Any]] = {}
+        # WAF precheck / scheduling summary for workflow step status
+        self._step_waf_status: Dict[str, Dict[str, Any]] = {}
+        self.waf_reputation = WafReputation()
         # Current step name, set by execute_task before input preparation so the
         # input validator can key its summary without threading through every helper.
         self._current_step_name: Optional[str] = None
@@ -560,6 +564,25 @@ class TaskExecutor:
         # Ensure input_data is a list
         if isinstance(input_data, str):
             input_data = [input_data]
+
+        if (
+            task_def.name in waf_detection.HEAVY_HTTP_TASK_NAMES
+            and waf_detection.is_waf_detection_enabled()
+        ):
+            input_data = await self._waf_precheck_gate(task_def, input_data, step_name, step_num)
+            if not input_data:
+                logger.info(
+                    "WAF precheck: all targets blocked on all worker nodes — skipping step '%s'",
+                    step_name,
+                )
+                self._step_waf_status.setdefault(
+                    step_name,
+                    {
+                        "skipped": "waf_all_nodes_blocked",
+                        "task": task_def.name,
+                    },
+                )
+                return {}
 
         try:
             if not self.job_manager:
@@ -3395,6 +3418,197 @@ class TaskExecutor:
             logger.error(f"Error updating timestamps for WorkerJobManager tasks: {e}")
             logger.exception(e)
 
+    async def _waf_precheck_gate(
+        self,
+        task_def: TaskDefinition,
+        input_data: List[str],
+        step_name: str,
+        step_num: int,
+    ) -> List[str]:
+        """Probe (target_key × worker node) pairs; drop targets blocked on every node."""
+        nodes: List[str] = []
+        try:
+            loop = asyncio.get_running_loop()
+            nodes = await loop.run_in_executor(None, self.k8s_service.list_worker_nodes)
+        except RuntimeError:
+            nodes = self.k8s_service.list_worker_nodes()
+        except Exception as e:
+            logger.warning("WAF precheck: worker node discovery failed (%s); skipping gate", e)
+            nodes = []
+
+        if not nodes:
+            logger.warning("WAF precheck: no labeled worker nodes — skipping gate")
+            return input_data
+
+        canon_to_probe: Dict[str, str] = {}
+        for raw in input_data:
+            rk = waf_canonical_target_key(str(raw))
+            if rk:
+                canon_to_probe.setdefault(rk, str(raw))
+
+        needed: List[tuple[str, str, str]] = []
+        for key, probe_url in canon_to_probe.items():
+            for node in nodes:
+                if self.waf_reputation.has_recent_probe(node, key):
+                    continue
+                if self.waf_reputation.is_blocked(node, key):
+                    continue
+                needed.append((key, node, probe_url))
+
+        if needed:
+            commands: List[str] = []
+            per_job_extra: List[Dict[str, Any]] = []
+            for key, node, probe_url in needed:
+                exclude = sorted(nn for nn in nodes if nn != node)
+                try:
+                    cmd = waf_detection.build_waf_precheck_command(probe_url)
+                except ValueError:
+                    cmd = waf_detection.build_waf_precheck_command(key)
+                commands.append(cmd)
+                per_job_extra.append(
+                    {
+                        "excluded_nodes": exclude,
+                        "_waf_meta": {"target_key": key, "pinned_node": node},
+                    }
+                )
+            logger.info(
+                "waf.schedule.exclude task=waf_precheck pairwise=%d nodes=%s",
+                len(commands),
+                ",".join(nodes),
+            )
+            batch_result = await self.job_manager.spawn_batch(
+                task_name="waf-precheck",
+                commands=commands,
+                batch_size=20,
+                timeout=30,
+                step_num=step_num,
+                step_name=f"{step_name}-waf-precheck",
+                per_job_extra=per_job_extra,
+            )
+            await self.job_manager.wait_for_batch(batch_result, timeout=60 + 30 * len(commands))
+
+            self._finalize_waf_precheck_batch(batch_result)
+            try:
+                self.job_manager.cleanup_batch(batch_result)
+            except Exception:
+                pass
+
+        node_set = set(nodes)
+        drop_keys = {
+            ck
+            for ck in canon_to_probe
+            if node_set <= self.waf_reputation.blocked_nodes_verified_for(ck)
+        }
+
+        filtered = [x for x in input_data if waf_canonical_target_key(str(x)) not in drop_keys]
+
+        self._step_waf_status[step_name] = {
+            "candidate_nodes": list(nodes),
+            "distinct_target_keys": len(canon_to_probe),
+            "blocked_all_nodes_keys": sorted(drop_keys),
+            "skipped_inputs": sum(1 for x in input_data if waf_canonical_target_key(str(x)) in drop_keys),
+        }
+
+        for dk in sorted(drop_keys)[:50]:
+            logger.info(
+                "waf.skip step=%s target_key=%s blocked_nodes=%s",
+                step_name,
+                dk,
+                sorted(self.waf_reputation.blocked_nodes_verified_for(dk)),
+            )
+
+        return filtered
+
+    def _finalize_waf_precheck_batch(self, batch_result: BatchResult) -> None:
+        """Read nuclei outputs and Redis reputation."""
+        for job in batch_result.jobs.values():
+            meta = job.waf_precheck_meta or {}
+            key = meta.get("target_key")
+            pinned = meta.get("pinned_node")
+            if not key:
+                continue
+            payload = job.output
+            if not isinstance(payload, dict):
+                if job.status in ("timeout", "failed"):
+                    logger.debug("waf.precheck no payload task_id=%s", job.task_id)
+                continue
+            out_str = payload.get("output") or ""
+            success = bool(payload.get("success", False))
+            node = payload.get("node_name") or pinned or "unknown"
+            node = str(node)
+
+            if job.status in ("timeout", "failed") or not job.is_completed:
+                logger.info(
+                    "waf.precheck.verdict node=%s target=%s verdict=infra_fail status=%s success=%s",
+                    node,
+                    key,
+                    job.status,
+                    success,
+                )
+                continue
+
+            self.waf_reputation.mark_probed(node, key)
+            verdict = waf_detection.classify_precheck_output(out_str)
+            logger.info(
+                "waf.precheck.verdict node=%s target=%s verdict=%s vendor=%s evidence=%s",
+                node,
+                key,
+                verdict.verdict,
+                verdict.vendor,
+                verdict.evidence[:3],
+            )
+            if verdict.verdict == "blocked_waf":
+                self.waf_reputation.record_blocked(
+                    node,
+                    key,
+                    vendor=verdict.vendor,
+                    evidence=verdict.evidence,
+                    source="precheck",
+                )
+
+    def _record_waf_heavy_signals_batch(
+        self, batch_result: BatchResult, task_name: str
+    ) -> None:
+        """Secondary weak signals for late WAF trips."""
+        if not waf_detection.is_waf_detection_enabled():
+            return
+        if task_name not in waf_detection.HEAVY_HTTP_TASK_NAMES:
+            return
+        for job in batch_result.jobs.values():
+            payload = job.output
+            wt = getattr(job, "waf_targets", None) or []
+            if not isinstance(payload, dict) or len(wt) != 1:
+                continue
+            node = payload.get("node_name") or job.node_name
+            if not node:
+                continue
+            node_s = str(node)
+            canon = waf_canonical_target_key(str(wt[0]))
+            if not canon:
+                continue
+            out_str = payload.get("output") or ""
+            if not waf_detection.secondary_signal_eligible_output(out_str):
+                continue
+            verdict = waf_detection.classify_heavy_output(
+                task_name, out_str, success=bool(payload.get("success", False))
+            )
+            if verdict.verdict != "blocked_waf":
+                continue
+            logger.info(
+                "waf.heavy.signal task=%s node=%s target=%s vendor=%s confidence=%.2f",
+                task_name,
+                node_s,
+                canon,
+                verdict.vendor,
+                verdict.confidence,
+            )
+            self.waf_reputation.record_secondary_signal(
+                node_s,
+                canon,
+                vendor=verdict.vendor,
+                evidence=verdict.evidence,
+            )
+
     async def _execute_task_unified(
         self,
         task_def: TaskDefinition,
@@ -3515,6 +3729,20 @@ class TaskExecutor:
                     else None
                 )
 
+                per_job_extra: Optional[List[Dict[str, Any]]] = None
+                if waf_detection.is_waf_detection_enabled():
+                    per_job_extra = []
+                    for spec in specs:
+                        wt = spec.waf_targets or []
+                        per_job_extra.append(
+                            {
+                                "excluded_nodes": self.waf_reputation.union_excluded_sorted(
+                                    [str(x) for x in wt]
+                                ),
+                                "waf_targets": [str(x) for x in wt],
+                            }
+                        )
+
                 batch_result = await self.job_manager.spawn_batch(
                     task_name=task_name,
                     commands=commands,
@@ -3523,6 +3751,7 @@ class TaskExecutor:
                     process_incrementally=self.progressive_streaming_enabled,
                     result_processor=result_processor,
                     step_name=step_name,
+                    per_job_extra=per_job_extra,
                 )
 
                 def progress_cb(completed: int, total: int):
@@ -3533,6 +3762,8 @@ class TaskExecutor:
                     timeout=timeout * len(commands),
                     progress_callback=progress_cb,
                 )
+
+                self._record_waf_heavy_signals_batch(batch_result, task_def.name)
 
                 if not self.progressive_streaming_enabled:
                     outputs = self.job_manager.get_job_outputs(batch_result)
@@ -3625,16 +3856,25 @@ class TaskExecutor:
 
             # Generate commands for each chunk
             commands = []
+            waf_per_job: List[List[str]] = []
             for chunk in input_chunks:
                 if task_def.params.get("timeout", None) is not None:
                     task_def.params["timeout"] = timeout
 
+                wt = (
+                    [str(x) for x in chunk]
+                    if task_def.name in waf_detection.HEAVY_HTTP_TASK_NAMES
+                    else []
+                )
                 command = task_instance.get_command(chunk, task_def.params or {})
                 # Handle both single commands and arrays of commands
                 if isinstance(command, list):
                     commands.extend(command)
+                    for _ in command:
+                        waf_per_job.append(wt)
                 else:
                     commands.append(command)
+                    waf_per_job.append(wt)
             
             logger.info(f"Generated {len(commands)} commands for {len(input_chunks)} chunks")
 
@@ -3846,6 +4086,19 @@ class TaskExecutor:
                             proxied_cmd = task_instance.replace_targets_with_proxies(cmd, proxy_mappings)
                             proxied_batch_commands.append(proxied_cmd)
 
+                        per_job_extra_proxy = None
+                        if waf_detection.is_waf_detection_enabled():
+                            bw = waf_per_job[start_idx:end_idx]
+                            per_job_extra_proxy = [
+                                {
+                                    "excluded_nodes": self.waf_reputation.union_excluded_sorted(
+                                        bw[i]
+                                    ),
+                                    "waf_targets": bw[i],
+                                }
+                                for i in range(len(proxied_batch_commands))
+                            ]
+
                         # Step 3: Spawn batch with proxied commands
                         logger.info(f"📤 Spawning {len(proxied_batch_commands)} jobs for batch {batch_num + 1}")
                         batch_result = await self.job_manager.spawn_batch(
@@ -3855,7 +4108,8 @@ class TaskExecutor:
                             timeout=timeout,
                             process_incrementally=self.progressive_streaming_enabled,
                             result_processor=process_batch_results if self.progressive_streaming_enabled else None,
-                            step_name=step_name
+                            step_name=step_name,
+                            per_job_extra=per_job_extra_proxy,
                         )
 
                         # Step 4: Wait for batch completion
@@ -3864,6 +4118,8 @@ class TaskExecutor:
                             batch_result,
                             timeout=timeout * len(batch_commands)
                         )
+
+                        self._record_waf_heavy_signals_batch(batch_result, task_def.name)
 
                         # Update last-execution timestamps for this batch's targets (per-batch so cache is correct)
                         batch_input_slice = input_data[start_idx:end_idx]
@@ -3898,6 +4154,16 @@ class TaskExecutor:
 
             else:
                 # Normal execution without proxies
+                per_job_extra_jm = None
+                if waf_detection.is_waf_detection_enabled() and waf_per_job:
+                    per_job_extra_jm = [
+                        {
+                            "excluded_nodes": self.waf_reputation.union_excluded_sorted(w),
+                            "waf_targets": w,
+                        }
+                        for w in waf_per_job
+                    ]
+
                 batch_result = await self.job_manager.spawn_batch(
                     task_name=task_def.name,
                     commands=commands,
@@ -3905,7 +4171,8 @@ class TaskExecutor:
                     timeout=timeout,
                     process_incrementally=self.progressive_streaming_enabled,
                     result_processor=process_batch_results if self.progressive_streaming_enabled else None,
-                    step_name=step_name
+                    step_name=step_name,
+                    per_job_extra=per_job_extra_jm,
                 )
                 
                 # Wait for all jobs to complete with progress tracking
@@ -3917,6 +4184,8 @@ class TaskExecutor:
                     timeout=timeout * len(input_chunks),  # Scale timeout by number of chunks
                     progress_callback=progress_callback
                 )
+
+                self._record_waf_heavy_signals_batch(batch_result, task_def.name)
                 
                 # Get final statistics
                 stats = self.job_manager.get_job_statistics(batch_result)
@@ -4903,6 +5172,10 @@ class TaskExecutor:
         iv = self._step_input_validation.get(step_name)
         if iv:
             result["input_validation"] = iv
+
+        ws = self._step_waf_status.get(step_name)
+        if ws:
+            result["waf_status"] = ws
 
         return result
 

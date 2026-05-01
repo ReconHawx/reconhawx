@@ -29,4 +29,32 @@ subjects:
 roleRef:
   kind: Role
   name: runner-role
-  apiGroup: rbac.authorization.k8s.io 
+  apiGroup: rbac.authorization.k8s.io
+---
+# Nodes are cluster-scoped: WAF precheck / scheduling discovers worker nodes via
+# list(label_selector=reconhawx.worker=true); requires read-only cluster Node access.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: reconhawx-runner-node-reader
+  labels:
+    app: runner
+rules:
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: reconhawx-runner-node-reader
+  labels:
+    app: runner
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: reconhawx-runner-node-reader
+subjects:
+  - kind: ServiceAccount
+    name: runner-service-account
+    namespace: reconhawx

@@ -1,0 +1,27 @@
+id: generic-captcha
+
+info:
+  name: Generic captcha / challenge framing
+  author: reconhawx
+  severity: info
+  tags:
+    - waf-block
+
+http:
+  - method: GET
+    path:
+      - "{{RootURL}}"
+    matchers-condition: or
+    matchers:
+      - type: dsl
+        dsl:
+          - "status_code != 200 && contains(to_lower(body),\"hcaptcha\")"
+      - type: dsl
+        dsl:
+          - "status_code != 200 && contains(to_lower(body),\"google.com/recaptcha\")"
+      - type: dsl
+        dsl:
+          - "status_code != 200 && contains(to_lower(body),\"recaptcha\")"
+      - type: dsl
+        dsl:
+          - "status_code != 200 && contains(to_lower(body),\"cloudflareinsights\")"

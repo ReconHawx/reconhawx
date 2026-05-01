@@ -50,6 +50,9 @@ async def publish_result(
     # Get current time for chunk tracking
     current_time = time.time()
 
+    node_name = os.getenv("NODE_NAME", "unknown")
+    pod_name = os.getenv("POD_NAME", "unknown")
+
     # Create result message
     result = {
         "task_id": task_id,
@@ -63,6 +66,8 @@ async def publish_result(
         "chunk_num": chunk_num,
         "total_chunks": total_chunks,
         "timestamp": current_time,  # Added explicit timestamp for chunk tracking
+        "node_name": node_name,
+        "pod_name": pod_name,
     }
 
     # Validate the message size before sending
@@ -289,6 +294,9 @@ async def send_chunked_output(output, success):
                         log.error("OUTPUT_QUEUE_SUBJECT environment variable not set")
                         continue
 
+                    node_name_chunk = os.getenv("NODE_NAME", "unknown")
+                    pod_name_chunk = os.getenv("POD_NAME", "unknown")
+
                     # Create result message
                     result = {
                         "task_id": task_id,
@@ -302,6 +310,8 @@ async def send_chunked_output(output, success):
                         "chunk_num": chunk_num,
                         "total_chunks": total_chunks,
                         "timestamp": time.time(),
+                        "node_name": node_name_chunk,
+                        "pod_name": pod_name_chunk,
                     }
 
                     # Encode message and check size before sending

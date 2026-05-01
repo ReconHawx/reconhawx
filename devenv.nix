@@ -38,6 +38,7 @@
     tesseract
     katana
     httpx
+    nuclei
   ];
   env = {};
   processes = {};

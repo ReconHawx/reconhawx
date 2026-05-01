@@ -353,7 +353,9 @@ class TaskQueueClient:
                         "chunk_num": chunk_num,
                         "total_chunks": total_chunks,
                         "is_final": is_final,
-                        "timestamp": payload.get("timestamp", time.time())
+                        "timestamp": payload.get("timestamp", time.time()),
+                        "node_name": payload.get("node_name"),
+                        "pod_name": payload.get("pod_name"),
                     }
                     
                     # Log progress
@@ -379,6 +381,15 @@ class TaskQueueClient:
                         final_payload["chunks_expected"] = total_chunks
                         final_payload["is_final"] = True
                         final_payload["is_partial"] = (processed_count < total_chunks)
+                        try:
+                            met_i = max(self.task_chunks[task_id]["chunks"].keys())
+                            meta_row = self.task_chunks[task_id]["chunks"][met_i]
+                            if meta_row.get("node_name"):
+                                final_payload["node_name"] = meta_row["node_name"]
+                            if meta_row.get("pod_name"):
+                                final_payload["pod_name"] = meta_row["pod_name"]
+                        except (ValueError, KeyError):
+                            pass
                         
                         # Store the final assembled output
                         self.task_outputs[task_id] = final_payload
@@ -489,7 +500,9 @@ class TaskQueueClient:
                         "chunks_received": processed_count,
                         "chunks_expected": total_chunks,
                         "is_final": True,
-                        "is_partial": False
+                        "is_partial": False,
+                        "node_name": last_chunk.get("node_name"),
+                        "pod_name": last_chunk.get("pod_name"),
                     }
                     
                     # Mark as complete to prevent further processing
@@ -564,7 +577,9 @@ class TaskQueueClient:
                         "chunks_received": processed_count,
                         "chunks_expected": total_chunks,
                         "is_final": True,
-                        "is_partial": True
+                        "is_partial": True,
+                        "node_name": last_chunk.get("node_name"),
+                        "pod_name": last_chunk.get("pod_name"),
                     }
                     
                     # Store the partial output
