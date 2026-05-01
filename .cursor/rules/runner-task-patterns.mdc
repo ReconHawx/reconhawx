@@ -13,7 +13,7 @@ Tasks are the core execution units in the workflow runner. Each task:
 2. Parses the command output into structured assets/findings
 3. Optionally returns synthetic assets via `get_synthetic_assets`
 
-All tasks run through the unified executor (`_execute_task_unified`), which handles spawn, wait, parse, and merge. Orchestrators no longer use `execute_task`; they override `generate_commands` instead.
+All tasks run through the unified executor (`_execute_task_unified`), which handles spawn, wait, parse, and merge. Orchestrators no longer use `execute_task`; they override `generate_commands` instead. **HTTP-heavy tasks** (`test_http`, `crawl_website`, `fuzz_website`, `nuclei_scan`, `screenshot_website`, `wpscan`) also flow through a **WAF precheck** (when `WAF_DETECTION` is on) and pass `excluded_nodes` / `waf_targets` into `WorkerJobManager.spawn_batch` — see `.cursor/rules/waf-quarantine.mdc`.
 
 ## CommandSpec and generate_commands
 
@@ -26,6 +26,7 @@ class CommandSpec:
     command: str        # Shell command for worker
     params: Optional[Dict] = None
     batch_group: Optional[int] = None  # For interleaved spawning (e.g., resolve_ip_cidr)
+    waf_targets: Optional[List[str]] = None  # Chunk inputs for WAF node-affinity union (HTTP-heavy tasks)
 ```
 
 ### generate_commands

@@ -1,0 +1,49 @@
+# One HTTP GET with OR'd matchers — runner WAF precheck uses only this file so each
+# (node × target) probe sends a single request. Per-vendor reference templates in this
+# directory (cloudflare-block.yaml, akamai-block.yaml, …) are kept for documentation /
+# tuning but are not passed to nuclei for precheck.
+id: waf-precheck-unified
+
+info:
+  name: Unified WAF / challenge block (single request)
+  author: reconhawx
+  severity: info
+  description: Any branch matches ⇒ treat node egress as blocked for this target.
+  tags:
+    - waf-block
+    - reconhawx-precheck
+
+http:
+  - method: GET
+    path:
+      - "{{RootURL}}"
+    matchers-condition: or
+    matchers:
+      # --- Reference: cloudflare-block.yaml ---
+      - type: dsl
+        dsl:
+          - '(status_code == 403 || status_code == 503) && contains(body, "Cloudflare")'
+      # --- Reference: akamai-block.yaml ---
+      - type: dsl
+        dsl:
+          - '(status_code == 403 || status_code == 503) && (contains(header, "AkamaiGHost") || contains(body, "Reference #"))'
+      # --- Reference: imperva-block.yaml ---
+      - type: dsl
+        dsl:
+          - '(status_code == 403 || status_code == 503) && (contains(to_lower(header), "x-iinfo") || contains(to_lower(body), "incapsula"))'
+      # --- Reference: aws-waf-block.yaml ---
+      - type: dsl
+        dsl:
+          - '(status_code == 403 || status_code == 503) && contains(to_lower(header), "x-amzn-requestid") && contains(body, "Request blocked")'
+      # --- Reference: f5-asm-block.yaml ---
+      - type: dsl
+        dsl:
+          - '(status_code == 403 || status_code == 503) && contains(body, "The requested URL was rejected")'
+      # --- Reference: sucuri-block.yaml ---
+      - type: dsl
+        dsl:
+          - '(status_code == 403 || status_code == 503) && contains(to_lower(header), "x-sucuri-id")'
+      # --- Reference: generic-captcha.yaml (combined) ---
+      - type: dsl
+        dsl:
+          - 'status_code != 200 && (contains(to_lower(body), "hcaptcha") || contains(to_lower(body), "google.com/recaptcha") || contains(to_lower(body), "recaptcha") || contains(to_lower(body), "cloudflareinsights"))'

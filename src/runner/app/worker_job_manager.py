@@ -32,6 +32,9 @@ class JobResult:
         self.error: Optional[str] = None
         self.start_time: Optional[float] = None
         self.end_time: Optional[float] = None
+        self.node_name: Optional[str] = None
+        self.waf_targets: Optional[List[Any]] = None
+        self.waf_precheck_meta: Optional[Dict[str, Any]] = None
 
         # Task information for output parsing
         self.task_name: Optional[str] = None
@@ -229,7 +232,8 @@ class WorkerJobManager:
         
         # Update with any additional parameters
         job_params.update(kwargs)
-        
+        job_params.setdefault("excluded_nodes", [])
+
         return job_params
     
     def _setup_output_handler(self, task_id: str, job_result: JobResult, result_processor: Optional[Callable] = None, batch_num: int = 0):
@@ -238,18 +242,24 @@ class WorkerJobManager:
             logger.warning(f"No task_queue_client available for output handling of job {task_id}")
             return
 
-        def output_handler(output):
+        def output_handler(payload):
             logger.debug(f"Received output from job {task_id}")
-            job_result.output = output
+            if isinstance(payload, dict):
+                job_result.output = payload
+                nn = payload.get("node_name")
+                job_result.node_name = str(nn) if nn else None
+            else:
+                job_result.output = payload
+                job_result.node_name = None
             job_result.status = "completed"
             job_result.end_time = time.time()
             logger.debug(f"Job {task_id} marked as completed")
 
             # If we have a result processor for progressive streaming, call it immediately
-            if result_processor and output:
+            if result_processor and job_result.output:
                 try:
                     logger.debug(f"Calling result processor for completed job {task_id}")
-                    result_processor({task_id: output}, batch_num)
+                    result_processor({task_id: job_result.output}, batch_num)
                 except Exception as e:
                     logger.error(f"Error in result processor for job {task_id}: {e}")
 
@@ -421,6 +431,7 @@ class WorkerJobManager:
                          result_processor: Optional[Callable] = None,
                          parse_output: bool = False,
                          sequential_batches: bool = False,
+                         per_job_extra: Optional[List[Dict[str, Any]]] = None,
                          **kwargs) -> BatchResult:
         """
         Spawn multiple worker jobs in batches.
@@ -470,7 +481,18 @@ class WorkerJobManager:
                 # Create job parameters for this batch
                 job_params_list = []
                 for j, command in enumerate(batch_commands):
+                    global_idx = start_idx + j
                     batch_kwargs = kwargs.copy()
+                    pe: Dict[str, Any] = {}
+                    if per_job_extra and global_idx < len(per_job_extra):
+                        pe = dict(per_job_extra[global_idx])
+                    waf_meta = pe.pop("_waf_meta", None)
+                    waf_targets = pe.pop("waf_targets", None)
+                    # ``timeout`` is always the ``spawn_batch(..., timeout=…)`` argument; do not
+                    # merge ``per_job_extra`` ``timeout`` into ``**batch_kwargs`` (duplicate kw).
+                    pe.pop("timeout", None)
+                    batch_kwargs.update(pe)
+
                     batch_kwargs.update({
                         "step_name": f"{task_name.replace('_', '-')}-batch-{batch_num}-{j}",
                         "job_name": f"{task_name.replace('_', '-')}-batch-{batch_num}-{j}",
@@ -482,15 +504,19 @@ class WorkerJobManager:
                         batch_kwargs['batch_num'] = batch_num + 1
 
                     job_params = self._build_job_params(task_name, command, timeout, **batch_kwargs)
-                    job_params_list.append(job_params)
+                    job_params_list.append((job_params, waf_meta, waf_targets))
 
                 # Queue current batch
                 if job_params_list:
+                    flat_params = [jp[0] for jp in job_params_list]
+
                     def queue_batch_in_thread():
                         loop = asyncio.new_event_loop()
                         asyncio.set_event_loop(loop)
                         try:
-                            return loop.run_until_complete(self.k8s_service.queue_worker_tasks(job_params_list))
+                            return loop.run_until_complete(
+                                self.k8s_service.queue_worker_tasks(flat_params)
+                            )
                         finally:
                             loop.close()
 
@@ -502,9 +528,12 @@ class WorkerJobManager:
                         # Set up tracking for spawned jobs
                         batch_jobs = []
                         for i, task_id in enumerate(task_ids):
-                            job_name = job_params_list[i]['job_name']
+                            job_name = flat_params[i]['job_name']
                             job_result = JobResult(task_id, job_name, "running")
                             job_result.start_time = time.time()
+                            _meta, wt = job_params_list[i][1], job_params_list[i][2]
+                            job_result.waf_precheck_meta = _meta
+                            job_result.waf_targets = wt
 
                             # Store task information for parsing if enabled
                             if parse_output:

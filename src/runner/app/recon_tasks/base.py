@@ -78,6 +78,7 @@ class CommandSpec:
     command: str
     params: Optional[Dict[str, Any]] = None
     batch_group: Optional[int] = None  # For interleaved spawning (e.g. resolve_ip_cidr)
+    waf_targets: Optional[List[str]] = None  # Raw chunk inputs for node block union (HTTP heavy tasks)
 
 
 class TaskParameterManager:
@@ -327,18 +328,31 @@ class Task(ABC):
         """
         chunk_size = self.get_chunk_size(input_data, params)
         commands = []
+        from services.waf_detection import HEAVY_HTTP_TASK_NAMES
+
         for i in range(0, len(input_data), chunk_size):
             chunk = input_data[i : i + chunk_size]
+            wt = [str(x) for x in chunk] if self.name in HEAVY_HTTP_TASK_NAMES else None
             cmd = self.get_command(chunk, params)
             if isinstance(cmd, list):
                 for c in cmd:
                     if c:
                         commands.append(
-                            CommandSpec(task_name=self.name, command=c, params=params)
+                            CommandSpec(
+                                task_name=self.name,
+                                command=c,
+                                params=params,
+                                waf_targets=wt,
+                            )
                         )
             elif cmd:
                 commands.append(
-                    CommandSpec(task_name=self.name, command=cmd, params=params)
+                    CommandSpec(
+                        task_name=self.name,
+                        command=cmd,
+                        params=params,
+                        waf_targets=wt,
+                    )
                 )
         return commands
 

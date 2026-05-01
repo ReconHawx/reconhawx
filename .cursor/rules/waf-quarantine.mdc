@@ -1,0 +1,37 @@
+---
+description: WAF-aware worker node quarantine (precheck, Redis reputation, scheduling)
+globs: ["src/runner/app/services/waf_*.py", "src/runner/app/services/waf_detection.py", "src/runner/app/services/kubernetes.py", "src/runner/app/task_executor.py", "src/runner/app/worker_job_manager.py", "src/worker/files/waf-block/**", "src/worker/app/command_wrapper.py"]
+---
+
+# WAF quarantine (runner + worker)
+
+Per **(worker node, canonical target)** Redis reputation blocks nodes that hit WAF challenges; heavy HTTP jobs get `NodeAffinity` `NotIn` on `WAF_NODE_LABEL` (default `kubernetes.io/hostname`). Worker Pods expose **`NODE_NAME` / `POD_NAME`** via Downward API; NATS payloads include **`node_name` / `pod_name`** for attribution.
+
+The runner discovers labeled worker nodes with **`KubernetesService.list_worker_nodes`** (Kube API `nodes` **list**, cluster-scoped). The ServiceAccount needs **`reconhawx-runner-node-reader`** (`kubernetes/base/runner/runner-rbac.yaml` — **`ClusterRole` + `ClusterRoleBinding`** bound to **`runner-service-account`**). Fresh installs/upgrades applying `kubernetes/base/` or **`base-update/`** pick this up; if you pasted an older RBAC snippet, re-apply the bundle so precheck does not silently skip (**`WAF_DETECTION=off`** is unrelated).
+
+## Code map
+
+| Concern | Module |
+|---------|--------|
+| Kill switch (`WAF_DETECTION`), precheck nuclei CLI, secondary heuristics | [`services/waf_detection.py`](../../src/runner/app/services/waf_detection.py) |
+| Redis TTL, `target_key()`, `blocked_nodes_verified_for` | [`services/waf_reputation.py`](../../src/runner/app/services/waf_reputation.py) |
+| Precheck orchestration + `waf_status` on step payloads | [`task_executor.py`](../../src/runner/app/task_executor.py) |
+| `per_job_extra` (`excluded_nodes`, `waf_targets`) → job params | [`worker_job_manager.py`](../../src/runner/app/worker_job_manager.py) |
+| Downward API env, affinity, `job_params["env"]` merge | [`kubernetes.py`](../../src/runner/app/services/kubernetes.py) |
+| Nuclei precheck YAML (one request per probe) plus per-vendor reference templates in worker image | [`src/worker/files/waf-block/`](../../src/worker/files/waf-block/) |
+
+## Operational env (runner pod unless noted)
+
+- **`WAF_DETECTION`** — `off` / `false` / `0` / `no` disables gate + secondary signals.
+- **`WAF_QUARANTINE_TTL`** — block key TTL seconds (default 1800).
+- **`WAF_SECONDARY_PROMOTE`** / **`WAF_SECONDARY_WINDOW`** — promote weak heavy-task signals after N hits in window.
+- **`WAF_NODE_LABEL`** — Kubernetes node label key for affinity exclusions (default `kubernetes.io/hostname`).
+
+## Extending matchers (precheck)
+
+Precheck nuclei loads only **`waf-precheck-unified.yaml`** (`services/waf_detection.WAF_PRECHECK_TEMPLATE_PATH`): one **`GET`** to `{{RootURL}}` with **`matchers-condition: or`** over every branch mirrored from per-vendor files. To add a detector: extend **`waf-precheck-unified.yaml`** with a new OR matcher **and** add or refresh a **`id: vendor-*`** YAML alongside it as reference/documentation. Matches are counted when nuclei JSONL has **`template-id: waf-precheck-unified`** or the template path contains **`waf-precheck-unified`**; **`vendor`** in the inferred verdict stays **`None`**. Prefer **status + body/header** signals so CDN branding alone does not imply blocked egress.
+
+## Do not
+
+- Put WAF templates only under `src/runner/` — nuclei runs in the **worker** container.
+- Key reputation at apex-only — use `target_key()` (scheme + host + port).

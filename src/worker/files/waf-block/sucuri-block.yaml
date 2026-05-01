@@ -1,0 +1,22 @@
+id: sucuri-block
+
+info:
+  name: Vendor Sucuri block
+  author: reconhawx
+  severity: info
+  tags:
+    - waf-block
+
+http:
+  - method: GET
+    path:
+      - "{{RootURL}}"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 403
+          - 503
+      - type: dsl
+        dsl:
+          - 'contains(to_lower(header),"x-sucuri-id")'

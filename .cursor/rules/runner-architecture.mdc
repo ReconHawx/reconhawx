@@ -76,6 +76,7 @@ sequenceDiagram
 - **Purpose**: Main orchestration engine for workflow execution
 - **Responsibilities**:
   - Initialize task queue client and job manager
+  - Optionally run **WAF prechecks** (nuclei + `files/waf-block`) for HTTP-heavy steps and apply Redis-backed node quarantine + NodeAffinity exclusions (see `.cursor/rules/waf-quarantine.mdc`)
   - Resolve input mappings from workflow definition
   - Execute tasks via WorkerJobManager
   - Process and aggregate task results
@@ -98,7 +99,7 @@ sequenceDiagram
   - `queue_worker_task()` - Submit single task
   - `queue_worker_tasks()` - Submit batch of tasks
   - `generate_job_crd()` - Create K8s Job manifest
-  - `wait_for_jobs_completion()` - Monitor job completion
+  - `list_worker_nodes()` — nodes labeled `reconhawx.worker=true` (short cache)
   - `get_pod_logs()` - Retrieve logs from worker pods
 
 ## Environment Variables
@@ -136,9 +137,13 @@ sequenceDiagram
   "is_final": true,
   "chunk_num": 1,
   "total_chunks": 1,
-  "timestamp": 1234567890.123
+  "timestamp": 1234567890.123,
+  "node_name": "kind-worker",
+  "pod_name": "worker-abc-job-uuid"
 }
 ```
+
+`node_name` / `pod_name` come from the worker pod Downward API and support WAF per-node attribution (`.cursor/rules/waf-quarantine.mdc`).
 
 ## Key Patterns
 

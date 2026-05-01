@@ -1,0 +1,23 @@
+id: f5-asm-block
+
+info:
+  name: Vendor F5 BIG-IP ASM denial
+  author: reconhawx
+  severity: info
+  tags:
+    - waf-block
+
+http:
+  - method: GET
+    path:
+      - "{{RootURL}}"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 403
+          - 503
+      - type: word
+        words:
+          - "The requested URL was rejected"
+        part: body

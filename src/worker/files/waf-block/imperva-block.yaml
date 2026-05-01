@@ -1,0 +1,22 @@
+id: imperva-block
+
+info:
+  name: Vendor Imperva / Incapsula block
+  author: reconhawx
+  severity: info
+  tags:
+    - waf-block
+
+http:
+  - method: GET
+    path:
+      - "{{RootURL}}"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 403
+          - 503
+      - type: dsl
+        dsl:
+          - 'contains(to_lower(header),"x-iinfo") || contains(to_lower(body),"incapsula")'

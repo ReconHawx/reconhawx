@@ -7,8 +7,12 @@ from typing import Dict, Any, List, Tuple
 import os
 import uuid
 import asyncio
+import time
 
 logger = logging.getLogger(__name__)
+
+# Node label key for affinity exclusion (pods land on Nodes; hostname aligns with kubectl get nodes).
+WAF_NODE_AFFINITY_KEY = os.getenv("WAF_NODE_LABEL", "kubernetes.io/hostname")
 
 # Align with API workflow Jobs: label values max 63 chars — never put raw program name in labels.
 WORKFLOW_PROGRAM_NAME_ANNOTATION = "reconhawx.io/program-name"
@@ -56,6 +60,30 @@ class KubernetesService:
         self.core_api = client.CoreV1Api()
         self.kubernetes_namespace = os.getenv('KUBERNETES_NAMESPACE', '')
         self.docker_registry = os.getenv('DOCKER_REGISTRY', '')
+        self._worker_nodes_cached_at: float = 0.0
+        self._worker_nodes_cache: List[str] = []
+
+    def list_worker_nodes(self, cache_ttl_seconds: float = 60.0) -> List[str]:
+        """Return node names labeled ``reconhawx.worker=true`` (cached briefly)."""
+        now = time.monotonic()
+        if (
+            self._worker_nodes_cache
+            and now - self._worker_nodes_cached_at < cache_ttl_seconds
+        ):
+            return list(self._worker_nodes_cache)
+        try:
+            resp = self.core_api.list_node(label_selector="reconhawx.worker=true")
+            names = sorted(
+                n.metadata.name
+                for n in (resp.items or [])
+                if n.metadata and n.metadata.name
+            )
+        except Exception as e:
+            logger.warning("list_worker_nodes failed: %s", e)
+            return []
+        self._worker_nodes_cache = names
+        self._worker_nodes_cached_at = now
+        return list(names)
 
     @staticmethod
     def _worker_program_k8s_fragments(job_params: Dict[str, Any]) -> Tuple[Dict[str, str], Dict[str, str]]:
@@ -299,7 +327,28 @@ class KubernetesService:
                 name="LOG_LEVEL",
                 value=os.getenv("LOG_LEVEL", "INFO"),
             ),
+            client.V1EnvVar(
+                name="NODE_NAME",
+                value_from=client.V1EnvVarSource(
+                    field_ref=client.V1ObjectFieldSelector(field_path="spec.nodeName"),
+                ),
+            ),
+            client.V1EnvVar(
+                name="POD_NAME",
+                value_from=client.V1EnvVarSource(
+                    field_ref=client.V1ObjectFieldSelector(field_path="metadata.name"),
+                ),
+            ),
         ]
+
+        for extra in job_params.get("env", []) or []:
+            name = extra.get("name")
+            if not name:
+                continue
+            if any(e.name == name for e in container.env):
+                continue
+            val = extra.get("value")
+            container.env.append(client.V1EnvVar(name=name, value=val))
 
         container.resources = {
             "requests": {
@@ -333,6 +382,26 @@ class KubernetesService:
                 
             )
         )
+
+        excluded = list(job_params.get("excluded_nodes") or [])
+        if excluded:
+            template.spec.affinity = client.V1Affinity(
+                node_affinity=client.V1NodeAffinity(
+                    required_during_scheduling_ignored_during_execution=client.V1NodeSelector(
+                        node_selector_terms=[
+                            client.V1NodeSelectorTerm(
+                                match_expressions=[
+                                    client.V1NodeSelectorRequirement(
+                                        key=WAF_NODE_AFFINITY_KEY,
+                                        operator="NotIn",
+                                        values=excluded,
+                                    )
+                                ],
+                            )
+                        ],
+                    ),
+                ),
+            )
 
         template.spec.node_selector = {"reconhawx.worker": "true"}
 

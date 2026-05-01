@@ -151,6 +151,7 @@ COPY --from=builder /usr/local/bin/massdns /usr/local/bin/massdns
 RUN chmod +x /usr/local/bin/command_wrapper.py
 
 # Nuclei configuration
+# Custom WAF probe templates ship under ./files/waf-block/ (see runner WAF quarantine docs).
 RUN mkdir -p /root/.config/nuclei && \
     cp /workspace/files/nuclei.yaml /root/.config/nuclei/config.yaml
 
