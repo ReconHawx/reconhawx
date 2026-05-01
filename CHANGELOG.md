@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.25.0](https://github.com/ReconHawx/reconhawx/compare/v0.24.5...v0.25.0) (2026-05-01)
+
+
+### Features
+
+* **runner:** quarantine nodes when WAF blocks target egress ([22f159e](https://github.com/ReconHawx/reconhawx/commit/22f159e655fae9c98ca76655c33096910f98e74c))
+
 ## [0.24.5](https://github.com/ReconHawx/reconhawx/compare/v0.24.4...v0.24.5) (2026-05-01)
 
 
