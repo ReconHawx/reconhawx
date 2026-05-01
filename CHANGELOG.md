@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.5](https://github.com/ReconHawx/reconhawx/compare/v0.24.4...v0.24.5) (2026-05-01)
+
+
+### Bug Fixes
+
+* **runner:** restore typosquat ingest for scheduled gather API findings jobs ([e8bce32](https://github.com/ReconHawx/reconhawx/commit/e8bce32748f6ffe371bf63719a322197ac042bfa))
+
 ## [0.24.4](https://github.com/ReconHawx/reconhawx/compare/v0.24.3...v0.24.4) (2026-04-29)
 
 
