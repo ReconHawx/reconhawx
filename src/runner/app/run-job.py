@@ -53,6 +53,7 @@ async def run_gather_api_findings_job(job_data: dict):
     try:
         job_id = job_data.get("job_id")
         program_name = job_data.get("program_name")  # Single program from scheduled job
+        program_id = job_data.get("program_id")
         user_id = job_data.get("user_id", "unknown")
 
         # Extract from job_data nested structure
@@ -82,10 +83,21 @@ async def run_gather_api_findings_job(job_data: dict):
                 )
                 return False
 
-        logger.info(f"Starting gather API findings job {job_id} for program {program_name} using {api_vendor}")
+        logger.info(
+            f"Starting gather API findings job {job_id} for program {program_name} "
+            f"(program_id={program_id!r}) using {api_vendor}"
+        )
 
         # Create and execute the task
-        task = GatherApiFindingsTask(job_id, program_name, user_id, api_vendor, date_range_hours, custom_query)
+        task = GatherApiFindingsTask(
+            job_id,
+            program_name,
+            user_id,
+            api_vendor,
+            date_range_hours,
+            custom_query,
+            program_id=program_id,
+        )
         await task.execute()
 
         logger.info(f"Gather API findings job {job_id} completed successfully")

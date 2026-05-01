@@ -458,11 +458,14 @@ class JobSchedulerService:
                 await JobRepository.create_job(job_id, request.job_type.value, job_payload)
 
                 if request.job_type == JobType.GATHER_API_FINDINGS:
+                    _pids = job_row.get("program_ids") or []
+                    _first_program_id = str(_pids[0]) if _pids else None
                     worker_payload = {
                         "job_id": job_id,
                         "job_type": request.job_type.value,
                         "schedule_id": schedule_id,
                         "user_id": job_row["user_id"],
+                        "program_id": _first_program_id,
                         "program_name": request.program_name,
                         "created_at": datetime.now(timezone.utc).isoformat(),
                         "job_data": effective_job_data,
