@@ -32,7 +32,7 @@ Register new vendors in `GatherApiFindingsTask._create_vendor_adapter` and imple
 ## Finding shape and API
 
 - Per domain: `vendor_adapter.create_finding_data(domain_data, program_name)` produces `{typo_domain, program_name, source, ...}` plus `{vendor}_data` JSONB payload.
-- **Batch create**: POST `{api_base}/findings/typosquat` with wrapped `findings.typosquat_domain[]`.
+- **Batch create**: POST `{api_base}/findings/typosquat` with top-level **`program_id`** (UUID) and optional `program_name`; body wraps `findings.typosquat_domain[]`. Scheduled `gather_api_findings` jobs receive `program_id` from the schedule row (`program_ids[0]`) in the K8s ConfigMap; if missing (older payloads), the task falls back to GET `/programs/{name}`.
 - **Patches** (updates / enrichment): `PATCH .../typosquat/{id}/recordedfuture-data`, `PATCH .../threatstream-data`, `PATCH .../recordedfuture-derived-columns` (API routes under `/findings`).
 
 WHOIS-related fields in create/update payloads are stored on **`typosquat_apex_domains`** (registrable domain per program); API responses merge those fields onto each finding as flat `whois_*` keys.

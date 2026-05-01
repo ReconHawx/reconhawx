@@ -11,13 +11,25 @@ logger = logging.getLogger(__name__)
 class GatherApiFindingsTask:
     """Task for gathering typosquat domain findings from vendor APIs"""
 
-    def __init__(self, job_id: str, program_name: str, user_id: str, api_vendor: str = "threatstream", date_range_hours: Optional[int] = None, custom_query: Optional[str] = None):
+    def __init__(
+        self,
+        job_id: str,
+        program_name: str,
+        user_id: str,
+        api_vendor: str = "threatstream",
+        date_range_hours: Optional[int] = None,
+        custom_query: Optional[str] = None,
+        program_id: Optional[str] = None,
+    ):
         self.job_id = job_id
         self.program_name = program_name
         self.user_id = user_id
         self.api_vendor = api_vendor
         self.date_range_hours = date_range_hours
         self.custom_query = custom_query
+        self.program_id = (
+            str(program_id).strip() if program_id and str(program_id).strip() else None
+        )
         self.existing_domains_cache = set()  # Cache existing domains for the single program
         self.results = {
             "success_count": 0,
@@ -55,6 +67,9 @@ class GatherApiFindingsTask:
         logger.info(f"Full endpoint URL will be: {self.api_base_url}/findings/typosquat")
         logger.info(f"Target API vendor: {api_vendor}")
         logger.info(f"Target program: {program_name}")
+        logger.info(
+            f"Target program_id: {self.program_id if self.program_id else '(unset; will resolve via API if needed)'}"
+        )
         if date_range_hours is not None:
             if date_range_hours == 0:
                 logger.info("Date range filter: 0 hours (no date filtering - fetch all available data)")
@@ -76,6 +91,8 @@ class GatherApiFindingsTask:
 
             # Test API connectivity first
             await self.test_api_connectivity()
+
+            await self._ensure_program_id()
 
             # Pre-fetch existing domains for the program
             await self.fetch_existing_domains_for_program(self.program_name)
@@ -148,6 +165,36 @@ class GatherApiFindingsTask:
         if self.connector and not self.connector.closed:
             await self.connector.close()
             logger.debug("Closed HTTP connector")
+    
+    async def _ensure_program_id(self) -> str:
+        """Resolve and cache program UUID for API ingest (POST /findings/typosquat requires program_id)."""
+        if self.program_id:
+            return self.program_id
+
+        headers: Dict[str, str] = {}
+        if self.api_token:
+            headers["Authorization"] = f"Bearer {self.api_token}"
+
+        url = f"{self.api_base_url}/programs/{self.program_name}"
+        logger.info(f"Resolving program_id via GET {url}")
+        session = await self._get_session()
+        async with session.get(url, headers=headers) as response:
+            if response.status != 200:
+                response_text = await response.text()
+                raise Exception(
+                    f"Failed to resolve program_id for {self.program_name!r}: "
+                    f"HTTP {response.status} - {response_text}"
+                )
+            program_data = await response.json()
+
+        pid = program_data.get("id")
+        if not pid or not str(pid).strip():
+            raise Exception(
+                f"Program {self.program_name!r} has no id in API response; cannot ingest findings"
+            )
+        self.program_id = str(pid).strip()
+        logger.info(f"Resolved program_id={self.program_id} for program {self.program_name}")
+        return self.program_id
     
     def _apply_vendor_configuration(self):
         """Apply any runtime configuration updates to the vendor adapter"""
@@ -390,9 +437,14 @@ class GatherApiFindingsTask:
                 headers["Authorization"] = f"Bearer {self.api_token}"
 
             url = f"{self.api_base_url}/findings/typosquat"
+            if not self.program_id:
+                raise ValueError(
+                    "program_id is required to store typosquat findings; ensure execute() calls _ensure_program_id()"
+                )
             # Wrap findings in the expected API format
             batch_data = {
-                "program_name": findings[0].get("program_name") if findings else "",
+                "program_id": self.program_id,
+                "program_name": self.program_name,
                 "findings": {
                     "typosquat_domain": findings
                 }
