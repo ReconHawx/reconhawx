@@ -26,6 +26,10 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 _VERSION_RE = re.compile(r"^(latest|\d+\.\d+\.\d+)$")
+_SEMVER_RE = re.compile(r"^\d+\.\d+\.\d+$")
+# OCI tag: ASCII letters/digits/._-, max 128 chars (first char must not be . or - per spec;
+# we allow underscore like Docker.)
+_UPGRADER_TAG_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$")
 
 _github_latest_cache: Dict[str, Any] = {"at": 0.0, "tag": None, "reachable": False}
 
@@ -38,8 +42,35 @@ def _upgrader_image() -> str:
     return (os.getenv("UPGRADER_IMAGE") or "ghcr.io/reconhawx/reconhawx/upgrader:latest").strip()
 
 
-def _max_upgrade_staging_bytes() -> int:
-    return int(os.getenv("UPGRADE_STAGING_MAX_BYTES", str(200 * 1024 * 1024)))
+def _split_image_repository_and_tag(image_ref: str) -> Tuple[str, Optional[str]]:
+    """Split registry/repo[:tag] without using a full OCI parser (supports host:port/repo:tag)."""
+    ref = image_ref.strip()
+    if not ref:
+        raise HTTPException(status_code=400, detail="UPGRADER_IMAGE is empty")
+    if "@" in ref:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "UPGRADER_IMAGE uses an image digest (@sha256:...); configure "
+                "UPGRADER_IMAGE as repository:tag so the upgrade Job can pull the target "
+                "release's upgrader image."
+            ),
+        )
+    last_slash = ref.rfind("/")
+    last_colon = ref.rfind(":")
+    if last_colon == -1:
+        return ref, None
+    if last_colon > last_slash:
+        return ref[:last_colon], ref[last_colon + 1 :]
+    return ref, None
+
+
+def _retag_upgrader_image(base_image: str, new_tag: str) -> str:
+    repo, _old = _split_image_repository_and_tag(base_image)
+    tag = new_tag.strip()
+    if not tag or not _UPGRADER_TAG_RE.match(tag):
+        raise HTTPException(status_code=400, detail=f"invalid upgrader image tag: {tag!r}")
+    return f"{repo}:{tag}"
 
 
 async def _fetch_github_latest_tag() -> Tuple[Optional[str], bool]:
@@ -77,6 +108,23 @@ async def _fetch_github_latest_tag() -> Tuple[Optional[str], bool]:
     _github_latest_cache["tag"] = tag
     _github_latest_cache["reachable"] = reachable
     return tag, reachable
+
+
+async def _resolve_upgrader_image_tag(requested_version: str) -> str:
+    """Tag for the upgrader image: explicit semver, or GitHub latest semver, or 'latest'."""
+    if requested_version != "latest":
+        return requested_version
+    latest_semver, _reachable = await _fetch_github_latest_tag()
+    if latest_semver and _SEMVER_RE.match(latest_semver):
+        return latest_semver
+    logger.warning(
+        "Could not resolve GitHub latest release for upgrader image tag; using literal 'latest'"
+    )
+    return "latest"
+
+
+def _max_upgrade_staging_bytes() -> int:
+    return int(os.getenv("UPGRADE_STAGING_MAX_BYTES", str(200 * 1024 * 1024)))
 
 
 class UpgradeJobBody(BaseModel):
@@ -218,11 +266,14 @@ async def upgrade_create_job(
         or "http://api:8000"
     ).rstrip("/")
 
+    upgrader_tag = await _resolve_upgrader_image_tag(ver)
+    upgrader_image = _retag_upgrader_image(_upgrader_image(), upgrader_tag)
+
     job_name = f"{UPGRADE_JOB_NAME_PREFIX}{int(time.time())}-{uuid4().hex[:6]}"
     try:
         k8s.create_upgrade_job(
             job_name,
-            upgrader_image=_upgrader_image(),
+            upgrader_image=upgrader_image,
             target_version=ver,
             github_repo=_github_repo(),
             pull_token=pull_token,
@@ -243,6 +294,7 @@ async def upgrade_create_job(
         metadata={
             "job_name": job_name,
             "version": ver,
+            "upgrader_image": upgrader_image,
             "staging_id": staging_id,
             "kueue_resync_quotas": body.kueue_resync_quotas,
         },

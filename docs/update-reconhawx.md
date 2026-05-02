@@ -6,7 +6,7 @@ Upgrades are different from install: they do **not** reinstall Kueue, ingress-ng
 
 ## Upgrading from the Admin UI (in-cluster)
 
-Superusers can use **Admin → System upgrade** (`/admin/system-upgrade`) when the cluster already runs ReconHawx and the **`upgrader`** image is available in your registry. The API creates a Kubernetes **Job** (ServiceAccount **`upgrader-sa`**) that:
+Superusers can use **Admin → System upgrade** (`/admin/system-upgrade`) when the cluster already runs ReconHawx and the **`upgrader`** image for the **target release** is pullable from your registry (same repository as **`UPGRADER_IMAGE`** on the API Deployment, tag retargeted to that release—see *How versions work* below). The API creates a Kubernetes **Job** (ServiceAccount **`upgrader-sa`**) that:
 
 1. Downloads the **GitHub release source tarball** for `latest` or a specific semver (or pulls a **staged tarball** you uploaded for air-gapped clusters),
 2. Runs **`kubernetes/base-update/pre-apply.d/`** hooks, then **`kubectl apply -k kubernetes/base-update/`**,
@@ -37,6 +37,7 @@ Optional: set `RECONHAWX_NO_COLOR=1` for plain log output. For **scripted** upgr
 
 - **Manifest / app version** is recorded in the cluster as ConfigMap **`reconhawx-version`** (key **`APP_VERSION`**), defined in [`kubernetes/base/config/reconhawx-version.yaml`](../kubernetes/base/config/reconhawx-version.yaml). It is bumped with **`version.txt`** on each release (release-please).
 - **Application images** (api, migrations, frontend, event-handler, ct-monitor, and runner/worker images referenced in `service-config`) are pinned to that **same semver** in the rendered manifests via Kustomize—see [`kubernetes/base/components/pinned-releases`](../kubernetes/base/components/pinned-releases/kustomization.yaml).
+- **In-cluster upgrade Job** (`upgrader`): the API **`UPGRADER_IMAGE`** env supplies **registry/repository** (with a tag pinned to the cluster’s current `APP_VERSION` like other control-plane images). When a superuser starts an upgrade, the API **replaces that tag** with the target release so the Job runs the matching **`upgrader`** image; mirror publishes **`…/upgrader:<semver>`** if the cluster cannot pull from GHCR.
 - Published images on GHCR include tags matching that semver (for example `ghcr.io/.../api:0.7.0`) when CI builds the release.
 
 Check what the cluster is tracking:
