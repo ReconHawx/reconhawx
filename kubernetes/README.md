@@ -40,7 +40,7 @@ Use repo root **`update-kubernetes.sh`** or **`update-minikube.sh`**, or manuall
 
 ### In-cluster upgrade Job (`upgrader-sa`)
 
-The base manifests include **`kubernetes/base/upgrader/`**: ServiceAccount **`upgrader-sa`**, a namespaced **Role** for applying `base-update` workloads, and a scoped **ClusterRole** for Kueue cluster resources and RBAC objects the bundle touches. Superusers can trigger upgrades from the UI (**System upgrade**); the API creates a **Job** whose pod runs the **`upgrader`** container image (`UPGRADER_IMAGE` on the API Deployment, semver-pinned like other services). Tune RBAC there if your policy requires a narrower set of verbs.
+The base manifests include **`kubernetes/base/upgrader/`**: ServiceAccount **`upgrader-sa`**, a namespaced **Role** for applying `base-update` workloads, and a scoped **ClusterRole** for Kueue cluster resources and RBAC objects the bundle touches. Superusers can trigger upgrades from the UI (**System upgrade**); the API creates a **Job** whose pod runs the **`upgrader`** image at the **target release tag** (registry/repository from `UPGRADER_IMAGE` on the API Deployment, tag chosen for the upgrade request—not the cluster’s prior semver). Tune RBAC there if your policy requires a narrower set of verbs.
 
 ### PostgreSQL: Deployment to StatefulSet (existing clusters)
 
