@@ -95,6 +95,7 @@ class WorkflowPostLogsResponse(BaseModel):
     status: str
 
 class WorkflowLogs(BaseModel):
+    workflow_id: Optional[str] = None
     execution_id: Optional[str] = None
     program_name: str
     workflow_name: str
@@ -103,6 +104,7 @@ class WorkflowLogs(BaseModel):
     workflow_definition: Optional[Dict[str, Any]] = None
     runner_pod_output: Optional[str] = None
     task_execution_logs: Optional[List[Dict[str, Any]]] = Field(default_factory=list)
+    waf_summary: Optional[Dict[str, Any]] = None
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
     created_at: Optional[datetime] = None

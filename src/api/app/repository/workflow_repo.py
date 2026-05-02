@@ -206,7 +206,11 @@ class WorkflowRepository:
                 mapped_data["task_execution_logs"] = existing_logs + new_logs
             else:
                 mapped_data["task_execution_logs"] = new_logs if isinstance(new_logs, list) else []
-        
+
+        # Aggregated WAF summary from runner (JSON object on workflow_logs.waf_summary)
+        if "waf_summary" in log_object:
+            mapped_data["waf_summary"] = log_object["waf_summary"]
+
         # Map execution_id
         if "execution_id" in log_object:
             mapped_data["execution_id"] = str(log_object["execution_id"])
@@ -227,7 +231,13 @@ class WorkflowRepository:
             # Don't set completed_at for new workflows
         else:
             # For updates, check if workflow is completing
-            if log_object.get("result") in ["success", "completed", "failed"]:
+            if log_object.get("result") in [
+                "success",
+                "completed",
+                "failed",
+                "cancelled_waf",
+                "partial_waf",
+            ]:
                 mapped_data["completed_at"] = now
 
         # Note: created_at and updated_at are handled by database defaults

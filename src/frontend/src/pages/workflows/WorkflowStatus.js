@@ -16,6 +16,16 @@ const sortableHeaderStyle = {
   userSelect: 'none'
 };
 
+/** Human-readable workflow result for list / modals (runner API `result` → `status`). */
+export function formatWorkflowStatusLabel(status) {
+  const k = (status || '').toLowerCase();
+  const labels = {
+    cancelled_waf: 'WAF cancelled',
+    partial_waf: 'WAF partial',
+  };
+  return labels[k] || status || 'unknown';
+}
+
 export function WorkflowMonitoringPanel({ embedded = false }) {
   const [executions, setExecutions] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -216,6 +226,8 @@ export function WorkflowMonitoringPanel({ embedded = false }) {
       'pending': 'warning',
       'cancelled': 'secondary',
       'stopped': 'secondary',
+      'cancelled_waf': 'warning',
+      'partial_waf': 'warning',
       'stopping': 'warning',
       'unknown': 'secondary'
     };
@@ -437,7 +449,7 @@ export function WorkflowMonitoringPanel({ embedded = false }) {
                           </td>
                           <td>
                             <Badge bg={getStatusBadge(execution.status)}>
-                              {execution.status || 'unknown'}
+                              {formatWorkflowStatusLabel(execution.status)}
                             </Badge>
                           </td>
                           <td>
@@ -567,7 +579,7 @@ export function WorkflowMonitoringPanel({ embedded = false }) {
                <div className="card-body">
                  <strong>Workflow:</strong> {workflowToStop.workflow_name}<br />
                  <strong>Program:</strong> {workflowToStop.program_name}<br />
-                 <strong>Status:</strong> <Badge bg={getStatusBadge(workflowToStop.status)}>{workflowToStop.status}</Badge><br />
+                 <strong>Status:</strong> <Badge bg={getStatusBadge(workflowToStop.status)}>{formatWorkflowStatusLabel(workflowToStop.status)}</Badge><br />
                  <small className="text-muted">ID: {workflowToStop.id}</small>
                </div>
              </div>
@@ -613,7 +625,7 @@ export function WorkflowMonitoringPanel({ embedded = false }) {
                     {ex && (
                       <>
                         <br />
-                        <Badge bg={getStatusBadge(ex.status)}>{ex.status}</Badge>
+                        <Badge bg={getStatusBadge(ex.status)}>{formatWorkflowStatusLabel(ex.status)}</Badge>
                       </>
                     )}
                   </div>

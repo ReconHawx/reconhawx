@@ -1,6 +1,6 @@
 ---
 description: WAF-aware worker node quarantine (precheck, Redis reputation, scheduling)
-globs: ["src/runner/app/services/waf_*.py", "src/runner/app/services/waf_detection.py", "src/runner/app/services/kubernetes.py", "src/runner/app/task_executor.py", "src/runner/app/worker_job_manager.py", "src/worker/files/waf-block/**", "src/worker/app/command_wrapper.py"]
+globs: ["src/runner/app/services/waf_*.py", "src/runner/app/services/waf_detection.py", "src/runner/app/services/kubernetes.py", "src/runner/app/task_executor.py", "src/runner/app/worker_job_manager.py", "src/runner/app/run-workflow.py", "src/worker/files/waf-block/**", "src/worker/app/command_wrapper.py"]
 ---
 
 # WAF quarantine (runner + worker)
@@ -19,6 +19,15 @@ The runner discovers labeled worker nodes with **`KubernetesService.list_worker_
 | `per_job_extra` (`excluded_nodes` for quarantine skips, **`required_nodes`** for precheck pin, `waf_targets`) → job params | [`worker_job_manager.py`](../../src/runner/app/worker_job_manager.py) |
 | Downward API env, affinity, `job_params["env"]` merge | [`kubernetes.py`](../../src/runner/app/services/kubernetes.py) |
 | Nuclei precheck YAML (one request per probe) plus per-vendor reference templates in worker image | [`src/worker/files/waf-block/`](../../src/worker/files/waf-block/) |
+| Runner workflow POST `result` / `waf_summary` aggregation | [`run-workflow.py`](../../src/runner/app/run-workflow.py) |
+| Persist `workflow_logs.waf_summary` + terminal `cancelled_waf` / `partial_waf` | API [`routes/workflows.py`](../../src/api/app/routes/workflows.py), [`repository/workflow_repo.py`](../../src/api/app/repository/workflow_repo.py) |
+
+## Workflow-level result + summary (API UI)
+
+Heavy-HTTP tasks that skip inputs via **`_waf_precheck_gate`** still attach per-step **`waf_status`** on step status blobs (existing). The runner also aggregates **`task_executor._step_waf_status`** before final **`POST …/executions/{id}/logs`**:
+
+- **`result`**: **`cancelled_waf`** when any step had all targets blocked on every worker (**fully skipped**); **`partial_waf`** when there were skips but every affected step ran on at least some surviving targets. **`failed`** / **`stopped`** are unchanged; **`waf_summary`** may still be present for operators.
+- **`waf_summary`** (JSON): `any_skips`, `fully_skipped_steps`, `partial_skip_steps` (each with `step`, `skipped_inputs`, blocked keys list, `candidate_nodes`), `total_skipped_inputs`, `total_blocked_target_keys`, `candidate_nodes_union`. Stored on **`workflow_logs.waf_summary`**.
 
 ## Operational env (runner pod unless noted)
 

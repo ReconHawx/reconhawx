@@ -2,8 +2,10 @@
 -- PostgreSQL database dump
 --
 
+\restrict YMGX40FNTdl8a2Spm2DrpE4wvgo0g3Kx1psnLmF3fh4iP12LMZg6YG1BZ4HnxLt
+
 -- Dumped from database version 15.15 (Debian 15.15-1.pgdg13+1)
--- Dumped by pg_dump version 17.9
+-- Dumped by pg_dump version 15.17
 
 SET statement_timeout = 0;
 SET lock_timeout = 0;
@@ -194,8 +196,6 @@ CREATE TABLE public.programs (
     id uuid NOT NULL,
     name character varying(255) NOT NULL,
     domain_regex text[],
-    scope_domains jsonb DEFAULT '[]'::jsonb NOT NULL,
-    out_of_scope_domains jsonb DEFAULT '[]'::jsonb NOT NULL,
     cidr_list text[],
     safe_registrar text[],
     safe_ssl_issuer text[],
@@ -214,7 +214,9 @@ CREATE TABLE public.programs (
     typosquat_filtering_settings jsonb DEFAULT '{}'::jsonb,
     event_handler_addon_mode boolean DEFAULT false NOT NULL,
     ct_monitoring_enabled boolean DEFAULT false NOT NULL,
-    ct_monitor_program_settings jsonb DEFAULT '{}'::jsonb NOT NULL
+    ct_monitor_program_settings jsonb DEFAULT '{}'::jsonb NOT NULL,
+    scope_domains jsonb DEFAULT '[]'::jsonb NOT NULL,
+    out_of_scope_domains jsonb DEFAULT '[]'::jsonb NOT NULL
 );
 
 
@@ -286,6 +288,20 @@ COMMENT ON COLUMN public.programs.typosquat_filtering_settings IS 'Settings for 
 --
 
 COMMENT ON COLUMN public.programs.ct_monitor_program_settings IS 'CT monitor tuning per program: {"tld_filter": "com,net,org", "similarity_threshold": 0.75}';
+
+
+--
+-- Name: COLUMN programs.scope_domains; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.programs.scope_domains IS 'Structured in-scope domain patterns: [{"pattern": "example.com|*.example.com", "wildcard": true}]. Legacy domain_regex still applies when non-empty.';
+
+
+--
+-- Name: COLUMN programs.out_of_scope_domains; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.programs.out_of_scope_domains IS 'Structured out-of-scope patterns (same shape as scope_domains). Legacy out_of_scope_regex still applies when non-empty.';
 
 
 --
@@ -737,10 +753,10 @@ CREATE TABLE public.event_handler_configs (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     program_id uuid,
     handler_id character varying(100) NOT NULL,
-    event_types text[] DEFAULT '{}'::text[] NOT NULL,
     config jsonb DEFAULT '{}'::jsonb NOT NULL,
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL
+    updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    event_types text[] DEFAULT '{}'::text[] NOT NULL
 );
 
 
@@ -1039,21 +1055,6 @@ COMMENT ON COLUMN public.scheduled_jobs.workflow_variables IS 'Stores workflow v
 
 
 --
--- Name: schema_migrations; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.schema_migrations (
-    version character varying(50) NOT NULL,
-    applied_at timestamp without time zone NOT NULL,
-    checksum character varying(64) NOT NULL,
-    execution_time_ms integer NOT NULL,
-    success boolean NOT NULL,
-    error_message text,
-    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
-);
-
-
---
 -- Name: screenshot_files; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1082,8 +1083,8 @@ CREATE TABLE public.screenshots (
     created_at timestamp without time zone NOT NULL,
     step_name character varying(255),
     program_name character varying(255),
-    program_id uuid,
-    extracted_text text
+    extracted_text text,
+    program_id uuid
 );
 
 
@@ -1473,10 +1474,10 @@ CREATE TABLE public.typosquat_screenshots (
     created_at timestamp without time zone NOT NULL,
     step_name character varying(255),
     program_name character varying(255),
-    program_id uuid,
     extracted_text text,
     source_created_at timestamp without time zone,
-    source character varying(255)
+    source character varying(255),
+    program_id uuid
 );
 
 
@@ -1685,7 +1686,8 @@ CREATE TABLE public.workflow_logs (
     workflow_definition jsonb,
     runner_pod_output text,
     task_execution_logs jsonb DEFAULT '[]'::jsonb,
-    workflow_id uuid
+    workflow_id uuid,
+    waf_summary jsonb
 );
 
 
@@ -2011,14 +2013,6 @@ ALTER TABLE ONLY public.scheduled_jobs
 
 ALTER TABLE ONLY public.scheduled_jobs
     ADD CONSTRAINT scheduled_jobs_schedule_id_key UNIQUE (schedule_id);
-
-
---
--- Name: schema_migrations schema_migrations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.schema_migrations
-    ADD CONSTRAINT schema_migrations_pkey PRIMARY KEY (version);
 
 
 --
@@ -3126,17 +3120,17 @@ CREATE INDEX ix_screenshots_last_captured_at ON public.screenshots USING btree (
 
 
 --
--- Name: ix_screenshots_program_name; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX ix_screenshots_program_name ON public.screenshots USING btree (program_name);
-
-
---
 -- Name: ix_screenshots_program_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX ix_screenshots_program_id ON public.screenshots USING btree (program_id);
+
+
+--
+-- Name: ix_screenshots_program_name; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_screenshots_program_name ON public.screenshots USING btree (program_name);
 
 
 --
@@ -3322,17 +3316,17 @@ CREATE INDEX ix_typosquat_screenshots_last_captured_at ON public.typosquat_scree
 
 
 --
--- Name: ix_typosquat_screenshots_program_name; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX ix_typosquat_screenshots_program_name ON public.typosquat_screenshots USING btree (program_name);
-
-
---
 -- Name: ix_typosquat_screenshots_program_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX ix_typosquat_screenshots_program_id ON public.typosquat_screenshots USING btree (program_id);
+
+
+--
+-- Name: ix_typosquat_screenshots_program_name; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_typosquat_screenshots_program_name ON public.typosquat_screenshots USING btree (program_name);
 
 
 --
@@ -3780,19 +3774,19 @@ ALTER TABLE ONLY public.screenshots
 
 
 --
--- Name: screenshots screenshots_url_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.screenshots
-    ADD CONSTRAINT screenshots_url_id_fkey FOREIGN KEY (url_id) REFERENCES public.urls(id);
-
-
---
 -- Name: screenshots screenshots_program_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.screenshots
     ADD CONSTRAINT screenshots_program_id_fkey FOREIGN KEY (program_id) REFERENCES public.programs(id) ON DELETE SET NULL;
+
+
+--
+-- Name: screenshots screenshots_url_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.screenshots
+    ADD CONSTRAINT screenshots_url_id_fkey FOREIGN KEY (url_id) REFERENCES public.urls(id);
 
 
 --
@@ -3892,19 +3886,19 @@ ALTER TABLE ONLY public.typosquat_screenshots
 
 
 --
--- Name: typosquat_screenshots typosquat_screenshots_url_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.typosquat_screenshots
-    ADD CONSTRAINT typosquat_screenshots_url_id_fkey FOREIGN KEY (url_id) REFERENCES public.typosquat_urls(id) ON DELETE CASCADE;
-
-
---
 -- Name: typosquat_screenshots typosquat_screenshots_program_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.typosquat_screenshots
     ADD CONSTRAINT typosquat_screenshots_program_id_fkey FOREIGN KEY (program_id) REFERENCES public.programs(id) ON DELETE SET NULL;
+
+
+--
+-- Name: typosquat_screenshots typosquat_screenshots_url_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.typosquat_screenshots
+    ADD CONSTRAINT typosquat_screenshots_url_id_fkey FOREIGN KEY (url_id) REFERENCES public.typosquat_urls(id) ON DELETE CASCADE;
 
 
 --
@@ -4039,4 +4033,5 @@ ALTER TABLE ONLY public.wpscan_findings
 -- PostgreSQL database dump complete
 --
 
+\unrestrict YMGX40FNTdl8a2Spm2DrpE4wvgo0g3Kx1psnLmF3fh4iP12LMZg6YG1BZ4HnxLt
 

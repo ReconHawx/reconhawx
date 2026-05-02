@@ -780,6 +780,7 @@ class WorkflowLog(Base):
     workflow_definition = Column(JSONB)  # Complete workflow definition structure
     runner_pod_output = Column(Text)  # Runner pod output/logs
     task_execution_logs = Column(JSONB)  # Per-task execution logs
+    waf_summary = Column(JSONB)  # Aggregated WAF precheck/quarantine summary from runner
     started_at = Column(DateTime, index=True)
     completed_at = Column(DateTime, index=True)
     created_at = Column(DateTime, default=utcnow, server_default=func.now(), nullable=False)
@@ -805,6 +806,7 @@ class WorkflowLog(Base):
             'workflow_definition': self.workflow_definition,
             'runner_pod_output': self.runner_pod_output,
             'task_execution_logs': self.task_execution_logs,
+            'waf_summary': self.waf_summary,
             'started_at': self.started_at.isoformat() + 'Z' if self.started_at else None,
             'completed_at': self.completed_at.isoformat() + 'Z' if self.completed_at else None,
             'created_at': self.created_at.isoformat() + 'Z' if self.created_at else None,

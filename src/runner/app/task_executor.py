@@ -3503,11 +3503,21 @@ class TaskExecutor:
 
         filtered = [x for x in input_data if waf_canonical_target_key(str(x)) not in drop_keys]
 
+        # Per-canonical-target: worker hostnames known to Redis as blocked for that target (precheck/heavy).
+        targets_blocked_on_workers: List[Dict[str, Any]] = []
+        for ck in sorted(canon_to_probe):
+            blocked_on = sorted(self.waf_reputation.blocked_nodes_verified_for(ck))
+            if blocked_on:
+                targets_blocked_on_workers.append(
+                    {"target_key": ck, "blocked_on_workers": blocked_on}
+                )
+
         self._step_waf_status[step_name] = {
             "candidate_nodes": list(nodes),
             "distinct_target_keys": len(canon_to_probe),
             "blocked_all_nodes_keys": sorted(drop_keys),
             "skipped_inputs": sum(1 for x in input_data if waf_canonical_target_key(str(x)) in drop_keys),
+            "targets_blocked_on_workers": targets_blocked_on_workers,
         }
 
         for dk in sorted(drop_keys)[:50]:
