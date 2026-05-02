@@ -9,7 +9,10 @@ import json
 import logging
 import os
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from collections import defaultdict
+from typing import Any, Dict, List, Optional, Sequence, Union
+
+from services.waf_reputation import target_key as _canonical_target_key
 
 logger = logging.getLogger(__name__)
 
@@ -48,13 +51,16 @@ class WafVerdict:
     confidence: float
 
 
-def build_waf_precheck_command(target: str) -> str:
-    """Single-target nuclei run: one bundled template ⇒ one HTTP request per precheck."""
-    t = (target or "").strip()
-    if not t:
-        raise ValueError("waf precheck requires a non-empty target")
+def build_waf_precheck_command(targets: Union[str, Sequence[str]]) -> str:
+    """Nuclei precheck stdin: one target per line; one HTTP request per target (bundled matchers)."""
+    items = [targets] if isinstance(targets, str) else list(targets)
+    clean = [(t or "").strip() for t in items if (t or "").strip()]
+    if not clean:
+        raise ValueError("waf precheck requires at least one non-empty target")
+    body = "\n".join(clean)
     return (
-        f"cat << 'EOF' | nuclei -or -silent -j -t {WAF_PRECHECK_TEMPLATE_PATH}\n{t}\nEOF"
+        f"cat << 'EOF' | nuclei -or -silent -j -t {WAF_PRECHECK_TEMPLATE_PATH}\n"
+        f"{body}\nEOF"
     )
 
 
@@ -94,6 +100,36 @@ def classify_precheck_output(nuclei_jsonl: str) -> WafVerdict:
         return WafVerdict("unknown", None, [], 0.3)
 
     return WafVerdict("accessible", None, [], 1.0)
+
+
+def classify_precheck_per_target(nuclei_jsonl: str) -> Dict[str, List[str]]:
+    """Canonical target key → evidence lines for unified-template matches only (multi-target precheck)."""
+    if _is_disabled():
+        return {}
+
+    acc: Dict[str, List[str]] = defaultdict(list)
+    for raw in (nuclei_jsonl or "").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("stderr:"):
+            continue
+        try:
+            row: Dict[str, Any] = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        tid = str(row.get("template-id") or row.get("template_id") or "")
+        path = str(row.get("template") or row.get("path") or "").lower()
+        if tid != _PREC_CHECK_TEMPLATE_ID and "waf-precheck-unified" not in path:
+            continue
+        matched = str(row.get("matched-at") or row.get("matched_at") or row.get("url") or "")
+        rk = _canonical_target_key(matched)
+        if not rk:
+            host = row.get("host")
+            if host:
+                rk = _canonical_target_key(str(host))
+        if rk:
+            acc[rk].append(f"{tid}:{matched}")
+
+    return dict(acc)
 
 
 def _httpx_403_ratio(output: str) -> tuple[int, int, Optional[str]]:

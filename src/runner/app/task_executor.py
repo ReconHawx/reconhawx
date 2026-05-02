@@ -3425,7 +3425,7 @@ class TaskExecutor:
         step_name: str,
         step_num: int,
     ) -> List[str]:
-        """Probe (target_key × worker node) pairs; drop targets blocked on every node."""
+        """Probe each worker node once per batched targets (node × probes collapsed to one nuclei stdin)."""
         nodes: List[str] = []
         try:
             loop = asyncio.get_running_loop()
@@ -3446,34 +3446,35 @@ class TaskExecutor:
             if rk:
                 canon_to_probe.setdefault(rk, str(raw))
 
-        needed: List[tuple[str, str, str]] = []
+        per_node: Dict[str, List[tuple[str, str]]] = {}
         for key, probe_url in canon_to_probe.items():
             for node in nodes:
                 if self.waf_reputation.has_recent_probe(node, key):
                     continue
                 if self.waf_reputation.is_blocked(node, key):
                     continue
-                needed.append((key, node, probe_url))
+                per_node.setdefault(node, []).append((key, probe_url))
 
-        if needed:
+        if per_node:
             commands: List[str] = []
             per_job_extra: List[Dict[str, Any]] = []
-            for key, node, probe_url in needed:
-                exclude = sorted(nn for nn in nodes if nn != node)
-                try:
-                    cmd = waf_detection.build_waf_precheck_command(probe_url)
-                except ValueError:
-                    cmd = waf_detection.build_waf_precheck_command(key)
-                commands.append(cmd)
+            probe_slots = 0
+            for node in sorted(per_node.keys()):
+                pairs = per_node[node]
+                probe_urls = [p for _, p in pairs]
+                target_keys = [k for k, _ in pairs]
+                probe_slots += len(target_keys)
+                commands.append(waf_detection.build_waf_precheck_command(probe_urls))
                 per_job_extra.append(
                     {
-                        "excluded_nodes": exclude,
-                        "_waf_meta": {"target_key": key, "pinned_node": node},
+                        "required_nodes": [node],
+                        "_waf_meta": {"pinned_node": node, "target_keys": target_keys},
                     }
                 )
             logger.info(
-                "waf.schedule.exclude task=waf_precheck pairwise=%d nodes=%s",
+                "waf.schedule task=waf_precheck jobs=%d probe_slots=%d nodes=%s",
                 len(commands),
+                probe_slots,
                 ",".join(nodes),
             )
             batch_result = await self.job_manager.spawn_batch(
@@ -3520,13 +3521,21 @@ class TaskExecutor:
         return filtered
 
     def _finalize_waf_precheck_batch(self, batch_result: BatchResult) -> None:
-        """Read nuclei outputs and Redis reputation."""
+        """Read nuclei outputs (multi-target JSONL per job) and update Redis reputation."""
         for job in batch_result.jobs.values():
             meta = job.waf_precheck_meta or {}
-            key = meta.get("target_key")
             pinned = meta.get("pinned_node")
-            if not key:
+            tk_bulk = meta.get("target_keys")
+            singular_key = meta.get("target_key")
+            if tk_bulk is not None:
+                target_keys = list(tk_bulk)
+            elif singular_key:
+                target_keys = [singular_key]
+            else:
                 continue
+            if not target_keys:
+                continue
+
             payload = job.output
             if not isinstance(payload, dict):
                 if job.status in ("timeout", "failed"):
@@ -3537,32 +3546,45 @@ class TaskExecutor:
             node = payload.get("node_name") or pinned or "unknown"
             node = str(node)
 
+            preview = ", ".join(target_keys[:10]) + ("…" if len(target_keys) > 10 else "")
+
             if job.status in ("timeout", "failed") or not job.is_completed:
                 logger.info(
-                    "waf.precheck.verdict node=%s target=%s verdict=infra_fail status=%s success=%s",
+                    "waf.precheck.verdict node=%s targets=[%s] verdict=infra_fail status=%s success=%s",
                     node,
-                    key,
+                    preview,
                     job.status,
                     success,
                 )
                 continue
 
-            self.waf_reputation.mark_probed(node, key)
-            verdict = waf_detection.classify_precheck_output(out_str)
-            logger.info(
-                "waf.precheck.verdict node=%s target=%s verdict=%s vendor=%s evidence=%s",
-                node,
-                key,
-                verdict.verdict,
-                verdict.vendor,
-                verdict.evidence[:3],
-            )
-            if verdict.verdict == "blocked_waf":
+            for k in target_keys:
+                self.waf_reputation.mark_probed(node, k)
+
+            blocked = waf_detection.classify_precheck_per_target(out_str)
+            tk_set = set(target_keys)
+
+            for ck, evid in sorted(blocked.items()):
+                if ck not in tk_set:
+                    logger.debug(
+                        "waf.precheck skip extra match node=%s key=%s (not in this job)",
+                        node,
+                        ck,
+                    )
+                    continue
+                logger.info(
+                    "waf.precheck.verdict node=%s target=%s verdict=%s vendor=%s evidence=%s",
+                    node,
+                    ck,
+                    "blocked_waf",
+                    None,
+                    evid[:3],
+                )
                 self.waf_reputation.record_blocked(
                     node,
-                    key,
-                    vendor=verdict.vendor,
-                    evidence=verdict.evidence,
+                    ck,
+                    vendor=None,
+                    evidence=evid,
                     source="precheck",
                 )
 

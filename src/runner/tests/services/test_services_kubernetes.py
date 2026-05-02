@@ -236,6 +236,37 @@ def test_generate_job_crd_extra_env_list_merged(svc, monkeypatch) -> None:
     assert ("CUSTOM_WAF_PROBE", "x") in env_names
 
 
+def test_generate_job_crd_required_nodes_sets_affinity_In(svc, monkeypatch) -> None:
+    monkeypatch.setenv("API_URL", "http://api:8000")
+    monkeypatch.setenv("NATS_URL", "nats://nats:4222")
+    monkeypatch.setenv("IMAGE_PULL_POLICY", "IfNotPresent")
+    job_params = {
+        "job_id": "jr",
+        "workflow_id": "wf-r",
+        "workflow_name": "w",
+        "program_name": "p",
+        "task_name": "t",
+        "step_num": 0,
+        "step_name": "s",
+        "args": ["echo hi"],
+        "image": "img",
+        "job_name": "jn",
+        "timeout": 60,
+        "required_nodes": ["worker-node-7"],
+    }
+    crd = svc.generate_job_crd(job_params)
+    aff = crd.spec.template.spec.affinity
+    assert aff is not None
+    term = (
+        aff.node_affinity.required_during_scheduling_ignored_during_execution.node_selector_terms[0]
+    )
+    assert len(term.match_expressions) == 1
+    expr_in = term.match_expressions[0]
+    assert expr_in.operator == "In"
+    assert expr_in.key == k8s_mod.WAF_NODE_AFFINITY_KEY
+    assert expr_in.values == ["worker-node-7"]
+
+
 def test_generate_job_crd_excluded_nodes_sets_affinity(svc, monkeypatch) -> None:
     monkeypatch.setenv("API_URL", "http://api:8000")
     monkeypatch.setenv("NATS_URL", "nats://nats:4222")

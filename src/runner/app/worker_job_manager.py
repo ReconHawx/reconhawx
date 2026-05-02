@@ -233,6 +233,7 @@ class WorkerJobManager:
         # Update with any additional parameters
         job_params.update(kwargs)
         job_params.setdefault("excluded_nodes", [])
+        job_params.setdefault("required_nodes", [])
 
         return job_params
     
