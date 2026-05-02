@@ -6,15 +6,12 @@ from models.job import (
 )
 from models.user_postgres import UserResponse
 from auth.dependencies import get_current_user_from_middleware, check_program_permission_by_id, get_user_accessible_programs
-from services.job_scheduler import JobSchedulerService
+from services.job_scheduler import scheduler_service
 from datetime import datetime, timezone
 import logging
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
-
-# Global scheduler service instance
-scheduler_service = JobSchedulerService()
 
 async def _resolve_program_names_to_ids(current_user: UserResponse, names: List[str]) -> List[str]:
     """Resolve ordered unique program names to UUID strings."""

@@ -42,6 +42,22 @@ workflow_definition_repository = WorkflowDefinitionRepository()
 # Create a thread pool executor for running blocking Kubernetes operations
 thread_pool = ThreadPoolExecutor(max_workers=4)
 
+
+async def _run_waf_auto_rerun_maybe(execution_id: str) -> None:
+    """Background: enqueue one-time rerun for cancelled_waf/partial_waf when configured."""
+    try:
+        from services.waf_auto_rerun import maybe_schedule_waf_rerun
+
+        full_log = await workflow_repository.get_workflow_logs_by_execution_id(execution_id)
+        await maybe_schedule_waf_rerun(full_log)
+    except Exception as exc:
+        logger.warning(
+            "WAF auto-rerun background hook failed for execution %s: %s",
+            execution_id,
+            exc,
+        )
+
+
 # === WORKFLOW DEFINITIONS (CRUD) ===
 
 class WorkflowDefinition(BaseModel):
@@ -414,6 +430,7 @@ async def run_workflow(
             "workflow_name": workflow_request.workflow_name,
             "program_name": workflow_request.program_name,
             "program_id": program_id_resolved,
+            "user_id": str(current_user.id),
             "workflow_definition_id": workflow_id,
             "result": "pending",
             "workflow_steps": [],
@@ -725,6 +742,7 @@ async def get_workflow_execution_logs(
             workflow_id=str(log.get("workflow_id", workflow_id)),
             execution_id=log.get("execution_id"),
             program_name=str(log.get("program_name", "")),
+            user_id=log.get("user_id"),
             workflow_name=str(log.get("workflow_name") or log.get("name", "")),
             result=str(log.get("result", "unknown")),
             workflow_steps=[step for step in log.get("workflow_steps", []) if isinstance(step, dict)] if isinstance(log.get("workflow_steps"), list) else [],
@@ -768,6 +786,14 @@ async def post_workflow_execution_logs(log_object: Dict[str, Any]):
                     )
 
             thread_pool.submit(_delete_workflow_configmap_bg)
+
+            if isinstance(raw_result, str) and raw_result.lower() in (
+                "cancelled_waf",
+                "partial_waf",
+            ):
+                asyncio.create_task(
+                    _run_waf_auto_rerun_maybe(str(execution_id_for_cleanup))
+                )
 
         return WorkflowPostLogsResponse(
             execution_id=log_object["execution_id"],

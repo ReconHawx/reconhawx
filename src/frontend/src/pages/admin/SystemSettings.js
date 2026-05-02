@@ -158,6 +158,16 @@ function SystemSettings() {
   const [workflowK8sLoading, setWorkflowK8sLoading] = useState(false);
   const [workflowK8sSaving, setWorkflowK8sSaving] = useState(false);
 
+  const [workflowWafRerun, setWorkflowWafRerun] = useState({
+    enabled: true,
+    max_attempts: 3,
+    max_attempts_cap: 50,
+    canonical_enabled: true,
+    canonical_max_attempts: 3,
+  });
+  const [workflowWafRerunLoading, setWorkflowWafRerunLoading] = useState(false);
+  const [workflowWafRerunSaving, setWorkflowWafRerunSaving] = useState(false);
+
   const FEATURE_LABELS = {
     typosquat: 'Typosquat Analysis',
     nuclei: 'Nuclei Analysis',
@@ -183,6 +193,7 @@ function SystemSettings() {
     loadAiSettings();
     loadCtMonitorRuntime();
     loadWorkflowK8sSettings();
+    loadWorkflowWafAutoRerunSettings();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only aggregated load
   }, []);
 
@@ -542,6 +553,71 @@ function SystemSettings() {
       setError('Failed to save workflow settings: ' + (err.response?.data?.detail || err.message));
     } finally {
       setWorkflowK8sSaving(false);
+    }
+  };
+
+  const loadWorkflowWafAutoRerunSettings = async () => {
+    try {
+      setWorkflowWafRerunLoading(true);
+      setError('');
+      const response = await adminAPI.getWorkflowWafAutoRerunSettings();
+      const s = response.settings || {};
+      const canon = response.canonical_defaults || {};
+      const cap =
+        typeof response.max_attempts_cap === 'number' ? response.max_attempts_cap : 50;
+      setWorkflowWafRerun({
+        enabled: Boolean(s.enabled),
+        max_attempts: typeof s.max_attempts === 'number' ? s.max_attempts : 3,
+        max_attempts_cap: cap,
+        canonical_enabled: Boolean(canon.enabled),
+        canonical_max_attempts: typeof canon.max_attempts === 'number' ? canon.max_attempts : 3,
+      });
+    } catch (err) {
+      setError(
+        'Failed to load WAF auto-rerun settings: ' +
+          (err.response?.data?.detail || err.message)
+      );
+    } finally {
+      setWorkflowWafRerunLoading(false);
+    }
+  };
+
+  const handleSaveWorkflowWafAutoRerun = async () => {
+    try {
+      setWorkflowWafRerunSaving(true);
+      setError('');
+      await adminAPI.updateWorkflowWafAutoRerunSettings({
+        enabled: workflowWafRerun.enabled,
+        max_attempts: parseInt(String(workflowWafRerun.max_attempts), 10),
+      });
+      setSuccess('WAF auto-rerun settings saved.');
+      loadWorkflowWafAutoRerunSettings();
+    } catch (err) {
+      setError(
+        'Failed to save WAF auto-rerun settings: ' +
+          (err.response?.data?.detail || err.message)
+      );
+    } finally {
+      setWorkflowWafRerunSaving(false);
+    }
+  };
+
+  const handleResetWorkflowWafAutoRerunDefaults = async () => {
+    try {
+      setWorkflowWafRerunSaving(true);
+      setError('');
+      await adminAPI.resetWorkflowWafAutoRerunSettings();
+      setSuccess(
+        'WAF auto-rerun reset to defaults (on, 3 reruns). Reschedule delay still uses WAF_AUTO_RERUN_DELAY_SECONDS on the API pod.'
+      );
+      loadWorkflowWafAutoRerunSettings();
+    } catch (err) {
+      setError(
+        'Failed to reset WAF auto-rerun settings: ' +
+          (err.response?.data?.detail || err.message)
+      );
+    } finally {
+      setWorkflowWafRerunSaving(false);
     }
   };
 
@@ -1384,6 +1460,95 @@ function SystemSettings() {
                           <option value="Never">Never</option>
                         </Form.Select>
                       </Form.Group>
+                    </>
+                  )}
+                </Card.Body>
+              </Card>
+
+              <Card className="rh-elevated-card mb-4">
+                <Card.Header className="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                  <h5 className="mb-0">WAF auto-rerun</h5>
+                  <div className="d-flex flex-wrap gap-2">
+                    <Button
+                      variant="outline-warning"
+                      size="sm"
+                      onClick={handleResetWorkflowWafAutoRerunDefaults}
+                      disabled={workflowWafRerunSaving || workflowWafRerunLoading}
+                      title="Restore enabled + max 3 consecutive auto-reruns"
+                    >
+                      Reset to defaults (on, 3 reruns)
+                    </Button>
+                    <Button
+                      variant="outline-secondary"
+                      size="sm"
+                      onClick={loadWorkflowWafAutoRerunSettings}
+                      disabled={workflowWafRerunLoading}
+                    >
+                      {workflowWafRerunLoading ? <Spinner animation="border" size="sm" /> : 'Refresh'}
+                    </Button>
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      onClick={handleSaveWorkflowWafAutoRerun}
+                      disabled={workflowWafRerunSaving || workflowWafRerunLoading}
+                    >
+                      {workflowWafRerunSaving ? (
+                        <>
+                          <Spinner animation="border" size="sm" className="me-2" />
+                          Saving...
+                        </>
+                      ) : (
+                        'Save'
+                      )}
+                    </Button>
+                  </div>
+                </Card.Header>
+                <Card.Body>
+                  <p className="text-muted small">
+                    When workflows end in <code>cancelled_waf</code> or <code>partial_waf</code>, the API can enqueue a
+                    one-time inline rerun for blocked targets. Defaults are seeded in the database (
+                    <strong>on</strong>, <strong>3</strong> reruns max per chain via workflow metadata{' '}
+                    <code>waf_rerun_attempt</code>). One-shot delay stays on the API pod as{' '}
+                    <code>WAF_AUTO_RERUN_DELAY_SECONDS</code>.
+                  </p>
+                  {workflowWafRerunLoading ? (
+                    <div className="text-center py-4">
+                      <Spinner animation="border" />
+                    </div>
+                  ) : (
+                    <>
+                      <Form.Check
+                        type="switch"
+                        id="workflow-waf-rerun-enabled"
+                        label="Enable WAF auto-rerun"
+                        className="mb-3"
+                        checked={workflowWafRerun.enabled}
+                        onChange={(e) =>
+                          setWorkflowWafRerun({ ...workflowWafRerun, enabled: e.target.checked })
+                        }
+                      />
+                      <Form.Group className="mb-2">
+                        <Form.Label>
+                          Maximum auto-reruns (1–{workflowWafRerun.max_attempts_cap})
+                        </Form.Label>
+                        <Form.Control
+                          type="number"
+                          min={1}
+                          max={workflowWafRerun.max_attempts_cap}
+                          value={workflowWafRerun.max_attempts}
+                          onChange={(e) =>
+                            setWorkflowWafRerun({
+                              ...workflowWafRerun,
+                              max_attempts: e.target.value,
+                            })
+                          }
+                        />
+                      </Form.Group>
+                      <Form.Text className="text-muted d-block mb-0">
+                        Canonical defaults (after reset):{' '}
+                        <strong>{workflowWafRerun.canonical_enabled ? 'on' : 'off'}</strong>, max{' '}
+                        {workflowWafRerun.canonical_max_attempts}.
+                      </Form.Text>
                     </>
                   )}
                 </Card.Body>

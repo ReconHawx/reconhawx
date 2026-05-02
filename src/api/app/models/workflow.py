@@ -98,6 +98,7 @@ class WorkflowLogs(BaseModel):
     workflow_id: Optional[str] = None
     execution_id: Optional[str] = None
     program_name: str
+    user_id: Optional[str] = Field(None, description="User who started the run (when known)")
     workflow_name: str
     result: str
     workflow_steps: List[Dict[str, Any]] = Field(default_factory=list)

@@ -123,6 +123,19 @@ class WorkflowRepository:
         
         mapped_data = {}
         
+        # Map initiating user (UI runs); runner updates usually omit — preserve DB value
+        if log_object.get("user_id"):
+            import uuid as _uuid
+
+            raw_uid = log_object["user_id"]
+            try:
+                mapped_data["user_id"] = (
+                    _uuid.UUID(str(raw_uid)) if not isinstance(raw_uid, _uuid.UUID) else raw_uid
+                )
+            except ValueError as e:
+                logger.error("Invalid user_id on workflow log: %r", raw_uid)
+                raise ValueError(f"Invalid user_id: {raw_uid!r}") from e
+        
         # Map workflow_id (convert string to UUID if needed, or set to None for custom workflows)
         if "workflow_definition_id" in log_object:
             workflow_definition_id = log_object["workflow_definition_id"]

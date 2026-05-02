@@ -15,6 +15,7 @@ from recon_task_defaults import (
     recon_task_api_payload,
 )
 from models.user_postgres import UserResponse
+from services.workflow_waf_auto_rerun_settings import MAX_AUTO_RERUN_ATTEMPTS_ADMIN
 from datetime import datetime
 import logging
 import os
@@ -1643,4 +1644,83 @@ async def delete_workflow_kubernetes_settings_admin(
         return await workflow_kubernetes_admin_success_payload()
     except Exception as e:
         logger.error("Error deleting workflow kubernetes settings: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class WorkflowWafAutoRerunUpdateRequest(BaseModel):
+    """Partial update for WAF auto-rerun policy (stored in system_settings)."""
+
+    enabled: Optional[bool] = None
+    max_attempts: Optional[int] = Field(
+        None,
+        ge=1,
+        le=MAX_AUTO_RERUN_ATTEMPTS_ADMIN,
+    )
+
+
+@router.get("/workflow-waf-auto-rerun-settings", response_model=Dict[str, Any])
+async def get_workflow_waf_auto_rerun_settings_admin(
+    current_user: UserResponse = Depends(require_superuser),
+):
+    """Effective WAF auto-rerun toggle and max reruns plus stored JSON (superuser)."""
+    try:
+        from services.workflow_waf_auto_rerun_settings import get_admin_payload
+
+        payload = await get_admin_payload()
+        return {"status": "success", **payload}
+    except Exception as e:
+        logger.error("Error getting workflow WAF auto-rerun settings: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/workflow-waf-auto-rerun-settings", response_model=Dict[str, Any])
+async def put_workflow_waf_auto_rerun_settings_admin(
+    request: WorkflowWafAutoRerunUpdateRequest = Body(...),
+    current_user: UserResponse = Depends(require_superuser),
+):
+    """Update WAF auto-rerun stored policy (superuser)."""
+    try:
+        from services.workflow_waf_auto_rerun_settings import (
+            get_admin_payload,
+            update_workflow_waf_auto_rerun_partial,
+        )
+
+        data = request.model_dump(exclude_unset=True)
+        if not data:
+            raise HTTPException(status_code=400, detail="No fields to update")
+
+        merged = await update_workflow_waf_auto_rerun_partial(
+            enabled=data.get("enabled"),
+            max_attempts=data.get("max_attempts"),
+        )
+        payload = await get_admin_payload()
+        return {"status": "success", "updated": merged, **payload}
+    except HTTPException:
+        raise
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve)) from ve
+    except Exception as e:
+        logger.error("Error updating workflow WAF auto-rerun settings: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post(
+    "/workflow-waf-auto-rerun-settings/reset-to-defaults",
+    response_model=Dict[str, Any],
+)
+async def post_workflow_waf_auto_rerun_reset_defaults_admin(
+    current_user: UserResponse = Depends(require_superuser),
+):
+    """Reset stored policy to canonical defaults (enabled + 3 max reruns)."""
+    try:
+        from services.workflow_waf_auto_rerun_settings import (
+            get_admin_payload,
+            reset_workflow_waf_auto_rerun_to_defaults,
+        )
+
+        await reset_workflow_waf_auto_rerun_to_defaults()
+        payload = await get_admin_payload()
+        return {"status": "success", **payload}
+    except Exception as e:
+        logger.error("Error resetting workflow WAF auto-rerun settings: %s", e)
         raise HTTPException(status_code=500, detail=str(e))

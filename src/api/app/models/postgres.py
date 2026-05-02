@@ -773,6 +773,7 @@ class WorkflowLog(Base):
     workflow_id = Column(UUID(as_uuid=True), ForeignKey("workflows.id", ondelete="CASCADE"), nullable=True, index=True)  # Add foreign key with CASCADE DELETE
     workflow_name = Column(String(255), nullable=False)
     program_id = Column(UUID(as_uuid=True), ForeignKey("programs.id"), nullable=False, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
     execution_id = Column(String(255), unique=True, nullable=False, index=True)  # Kubernetes job ID
     status = Column(String(20), nullable=False, index=True)  # pending, running, completed, failed
     result_data = Column(JSONB)  # Execution results
@@ -789,6 +790,7 @@ class WorkflowLog(Base):
     # Relationships
     program = relationship("Program", back_populates="workflow_logs")
     workflow = relationship("Workflow", back_populates="logs")  # Add relationship to Workflow
+    initiator_user = relationship("User", foreign_keys=[user_id])
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert model instance to dictionary"""
@@ -797,6 +799,7 @@ class WorkflowLog(Base):
             'workflow_id': str(self.workflow_id) if self.workflow_id else None,
             'workflow_name': self.workflow_name,
             'program_id': str(self.program_id),
+            'user_id': str(self.user_id) if self.user_id else None,
             'program_name': self.program.name if self.program else None,  # Include program name from relationship
             'execution_id': self.execution_id,
             'status': self.status,
