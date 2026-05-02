@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.26.0](https://github.com/ReconHawx/reconhawx/compare/v0.25.0...v0.26.0) (2026-05-02)
+
+
+### Features
+
+* **api:** run in-cluster upgrade jobs with target release upgrader image ([e2e5405](https://github.com/ReconHawx/reconhawx/commit/e2e5405ad29438e32c1483a957da97dc42b6c293))
+
 ## [0.25.0](https://github.com/ReconHawx/reconhawx/compare/v0.24.5...v0.25.0) (2026-05-01)
 
 
