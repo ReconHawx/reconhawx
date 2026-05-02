@@ -1675,6 +1675,7 @@ CREATE TABLE public.workflow_logs (
     id uuid NOT NULL,
     workflow_name character varying(255) NOT NULL,
     program_id uuid NOT NULL,
+    user_id uuid,
     execution_id character varying(255) NOT NULL,
     status character varying(20) NOT NULL,
     result_data jsonb,
@@ -3498,6 +3499,13 @@ CREATE INDEX ix_workflow_logs_program_id ON public.workflow_logs USING btree (pr
 
 
 --
+-- Name: ix_workflow_logs_user_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_workflow_logs_user_id ON public.workflow_logs USING btree (user_id);
+
+
+--
 -- Name: ix_workflow_logs_started_at; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -4019,6 +4027,14 @@ ALTER TABLE ONLY public.wordlists
 
 ALTER TABLE ONLY public.workflow_logs
     ADD CONSTRAINT workflow_logs_program_id_fkey FOREIGN KEY (program_id) REFERENCES public.programs(id);
+
+
+--
+-- Name: workflow_logs workflow_logs_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workflow_logs
+    ADD CONSTRAINT workflow_logs_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE SET NULL;
 
 
 --

@@ -1,6 +1,6 @@
 ---
 description: WAF-aware worker node quarantine (precheck, Redis reputation, scheduling)
-globs: ["src/runner/app/services/waf_*.py", "src/runner/app/services/waf_detection.py", "src/runner/app/services/kubernetes.py", "src/runner/app/task_executor.py", "src/runner/app/worker_job_manager.py", "src/runner/app/run-workflow.py", "src/worker/files/waf-block/**", "src/worker/app/command_wrapper.py"]
+globs: ["src/runner/app/services/waf_*.py", "src/runner/app/services/waf_detection.py", "src/runner/app/services/kubernetes.py", "src/runner/app/task_executor.py", "src/runner/app/worker_job_manager.py", "src/runner/app/run-workflow.py", "src/worker/files/waf-block/**", "src/worker/app/command_wrapper.py", "src/api/app/services/waf_auto_rerun.py", "src/api/app/services/workflow_waf_auto_rerun_settings.py", "src/api/app/routes/workflows.py"]
 ---
 
 # WAF quarantine (runner + worker)
@@ -21,6 +21,7 @@ The runner discovers labeled worker nodes with **`KubernetesService.list_worker_
 | Nuclei precheck YAML (one request per probe) plus per-vendor reference templates in worker image | [`src/worker/files/waf-block/`](../../src/worker/files/waf-block/) |
 | Runner workflow POST `result` / `waf_summary` aggregation | [`run-workflow.py`](../../src/runner/app/run-workflow.py) |
 | Persist `workflow_logs.waf_summary` + terminal `cancelled_waf` / `partial_waf` | API [`routes/workflows.py`](../../src/api/app/routes/workflows.py), [`repository/workflow_repo.py`](../../src/api/app/repository/workflow_repo.py) |
+| **`system_settings.workflow_waf_auto_rerun`** enable + max chain (`waf_rerun_attempt`), Admin UI | [`services/workflow_waf_auto_rerun_settings.py`](../../src/api/app/services/workflow_waf_auto_rerun_settings.py), [`routes/admin.py`](../../src/api/app/routes/admin.py), [`waf_auto_rerun.py`](../../src/api/app/services/waf_auto_rerun.py) |
 
 ## Workflow-level result + summary (API UI)
 
@@ -29,9 +30,20 @@ Heavy-HTTP tasks that skip inputs via **`_waf_precheck_gate`** still attach per-
 - **`result`**: **`cancelled_waf`** when any step had all targets blocked on every worker (**fully skipped**); **`partial_waf`** when there were skips but every affected step ran on at least some surviving targets. **`failed`** / **`stopped`** are unchanged; **`waf_summary`** may still be present for operators.
 - **`waf_summary`** (JSON): `any_skips`, `fully_skipped_steps`, `partial_skip_steps` (each with `step`, `skipped_inputs`, blocked keys list, `candidate_nodes`), `total_skipped_inputs`, `total_blocked_target_keys`, `candidate_nodes_union`. Stored on **`workflow_logs.waf_summary`**.
 
+## Auto-rerun (API, optional)
+
+When the runner posts a **terminal** log with `result` **`cancelled_waf`** or **`partial_waf`**, the API fires a background task that may create a **one-time** workflow row in **`scheduled_jobs`** (APScheduler `DateTrigger`) with **no** saved `workflow_id`: inline `job_data` carries `variables`, `inputs`, `steps`, `metadata`, and `priority`. Only steps that have **`status.waf_status.skipped_originals`** (and heavy-HTTP tasks per runner `HEAVY_HTTP_TASK_NAMES`) are included; the primary `input_mapping` slot is repointed to new **`direct`** workflow inputs holding those skipped strings. Implementation: [`waf_auto_rerun.py`](../../src/api/app/services/waf_auto_rerun.py), triggered from [`routes/workflows.py`](../../src/api/app/routes/workflows.py) `POST /workflows/executions/{id}/logs`.
+
+- **`workflow_logs.user_id`** — nullable FK to `users`; set on `POST /workflows/run` when auth is available. Auto-rerun is skipped if absent (e.g. internal/event-handler triggers with no user).
+- **Runner:** per-step `waf_status` includes **`skipped_originals`** (cap via **`WAF_MAX_SKIPPED_ORIGINALS`**, default `5000`) plus **`skipped_originals_truncated`** for API-sized payloads in [`task_executor.py`](../../src/runner/app/task_executor.py).
+- **Superuser controls (DB):** key **`workflow_waf_auto_rerun`** in **`system_settings`** — **`enabled`** and **`max_attempts`** for the auto-rerun chain (defaults seeded by migration as **on** / **max 3**). Admin UI: **System settings → Workflow settings → WAF auto-rerun**; **`POST …/workflow-waf-auto-rerun-settings/reset-to-defaults`** restores canonical on/3.
+- **API env:** **`WAF_AUTO_RERUN_DELAY_SECONDS`** only (default `2100` ≈ quarantine TTL + buffer); enable/max chain length come from **`system_settings`** (falls back to canonical on/3 if the row is missing).
+- **`JobSchedulerService`** singleton lives in [`job_scheduler.py`](../../src/api/app/services/job_scheduler.py) (`scheduler_service`) and is started/stopped from [`routes/scheduled_jobs.py`](../../src/api/app/routes/scheduled_jobs.py).
+
 ## Operational env (runner pod unless noted)
 
 - **`WAF_DETECTION`** — `off` / `false` / `0` / `no` disables gate + secondary signals.
+- **`WAF_MAX_SKIPPED_ORIGINALS`** — max length of `skipped_originals` appended to step `waf_status` (default `5000`).
 - **`WAF_QUARANTINE_TTL`** — block key TTL seconds (default 1800).
 - **`WAF_SECONDARY_PROMOTE`** / **`WAF_SECONDARY_WINDOW`** — promote weak heavy-task signals after N hits in window.
 - **`WAF_NODE_LABEL`** — Kubernetes node label key for affinity exclusions (default `kubernetes.io/hostname`).

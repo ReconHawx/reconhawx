@@ -1,0 +1,136 @@
+"""Tests for workflow WAF auto-rerun system_settings + admin routes."""
+
+from __future__ import annotations
+
+from unittest.mock import AsyncMock, patch
+
+import httpx
+import pytest
+
+from app.main import app
+from app.models.user_postgres import UserResponse
+from auth.dependencies import require_superuser
+
+import services.workflow_waf_auto_rerun_settings as wset
+
+
+@pytest.fixture
+def superuser_override():
+    u = UserResponse(
+        id="00000000-0000-0000-0000-000000000001",
+        username="super",
+        email="super@example.com",
+        is_active=True,
+        is_superuser=True,
+        roles=["admin"],
+        program_permissions={},
+    )
+    app.dependency_overrides[require_superuser] = lambda: u
+    yield u
+    app.dependency_overrides.pop(require_superuser, None)
+
+
+def test_merge_stored_value_canonical_fallback() -> None:
+    assert wset.merge_stored_value(None) == dict(wset.CANONICAL_DEFAULTS)
+    assert wset.merge_stored_value({}) == dict(wset.CANONICAL_DEFAULTS)
+
+
+def test_merge_stored_value_overrides() -> None:
+    m = wset.merge_stored_value({"enabled": False, "max_attempts": 7})
+    assert m == {"enabled": False, "max_attempts": 7}
+
+
+def test_merge_stored_value_ignores_invalid_max() -> None:
+    m = wset.merge_stored_value({"max_attempts": 1000, "enabled": True})
+    assert m["max_attempts"] == wset.CANONICAL_DEFAULTS["max_attempts"]
+
+
+@pytest.mark.asyncio
+async def test_get_workflow_waf_auto_rerun_effective_no_row_logs():
+    with patch("repository.admin_repo.AdminRepository") as cls:
+        inst = cls.return_value
+        inst.get_system_setting = AsyncMock(return_value=None)
+        eff = await wset.get_workflow_waf_auto_rerun_effective()
+    assert eff == dict(wset.CANONICAL_DEFAULTS)
+
+
+@pytest.mark.asyncio
+async def test_reset_to_defaults_calls_set():
+    with patch("repository.admin_repo.AdminRepository") as cls:
+        inst = cls.return_value
+        inst.set_system_setting = AsyncMock(return_value={"key": wset.WORKFLOW_WAF_AUTO_RERUN_KEY})
+        out = await wset.reset_workflow_waf_auto_rerun_to_defaults()
+    assert out == dict(wset.CANONICAL_DEFAULTS)
+    inst.set_system_setting.assert_awaited_once()
+    call_kw = inst.set_system_setting.await_args
+    assert call_kw.args[0] == wset.WORKFLOW_WAF_AUTO_RERUN_KEY
+    assert call_kw.args[1] == dict(wset.CANONICAL_DEFAULTS)
+
+
+@pytest.mark.asyncio
+async def test_get_route(client: httpx.AsyncClient, superuser_override):
+    fake = {
+        "settings": {"enabled": True, "max_attempts": 3},
+        "stored": {"enabled": True, "max_attempts": 3},
+        "canonical_defaults": dict(wset.CANONICAL_DEFAULTS),
+        "max_attempts_cap": wset.MAX_AUTO_RERUN_ATTEMPTS_ADMIN,
+    }
+    with patch(
+        "services.workflow_waf_auto_rerun_settings.get_admin_payload",
+        new_callable=AsyncMock,
+        return_value=fake,
+    ):
+        r = await client.get("/admin/workflow-waf-auto-rerun-settings")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["status"] == "success"
+    assert body["settings"]["enabled"] is True
+    assert body["settings"]["max_attempts"] == 3
+
+
+@pytest.mark.asyncio
+async def test_put_route(client: httpx.AsyncClient, superuser_override):
+    updated = {"enabled": False, "max_attempts": 5}
+    payload_shell = {
+        "settings": updated,
+        "stored": updated,
+        "canonical_defaults": dict(wset.CANONICAL_DEFAULTS),
+        "max_attempts_cap": wset.MAX_AUTO_RERUN_ATTEMPTS_ADMIN,
+    }
+    with patch(
+        "services.workflow_waf_auto_rerun_settings.update_workflow_waf_auto_rerun_partial",
+        new_callable=AsyncMock,
+        return_value=updated,
+    ) as up:
+        with patch(
+            "services.workflow_waf_auto_rerun_settings.get_admin_payload",
+            new_callable=AsyncMock,
+            return_value=payload_shell,
+        ):
+            r = await client.put("/admin/workflow-waf-auto-rerun-settings", json={"enabled": False})
+    assert r.status_code == 200
+    up.assert_awaited_once_with(enabled=False, max_attempts=None)
+
+
+@pytest.mark.asyncio
+async def test_reset_route(client: httpx.AsyncClient, superuser_override):
+    merged = dict(wset.CANONICAL_DEFAULTS)
+    fake = {
+        "settings": merged,
+        "stored": merged,
+        "canonical_defaults": dict(wset.CANONICAL_DEFAULTS),
+        "max_attempts_cap": wset.MAX_AUTO_RERUN_ATTEMPTS_ADMIN,
+    }
+    with patch(
+        "services.workflow_waf_auto_rerun_settings.reset_workflow_waf_auto_rerun_to_defaults",
+        new_callable=AsyncMock,
+        return_value=merged,
+    ) as rs:
+        with patch(
+            "services.workflow_waf_auto_rerun_settings.get_admin_payload",
+            new_callable=AsyncMock,
+            return_value=fake,
+        ):
+            r = await client.post("/admin/workflow-waf-auto-rerun-settings/reset-to-defaults")
+    assert r.status_code == 200
+    rs.assert_awaited_once()

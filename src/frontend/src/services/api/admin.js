@@ -336,6 +336,21 @@ export const adminAPI = {
     return response.data;
   },
 
+  getWorkflowWafAutoRerunSettings: async () => {
+    const response = await api.get('/admin/workflow-waf-auto-rerun-settings');
+    return response.data;
+  },
+
+  updateWorkflowWafAutoRerunSettings: async (payload) => {
+    const response = await api.put('/admin/workflow-waf-auto-rerun-settings', payload);
+    return response.data;
+  },
+
+  resetWorkflowWafAutoRerunSettings: async () => {
+    const response = await api.post('/admin/workflow-waf-auto-rerun-settings/reset-to-defaults');
+    return response.data;
+  },
+
   // AI Settings
   getAiSettings: async () => {
     const response = await api.get('/admin/ai-settings');

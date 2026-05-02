@@ -133,7 +133,7 @@ class JobSchedulerService:
             
         except Exception as e:
             logger.error(f"Error loading scheduled jobs: {str(e)}")
-    
+            
     async def create_scheduled_job(
         self, request: ScheduledJobRequest, user_id: str, program_ids: List[str]
     ) -> ScheduledJobResponse:
@@ -375,7 +375,11 @@ class JobSchedulerService:
                     "variables": effective_job_data.get("variables", {}),
                     "inputs": effective_job_data.get("inputs", {}),
                     "steps": effective_job_data.get("steps", []),
+                    "priority": effective_job_data.get("priority", "normal"),
                 }
+                meta = effective_job_data.get("metadata")
+                if isinstance(meta, dict) and meta:
+                    wd["metadata"] = meta
                 if stored_variables and wd.get("variables"):
                     try:
                         from utils.workflow_processor import process_workflow_with_variables
@@ -889,3 +893,6 @@ class JobSchedulerService:
         except Exception as e:
             logger.error(f"Error getting latest execution ID for job {job_id}: {str(e)}")
             return None 
+
+# Process-wide singleton; started/stopped from ``routes.scheduled_jobs`` lifespan events.
+scheduler_service = JobSchedulerService()

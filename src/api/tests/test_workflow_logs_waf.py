@@ -1,5 +1,6 @@
 """Tests for workflow logs WAF summary persistence and GET response."""
 
+import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -28,13 +29,28 @@ async def test_post_workflow_execution_logs_passes_waf_summary(
         "workflow_steps": [],
     }
 
+    full_log_stub = dict(body)
+
+    # Do not patch ``asyncio.create_task`` here: replacing it with a MagicMock deadlocks ASGITransport
+    # under asyncio (Python 3.14.x). Stub the rerun path instead and yield to flush the background task.
     with patch("routes.workflows.workflow_repository.create_workflow_log", new_callable=AsyncMock) as m:
         m.side_effect = fake_create
         with patch("routes.workflows.k8s_service.delete_workflow_configmap"):
             with patch("routes.workflows.thread_pool.submit", new_callable=MagicMock):
-                r = await client.post(f"/workflows/executions/{exec_id}/logs", json=body)
-                assert r.status_code == 200
-                m.assert_awaited_once()
+                with patch(
+                    "routes.workflows.workflow_repository.get_workflow_logs_by_execution_id",
+                    new_callable=AsyncMock,
+                ) as gql:
+                    gql.return_value = full_log_stub
+                    with patch(
+                        "services.waf_auto_rerun.maybe_schedule_waf_rerun",
+                        new_callable=AsyncMock,
+                    ) as rerun:
+                        r = await client.post(f"/workflows/executions/{exec_id}/logs", json=body)
+                        await asyncio.sleep(0)
+                        assert r.status_code == 200
+                        m.assert_awaited_once()
+                        rerun.assert_awaited_once_with(full_log_stub)
     assert captured.get("waf_summary") == waf
     assert captured.get("result") == "cancelled_waf"
 
