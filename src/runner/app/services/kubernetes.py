@@ -383,20 +383,32 @@ class KubernetesService:
             )
         )
 
+        required = list(job_params.get("required_nodes") or [])
         excluded = list(job_params.get("excluded_nodes") or [])
+        exprs: List[Any] = []
+        if required:
+            exprs.append(
+                client.V1NodeSelectorRequirement(
+                    key=WAF_NODE_AFFINITY_KEY,
+                    operator="In",
+                    values=required,
+                )
+            )
         if excluded:
+            exprs.append(
+                client.V1NodeSelectorRequirement(
+                    key=WAF_NODE_AFFINITY_KEY,
+                    operator="NotIn",
+                    values=excluded,
+                )
+            )
+        if exprs:
             template.spec.affinity = client.V1Affinity(
                 node_affinity=client.V1NodeAffinity(
                     required_during_scheduling_ignored_during_execution=client.V1NodeSelector(
                         node_selector_terms=[
                             client.V1NodeSelectorTerm(
-                                match_expressions=[
-                                    client.V1NodeSelectorRequirement(
-                                        key=WAF_NODE_AFFINITY_KEY,
-                                        operator="NotIn",
-                                        values=excluded,
-                                    )
-                                ],
+                                match_expressions=exprs,
                             )
                         ],
                     ),

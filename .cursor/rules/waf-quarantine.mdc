@@ -5,7 +5,7 @@ globs: ["src/runner/app/services/waf_*.py", "src/runner/app/services/waf_detecti
 
 # WAF quarantine (runner + worker)
 
-Per **(worker node, canonical target)** Redis reputation blocks nodes that hit WAF challenges; heavy HTTP jobs get `NodeAffinity` `NotIn` on `WAF_NODE_LABEL` (default `kubernetes.io/hostname`). Worker Pods expose **`NODE_NAME` / `POD_NAME`** via Downward API; NATS payloads include **`node_name` / `pod_name`** for attribution.
+Per **(worker node, canonical target)** Redis reputation blocks nodes that hit WAF challenges; heavy HTTP jobs get `NodeAffinity` `NotIn` on **`WAF_NODE_LABEL`** (default `kubernetes.io/hostname`). The **precheck** issues one worker **Job per node**, pinned with **`required_nodes` → affinity `In`=[that host], and pumps all pending targets through one nuclei stdin on that Pod (not one Job per `(target × node)`). Worker Pods expose **`NODE_NAME` / `POD_NAME`** via Downward API; NATS payloads include **`node_name` / `pod_name`** for attribution.
 
 The runner discovers labeled worker nodes with **`KubernetesService.list_worker_nodes`** (Kube API `nodes` **list**, cluster-scoped). The ServiceAccount needs **`reconhawx-runner-node-reader`** (`kubernetes/base/runner/runner-rbac.yaml` — **`ClusterRole` + `ClusterRoleBinding`** bound to **`runner-service-account`**). Fresh installs/upgrades applying `kubernetes/base/` or **`base-update/`** pick this up; if you pasted an older RBAC snippet, re-apply the bundle so precheck does not silently skip (**`WAF_DETECTION=off`** is unrelated).
 
@@ -16,7 +16,7 @@ The runner discovers labeled worker nodes with **`KubernetesService.list_worker_
 | Kill switch (`WAF_DETECTION`), precheck nuclei CLI, secondary heuristics | [`services/waf_detection.py`](../../src/runner/app/services/waf_detection.py) |
 | Redis TTL, `target_key()`, `blocked_nodes_verified_for` | [`services/waf_reputation.py`](../../src/runner/app/services/waf_reputation.py) |
 | Precheck orchestration + `waf_status` on step payloads | [`task_executor.py`](../../src/runner/app/task_executor.py) |
-| `per_job_extra` (`excluded_nodes`, `waf_targets`) → job params | [`worker_job_manager.py`](../../src/runner/app/worker_job_manager.py) |
+| `per_job_extra` (`excluded_nodes` for quarantine skips, **`required_nodes`** for precheck pin, `waf_targets`) → job params | [`worker_job_manager.py`](../../src/runner/app/worker_job_manager.py) |
 | Downward API env, affinity, `job_params["env"]` merge | [`kubernetes.py`](../../src/runner/app/services/kubernetes.py) |
 | Nuclei precheck YAML (one request per probe) plus per-vendor reference templates in worker image | [`src/worker/files/waf-block/`](../../src/worker/files/waf-block/) |
 
@@ -26,6 +26,10 @@ The runner discovers labeled worker nodes with **`KubernetesService.list_worker_
 - **`WAF_QUARANTINE_TTL`** — block key TTL seconds (default 1800).
 - **`WAF_SECONDARY_PROMOTE`** / **`WAF_SECONDARY_WINDOW`** — promote weak heavy-task signals after N hits in window.
 - **`WAF_NODE_LABEL`** — Kubernetes node label key for affinity exclusions (default `kubernetes.io/hostname`).
+
+## Precheck batching / affinity
+
+Heavy HTTP steps invoke **`task_executor._waf_precheck_gate`**: probes are collapsed so each labeled worker gets **one** Job whose command runs nuclei with **multiple lines on stdin** (one URL per probe). Outputs are **`classify_precheck_per_target`**: canonical keys from **`matched-at`** map to **`mark_probed` / `record_blocked`**. Scheduling uses **`job_params["required_nodes"]=[hostname]`**; see **`KubernetesService.generate_job_crd`** (affinity `In` + optional `NotIn` for heavy tasks).
 
 ## Extending matchers (precheck)
 

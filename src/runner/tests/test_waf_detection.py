@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 
 from services import waf_detection
+from services.waf_reputation import target_key
 
 
 def test_classify_precheck_blocked_line() -> None:
@@ -44,12 +45,44 @@ def test_waf_detection_kill_switch(monkeypatch) -> None:
     monkeypatch.setenv("WAF_DETECTION", "off")
     line = json.dumps({"template-id": "waf-precheck-unified"})
     assert waf_detection.classify_precheck_output(line).verdict == "unknown"
+    assert waf_detection.classify_precheck_per_target(line + "\na") == {}
     assert waf_detection.classify_heavy_output("test_http", "{}", success=True).confidence == 0.0
 
 
 def test_build_precheck_command() -> None:
     cmd = waf_detection.build_waf_precheck_command("https://a.example")
     assert "nuclei" in cmd and "waf-precheck-unified.yaml" in cmd
+
+
+def test_build_precheck_command_list_newline_targets() -> None:
+    urls = ["https://a.example", " https://b.example "]
+    cmd = waf_detection.build_waf_precheck_command(urls)
+    assert "https://a.example\nhttps://b.example" in cmd
+
+
+def test_classify_precheck_per_target_multiple_matches() -> None:
+    blob = (
+        json.dumps(
+            {
+                "template-id": "waf-precheck-unified",
+                "matched-at": "https://alpha.example/",
+            }
+        )
+        + "\n"
+        + json.dumps(
+            {
+                "template-id": "waf-precheck-unified",
+                "matched-at": "https://bravo.example:443/page",
+            }
+        )
+        + "\n"
+        + '{"template-id":"other","matched-at":"https://charlie.example/"}\n'
+    )
+    d = waf_detection.classify_precheck_per_target(blob)
+    ka = target_key("https://alpha.example/")
+    kb = target_key("https://bravo.example:443/page")
+    assert ka in d and kb in d
+    assert len(d) == 2
 
 
 def test_httpx_403_ratio_blocked() -> None:
