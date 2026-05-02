@@ -57,6 +57,23 @@ def target_key(target: str) -> str:
     return f"http://{t}:80"
 
 
+def waf_max_skipped_originals() -> int:
+    """Cap skipped_originals payloads in logs (env WAF_MAX_SKIPPED_ORIGINALS, default 5000)."""
+    try:
+        return max(1, int(os.getenv("WAF_MAX_SKIPPED_ORIGINALS", "5000")))
+    except ValueError:
+        return 5000
+
+
+def waf_truncated_skip_original_strings(originals_full: List[str]) -> tuple[List[str], int, bool]:
+    """Return (capped list, total skipped count before cap, truncated flag)."""
+    cap = waf_max_skipped_originals()
+    total = len(originals_full)
+    if total <= cap:
+        return originals_full, total, False
+    return originals_full[:cap], total, True
+
+
 def _sanitize_map_key(fragment: str) -> str:
     return fragment.replace(":", "|")
 
