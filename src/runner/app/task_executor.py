@@ -11,7 +11,11 @@ from models.assets import Ip, Service as AssetService
 from models.workflow import TaskDefinition, AssetStore
 from task_queue_client import TaskQueueClient
 from services.kubernetes import KubernetesService
-from services.waf_reputation import WafReputation, target_key as waf_canonical_target_key
+from services.waf_reputation import (
+    WafReputation,
+    target_key as waf_canonical_target_key,
+    waf_truncated_skip_original_strings,
+)
 from services import waf_detection
 from worker_job_manager import WorkerJobManager, BatchResult
 import redis
@@ -569,17 +573,25 @@ class TaskExecutor:
             task_def.name in waf_detection.HEAVY_HTTP_TASK_NAMES
             and waf_detection.is_waf_detection_enabled()
         ):
+            _waf_gate_input_snapshot = (
+                list(input_data) if isinstance(input_data, list) else [str(input_data)]
+            )
             input_data = await self._waf_precheck_gate(task_def, input_data, step_name, step_num)
             if not input_data:
                 logger.info(
                     "WAF precheck: all targets blocked on all worker nodes — skipping step '%s'",
                     step_name,
                 )
+                _origs = [str(x) for x in _waf_gate_input_snapshot]
+                _capped, _total, _trunc = waf_truncated_skip_original_strings(_origs)
                 self._step_waf_status.setdefault(
                     step_name,
                     {
                         "skipped": "waf_all_nodes_blocked",
                         "task": task_def.name,
+                        "skipped_inputs": _total,
+                        "skipped_originals": _capped,
+                        "skipped_originals_truncated": _trunc,
                     },
                 )
                 return {}
@@ -3503,6 +3515,11 @@ class TaskExecutor:
 
         filtered = [x for x in input_data if waf_canonical_target_key(str(x)) not in drop_keys]
 
+        skipped_originals_full = [
+            str(x) for x in input_data if waf_canonical_target_key(str(x)) in drop_keys
+        ]
+        capped, skipped_total, truncated = waf_truncated_skip_original_strings(skipped_originals_full)
+
         # Per-canonical-target: worker hostnames known to Redis as blocked for that target (precheck/heavy).
         targets_blocked_on_workers: List[Dict[str, Any]] = []
         for ck in sorted(canon_to_probe):
@@ -3516,7 +3533,9 @@ class TaskExecutor:
             "candidate_nodes": list(nodes),
             "distinct_target_keys": len(canon_to_probe),
             "blocked_all_nodes_keys": sorted(drop_keys),
-            "skipped_inputs": sum(1 for x in input_data if waf_canonical_target_key(str(x)) in drop_keys),
+            "skipped_inputs": skipped_total,
+            "skipped_originals": capped,
+            "skipped_originals_truncated": truncated,
             "targets_blocked_on_workers": targets_blocked_on_workers,
         }
 
