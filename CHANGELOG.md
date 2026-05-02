@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.26.1](https://github.com/ReconHawx/reconhawx/compare/v0.26.0...v0.26.1) (2026-05-02)
+
+
+### Bug Fixes
+
+* **runner:** avoid WAF precheck spawning Jobs for every node and target ([0908598](https://github.com/ReconHawx/reconhawx/commit/09085989110bd4b5158bbf53e29e5fec22ddc088))
+
 ## [0.26.0](https://github.com/ReconHawx/reconhawx/compare/v0.25.0...v0.26.0) (2026-05-02)
 
 
