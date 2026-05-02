@@ -42,3 +42,15 @@
 .theme-aware-code-block pre {
   color: var(--bs-pre-color) !important;
 }
+
+/* Collapsed workflow WAF summary bar — avoids bg-light-subtle (broken in dark theme) */
+.theme-aware-waf-summary-collapsed {
+  background-color: var(--bs-secondary-bg) !important;
+  color: var(--bs-secondary-color) !important;
+  border-color: var(--bs-border-color) !important;
+}
+
+/* Use body foreground — avoids Bootstrap `--bs-emphasis-color` staying dark when theme is `[data-theme="dark"]` */
+.theme-aware-waf-summary-collapsed strong {
+  color: var(--bs-body-color);
+}

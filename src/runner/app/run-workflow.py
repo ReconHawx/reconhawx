@@ -2,7 +2,7 @@
 import sys
 import json
 import os
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 
 from runner_logging import configure_runner_logging
 
@@ -354,6 +354,127 @@ def _capture_pod_output(execution_id: str, step_name: Optional[str] = None) -> s
     except Exception as e:
         logger.warning(f"Failed to capture pod output for execution {execution_id}: {e}")
         return ""
+
+
+def _waf_step_fully_blocked(ws: Dict[str, Any]) -> bool:
+    """True when WAF precheck dropped all targets for this step's heavy HTTP task."""
+    if not isinstance(ws, dict):
+        return False
+    if ws.get("skipped") == "waf_all_nodes_blocked":
+        return True
+    dk = ws.get("distinct_target_keys") or 0
+    bloc = ws.get("blocked_all_nodes_keys") or []
+    if dk > 0 and isinstance(bloc, list) and len(bloc) >= dk:
+        return True
+    return False
+
+
+def _aggregate_waf_summary(step_waf_status: Optional[Dict[str, Dict[str, Any]]]) -> Tuple[Dict[str, Any], bool]:
+    """
+    Aggregate per-step `_step_waf_status` into a workflow-level summary for the API.
+
+    Returns (summary_dict, any_skips). When ``any_skips`` is False, callers should omit ``waf_summary`` from payloads.
+    """
+    if not step_waf_status:
+        return {}, False
+
+    fully_skipped: List[str] = []
+    partial_rows: List[Dict[str, Any]] = []
+    total_skipped = 0
+
+    blocked_seen: Dict[str, None] = {}
+    cand_seen: Dict[str, None] = {}
+
+    for step_name, raw in sorted(step_waf_status.items()):
+        if not isinstance(raw, dict):
+            continue
+        skipped_in = int(raw.get("skipped_inputs") or 0)
+        bloc = raw.get("blocked_all_nodes_keys")
+        if isinstance(bloc, list):
+            for k in bloc:
+                if isinstance(k, str) and k not in blocked_seen:
+                    blocked_seen[k] = None
+        cands = raw.get("candidate_nodes")
+        if isinstance(cands, list):
+            for n in cands:
+                if isinstance(n, str) and n not in cand_seen:
+                    cand_seen[n] = None
+
+        if skipped_in <= 0:
+            continue
+
+        total_skipped += skipped_in
+        if _waf_step_fully_blocked(raw):
+            fully_skipped.append(step_name)
+        else:
+            blocked_list = [str(x) for x in bloc] if isinstance(bloc, list) else []
+            cand_list = [str(x) for x in cands] if isinstance(cands, list) else []
+            partial_rows.append(
+                {
+                    "step": step_name,
+                    "skipped_inputs": skipped_in,
+                    "blocked_all_nodes_keys": blocked_list,
+                    "candidate_nodes": cand_list,
+                }
+            )
+
+    union_blocked = sorted(blocked_seen.keys())
+    cand_union = sorted(cand_seen.keys())
+
+    any_skips = bool(fully_skipped or partial_rows)
+    if not any_skips:
+        return {}, False
+
+    summary = {
+        "any_skips": True,
+        "fully_skipped_steps": fully_skipped,
+        "partial_skip_steps": partial_rows,
+        "total_skipped_inputs": total_skipped,
+        "total_blocked_target_keys": len(union_blocked),
+        "candidate_nodes_union": cand_union,
+    }
+    return summary, True
+
+
+def _derive_workflow_result(base_result: str, waf_summary: Optional[Dict[str, Any]]) -> str:
+    """
+    Refine terminal ``result`` when the workflow succeeded but WAF precheck skipped work.
+
+    - ``success`` + any fully-skipped heavy step → ``cancelled_waf``
+    - ``success`` + only partial skips → ``partial_waf``
+    """
+    low = (base_result or "").lower()
+    if low != "success" or not waf_summary:
+        return base_result
+
+    fs = waf_summary.get("fully_skipped_steps") or []
+    partial = waf_summary.get("partial_skip_steps") or []
+
+    if fs:
+        return "cancelled_waf"
+    if partial:
+        return "partial_waf"
+    return base_result
+
+
+def _apply_waf_to_workflow_outputs(
+    workflow_outputs: Dict[str, Any],
+    task_executor: Optional[Any],
+) -> None:
+    """Attach ``waf_summary`` and adjust ``result`` in place when WAF skips occurred."""
+    if not workflow_outputs:
+        return
+    step_ws = getattr(task_executor, "_step_waf_status", None) if task_executor else None
+    summary, any_skips = _aggregate_waf_summary(step_ws if isinstance(step_ws, dict) else None)
+    if any_skips:
+        workflow_outputs["waf_summary"] = summary
+    else:
+        workflow_outputs.pop("waf_summary", None)
+
+    workflow_outputs["result"] = _derive_workflow_result(
+        str(workflow_outputs.get("result") or ""),
+        workflow_outputs.get("waf_summary"),
+    )
 
 
 def _serialize_input_data(input_data: Any) -> Any:
@@ -877,6 +998,7 @@ async def run_workflow(workflow_data):
             if workflow_stopped_externally:
                 logger.info("Workflow was stopped externally, terminating execution")
                 workflow_outputs["result"] = "stopped"
+                _apply_waf_to_workflow_outputs(workflow_outputs, task_executor)
                 return False
             logger.info(f"Starting step {step_num}: {step.name}")
 
@@ -961,6 +1083,7 @@ async def run_workflow(workflow_data):
                         step.name: serialized_step_output
                     })
                 logger.debug(f"Updating workflow outputs: {workflow_outputs}")
+                _apply_waf_to_workflow_outputs(workflow_outputs, task_executor)
                 headers = {}
                 internal_api_key = os.getenv('INTERNAL_SERVICE_API_KEY')
                 if internal_api_key:
@@ -984,6 +1107,7 @@ async def run_workflow(workflow_data):
         else:
             workflow_outputs["result"] = "stopped"
             logger.info("Workflow was stopped externally")
+        _apply_waf_to_workflow_outputs(workflow_outputs, task_executor)
         return True
     except Exception as e:
         logger.error(f"Workflow failed: {e}")
@@ -995,6 +1119,7 @@ async def run_workflow(workflow_data):
             workflow_outputs["result"] = "failed"
         else:
             workflow_outputs["result"] = "stopped"
+        _apply_waf_to_workflow_outputs(workflow_outputs, task_executor)
         return False
     finally:
         # Check current status before updating - don't overwrite if already stopped
@@ -1040,6 +1165,8 @@ async def run_workflow(workflow_data):
                     logger.warning(f"Failed to log final pod output: {e}")
             
             # Only update status if it wasn't stopped externally
+            if isinstance(workflow_outputs, dict):
+                _apply_waf_to_workflow_outputs(workflow_outputs, task_executor)
             logger.info(f"Updating final workflow status: {workflow_outputs.get('result', 'unknown')}")
             headers = {}
             internal_api_key = os.getenv('INTERNAL_SERVICE_API_KEY')

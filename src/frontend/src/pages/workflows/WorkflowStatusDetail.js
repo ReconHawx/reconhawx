@@ -1,10 +1,194 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { Container, Row, Col, Card, Badge, Button, Spinner, Alert, Modal, ButtonGroup, Form, InputGroup } from 'react-bootstrap';
+import { Container, Row, Col, Card, Badge, Button, Spinner, Alert, Modal, ButtonGroup, Form, InputGroup, Table } from 'react-bootstrap';
 import { workflowAPI } from '../../services/api';
 import { formatDate, calculateDuration } from '../../utils/dateUtils';
 import './WorkflowStatusDetail.css';
 import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
+import { formatWorkflowStatusLabel } from './WorkflowStatus';
+
+/** Per-step WAF precheck / quarantine details from runner `waf_status`. */
+function StepWafStatusPanel({ wafStatus, expanded }) {
+  const [showAllKeys, setShowAllKeys] = useState(false);
+  if (!wafStatus || typeof wafStatus !== 'object') {
+    return null;
+  }
+  if (!expanded) {
+    return null;
+  }
+  const fullSkip = wafStatus.skipped === 'waf_all_nodes_blocked';
+  const keys = Array.isArray(wafStatus.blocked_all_nodes_keys) ? wafStatus.blocked_all_nodes_keys : [];
+  const preview = showAllKeys ? keys : keys.slice(0, 15);
+  const cands = Array.isArray(wafStatus.candidate_nodes) ? wafStatus.candidate_nodes : [];
+  const blockRows = Array.isArray(wafStatus.targets_blocked_on_workers)
+    ? wafStatus.targets_blocked_on_workers
+    : [];
+
+  return (
+    <Alert variant={fullSkip ? 'warning' : 'info'} className="mb-3 py-2">
+      <div className="fw-bold mb-1">
+        {fullSkip ? 'Step skipped (WAF)' : 'WAF precheck (partial skip)'}
+        {wafStatus.task && (
+          <span className="text-muted fw-normal ms-2">
+            task: <code>{wafStatus.task}</code>
+          </span>
+        )}
+      </div>
+      {!fullSkip && (
+        <div className="small text-muted mb-1">
+          Candidate worker nodes: {cands.length}
+          {cands.length > 0 && expanded && (
+            <span className="ms-1">(<code className="small">{cands.slice(0, 8).join(', ')}{cands.length > 8 ? ', …' : ''}</code>)</span>
+          )}
+          {wafStatus.distinct_target_keys != null && (
+            <span className="ms-2">· Distinct target keys: {wafStatus.distinct_target_keys}</span>
+          )}
+          {wafStatus.skipped_inputs != null && (
+            <span className="ms-2">· Skipped inputs: {wafStatus.skipped_inputs}</span>
+          )}
+        </div>
+      )}
+      {blockRows.length > 0 && (
+        <div className="small mt-2">
+          <div className="text-muted fw-bold mb-1">Targets blocked per worker node (Redis reputation)</div>
+          <Table size="sm" bordered responsive className="mb-2 small bg-transparent">
+            <thead>
+              <tr>
+                <th>Target (canonical)</th>
+                <th>Worker node(s)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {blockRows.map((row) => (
+                <tr key={row.target_key}>
+                  <td style={{ verticalAlign: 'top' }}>
+                    <code className="small">{row.target_key}</code>
+                  </td>
+                  <td style={{ verticalAlign: 'top' }}>
+                    {Array.isArray(row.blocked_on_workers) && row.blocked_on_workers.length > 0 ? (
+                      <code className="small">{row.blocked_on_workers.join(', ')}</code>
+                    ) : (
+                      <span className="text-muted">—</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+        </div>
+      )}
+      {keys.length > 0 && (
+        <div className="small mt-1">
+          <span className="text-muted">Blocked on every worker node (skipped from this step):</span>
+          <ul className="mb-1 ps-3">
+            {preview.map((k) => (
+              <li key={k}><code className="small">{k}</code></li>
+            ))}
+          </ul>
+          {keys.length > 15 && (
+            <Button variant="link" size="sm" className="p-0" onClick={() => setShowAllKeys(!showAllKeys)}>
+              {showAllKeys ? 'Show fewer' : `Show all ${keys.length} keys`}
+            </Button>
+          )}
+        </div>
+      )}
+    </Alert>
+  );
+}
+
+/** Aggregated workflow-level WAF summary from runner. */
+function WafSummaryCallout({ summary, expanded }) {
+  const [openF, setOpenF] = useState(true);
+  const [openP, setOpenP] = useState(true);
+
+  const full = summary && typeof summary === 'object' ? summary.fully_skipped_steps || [] : [];
+  const partial = summary && typeof summary === 'object' ? summary.partial_skip_steps || [] : [];
+  const hasAggregate =
+    summary &&
+    typeof summary === 'object' &&
+    (summary.any_skips || full.length > 0 || partial.length > 0);
+
+  if (!hasAggregate) {
+    return null;
+  }
+
+  if (!expanded) {
+    const summaryBits = [];
+    if (full.length > 0) {
+      summaryBits.push(`${full.length} step${full.length !== 1 ? 's' : ''} fully skipped`);
+    }
+    if (partial.length > 0) {
+      summaryBits.push(`${partial.length} partial step${partial.length !== 1 ? 's' : ''}`);
+    }
+    return (
+      <div className="mb-3 py-2 px-3 border rounded small theme-aware-waf-summary-collapsed">
+        WAF quarantine summary: {summaryBits.length > 0 ? `${summaryBits.join('; ')}. ` : ''}
+        Toggle <strong>Show WAF details</strong> above for totals, step lists, and per-worker ↔ target maps
+        inside each affected step.
+      </div>
+    );
+  }
+
+  return (
+    <div className="mb-4">
+      <h6 className="fw-bold text-primary mb-3">🛡️ WAF quarantine summary</h6>
+      <Alert variant="warning" className="mb-2">
+        <div className="small mb-2">
+          <strong>Totals:</strong>{' '}
+          skipped inputs {summary.total_skipped_inputs ?? '—'}
+          {' · '}
+          distinct blocked target keys {summary.total_blocked_target_keys ?? '—'}
+          {' · '}
+          worker nodes (union) {(summary.candidate_nodes_union || []).length}
+        </div>
+        {full.length > 0 && (
+          <div className="mb-2">
+            <Button
+              variant="link"
+              size="sm"
+              className="p-0 fw-bold text-dark"
+              onClick={() => setOpenF(!openF)}
+            >
+              {openF ? '▼' : '▶'} Steps fully skipped (all targets blocked on all workers) ({full.length})
+            </Button>
+            {openF && (
+              <ul className="mb-0 mt-1 small ps-3">
+                {full.map((s) => (
+                  <li key={s}><code>{s}</code></li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+        {partial.length > 0 && (
+          <div>
+            <Button
+              variant="link"
+              size="sm"
+              className="p-0 fw-bold text-dark"
+              onClick={() => setOpenP(!openP)}
+            >
+              {openP ? '▼' : '▶'} Partial skips ({partial.length})
+            </Button>
+            {openP && (
+              <ul className="mb-0 mt-1 small ps-3">
+                {partial.map((row, i) => (
+                  <li key={row.step || i}>
+                    <code>{row.step}</code>
+                    {' — '}skipped inputs: {row.skipped_inputs ?? '—'}
+                    {Array.isArray(row.blocked_all_nodes_keys) && row.blocked_all_nodes_keys.length > 0 && (
+                      <span className="text-muted"> ({row.blocked_all_nodes_keys.length} keys)</span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+      </Alert>
+    </div>
+  );
+}
 
 function WorkflowStatusDetail() {
   const { workflowId } = useParams();
@@ -18,6 +202,7 @@ function WorkflowStatusDetail() {
   const [showWorkflowDefinition, setShowWorkflowDefinition] = useState(false);
   const [showTaskLogs, setShowTaskLogs] = useState(true);
   const [showPodOutput, setShowPodOutput] = useState(false);
+  const [showWafDetails, setShowWafDetails] = useState(false);
   const [expandedTaskLogs, setExpandedTaskLogs] = useState(new Set());
   const [podOutputSearch, setPodOutputSearch] = useState('');
   const [podOutputMatchIndex, setPodOutputMatchIndex] = useState(0);
@@ -109,6 +294,8 @@ function WorkflowStatusDetail() {
       'pending': 'warning',
       'cancelled': 'secondary',
       'stopped': 'secondary',
+      'cancelled_waf': 'warning',
+      'partial_waf': 'warning',
       'stopping': 'warning'
     };
     return statusMap[status?.toLowerCase()] || 'secondary';
@@ -414,7 +601,8 @@ function WorkflowStatusDetail() {
                   <span className="me-3 fs-4">
                     {logs.result === 'success' || logs.result === 'completed' ? '✅' :
                      logs.result === 'failed' ? '❌' :
-                     logs.result === 'running' ? '🔄' : '⏸️'}
+                     logs.result === 'running' ? '🔄' :
+                     logs.result === 'partial_waf' || logs.result === 'cancelled_waf' ? '⚠️' : '⏸️'}
                   </span>
                   <div>
                     <h5 className="mb-1 fw-bold">
@@ -422,7 +610,7 @@ function WorkflowStatusDetail() {
                     </h5>
                     <p className="mb-0 text-muted">
                       <Badge bg={getStatusBadge(logs.result)} className="me-2">
-                        {logs.result || 'unknown'}
+                        {formatWorkflowStatusLabel(logs.result)}
                       </Badge>
                       {logs.workflow_steps?.length > 0 && (
                         <span className="me-2">
@@ -491,7 +679,7 @@ function WorkflowStatusDetail() {
               <div className="bg-light p-3 rounded text-center">
                 <div className="mb-2">
                   <Badge bg={getStatusBadge(logs.result)} className="fs-6">
-                    {logs.result || 'unknown'}
+                    {formatWorkflowStatusLabel(logs.result)}
                   </Badge>
                 </div>
                 <small className="text-muted">Final Status</small>
@@ -526,6 +714,42 @@ function WorkflowStatusDetail() {
             </Col>
           </Row>
         </div>
+
+        {(() => {
+          const r = String(logs.result || '').toLowerCase();
+          const hasWafSignals =
+            r === 'cancelled_waf' ||
+            r === 'partial_waf' ||
+            (logs.waf_summary &&
+              typeof logs.waf_summary === 'object' &&
+              (logs.waf_summary.any_skips ||
+                (Array.isArray(logs.waf_summary.fully_skipped_steps) &&
+                  logs.waf_summary.fully_skipped_steps.length > 0) ||
+                (Array.isArray(logs.waf_summary.partial_skip_steps) &&
+                  logs.waf_summary.partial_skip_steps.length > 0))) ||
+            (logs.workflow_steps || []).some((step) => {
+              const n = step && typeof step === 'object' ? Object.keys(step)[0] : null;
+              return n && step[n]?.waf_status && typeof step[n].waf_status === 'object';
+            });
+          if (!hasWafSignals) return null;
+          return (
+            <div className="mb-3 d-flex flex-wrap justify-content-between align-items-center gap-2">
+              <span className="small text-muted">
+                Worker WAF reputation / targets are available for this execution.
+              </span>
+              <Button
+                variant={showWafDetails ? 'secondary' : 'outline-secondary'}
+                size="sm"
+                onClick={() => setShowWafDetails(!showWafDetails)}
+                aria-expanded={showWafDetails}
+              >
+                {showWafDetails ? 'Hide WAF details' : 'Show WAF details'}
+              </Button>
+            </div>
+          );
+        })()}
+
+        <WafSummaryCallout summary={logs.waf_summary} expanded={showWafDetails} />
 
         {/* Workflow Steps Details */}
         {logs.workflow_steps && logs.workflow_steps.length > 0 && (
@@ -572,6 +796,15 @@ function WorkflowStatusDetail() {
                             Step {index + 1}
                           </Badge>
                           <code className="me-3 flex-grow-1">{stepName}</code>
+                          {stepData?.waf_status && (
+                            <Badge
+                              bg={stepData.waf_status.skipped === 'waf_all_nodes_blocked' ? 'warning' : 'info'}
+                              className="text-dark me-2"
+                              title="WAF precheck / worker quarantine"
+                            >
+                              WAF
+                            </Badge>
+                          )}
                           <div className="d-flex gap-1">
                             {stepData?.started_at && (
                               <small className="text-muted me-2">
@@ -638,6 +871,7 @@ function WorkflowStatusDetail() {
                       aria-labelledby={`heading-${index}`}
                     >
                       <div className="accordion-body">
+                        <StepWafStatusPanel wafStatus={stepData?.waf_status} expanded={showWafDetails} />
                         {hasData ? renderStepResults(stepData) : (
                           <p className="text-muted mb-0">No execution data available for this step.</p>
                         )}

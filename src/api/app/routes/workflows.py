@@ -31,7 +31,7 @@ router = APIRouter()
 
 # Terminal workflow `result` values from the runner; used to trigger ConfigMap cleanup on log POST.
 _TERMINAL_WORKFLOW_RESULTS = frozenset(
-    {"success", "completed", "failed", "stopped", "cancelled"}
+    {"success", "completed", "failed", "stopped", "cancelled", "cancelled_waf", "partial_waf"}
 )
 
 # Initialize services
@@ -505,7 +505,10 @@ async def get_workflow_executions(
                 "program_name": execution.get("program_name", "Unknown"),
                 "status": execution.get("result", "unknown").lower(),
                 "started_at": execution.get("created_at"),
-                "completed_at": execution.get("updated_at") if execution.get("result") in ["success", "completed", "failed"] else None,
+                "completed_at": execution.get("updated_at")
+                if execution.get("result")
+                in ["success", "completed", "failed", "cancelled_waf", "partial_waf"]
+                else None,
                 "progress": {
                     "completed": 0,
                     "total": 0,
@@ -653,7 +656,12 @@ async def get_workflow_execution_status(
         
         # Handle datetime conversion
         started_at = workflow_log.get("created_at")
-        completed_at = workflow_log.get("updated_at") if current_status in ["success", "completed", "failed"] else None
+        completed_at = (
+            workflow_log.get("updated_at")
+            if current_status
+            in ["success", "completed", "failed", "cancelled_waf", "partial_waf"]
+            else None
+        )
         
         return WorkflowStatusResponse(
             workflow_id=workflow_id,
@@ -723,6 +731,7 @@ async def get_workflow_execution_logs(
             workflow_definition=log.get("workflow_definition"),
             runner_pod_output=log.get("runner_pod_output"),
             task_execution_logs=[task_log for task_log in log.get("task_execution_logs", []) if isinstance(task_log, dict)] if isinstance(log.get("task_execution_logs"), list) else [],
+            waf_summary=log.get("waf_summary") if isinstance(log.get("waf_summary"), dict) else None,
             started_at=parse_timestamp(started_at_val),
             completed_at=parse_timestamp(completed_at_val),
             created_at=parse_timestamp(created_at_val),
