@@ -15,6 +15,7 @@ from models.postgres import ApexDomain, Program
 from repository.apexdomain_assets_repo import WHOIS_COLUMNS, _apply_whois_from_payload
 from repository.bulk_sql.config import sql_chunk_size
 from repository.bulk_sql.scope import domain_in_scope
+from utils.domain_utils import normalize_hostname
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +51,9 @@ def upsert_apex_domains_chunk(program_id: str, items: List[Dict[str, Any]]) -> D
             item = dict(raw)
             if not item.get("program_name"):
                 item["program_name"] = program_name_disp
-            nm = item.get("name")
+            nm = normalize_hostname(item.get("name"))
+            if nm is not None:
+                item["name"] = nm
             if not nm:
                 failed_count += 1
                 skipped_assets.append(

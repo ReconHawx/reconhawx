@@ -8,7 +8,7 @@ from models.base import utcnow
 import uuid
 import json
 from utils import normalize_url_for_storage
-from utils.domain_utils import extract_apex_domain
+from utils.domain_utils import extract_apex_domain, normalize_hostname
 import tldextract
 import asyncio
 from services.kubernetes import KubernetesService
@@ -488,7 +488,10 @@ class TyposquatFindingsRepository(ProgramAccessMixin):
         async with get_db_session() as db:
             try:
                 program = resolve_program_from_payload(db, typosquat_data)
-                
+
+                if typosquat_data.get('typo_domain'):
+                    typosquat_data['typo_domain'] = normalize_hostname(str(typosquat_data['typo_domain']))
+
                 # Check if typosquat domain already exists (filter by both domain and program for accuracy)
                 existing = db.query(TyposquatDomain).filter(
                     TyposquatDomain.typo_domain == typosquat_data.get('typo_domain'),

@@ -5,7 +5,7 @@ import logging
 from .program_repo import ProgramRepository
 from datetime import datetime, timezone
 from uuid import UUID
-from utils.domain_utils import extract_apex_domain
+from utils.domain_utils import extract_apex_domain, normalize_hostname
 from models.postgres import (
     Program, ApexDomain, Subdomain, IP, SubdomainIP
 )
@@ -60,9 +60,10 @@ class SubdomainAssetsRepository(ProgramAccessMixin):
     async def get_domain_by_name(domain_name: str, programs: Optional[List[str]] = None) -> Optional[Dict[str, Any]]:
         """Get domain (subdomain) by name. If programs specified, restrict to those programs."""
         domain_id = None
+        dn = normalize_hostname(domain_name) or domain_name
         async with get_db_session() as db:
             try:
-                query = db.query(Subdomain).join(Program).filter(Subdomain.name == domain_name)
+                query = db.query(Subdomain).join(Program).filter(Subdomain.name == dn)
                 if programs is not None and len(programs) > 0:
                     query = query.filter(Program.name.in_(programs))
                 domain = query.first()
@@ -86,6 +87,10 @@ class SubdomainAssetsRepository(ProgramAccessMixin):
                 
                 for key, value in domain_data.items():
                     if hasattr(domain, key):
+                        if key == "name" and value:
+                            value = normalize_hostname(str(value)) or value
+                        if key == "cname_record" and value:
+                            value = normalize_hostname(str(value)) or value
                         setattr(domain, key, value)
                 
                 domain.updated_at = datetime.now(timezone.utc)
@@ -316,12 +321,19 @@ class SubdomainAssetsRepository(ProgramAccessMixin):
                 program = db.query(Program).filter(Program.name == subdomain_data.get('program_name')).first()
                 if not program:
                     raise ValueError(f"Program '{subdomain_data.get('program_name')}' not found")
-                
-                # Scope check for the subdomain hostname
-                hostname = subdomain_data.get('name')
-                program_name = subdomain_data.get('program_name')
-                if not hostname:
+
+                hn = normalize_hostname(subdomain_data.get('name'))
+                if not hn:
                     raise ValueError("'name' (subdomain) is required")
+                subdomain_data['name'] = hn
+                if subdomain_data.get('apex_domain'):
+                    subdomain_data['apex_domain'] = normalize_hostname(str(subdomain_data['apex_domain']))
+                if subdomain_data.get('cname_record'):
+                    subdomain_data['cname_record'] = normalize_hostname(str(subdomain_data['cname_record']))
+
+                # Scope check for the subdomain hostname
+                hostname = hn
+                program_name = subdomain_data.get('program_name')
                 if not await ProgramRepository.is_domain_in_scope(hostname, program_name):
                     logger.info(f"Subdomain '{hostname}' is out of scope for program '{program_name}'")
                     return "", "out_of_scope", None, None
