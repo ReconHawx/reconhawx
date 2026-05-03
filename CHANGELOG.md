@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.29.0](https://github.com/ReconHawx/reconhawx/compare/v0.28.0...v0.29.0) (2026-05-03)
+
+
+### Features
+
+* **api:** store hostnames and URL hosts lowercase with DB backfill ([dddaf30](https://github.com/ReconHawx/reconhawx/commit/dddaf307eec35b46c1a808935fcfc9225832c44c))
+
 ## [0.28.0](https://github.com/ReconHawx/reconhawx/compare/v0.27.1...v0.28.0) (2026-05-03)
 
 
