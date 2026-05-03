@@ -406,6 +406,25 @@ class KubernetesService:
             {"name": "TYPOSQUAT_CACHE_TTL", "value": os.getenv('TYPOSQUAT_CACHE_TTL', '2592000')},
             {"name": "TYPOSQUAT_USE_CACHE", "value": os.getenv('TYPOSQUAT_USE_CACHE', 'true')}
         ]
+        from services.workflow_waf_auto_rerun_settings import get_workflow_waf_auto_rerun_effective
+
+        waf_eff = await get_workflow_waf_auto_rerun_effective()
+        env_vars.extend(
+            [
+                {
+                    "name": "WAF_QUARANTINE_TTL",
+                    "value": str(int(waf_eff["quarantine_ttl"])),
+                },
+                {
+                    "name": "WAF_SECONDARY_PROMOTE",
+                    "value": str(int(waf_eff["secondary_promote"])),
+                },
+                {
+                    "name": "WAF_SECONDARY_WINDOW",
+                    "value": str(int(waf_eff["secondary_window"])),
+                },
+            ]
+        )
         _program_uuid = workflow_data.get("program_id")
         if _program_uuid:
             env_vars.insert(3, {"name": "PROGRAM_ID", "value": str(_program_uuid)})
@@ -1008,6 +1027,25 @@ class KubernetesService:
                 client.V1EnvVar(name="TYPOSQUAT_CACHE_TTL", value=os.getenv('TYPOSQUAT_CACHE_TTL', '2592000')),
                 client.V1EnvVar(name="TYPOSQUAT_USE_CACHE", value=os.getenv('TYPOSQUAT_USE_CACHE', 'true'))
             ]
+            from services.workflow_waf_auto_rerun_settings import get_workflow_waf_auto_rerun_effective
+
+            waf_eff = await get_workflow_waf_auto_rerun_effective()
+            env_vars.extend(
+                [
+                    client.V1EnvVar(
+                        name="WAF_QUARANTINE_TTL",
+                        value=str(int(waf_eff["quarantine_ttl"])),
+                    ),
+                    client.V1EnvVar(
+                        name="WAF_SECONDARY_PROMOTE",
+                        value=str(int(waf_eff["secondary_promote"])),
+                    ),
+                    client.V1EnvVar(
+                        name="WAF_SECONDARY_WINDOW",
+                        value=str(int(waf_eff["secondary_window"])),
+                    ),
+                ]
+            )
             _program_uuid = workflow_data.get("program_id")
             if _program_uuid:
                 env_vars.insert(3, client.V1EnvVar(name="PROGRAM_ID", value=str(_program_uuid)))

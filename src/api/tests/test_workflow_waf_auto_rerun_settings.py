@@ -36,13 +36,42 @@ def test_merge_stored_value_canonical_fallback() -> None:
 
 
 def test_merge_stored_value_overrides() -> None:
-    m = wset.merge_stored_value({"enabled": False, "max_attempts": 7})
-    assert m == {"enabled": False, "max_attempts": 7}
+    m = wset.merge_stored_value(
+        {
+            "enabled": False,
+            "max_attempts": 7,
+            "delay_seconds": 120,
+            "quarantine_ttl": 600,
+            "secondary_promote": 3,
+            "secondary_window": 120,
+        }
+    )
+    assert m == {
+        "enabled": False,
+        "max_attempts": 7,
+        "delay_seconds": 120,
+        "quarantine_ttl": 600,
+        "secondary_promote": 3,
+        "secondary_window": 120,
+    }
 
 
-def test_merge_stored_value_ignores_invalid_max() -> None:
-    m = wset.merge_stored_value({"max_attempts": 1000, "enabled": True})
+def test_merge_stored_value_ignores_invalid_numeric_fields() -> None:
+    m = wset.merge_stored_value(
+        {
+            "max_attempts": 1000,
+            "delay_seconds": 30,
+            "quarantine_ttl": 30,
+            "secondary_promote": 0,
+            "secondary_window": 10,
+            "enabled": True,
+        }
+    )
     assert m["max_attempts"] == wset.CANONICAL_DEFAULTS["max_attempts"]
+    assert m["delay_seconds"] == wset.CANONICAL_DEFAULTS["delay_seconds"]
+    assert m["quarantine_ttl"] == wset.CANONICAL_DEFAULTS["quarantine_ttl"]
+    assert m["secondary_promote"] == wset.CANONICAL_DEFAULTS["secondary_promote"]
+    assert m["secondary_window"] == wset.CANONICAL_DEFAULTS["secondary_window"]
 
 
 @pytest.mark.asyncio
@@ -70,10 +99,11 @@ async def test_reset_to_defaults_calls_set():
 @pytest.mark.asyncio
 async def test_get_route(client: httpx.AsyncClient, superuser_override):
     fake = {
-        "settings": {"enabled": True, "max_attempts": 3},
-        "stored": {"enabled": True, "max_attempts": 3},
+        "settings": dict(wset.CANONICAL_DEFAULTS),
+        "stored": dict(wset.CANONICAL_DEFAULTS),
         "canonical_defaults": dict(wset.CANONICAL_DEFAULTS),
         "max_attempts_cap": wset.MAX_AUTO_RERUN_ATTEMPTS_ADMIN,
+        "bounds": wset.admin_bounds_payload(),
     }
     with patch(
         "services.workflow_waf_auto_rerun_settings.get_admin_payload",
@@ -90,12 +120,14 @@ async def test_get_route(client: httpx.AsyncClient, superuser_override):
 
 @pytest.mark.asyncio
 async def test_put_route(client: httpx.AsyncClient, superuser_override):
-    updated = {"enabled": False, "max_attempts": 5}
+    updated = dict(wset.CANONICAL_DEFAULTS)
+    updated["enabled"] = False
     payload_shell = {
         "settings": updated,
         "stored": updated,
         "canonical_defaults": dict(wset.CANONICAL_DEFAULTS),
         "max_attempts_cap": wset.MAX_AUTO_RERUN_ATTEMPTS_ADMIN,
+        "bounds": wset.admin_bounds_payload(),
     }
     with patch(
         "services.workflow_waf_auto_rerun_settings.update_workflow_waf_auto_rerun_partial",
@@ -109,7 +141,14 @@ async def test_put_route(client: httpx.AsyncClient, superuser_override):
         ):
             r = await client.put("/admin/workflow-waf-auto-rerun-settings", json={"enabled": False})
     assert r.status_code == 200
-    up.assert_awaited_once_with(enabled=False, max_attempts=None)
+    up.assert_awaited_once_with(
+        enabled=False,
+        max_attempts=None,
+        delay_seconds=None,
+        quarantine_ttl=None,
+        secondary_promote=None,
+        secondary_window=None,
+    )
 
 
 @pytest.mark.asyncio
@@ -120,6 +159,7 @@ async def test_reset_route(client: httpx.AsyncClient, superuser_override):
         "stored": merged,
         "canonical_defaults": dict(wset.CANONICAL_DEFAULTS),
         "max_attempts_cap": wset.MAX_AUTO_RERUN_ATTEMPTS_ADMIN,
+        "bounds": wset.admin_bounds_payload(),
     }
     with patch(
         "services.workflow_waf_auto_rerun_settings.reset_workflow_waf_auto_rerun_to_defaults",

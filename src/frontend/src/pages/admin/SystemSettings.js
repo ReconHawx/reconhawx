@@ -13,7 +13,9 @@ import {
   Badge,
   Modal,
   Tabs,
-  Tab
+  Tab,
+  OverlayTrigger,
+  Tooltip,
 } from 'react-bootstrap';
 import { adminAPI, aiAPI } from '../../services/api';
 import { formatDate } from '../../utils/dateUtils';
@@ -33,6 +35,17 @@ const SETTINGS_TAB_LABELS = {
   ai: 'AI settings',
   'event-handlers': 'Event handlers',
   'social-media': 'Social media credentials',
+};
+
+const WAF_WORKFLOW_FIELD_HELP = {
+  delay_seconds:
+    'How long the API waits before scheduling a one-time inline rerun for WAF-blocked targets. Match or exceed the quarantine TTL so blocks expire first.',
+  quarantine_ttl:
+    'Lifetime in Redis of a (worker node, target) block recorded by the WAF precheck. Heavy HTTP jobs steer affinity away from blocked nodes for this long.',
+  secondary_promote:
+    'How many weak (“secondary”) WAF signals are required before the runner treats the pair like a precheck block. Heavy-task steps can infer WAF-like behavior from tool output without a nuclei precheck match; each such signal is stored in Redis per worker node and canonical target (scheme+host+port). When the count of signals in the current window reaches this number, the runner calls the same quarantine path as a real precheck block (Redis block key + node affinity skip), with source secondary. Higher values reduce false positives; lower values quarantine sooner after repeated weak hints.',
+  secondary_window:
+    'Sliding time window in seconds for counting secondary signals in Redis (sorted set by timestamp; entries older than this are dropped from the count). A new weak signal always sees only peers inside the last N seconds. Shorter windows require clustered-in-time hints to promote; longer windows let sporadic signals add up. Default 900 is 15 minutes.',
 };
 
 // Add Font Awesome CSS if not already loaded
@@ -162,8 +175,23 @@ function SystemSettings() {
     enabled: true,
     max_attempts: 3,
     max_attempts_cap: 50,
+    delay_seconds: 2100,
+    quarantine_ttl: 1800,
+    secondary_promote: 2,
+    secondary_window: 900,
+    bounds: {
+      max_attempts: { min: 1, max: 50 },
+      delay_seconds: { min: 60, max: 86400 },
+      quarantine_ttl: { min: 60, max: 86400 },
+      secondary_promote: { min: 1, max: 100 },
+      secondary_window: { min: 60, max: 86400 },
+    },
     canonical_enabled: true,
     canonical_max_attempts: 3,
+    canonical_delay_seconds: 2100,
+    canonical_quarantine_ttl: 1800,
+    canonical_secondary_promote: 2,
+    canonical_secondary_window: 900,
   });
   const [workflowWafRerunLoading, setWorkflowWafRerunLoading] = useState(false);
   const [workflowWafRerunSaving, setWorkflowWafRerunSaving] = useState(false);
@@ -565,12 +593,41 @@ function SystemSettings() {
       const canon = response.canonical_defaults || {};
       const cap =
         typeof response.max_attempts_cap === 'number' ? response.max_attempts_cap : 50;
+      const fb = {
+        max_attempts: { min: 1, max: cap },
+        delay_seconds: { min: 60, max: 86400 },
+        quarantine_ttl: { min: 60, max: 86400 },
+        secondary_promote: { min: 1, max: 100 },
+        secondary_window: { min: 60, max: 86400 },
+      };
+      const apiBounds =
+        response.bounds && typeof response.bounds === 'object' ? response.bounds : {};
+      const bounds = {
+        max_attempts: { ...fb.max_attempts, ...(apiBounds.max_attempts || {}) },
+        delay_seconds: { ...fb.delay_seconds, ...(apiBounds.delay_seconds || {}) },
+        quarantine_ttl: { ...fb.quarantine_ttl, ...(apiBounds.quarantine_ttl || {}) },
+        secondary_promote: { ...fb.secondary_promote, ...(apiBounds.secondary_promote || {}) },
+        secondary_window: { ...fb.secondary_window, ...(apiBounds.secondary_window || {}) },
+      };
       setWorkflowWafRerun({
         enabled: Boolean(s.enabled),
         max_attempts: typeof s.max_attempts === 'number' ? s.max_attempts : 3,
         max_attempts_cap: cap,
+        delay_seconds: typeof s.delay_seconds === 'number' ? s.delay_seconds : 2100,
+        quarantine_ttl: typeof s.quarantine_ttl === 'number' ? s.quarantine_ttl : 1800,
+        secondary_promote: typeof s.secondary_promote === 'number' ? s.secondary_promote : 2,
+        secondary_window: typeof s.secondary_window === 'number' ? s.secondary_window : 900,
+        bounds,
         canonical_enabled: Boolean(canon.enabled),
         canonical_max_attempts: typeof canon.max_attempts === 'number' ? canon.max_attempts : 3,
+        canonical_delay_seconds:
+          typeof canon.delay_seconds === 'number' ? canon.delay_seconds : 2100,
+        canonical_quarantine_ttl:
+          typeof canon.quarantine_ttl === 'number' ? canon.quarantine_ttl : 1800,
+        canonical_secondary_promote:
+          typeof canon.secondary_promote === 'number' ? canon.secondary_promote : 2,
+        canonical_secondary_window:
+          typeof canon.secondary_window === 'number' ? canon.secondary_window : 900,
       });
     } catch (err) {
       setError(
@@ -589,6 +646,10 @@ function SystemSettings() {
       await adminAPI.updateWorkflowWafAutoRerunSettings({
         enabled: workflowWafRerun.enabled,
         max_attempts: parseInt(String(workflowWafRerun.max_attempts), 10),
+        delay_seconds: parseInt(String(workflowWafRerun.delay_seconds), 10),
+        quarantine_ttl: parseInt(String(workflowWafRerun.quarantine_ttl), 10),
+        secondary_promote: parseInt(String(workflowWafRerun.secondary_promote), 10),
+        secondary_window: parseInt(String(workflowWafRerun.secondary_window), 10),
       });
       setSuccess('WAF auto-rerun settings saved.');
       loadWorkflowWafAutoRerunSettings();
@@ -608,7 +669,7 @@ function SystemSettings() {
       setError('');
       await adminAPI.resetWorkflowWafAutoRerunSettings();
       setSuccess(
-        'WAF auto-rerun reset to defaults (on, 3 reruns). Reschedule delay still uses WAF_AUTO_RERUN_DELAY_SECONDS on the API pod.'
+        'WAF workflow settings reset to defaults (auto-rerun on, 3 attempts, default delay and quarantine).'
       );
       loadWorkflowWafAutoRerunSettings();
     } catch (err) {
@@ -1474,7 +1535,7 @@ function SystemSettings() {
                       size="sm"
                       onClick={handleResetWorkflowWafAutoRerunDefaults}
                       disabled={workflowWafRerunSaving || workflowWafRerunLoading}
-                      title="Restore enabled + max 3 consecutive auto-reruns"
+                      title="Restore defaults: auto-rerun on, 3 attempts, delay and quarantine defaults"
                     >
                       Reset to defaults (on, 3 reruns)
                     </Button>
@@ -1506,10 +1567,10 @@ function SystemSettings() {
                 <Card.Body>
                   <p className="text-muted small">
                     When workflows end in <code>cancelled_waf</code> or <code>partial_waf</code>, the API can enqueue a
-                    one-time inline rerun for blocked targets. Defaults are seeded in the database (
-                    <strong>on</strong>, <strong>3</strong> reruns max per chain via workflow metadata{' '}
-                    <code>waf_rerun_attempt</code>). One-shot delay stays on the API pod as{' '}
-                    <code>WAF_AUTO_RERUN_DELAY_SECONDS</code>.
+                    one-time inline rerun for blocked targets. All values below are stored in{' '}
+                    <code>system_settings.workflow_waf_auto_rerun</code> (seeded by migrations). The API injects
+                    quarantine TTL and secondary-signal settings into each workflow-runner Job as environment variables
+                    so the runner matches the database.
                   </p>
                   {workflowWafRerunLoading ? (
                     <div className="text-center py-4">
@@ -1528,13 +1589,26 @@ function SystemSettings() {
                         }
                       />
                       <Form.Group className="mb-2">
-                        <Form.Label>
-                          Maximum auto-reruns (1–{workflowWafRerun.max_attempts_cap})
+                        <Form.Label className="d-inline-flex align-items-center flex-wrap gap-1">
+                          <span>Maximum auto-reruns ({workflowWafRerun.bounds.max_attempts.min}–{workflowWafRerun.bounds.max_attempts.max})</span>
+                          <OverlayTrigger
+                            placement="top"
+                            overlay={
+                              <Tooltip id="waf-tooltip-max-attempts">
+                                Cap on consecutive auto-reruns in a chain, tracked on workflow metadata{' '}
+                                <code>waf_rerun_attempt</code>.
+                              </Tooltip>
+                            }
+                          >
+                            <i className="text-muted" style={{ cursor: 'help' }} aria-label="Help">
+                              ?
+                            </i>
+                          </OverlayTrigger>
                         </Form.Label>
                         <Form.Control
                           type="number"
-                          min={1}
-                          max={workflowWafRerun.max_attempts_cap}
+                          min={workflowWafRerun.bounds.max_attempts.min}
+                          max={workflowWafRerun.bounds.max_attempts.max}
                           value={workflowWafRerun.max_attempts}
                           onChange={(e) =>
                             setWorkflowWafRerun({
@@ -1544,10 +1618,150 @@ function SystemSettings() {
                           }
                         />
                       </Form.Group>
-                      <Form.Text className="text-muted d-block mb-0">
+                      <Form.Group className="mb-2">
+                        <Form.Label className="d-inline-flex align-items-center flex-wrap gap-1">
+                          <span>
+                            Reschedule delay (seconds, {workflowWafRerun.bounds.delay_seconds.min}–
+                            {workflowWafRerun.bounds.delay_seconds.max})
+                          </span>
+                          <OverlayTrigger
+                            placement="top"
+                            overlay={
+                              <Tooltip id="waf-tooltip-delay">
+                                {WAF_WORKFLOW_FIELD_HELP.delay_seconds}
+                              </Tooltip>
+                            }
+                          >
+                            <i className="text-muted" style={{ cursor: 'help' }} aria-label="Help">
+                              ?
+                            </i>
+                          </OverlayTrigger>
+                        </Form.Label>
+                        <Form.Control
+                          type="number"
+                          min={workflowWafRerun.bounds.delay_seconds.min}
+                          max={workflowWafRerun.bounds.delay_seconds.max}
+                          value={workflowWafRerun.delay_seconds}
+                          onChange={(e) =>
+                            setWorkflowWafRerun({
+                              ...workflowWafRerun,
+                              delay_seconds: e.target.value,
+                            })
+                          }
+                        />
+                      </Form.Group>
+                      <Form.Group className="mb-2">
+                        <Form.Label className="d-inline-flex align-items-center flex-wrap gap-1">
+                          <span>
+                            Quarantine TTL (seconds, {workflowWafRerun.bounds.quarantine_ttl.min}–
+                            {workflowWafRerun.bounds.quarantine_ttl.max})
+                          </span>
+                          <OverlayTrigger
+                            placement="top"
+                            overlay={
+                              <Tooltip id="waf-tooltip-ttl">
+                                {WAF_WORKFLOW_FIELD_HELP.quarantine_ttl}
+                              </Tooltip>
+                            }
+                          >
+                            <i className="text-muted" style={{ cursor: 'help' }} aria-label="Help">
+                              ?
+                            </i>
+                          </OverlayTrigger>
+                        </Form.Label>
+                        <Form.Control
+                          type="number"
+                          min={workflowWafRerun.bounds.quarantine_ttl.min}
+                          max={workflowWafRerun.bounds.quarantine_ttl.max}
+                          value={workflowWafRerun.quarantine_ttl}
+                          onChange={(e) =>
+                            setWorkflowWafRerun({
+                              ...workflowWafRerun,
+                              quarantine_ttl: e.target.value,
+                            })
+                          }
+                        />
+                        <Form.Text className="text-muted">
+                          Injected as <code>WAF_QUARANTINE_TTL</code> on new workflow-runner Jobs.
+                        </Form.Text>
+                      </Form.Group>
+                      <Form.Group className="mb-2">
+                        <Form.Label className="d-inline-flex align-items-center flex-wrap gap-1">
+                          <span>
+                            Secondary promote (count, {workflowWafRerun.bounds.secondary_promote.min}–
+                            {workflowWafRerun.bounds.secondary_promote.max})
+                          </span>
+                          <OverlayTrigger
+                            placement="top"
+                            overlay={
+                              <Tooltip id="waf-tooltip-secondary-promote">
+                                {WAF_WORKFLOW_FIELD_HELP.secondary_promote}
+                              </Tooltip>
+                            }
+                          >
+                            <i className="text-muted" style={{ cursor: 'help' }} aria-label="Help">
+                              ?
+                            </i>
+                          </OverlayTrigger>
+                        </Form.Label>
+                        <Form.Control
+                          type="number"
+                          min={workflowWafRerun.bounds.secondary_promote.min}
+                          max={workflowWafRerun.bounds.secondary_promote.max}
+                          value={workflowWafRerun.secondary_promote}
+                          onChange={(e) =>
+                            setWorkflowWafRerun({
+                              ...workflowWafRerun,
+                              secondary_promote: e.target.value,
+                            })
+                          }
+                        />
+                        <Form.Text className="text-muted">
+                          Injected as <code>WAF_SECONDARY_PROMOTE</code> on new workflow-runner Jobs (read once at runner start). Count threshold for weak heavy-task signals before promoting to a full node/target block.
+                        </Form.Text>
+                      </Form.Group>
+                      <Form.Group className="mb-2">
+                        <Form.Label className="d-inline-flex align-items-center flex-wrap gap-1">
+                          <span>
+                            Secondary window (seconds, {workflowWafRerun.bounds.secondary_window.min}–
+                            {workflowWafRerun.bounds.secondary_window.max})
+                          </span>
+                          <OverlayTrigger
+                            placement="top"
+                            overlay={
+                              <Tooltip id="waf-tooltip-secondary-window">
+                                {WAF_WORKFLOW_FIELD_HELP.secondary_window}
+                              </Tooltip>
+                            }
+                          >
+                            <i className="text-muted" style={{ cursor: 'help' }} aria-label="Help">
+                              ?
+                            </i>
+                          </OverlayTrigger>
+                        </Form.Label>
+                        <Form.Control
+                          type="number"
+                          min={workflowWafRerun.bounds.secondary_window.min}
+                          max={workflowWafRerun.bounds.secondary_window.max}
+                          value={workflowWafRerun.secondary_window}
+                          onChange={(e) =>
+                            setWorkflowWafRerun({
+                              ...workflowWafRerun,
+                              secondary_window: e.target.value,
+                            })
+                          }
+                        />
+                        <Form.Text className="text-muted d-block mb-0">
+                          Injected as <code>WAF_SECONDARY_WINDOW</code> on new workflow-runner Jobs (read once at runner start). Sliding window (seconds) for counting those weak signals in Redis before promotion.
+                        </Form.Text>
+                      </Form.Group>
+                      <Form.Text className="text-muted d-block mb-0 mt-2">
                         Canonical defaults (after reset):{' '}
                         <strong>{workflowWafRerun.canonical_enabled ? 'on' : 'off'}</strong>, max{' '}
-                        {workflowWafRerun.canonical_max_attempts}.
+                        {workflowWafRerun.canonical_max_attempts}, delay {workflowWafRerun.canonical_delay_seconds}s,
+                        quarantine TTL {workflowWafRerun.canonical_quarantine_ttl}s, secondary promote{' '}
+                        {workflowWafRerun.canonical_secondary_promote}, secondary window{' '}
+                        {workflowWafRerun.canonical_secondary_window}s.
                       </Form.Text>
                     </>
                   )}

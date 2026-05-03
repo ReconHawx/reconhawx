@@ -122,6 +122,31 @@
   --rh-table-header-bg: #223651;
 }
 
+/*
+ * Bootstrap sets `.tooltip { --bs-tooltip-bg: var(--bs-emphasis-color); … }`. This app themes
+ * via `body[data-theme]` and does not mirror `--bs-emphasis-color` onto body, so tooltips inherit
+ * emphasis from `:root` (#000) while `--bs-body-bg` comes from the theme → unreadable contrast.
+ * Redefine on `.tooltip` so vars resolve against themed `--bs-body-*` inherited from body.
+ */
+.tooltip {
+  --bs-tooltip-bg: var(--bs-body-color);
+  --bs-tooltip-color: var(--bs-body-bg);
+}
+
+/* Tooltip copy is sentence-length on some admin screens — left-align; keep width readable */
+.tooltip .tooltip-inner {
+  text-align: start;
+  max-width: min(22rem, 92vw);
+}
+
+/* Tooltip content can include <code>; keep it readable on the inverted inner (not --bs-pre-*). */
+.tooltip .tooltip-inner code {
+  color: inherit;
+  background-color: rgba(var(--bs-body-bg-rgb), 0.2);
+  padding: 0.1em 0.35em;
+  border-radius: 0.25rem;
+}
+
 /* Bootstrap’s compiled .btn-* uses hardcoded blues — align fills to brand cyan */
 .btn-primary {
   --bs-btn-color: var(--rh-on-cyan);

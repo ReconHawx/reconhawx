@@ -47,13 +47,6 @@ _PRIORITY_MAPPING_KEYS = (
 )
 
 
-def _rerun_delay_seconds() -> int:
-    try:
-        return int(os.getenv("WAF_AUTO_RERUN_DELAY_SECONDS", "2100"))
-    except ValueError:
-        return 2100
-
-
 @lru_cache(maxsize=1)
 def _builtin_task_yaml() -> Dict[str, Any]:
     alt = os.getenv("RECON_TASK_DEFAULTS_PATH")
@@ -356,7 +349,7 @@ async def maybe_schedule_waf_rerun(workflow_log: Optional[Dict[str, Any]]) -> Op
         schedule=JobSchedule(
             schedule_type=ScheduleType.ONCE,
             start_time=datetime.now(timezone.utc)
-            + timedelta(seconds=max(60, _rerun_delay_seconds())),
+            + timedelta(seconds=max(60, int(policy["delay_seconds"]))),
             timezone="UTC",
             enabled=True,
         ),

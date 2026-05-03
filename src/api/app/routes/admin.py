@@ -15,7 +15,17 @@ from recon_task_defaults import (
     recon_task_api_payload,
 )
 from models.user_postgres import UserResponse
-from services.workflow_waf_auto_rerun_settings import MAX_AUTO_RERUN_ATTEMPTS_ADMIN
+from services.workflow_waf_auto_rerun_settings import (
+    DELAY_SECONDS_MAX,
+    DELAY_SECONDS_MIN,
+    MAX_AUTO_RERUN_ATTEMPTS_ADMIN,
+    QUARANTINE_TTL_MAX,
+    QUARANTINE_TTL_MIN,
+    SECONDARY_PROMOTE_MAX,
+    SECONDARY_PROMOTE_MIN,
+    SECONDARY_WINDOW_MAX,
+    SECONDARY_WINDOW_MIN,
+)
 from datetime import datetime
 import logging
 import os
@@ -1648,13 +1658,25 @@ async def delete_workflow_kubernetes_settings_admin(
 
 
 class WorkflowWafAutoRerunUpdateRequest(BaseModel):
-    """Partial update for WAF auto-rerun policy (stored in system_settings)."""
+    """Partial update for WAF workflow settings (stored in system_settings)."""
 
     enabled: Optional[bool] = None
     max_attempts: Optional[int] = Field(
         None,
         ge=1,
         le=MAX_AUTO_RERUN_ATTEMPTS_ADMIN,
+    )
+    delay_seconds: Optional[int] = Field(
+        None, ge=DELAY_SECONDS_MIN, le=DELAY_SECONDS_MAX
+    )
+    quarantine_ttl: Optional[int] = Field(
+        None, ge=QUARANTINE_TTL_MIN, le=QUARANTINE_TTL_MAX
+    )
+    secondary_promote: Optional[int] = Field(
+        None, ge=SECONDARY_PROMOTE_MIN, le=SECONDARY_PROMOTE_MAX
+    )
+    secondary_window: Optional[int] = Field(
+        None, ge=SECONDARY_WINDOW_MIN, le=SECONDARY_WINDOW_MAX
     )
 
 
@@ -1692,6 +1714,10 @@ async def put_workflow_waf_auto_rerun_settings_admin(
         merged = await update_workflow_waf_auto_rerun_partial(
             enabled=data.get("enabled"),
             max_attempts=data.get("max_attempts"),
+            delay_seconds=data.get("delay_seconds"),
+            quarantine_ttl=data.get("quarantine_ttl"),
+            secondary_promote=data.get("secondary_promote"),
+            secondary_window=data.get("secondary_window"),
         )
         payload = await get_admin_payload()
         return {"status": "success", "updated": merged, **payload}
@@ -1711,7 +1737,7 @@ async def put_workflow_waf_auto_rerun_settings_admin(
 async def post_workflow_waf_auto_rerun_reset_defaults_admin(
     current_user: UserResponse = Depends(require_superuser),
 ):
-    """Reset stored policy to canonical defaults (enabled + 3 max reruns)."""
+    """Reset stored policy to canonical defaults (full WAF workflow JSON)."""
     try:
         from services.workflow_waf_auto_rerun_settings import (
             get_admin_payload,

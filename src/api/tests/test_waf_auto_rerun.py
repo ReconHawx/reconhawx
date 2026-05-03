@@ -10,6 +10,7 @@ import pytest
 import services.waf_auto_rerun as war
 from models.job import JobSchedule, JobType, ScheduleType, ScheduledJobRequest
 from services.job_scheduler import JobSchedulerService
+from services.workflow_waf_auto_rerun_settings import CANONICAL_DEFAULTS
 
 
 @pytest.fixture
@@ -18,7 +19,11 @@ def mock_waf_effective_policy():
         "services.workflow_waf_auto_rerun_settings.get_workflow_waf_auto_rerun_effective",
         new_callable=AsyncMock,
     ) as m:
-        m.return_value = {"enabled": True, "max_attempts": 10}
+        m.return_value = {
+            **dict(CANONICAL_DEFAULTS),
+            "max_attempts": 10,
+            "delay_seconds": 90,
+        }
         yield m
 
 
@@ -79,10 +84,8 @@ async def test_partial_waf_schedules_inline_workflow_no_workflow_id(
     mock_sched: AsyncMock,
     mock_prog: AsyncMock,
     base_waf_log: dict,
-    monkeypatch,
     mock_waf_effective_policy: AsyncMock,
 ):
-    monkeypatch.setenv("WAF_AUTO_RERUN_DELAY_SECONDS", "90")
     mock_prog.return_value = {"id": "dddddddd-dddd-dddd-dddd-dddddddddddd"}
     mock_sched.return_value = MagicMock(schedule_id="sched-abc")
 
@@ -125,10 +128,8 @@ async def test_maybe_schedule_skipped_when_pending_chain_conflict(
     mock_prog: AsyncMock,
     mock_conflict: AsyncMock,
     base_waf_log: dict,
-    monkeypatch,
     mock_waf_effective_policy: AsyncMock,
 ):
-    monkeypatch.setenv("WAF_AUTO_RERUN_DELAY_SECONDS", "90")
     mock_prog.return_value = {"id": "dddddddd-dddd-dddd-dddd-dddddddddddd"}
     mock_conflict.return_value = True
 
@@ -157,10 +158,8 @@ async def test_chain_root_carried_from_metadata(
     mock_prog: AsyncMock,
     mock_conflict: AsyncMock,
     base_waf_log: dict,
-    monkeypatch,
     mock_waf_effective_policy: AsyncMock,
 ):
-    monkeypatch.setenv("WAF_AUTO_RERUN_DELAY_SECONDS", "90")
     mock_prog.return_value = {"id": "dddddddd-dddd-dddd-dddd-dddddddddddd"}
     mock_sched.return_value = MagicMock(schedule_id="sched-xyz")
     mock_conflict.return_value = False
@@ -187,13 +186,20 @@ async def test_missing_user_id(base_waf_log: dict, mock_waf_effective_policy: As
 
 @pytest.mark.asyncio
 async def test_waf_auto_rerun_off(base_waf_log: dict, mock_waf_effective_policy: AsyncMock):
-    mock_waf_effective_policy.return_value = {"enabled": False, "max_attempts": 3}
+    mock_waf_effective_policy.return_value = {
+        **dict(CANONICAL_DEFAULTS),
+        "enabled": False,
+        "max_attempts": 3,
+    }
     assert await war.maybe_schedule_waf_rerun(base_waf_log) is None
 
 
 @pytest.mark.asyncio
 async def test_max_attempts_blocks(base_waf_log: dict, mock_waf_effective_policy: AsyncMock):
-    mock_waf_effective_policy.return_value = {"enabled": True, "max_attempts": 1}
+    mock_waf_effective_policy.return_value = {
+        **dict(CANONICAL_DEFAULTS),
+        "max_attempts": 1,
+    }
     base_waf_log["workflow_definition"]["metadata"] = {"waf_rerun_attempt": 1}
     assert await war.maybe_schedule_waf_rerun(base_waf_log) is None
 
