@@ -22,6 +22,7 @@ from task_executor import TaskExecutor
 from recon_tasks.base import parameter_manager
 from data_api_client import DataAPIClient
 from services.kubernetes import KubernetesService
+from workflow_definition_snapshot import serialize_workflow_definition_snapshot
 
 logger = logging.getLogger(__name__)
 
@@ -253,57 +254,6 @@ def _log_step_outputs(step_name: str, step_outputs: Dict[str, Any]):
 
     except Exception as e:
         logger.warning(f"Error logging step outputs for '{step_name}': {e}")
-
-
-def _serialize_workflow_definition(workflow) -> Dict[str, Any]:
-    """Serialize workflow definition to JSON-serializable format"""
-    def serialize_input_definition(input_def):
-        """Convert InputDefinition to dict"""
-        if hasattr(input_def, 'model_dump'):
-            return input_def.model_dump()
-        elif hasattr(input_def, 'dict'):
-            return input_def.dict()
-        elif isinstance(input_def, dict):
-            return input_def
-        else:
-            # Fallback: convert to dict manually
-            return {
-                'type': getattr(input_def, 'type', None),
-                'asset_type': getattr(input_def, 'asset_type', None),
-                'finding_type': getattr(input_def, 'finding_type', None),
-                'value_type': getattr(input_def, 'value_type', None),
-                'values': getattr(input_def, 'values', None),
-                'filter': getattr(input_def, 'filter', None),
-                'filter_type': getattr(input_def, 'filter_type', None),
-                'limit': getattr(input_def, 'limit', None),
-                'min_similarity_percent': getattr(input_def, 'min_similarity_percent', None),
-                'similarity_protected_domain': getattr(input_def, 'similarity_protected_domain', None),
-                'scope_domains_filter': getattr(input_def, 'scope_domains_filter', None),
-            }
-    
-    # Serialize inputs
-    serialized_inputs = {}
-    if hasattr(workflow, 'inputs') and workflow.inputs:
-        for k, v in workflow.inputs.items():
-            serialized_inputs[k] = serialize_input_definition(v)
-    
-    return {
-        "name": workflow.name,
-        "description": getattr(workflow, 'description', None),
-        "steps": [{
-            "name": step.name,
-            "tasks": [{
-                "name": task.name,
-                "task_type": getattr(task, 'task_type', None) or task.name,
-                "params": getattr(task, 'params', {}) or {},
-                "input_mapping": getattr(task, 'input_mapping', None),
-                "output_mode": getattr(task, 'output_mode', None),
-                "use_proxy": getattr(task, 'use_proxy', None)
-            } for task in step.tasks]
-        } for step in workflow.steps],
-        "inputs": serialized_inputs,
-        "variables": getattr(workflow, 'variables', {}) or {}
-    }
 
 
 def _log_concise_asset_summary(step_name: str, step_status_data: Dict[str, Any]):
@@ -977,7 +927,7 @@ async def run_workflow(workflow_data):
             "total_steps": len(workflow.steps),
             "total_assets": 0,
             "total_findings": 0,
-            "workflow_definition": _serialize_workflow_definition(workflow)
+            "workflow_definition": serialize_workflow_definition_snapshot(workflow, workflow_data),
         }
         headers = {}
         internal_api_key = os.getenv('INTERNAL_SERVICE_API_KEY')

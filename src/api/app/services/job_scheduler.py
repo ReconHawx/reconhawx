@@ -20,7 +20,23 @@ from repository import ScheduledJobRepository
 
 logger = logging.getLogger(__name__)
 
+
 class JobSchedulerService:
+    @staticmethod
+    def _job_row_is_disposable_waf_one_shot_workflow(job_row: Dict[str, Any]) -> bool:
+        """True for WAF auto-rerun one-time workflow schedules (consumable after execution)."""
+        if not isinstance(job_row, dict):
+            return False
+        if job_row.get("job_type") != JobType.WORKFLOW.value:
+            return False
+        tags = job_row.get("tags") or []
+        if "waf_auto_rerun" not in tags:
+            return False
+        sd = job_row.get("schedule_data") or {}
+        raw_st = sd.get("schedule_type")
+        st_norm = getattr(raw_st, "value", raw_st)
+        return str(st_norm).lower() == ScheduleType.ONCE.value
+
     def _parse_datetime_field(self, value: Any) -> Any:
         if value is None:
             return None
@@ -205,30 +221,27 @@ class JobSchedulerService:
             job_func = self._create_job_execution_function(schedule_id, request)
             
             if request.schedule.schedule_type == ScheduleType.ONCE:
-                # One-time job
+                # One-time job. WAF auto-rerun ONCE jobs use unlimited misfire grace so a
+                # pod restart that re-adds a past-due DateTrigger still runs on next tick.
+                is_waf_rerun = "waf_auto_rerun" in (request.tags or [])
+                add_kwargs: Dict[str, Any] = {
+                    "id": schedule_id,
+                    "name": request.name,
+                    "replace_existing": True,
+                }
+                if is_waf_rerun:
+                    add_kwargs["misfire_grace_time"] = None
+
                 if request.schedule.start_time:
                     # Use the timezone from the schedule configuration for one-time jobs
                     timezone_str = request.schedule.timezone or "UTC"
                     timezone_obj = self._get_timezone_object(timezone_str)
-                    
-                    # Create trigger with timezone
+
                     trigger = DateTrigger(run_date=request.schedule.start_time, timezone=timezone_obj)
-                    self.scheduler.add_job(
-                        job_func,
-                        trigger=trigger,
-                        id=schedule_id,
-                        name=request.name,
-                        replace_existing=True
-                    )
+                    self.scheduler.add_job(job_func, trigger=trigger, **add_kwargs)
                 else:
                     # Run immediately
-                    self.scheduler.add_job(
-                        job_func,
-                        trigger='date',
-                        id=schedule_id,
-                        name=request.name,
-                        replace_existing=True
-                    )
+                    self.scheduler.add_job(job_func, trigger="date", **add_kwargs)
                     
             elif request.schedule.schedule_type == ScheduleType.RECURRING:
                 # Recurring job
@@ -323,9 +336,10 @@ class JobSchedulerService:
         from services.kubernetes import KubernetesService
         from repository import WorkflowDefinitionRepository
         from repository.program_repo import ProgramRepository
+        from repository.workflow_repo import WorkflowRepository
 
         k8s_service = KubernetesService()
-        workflow_repo = WorkflowDefinitionRepository()
+        wf_def_repo = WorkflowDefinitionRepository()
 
         effective_job_data = job_row.get("job_data") or {}
         stored_variables = job_row.get("workflow_variables") or {}
@@ -337,7 +351,7 @@ class JobSchedulerService:
         workflow_specs: List[Dict[str, Any]] = []
 
         if wf_id:
-            workflow_definition = await workflow_repo.get_workflow_definition(wf_id)
+            workflow_definition = await wf_def_repo.get_workflow_definition(wf_id)
             if not workflow_definition:
                 raise ValueError(f"Workflow definition not found: {wf_id}")
             base = {
@@ -407,6 +421,34 @@ class JobSchedulerService:
                 "created_at": datetime.now(timezone.utc).isoformat(),
             }
             await JobRepository.create_job(job_id, request.job_type.value, job_payload)
+
+            try:
+                owner_uid = job_row.get("user_id")
+                if not owner_uid:
+                    logger.warning(
+                        "Scheduled workflow %s: missing job user_id — skipping pending workflow_logs seed",
+                        job_id,
+                    )
+                else:
+                    pending_log = {
+                        "execution_id": job_id,
+                        "workflow_name": spec.get("name") or request.name,
+                        "program_name": program_name,
+                        "program_id": spec.get("program_id"),
+                        "user_id": str(owner_uid),
+                        "workflow_definition_id": spec.get("workflow_id"),
+                        "result": "pending",
+                        "workflow_steps": [],
+                        "workflow_definition": copy.deepcopy(spec),
+                    }
+                    await WorkflowRepository.create_workflow_log(pending_log)
+            except Exception as exc:
+                logger.warning(
+                    "Scheduled workflow pending log seed failed for execution %s: %s",
+                    job_id,
+                    exc,
+                )
+
             await k8s_service.create_runner_job(spec)
             logger.info(
                 f"Created workflow runner job for scheduled workflow: {job_id} program={program_name}"
@@ -422,11 +464,22 @@ class JobSchedulerService:
 
         if monitor_coros:
             results = await asyncio.gather(*monitor_coros, return_exceptions=True)
-            failed = any(isinstance(r, Exception) for r in results) or any(r is not True for r in results if not isinstance(r, Exception))
-            if failed:
-                await self._update_scheduled_job_status(schedule_id, JobStatus.FAILED)
+            disposable = self._job_row_is_disposable_waf_one_shot_workflow(job_row)
+            if disposable:
+                deleted = await self.delete_scheduled_job(schedule_id)
+                if not deleted:
+                    logger.warning(
+                        "Failed to delete disposable WAF one-shot schedule row %s after execution",
+                        schedule_id,
+                    )
             else:
-                await self._update_scheduled_job_status(schedule_id, JobStatus.SCHEDULED)
+                failed = any(isinstance(r, Exception) for r in results) or any(
+                    r is not True for r in results if not isinstance(r, Exception)
+                )
+                if failed:
+                    await self._update_scheduled_job_status(schedule_id, JobStatus.FAILED)
+                else:
+                    await self._update_scheduled_job_status(schedule_id, JobStatus.SCHEDULED)
         else:
             await self._update_scheduled_job_status(schedule_id, JobStatus.SCHEDULED)
 
@@ -596,8 +649,9 @@ class JobSchedulerService:
             
             # Remove from database
             success = await ScheduledJobRepository.delete_scheduled_job(schedule_id)
-            
+
             if success:
+                self.scheduled_jobs.pop(schedule_id, None)
                 logger.info(f"Deleted scheduled job {schedule_id}")
                 return True
             else:
