@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.28.0](https://github.com/ReconHawx/reconhawx/compare/v0.27.1...v0.28.0) (2026-05-03)
+
+
+### Features
+
+* **admin:** manage WAF timing and runner env from system settings ([8158623](https://github.com/ReconHawx/reconhawx/commit/8158623f05c1e50df4c3c38f43bedab1f45959e0))
+* **admin:** show worker WAF block status per node in System Status ([4b73002](https://github.com/ReconHawx/reconhawx/commit/4b73002ec612095c754aba796df6fd90c8ef890c))
+
 ## [0.27.1](https://github.com/ReconHawx/reconhawx/compare/v0.27.0...v0.27.1) (2026-05-03)
 
 
