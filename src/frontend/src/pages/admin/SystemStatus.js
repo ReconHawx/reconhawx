@@ -18,6 +18,7 @@ import { adminAPI } from '../../services/api';
 import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
 import { EventStatsInner } from './EventStats';
 import { CTMonitorInner } from './CTMonitor';
+import { WorkerStatusInner } from './WorkerStatus';
 
 const STATUS_VARIANT = {
   available: 'success',
@@ -26,11 +27,13 @@ const STATUS_VARIANT = {
 };
 
 const TAB_DEPLOYMENTS = 'deployments';
+const TAB_WORKERS = 'worker-status';
 const TAB_EVENTS = 'events';
 const TAB_CT = 'ct-monitor';
 
 const TAB_TITLES = {
   [TAB_DEPLOYMENTS]: 'Deployments',
+  [TAB_WORKERS]: 'Worker Status',
   [TAB_EVENTS]: 'Event queue',
   [TAB_CT]: 'CT Monitor',
 };
@@ -42,7 +45,7 @@ function SystemStatus() {
   const [searchParams, setSearchParams] = useSearchParams();
 
   const allowedTabs = useMemo(() => {
-    if (superuser) return [TAB_DEPLOYMENTS, TAB_EVENTS, TAB_CT];
+    if (superuser) return [TAB_DEPLOYMENTS, TAB_WORKERS, TAB_EVENTS, TAB_CT];
     if (admin) return [TAB_EVENTS];
     return [];
   }, [superuser, admin]);
@@ -203,6 +206,11 @@ function SystemStatus() {
         {superuser && (
           <Tab eventKey={TAB_DEPLOYMENTS} title="Deployments">
             {deploymentsBody}
+          </Tab>
+        )}
+        {superuser && (
+          <Tab eventKey={TAB_WORKERS} title="Worker Status">
+            <WorkerStatusInner embedded />
           </Tab>
         )}
         <Tab eventKey={TAB_EVENTS} title="Event queue">

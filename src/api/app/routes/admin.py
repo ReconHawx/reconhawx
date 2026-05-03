@@ -27,6 +27,7 @@ from services.workflow_waf_auto_rerun_settings import (
     SECONDARY_WINDOW_MIN,
 )
 from datetime import datetime
+import asyncio
 import logging
 import os
 import httpx
@@ -1511,6 +1512,50 @@ async def get_system_status(
     return {
         "app_version": os.getenv("APP_VERSION", "dev"),
         "services": services,
+    }
+
+
+@router.get("/worker-status")
+async def get_worker_status(
+    current_user: UserResponse = Depends(require_superuser),
+):
+    """Worker nodes plus per-node WAF quarantine blocks from Redis."""
+    from services.kubernetes import KubernetesService
+    from services.worker_waf_status import get_worker_waf_status
+
+    try:
+        k8s = KubernetesService()
+        cluster_nodes = k8s.list_worker_nodes()
+    except Exception as e:
+        logger.error("list_worker_nodes failed: %s", e)
+        cluster_nodes = []
+
+    waf = await asyncio.to_thread(get_worker_waf_status)
+    by_node: Dict[str, Any] = dict(waf.get("blocked_by_node") or {})
+    rows: List[Dict[str, Any]] = []
+    for n in cluster_nodes:
+        name = n["name"]
+        targets = list(by_node.pop(name, []))
+        rows.append({
+            **n,
+            "blocked_count": len(targets),
+            "targets": targets,
+            "orphan": False,
+        })
+    for orphan_name in sorted(by_node.keys()):
+        targets = list(by_node[orphan_name])
+        rows.append({
+            "name": orphan_name,
+            "ready": None,
+            "blocked_count": len(targets),
+            "targets": targets,
+            "orphan": True,
+        })
+
+    return {
+        "redis_connected": bool(waf.get("redis_connected")),
+        "redis_error": waf.get("error"),
+        "nodes": rows,
     }
 
 

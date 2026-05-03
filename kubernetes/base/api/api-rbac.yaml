@@ -39,4 +39,31 @@ subjects:
 roleRef:
   kind: Role
   name: job-manager
-  apiGroup: rbac.authorization.k8s.io 
+  apiGroup: rbac.authorization.k8s.io
+---
+# Cluster-scoped: API lists worker nodes for Admin → System Status → Worker Status (WAF blocks).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: reconhawx-api-node-reader
+  labels:
+    app: api
+rules:
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: reconhawx-api-node-reader
+  labels:
+    app: api
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: reconhawx-api-node-reader
+subjects:
+  - kind: ServiceAccount
+    name: api-sa
+    namespace: reconhawx

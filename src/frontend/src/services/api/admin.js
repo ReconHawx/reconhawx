@@ -373,6 +373,11 @@ export const adminAPI = {
     return response.data;
   },
 
+  getWorkerStatus: async () => {
+    const response = await api.get('/admin/worker-status');
+    return response.data;
+  },
+
   // Database backup / restore (superuser)
   getDatabaseBackupStatus: async () => {
     const response = await api.get('/admin/database/status');

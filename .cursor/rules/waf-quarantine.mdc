@@ -1,13 +1,13 @@
 ---
 description: WAF-aware worker node quarantine (precheck, Redis reputation, scheduling)
-globs: ["src/runner/app/services/waf_*.py", "src/runner/app/services/waf_detection.py", "src/runner/app/services/kubernetes.py", "src/runner/app/task_executor.py", "src/runner/app/worker_job_manager.py", "src/runner/app/run-workflow.py", "src/runner/app/workflow_definition_snapshot.py", "src/worker/files/waf-block/**", "src/worker/app/command_wrapper.py", "src/api/app/services/waf_auto_rerun.py", "src/api/app/services/workflow_waf_auto_rerun_settings.py", "src/api/app/services/job_scheduler.py", "src/api/app/routes/workflows.py"]
+globs: ["src/runner/app/services/waf_*.py", "src/runner/app/services/waf_detection.py", "src/runner/app/services/kubernetes.py", "src/runner/app/task_executor.py", "src/runner/app/worker_job_manager.py", "src/runner/app/run-workflow.py", "src/runner/app/workflow_definition_snapshot.py", "src/worker/files/waf-block/**", "src/worker/app/command_wrapper.py", "src/api/app/services/waf_auto_rerun.py", "src/api/app/services/workflow_waf_auto_rerun_settings.py", "src/api/app/services/worker_waf_status.py", "src/api/app/services/job_scheduler.py", "src/api/app/routes/workflows.py"]
 ---
 
 # WAF quarantine (runner + worker)
 
 Per **(worker node, canonical target)** Redis reputation blocks nodes that hit WAF challenges; heavy HTTP jobs get `NodeAffinity` `NotIn` on **`WAF_NODE_LABEL`** (default `kubernetes.io/hostname`). The **precheck** issues one worker **Job per node**, pinned with **`required_nodes` → affinity `In`=[that host], and pumps all pending targets through one nuclei stdin on that Pod (not one Job per `(target × node)`). Worker Pods expose **`NODE_NAME` / `POD_NAME`** via Downward API; NATS payloads include **`node_name` / `pod_name`** for attribution.
 
-The runner discovers labeled worker nodes with **`KubernetesService.list_worker_nodes`** (Kube API `nodes` **list**, cluster-scoped). The ServiceAccount needs **`reconhawx-runner-node-reader`** (`kubernetes/base/runner/runner-rbac.yaml` — **`ClusterRole` + `ClusterRoleBinding`** bound to **`runner-service-account`**). Fresh installs/upgrades applying `kubernetes/base/` or **`base-update/`** pick this up; if you pasted an older RBAC snippet, re-apply the bundle so precheck does not silently skip (**`WAF_DETECTION=off`** is unrelated).
+The runner discovers labeled worker nodes with **`KubernetesService.list_worker_nodes`** (Kube API `nodes` **list**, cluster-scoped). The ServiceAccount needs **`reconhawx-runner-node-reader`** (`kubernetes/base/runner/runner-rbac.yaml` — **`ClusterRole` + `ClusterRoleBinding`** bound to **`runner-service-account`**). The API pod uses **`reconhawx-api-node-reader`** bound to **`api-sa`** for **Admin → System Status → Worker Status** (same node list). Fresh installs/upgrades applying `kubernetes/base/` or **`base-update/`** pick this up; if you pasted an older RBAC snippet, re-apply the bundle so precheck does not silently skip (**`WAF_DETECTION=off`** is unrelated).
 
 ## Code map
 
@@ -23,6 +23,7 @@ The runner discovers labeled worker nodes with **`KubernetesService.list_worker_
 | Persist `workflow_logs.waf_summary` + terminal `cancelled_waf` / `partial_waf` | API [`routes/workflows.py`](../../src/api/app/routes/workflows.py), [`repository/workflow_repo.py`](../../src/api/app/repository/workflow_repo.py) |
 | **Scheduled workflows:** pending `workflow_logs` seed + **`user_id`** (`JobSchedulerService` before runner Job create) | API [`services/job_scheduler.py`](../../src/api/app/services/job_scheduler.py) (`_execute_multi_program_workflow`) |
 | **`system_settings.workflow_waf_auto_rerun`** enable + max chain (`waf_rerun_attempt`), Admin UI | [`services/workflow_waf_auto_rerun_settings.py`](../../src/api/app/services/workflow_waf_auto_rerun_settings.py), [`routes/admin.py`](../../src/api/app/routes/admin.py), [`waf_auto_rerun.py`](../../src/api/app/services/waf_auto_rerun.py) |
+| **Admin UI:** per-node WAF blocks (`GET /admin/worker-status`, Redis `waf:block:*`) | [`services/worker_waf_status.py`](../../src/api/app/services/worker_waf_status.py), API [`services/kubernetes.py`](../../src/api/app/services/kubernetes.py) `list_worker_nodes`, **`reconhawx-api-node-reader`** on **`api-sa`** ([`kubernetes/base/api/api-rbac.yaml`](../../kubernetes/base/api/api-rbac.yaml)) |
 | Runner log snapshot: **`workflow_definition.metadata`** + **`priority`** from ConfigMap | [`workflow_definition_snapshot.py`](../../src/runner/app/workflow_definition_snapshot.py), wired from [`run-workflow.py`](../../src/runner/app/run-workflow.py) |
 
 ## Workflow-level result + summary (API UI)

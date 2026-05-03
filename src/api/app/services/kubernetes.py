@@ -1404,6 +1404,27 @@ class KubernetesService:
             })
         return results
 
+    def list_worker_nodes(self) -> List[Dict[str, Any]]:
+        """Nodes labeled ``reconhawx.worker=true`` with Ready condition (for admin worker/WAF status)."""
+        try:
+            resp = self.v1.list_node(label_selector="reconhawx.worker=true")
+        except ApiException as e:
+            logger.error("Failed to list worker nodes: %s", e)
+            return []
+
+        nodes: List[Dict[str, Any]] = []
+        for n in resp.items or []:
+            name = n.metadata.name if n.metadata else None
+            if not name:
+                continue
+            ready = False
+            for cond in n.status.conditions or []:
+                if cond.type == "Ready":
+                    ready = cond.status == "True"
+                    break
+            nodes.append({"name": name, "ready": bool(ready)})
+        return sorted(nodes, key=lambda x: x["name"])
+
     def _read_pod_env(
         self,
         match_labels: Dict[str, str],
