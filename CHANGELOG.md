@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.27.1](https://github.com/ReconHawx/reconhawx/compare/v0.27.0...v0.27.1) (2026-05-03)
+
+
+### Bug Fixes
+
+* restore default re-run delay ([72fd2fa](https://github.com/ReconHawx/reconhawx/commit/72fd2faf17872d25c42627c795793b435e60feb7))
+
 ## [0.27.0](https://github.com/ReconHawx/reconhawx/compare/v0.26.1...v0.27.0) (2026-05-03)
 
 
