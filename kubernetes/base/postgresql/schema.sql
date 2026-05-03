@@ -1,7 +1,10 @@
 --
 -- PostgreSQL database dump
 --
--- Dumped from database version 15.15 (Debian 15.15-1.pgdg13+1)
+
+\restrict VRgO7bKHtbJQWrhsiJ6cMvosQzTWbUYoVSIyunhewZ2nN3BZzNZrEWTyiSIAl8m
+
+-- Dumped from database version 15.17 (Debian 15.17-1.pgdg13+1)
 -- Dumped by pg_dump version 15.17
 
 SET statement_timeout = 0;
@@ -1672,7 +1675,6 @@ CREATE TABLE public.workflow_logs (
     id uuid NOT NULL,
     workflow_name character varying(255) NOT NULL,
     program_id uuid NOT NULL,
-    user_id uuid,
     execution_id character varying(255) NOT NULL,
     status character varying(20) NOT NULL,
     result_data jsonb,
@@ -1685,7 +1687,8 @@ CREATE TABLE public.workflow_logs (
     runner_pod_output text,
     task_execution_logs jsonb DEFAULT '[]'::jsonb,
     workflow_id uuid,
-    waf_summary jsonb
+    waf_summary jsonb,
+    user_id uuid
 );
 
 
@@ -2747,6 +2750,13 @@ CREATE INDEX idx_wordlists_is_dynamic ON public.wordlists USING btree (is_dynami
 
 
 --
+-- Name: idx_workflow_logs_user_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_workflow_logs_user_id ON public.workflow_logs USING btree (user_id);
+
+
+--
 -- Name: ips_ip_address_program_id_unique; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3496,13 +3506,6 @@ CREATE INDEX ix_workflow_logs_program_id ON public.workflow_logs USING btree (pr
 
 
 --
--- Name: ix_workflow_logs_user_id; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX ix_workflow_logs_user_id ON public.workflow_logs USING btree (user_id);
-
-
---
 -- Name: ix_workflow_logs_started_at; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -4045,3 +4048,6 @@ ALTER TABLE ONLY public.wpscan_findings
 --
 -- PostgreSQL database dump complete
 --
+
+\unrestrict VRgO7bKHtbJQWrhsiJ6cMvosQzTWbUYoVSIyunhewZ2nN3BZzNZrEWTyiSIAl8m
+
