@@ -2,7 +2,7 @@ from typing import List, Dict, Any, Optional
 import logging
 from datetime import datetime
 from models.base import utcnow
-from sqlalchemy import desc
+from sqlalchemy import and_, desc, or_
 from sqlalchemy.exc import SQLAlchemyError
 from models.postgres import ScheduledJob, JobExecutionHistory, Program
 from db import get_db_session
@@ -254,6 +254,53 @@ class ScheduledJobRepository:
             return False
         except Exception as e:
             logger.error(f"Error updating scheduled job {schedule_id}: {str(e)}")
+            return False
+
+    @staticmethod
+    async def has_pending_waf_rerun_conflict(
+        triggering_execution_id: str,
+        lineage_root_execution_id: str,
+    ) -> bool:
+        """Return True if a WAF auto-rerun is already queued or running for this completion or lineage.
+
+        Uses ``scheduled_jobs.tags``: ``waf_auto_rerun``, ``parent:{uuid}``, ``chain_root:{root_uuid}``.
+        """
+        try:
+            trig = str(uuid.UUID(str(triggering_execution_id).strip()))
+            root = str(uuid.UUID(str(lineage_root_execution_id).strip()))
+        except ValueError:
+            return False
+        parent_tag = f"parent:{trig}"
+        chain_tag = f"chain_root:{root}"
+        wf_tag_list = ["waf_auto_rerun"]
+        try:
+            async with get_db_session() as db:
+                row = (
+                    db.query(ScheduledJob)
+                    .filter(
+                        ScheduledJob.job_type == "workflow",
+                        ScheduledJob.enabled.is_(True),
+                        ScheduledJob.status.in_(["scheduled", "running"]),
+                        or_(
+                            and_(
+                                ScheduledJob.tags.contains(wf_tag_list),
+                                ScheduledJob.tags.contains([parent_tag]),
+                            ),
+                            and_(
+                                ScheduledJob.tags.contains(wf_tag_list),
+                                ScheduledJob.tags.contains([chain_tag]),
+                            ),
+                        ),
+                    )
+                    .first()
+                )
+                return row is not None
+
+        except SQLAlchemyError as e:
+            logger.error("Database error checking WAF rerun pending conflict: %s", str(e))
+            return False
+        except Exception as e:
+            logger.error("Error checking WAF rerun pending conflict: %s", str(e))
             return False
 
     @staticmethod

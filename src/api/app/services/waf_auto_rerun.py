@@ -9,6 +9,7 @@ import copy
 import logging
 import os
 import re
+import uuid
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 from pathlib import Path
@@ -48,7 +49,7 @@ _PRIORITY_MAPPING_KEYS = (
 
 def _rerun_delay_seconds() -> int:
     try:
-        return int(os.getenv("WAF_AUTO_RERUN_DELAY_SECONDS", "2100"))
+        return int(os.getenv("WAF_AUTO_RERUN_DELAY_SECONDS", "90"))
     except ValueError:
         return 2100
 
@@ -289,7 +290,37 @@ async def maybe_schedule_waf_rerun(workflow_log: Optional[Dict[str, Any]]) -> Op
         logger.warning("WAF auto-rerun: no heavy tasks could be remapped (%s)", execution_id)
         return None
 
-    new_meta = {**meta, "parent_execution_id": execution_id, "waf_rerun_attempt": next_attempt, "source": "waf_auto_rerun"}
+    er = meta.get("root_execution_id")
+    lineage_root_str: Optional[str] = None
+    if isinstance(er, str) and er.strip():
+        try:
+            lineage_root_str = str(uuid.UUID(er.strip()))
+        except ValueError:
+            lineage_root_str = None
+    if lineage_root_str is None:
+        try:
+            lineage_root_str = str(uuid.UUID(str(execution_id).strip()))
+        except ValueError:
+            logger.warning("WAF auto-rerun: invalid execution_id UUID for chain (%s)", execution_id)
+            return None
+
+    from repository.scheduled_job_repo import ScheduledJobRepository
+
+    if await ScheduledJobRepository.has_pending_waf_rerun_conflict(execution_id, lineage_root_str):
+        logger.info(
+            "WAF auto-rerun: skipping duplicate enqueue (completion=%s chain_root=%s)",
+            execution_id,
+            lineage_root_str,
+        )
+        return None
+
+    new_meta = {
+        **meta,
+        "parent_execution_id": execution_id,
+        "waf_rerun_attempt": next_attempt,
+        "source": "waf_auto_rerun",
+        "root_execution_id": lineage_root_str,
+    }
     wf_name = wf_def.get("name") or workflow_log.get("workflow_name") or "workflow"
 
     vars_copy = (
@@ -332,7 +363,7 @@ async def maybe_schedule_waf_rerun(workflow_log: Optional[Dict[str, Any]]) -> Op
         name=sched_label,
         description=descr[:500],
         program_name=program_name,
-        tags=["waf_auto_rerun", f"parent:{execution_id}"],
+        tags=["waf_auto_rerun", f"parent:{execution_id}", f"chain_root:{lineage_root_str}"],
     )
 
     try:
