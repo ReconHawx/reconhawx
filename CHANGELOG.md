@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.27.0](https://github.com/ReconHawx/reconhawx/compare/v0.26.1...v0.27.0) (2026-05-03)
+
+
+### Features
+
+* **api,runner:** improve scheduled workflows and WAF rerun execution plumbing ([5d26bfd](https://github.com/ReconHawx/reconhawx/commit/5d26bfd4f418f1ccffff375c6cd931b5c049bcd4))
+* **api:** add WAF auto-rerun schedules and workflow admin settings ([8f2f18f](https://github.com/ReconHawx/reconhawx/commit/8f2f18ffed637c2f760340720af641187fcc6ef3))
+* **runner:** keep blocked target strings on WAF step status ([4c40f51](https://github.com/ReconHawx/reconhawx/commit/4c40f519cc543671ab859d47fd362ff879fee29b))
+* **workflows:** show WAF quarantine outcomes on run detail and logs ([3a53a3f](https://github.com/ReconHawx/reconhawx/commit/3a53a3f1b1181d23323fd1fade31405ca98adcc5))
+
+
+### Bug Fixes
+
+* **api:** deduplicate queued WAF auto-rerun schedules ([ba40378](https://github.com/ReconHawx/reconhawx/commit/ba40378ce164d3726b8a9680cff7ff8c70a9c063))
+
 ## [0.26.1](https://github.com/ReconHawx/reconhawx/compare/v0.26.0...v0.26.1) (2026-05-02)
 
 
