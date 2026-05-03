@@ -19,7 +19,7 @@ spec:
         reconhawx.runner: "true"
       containers:
       - name: postgresql
-        image: postgres:15
+        image: postgres:15.17
         ports:
         - containerPort: 5432
           name: postgres
