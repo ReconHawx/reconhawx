@@ -49,7 +49,7 @@ _PRIORITY_MAPPING_KEYS = (
 
 def _rerun_delay_seconds() -> int:
     try:
-        return int(os.getenv("WAF_AUTO_RERUN_DELAY_SECONDS", "90"))
+        return int(os.getenv("WAF_AUTO_RERUN_DELAY_SECONDS", "2100"))
     except ValueError:
         return 2100
 
