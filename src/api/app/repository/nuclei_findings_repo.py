@@ -11,6 +11,8 @@ from db import get_db_session
 # Direct import to avoid circular import
 from utils.query_filters import QueryFilterUtils, ProgramAccessMixin
 from utils.program_resolve import resolve_program_from_payload
+from utils.domain_utils import normalize_hostname
+from utils.url_utils import lower_url_host
 from services.event_publisher import publisher
 
 logger = logging.getLogger(__name__)
@@ -25,7 +27,18 @@ class NucleiFindingsRepository(ProgramAccessMixin):
         async with get_db_session() as db:
             try:
                 program = resolve_program_from_payload(db, finding_data)
-                
+
+                if finding_data.get("url"):
+                    finding_data["url"] = lower_url_host(str(finding_data["url"])) or finding_data["url"]
+                if finding_data.get("hostname"):
+                    finding_data["hostname"] = normalize_hostname(str(finding_data["hostname"]))
+                if finding_data.get("template_url") and isinstance(finding_data["template_url"], str):
+                    tu = finding_data["template_url"]
+                    if tu.startswith(("http://", "https://")):
+                        finding_data["template_url"] = lower_url_host(tu) or tu
+                if finding_data.get("scheme") and isinstance(finding_data["scheme"], str):
+                    finding_data["scheme"] = finding_data["scheme"].lower()
+
                 # Find IP if provided
                 ip = None
                 if finding_data.get('ip'):

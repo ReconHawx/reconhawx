@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict VRgO7bKHtbJQWrhsiJ6cMvosQzTWbUYoVSIyunhewZ2nN3BZzNZrEWTyiSIAl8m
+\restrict Ei7URu6RndHzDbbtAh1tq6LEUt25x54jgyvPh33LWngezWNWpBB3lby88K5eNFn
 
 -- Dumped from database version 15.17 (Debian 15.17-1.pgdg13+1)
 -- Dumped by pg_dump version 15.17
@@ -4049,5 +4049,5 @@ ALTER TABLE ONLY public.wpscan_findings
 -- PostgreSQL database dump complete
 --
 
-\unrestrict VRgO7bKHtbJQWrhsiJ6cMvosQzTWbUYoVSIyunhewZ2nN3BZzNZrEWTyiSIAl8m
+\unrestrict Ei7URu6RndHzDbbtAh1tq6LEUt25x54jgyvPh33LWngezWNWpBB3lby88K5eNFn
 

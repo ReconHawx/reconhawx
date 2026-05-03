@@ -3,11 +3,34 @@ Utility functions for domain processing and apex domain extraction.
 """
 import tldextract
 import logging
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from datetime import datetime
 import re
 
 logger = logging.getLogger(__name__)
+
+
+def normalize_hostname(value: Optional[str]) -> Optional[str]:
+    """
+    Normalize a hostname or FQDN for storage (strip, drop trailing dots, lowercase).
+
+    Does not strip ``www`` (unlike ``normalize_domain_for_comparison``).
+
+    Examples:
+        >>> normalize_hostname("  Foo.EXAMPLE.COM. ")
+        'foo.example.com'
+        >>> normalize_hostname(None)
+        None
+        >>> normalize_hostname("")
+        ''
+    """
+    if value is None:
+        return None
+    s = str(value).strip()
+    if not s:
+        return s
+    return s.rstrip(".").lower()
+
 
 def normalize_domain_for_comparison(domain: str) -> str:
     """

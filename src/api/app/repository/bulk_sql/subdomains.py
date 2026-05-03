@@ -15,7 +15,7 @@ from db import BatchSessionLocal
 from models.postgres import ApexDomain, IP, Program, Subdomain, SubdomainIP
 from repository.bulk_sql.config import sql_chunk_size
 from repository.bulk_sql.scope import domain_in_scope
-from utils.domain_utils import extract_apex_domain
+from utils.domain_utils import extract_apex_domain, normalize_hostname
 
 logger = logging.getLogger(__name__)
 
@@ -135,7 +135,13 @@ def upsert_subdomains_chunk(program_id: str, items: List[Dict[str, Any]]) -> Dic
             item = dict(raw)
             if not item.get("program_name"):
                 item["program_name"] = program_name_disp
-            hostname = item.get("name")
+            hostname = normalize_hostname(item.get("name"))
+            if hostname is not None:
+                item["name"] = hostname
+            if item.get("apex_domain"):
+                item["apex_domain"] = normalize_hostname(str(item["apex_domain"]))
+            if item.get("cname_record"):
+                item["cname_record"] = normalize_hostname(str(item["cname_record"]))
             if not hostname:
                 failed_count += 1
                 skipped_assets.append(

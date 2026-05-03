@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from uuid import UUID
 from sqlalchemy import and_
 
+from utils.domain_utils import normalize_hostname
 from models.postgres import (
     Program, ApexDomain, Subdomain
 )
@@ -377,8 +378,11 @@ class ApexDomainAssetsRepository(ProgramAccessMixin):
                 program = db.query(Program).filter(Program.name == apex_domain_data.get('program_name')).first()
                 if not program:
                     raise ValueError(f"Program '{apex_domain_data.get('program_name')}' not found")
-                
-                # Check if apex domain already exists for this program
+
+                if apex_domain_data.get('name') is not None:
+                    apex_domain_data['name'] = normalize_hostname(str(apex_domain_data['name'])) or apex_domain_data.get(
+                        'name'
+                    )
                 existing = db.query(ApexDomain).filter(
                     and_(ApexDomain.name == apex_domain_data.get('name'), ApexDomain.program_id == program.id)
                 ).first()

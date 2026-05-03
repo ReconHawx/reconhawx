@@ -11,6 +11,7 @@ from models.postgres import (
 )
 from db import get_db_session
 from utils.query_filters import ProgramAccessMixin
+from utils.domain_utils import normalize_hostname
 from services.event_publisher import publisher
 from repository.program_repo import ProgramRepository
 
@@ -234,6 +235,11 @@ class IPAssetsRepository(ProgramAccessMixin):
                 program = db.query(Program).filter(Program.name == ip_data.get('program_name')).first()
                 if not program:
                     raise ValueError(f"Program '{ip_data.get('program_name')}' not found")
+
+                if ip_data.get('ptr'):
+                    ip_data['ptr'] = normalize_hostname(str(ip_data['ptr']))
+                if ip_data.get('discovered_via_domain'):
+                    ip_data['discovered_via_domain'] = normalize_hostname(str(ip_data['discovered_via_domain']))
 
                 disco = ip_data.get("discovered_via_domain")
                 if disco and not await ProgramRepository.is_domain_in_scope(disco, program.name):

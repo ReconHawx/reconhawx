@@ -16,6 +16,8 @@ from db import BatchSessionLocal
 from models.postgres import Program, URL
 from repository.bulk_sql.config import sql_chunk_size
 from repository.bulk_sql.scope import domain_in_scope
+from utils.domain_utils import normalize_hostname
+from utils.url_utils import lower_url_host
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +25,7 @@ logger = logging.getLogger(__name__)
 def _hostname(item: Dict[str, Any]) -> Optional[str]:
     h = item.get("hostname")
     if h:
-        return str(h).strip()
+        return normalize_hostname(str(h)) or None
     u = item.get("url")
     if not u:
         return None
@@ -73,8 +75,8 @@ def upsert_urls_chunk(program_id: str, items: List[Dict[str, Any]]) -> Dict[str,
             item = dict(raw)
             if not item.get("program_name"):
                 item["program_name"] = program_name_disp
-            u = item.get("url")
-            if not u:
+            u_raw = item.get("url")
+            if not u_raw:
                 failed_count += 1
                 skipped_assets.append(
                     {
@@ -84,18 +86,24 @@ def upsert_urls_chunk(program_id: str, items: List[Dict[str, Any]]) -> Dict[str,
                     }
                 )
                 continue
-            if u in dedup:
+            u_norm = lower_url_host(str(u_raw)) or ""
+            item["url"] = u_norm
+            if item.get("hostname"):
+                item["hostname"] = normalize_hostname(str(item["hostname"])) or item["hostname"]
+            if item.get("final_url"):
+                item["final_url"] = lower_url_host(str(item["final_url"]))
+            if u_norm in dedup:
                 failed_count += 1
                 skipped_assets.append(
                     {
-                        "url": u,
+                        "url": u_norm,
                         "program_name": program_name_disp,
                         "error": "duplicate_url_in_batch",
                     }
                 )
                 continue
-            order.append(u)
-            dedup[u] = item
+            order.append(u_norm)
+            dedup[u_norm] = item
 
         rows: List[Dict[str, Any]] = []
         meta: List[Dict[str, Any]] = []

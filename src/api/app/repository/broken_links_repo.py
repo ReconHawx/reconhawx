@@ -9,6 +9,8 @@ from models.postgres import (
 )
 from db import get_db_session
 from utils.program_resolve import resolve_program_from_payload
+from utils.domain_utils import normalize_hostname
+from utils.url_utils import lower_url_host
 from utils.query_filters import ProgramAccessMixin
 from services.event_publisher import publisher
 
@@ -25,7 +27,12 @@ class BrokenLinksRepository(ProgramAccessMixin):
             try:
                 # Find program by name
                 program = resolve_program_from_payload(db, finding_data)
-                
+
+                if finding_data.get("domain"):
+                    finding_data["domain"] = normalize_hostname(str(finding_data["domain"]))
+                if finding_data.get("url"):
+                    finding_data["url"] = lower_url_host(str(finding_data["url"])) or finding_data["url"]
+
                 # Check if finding already exists based on unique constraint (program_id, url)
                 url = finding_data.get('url')
                 existing = None

@@ -1,9 +1,43 @@
+from __future__ import annotations
+
 from fastapi import Request
-from urllib.parse import urlparse
-from typing import List
+from urllib.parse import urlparse, urlsplit, urlunsplit
+from typing import List, Optional
 import logging
 
+from .domain_utils import is_valid_domain
+
 logger = logging.getLogger(__name__)
+
+
+def lower_url_host(url: Optional[str]) -> Optional[str]:
+    """
+    Lowercase only the scheme and netloc (host[:port], userinfo) of a URL;
+    preserve path, query string, and fragment casing.
+
+    Handles absolute URLs with a scheme and scheme-relative URLs (``//host/...``).
+    Leaves relative paths (no netloc) unchanged except for stripping.
+
+    Examples:
+        >>> lower_url_host("HTTPS://WWW.Example.COM:8443/Path?Q=1#Frag")
+        'https://www.example.com:8443/Path?Q=1#Frag'
+        >>> lower_url_host("//Foo.com/bar")
+        '//foo.com/bar'
+        >>> lower_url_host(None)
+        None
+        >>> lower_url_host("")
+        ''
+    """
+    if url is None:
+        return None
+    s = str(url).strip()
+    if not s:
+        return s
+    parts = urlsplit(s)
+    scheme = parts.scheme.lower() if parts.scheme else ""
+    netloc = parts.netloc.lower() if parts.netloc else ""
+    return urlunsplit((scheme, netloc, parts.path, parts.query, parts.fragment))
+
 
 def create_status_url(request: Request, resource_type: str, resource_id: str) -> str:
     """Create a status URL for a resource"""

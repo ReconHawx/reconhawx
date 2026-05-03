@@ -13,6 +13,8 @@ from models.postgres import (
 from db import get_db_session
 from utils.query_filters import ProgramAccessMixin
 from utils import get_root_url
+from utils.domain_utils import normalize_hostname
+from utils.url_utils import lower_url_host
 from repository.program_repo import ProgramRepository
 
 logger = logging.getLogger(__name__)
@@ -267,7 +269,12 @@ class UrlAssetsRepository(ProgramAccessMixin):
         """
         # Get current links for this URL
         current_links = {source.extracted_link.link_url for source in url_obj.extracted_link_sources}
-        new_links_set = {link.strip() for link in new_links if link and link.strip()}
+        new_links_set = set()
+        for link in new_links:
+            if link and link.strip():
+                ln = lower_url_host(link.strip())
+                if ln:
+                    new_links_set.add(ln)
 
         # Filter out links that are in scope (we only want external links)
         filtered_links = set()
@@ -481,6 +488,13 @@ class UrlAssetsRepository(ProgramAccessMixin):
         async with get_db_session() as db:
             try:
                 logger.debug(f"create_or_update_url called with URL data: {url_data}")
+                # Hostname / URL host stored lowercase; preserve path/query casing
+                if url_data.get('url'):
+                    url_data['url'] = lower_url_host(str(url_data['url'])) or url_data['url']
+                if url_data.get('hostname'):
+                    url_data['hostname'] = normalize_hostname(str(url_data['hostname']))
+                if url_data.get('final_url'):
+                    url_data['final_url'] = lower_url_host(str(url_data['final_url']))
                 # Find program by name
                 program = db.query(Program).filter(Program.name == url_data.get('program_name')).first()
                 if not program:
@@ -631,7 +645,7 @@ class UrlAssetsRepository(ProgramAccessMixin):
                     if 'extracted_links' in url_data and isinstance(url_data['extracted_links'], list):
                         for link_url in url_data['extracted_links']:
                             if link_url and link_url.strip():
-                                link_url = link_url.strip()
+                                link_url = lower_url_host(link_url.strip()) or link_url.strip()
 
                                 # Check if the link is in scope (skip if it is)
                                 try:
@@ -702,7 +716,7 @@ class UrlAssetsRepository(ProgramAccessMixin):
                 filtered_links = []
                 for link_url in links:
                     if link_url and link_url.strip():
-                        link_url = link_url.strip()
+                        link_url = lower_url_host(link_url.strip()) or link_url.strip()
                         try:
                             parsed = urlparse(link_url)
                             hostname = parsed.hostname
