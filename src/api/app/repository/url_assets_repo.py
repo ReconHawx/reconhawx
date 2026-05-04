@@ -947,64 +947,90 @@ class UrlAssetsRepository(ProgramAccessMixin):
                 else:  # sort by name
                     order_by = f"ORDER BY tech_name {sort_direction}"
                 
-                # Build optimized query using PostgreSQL to do the heavy lifting
-                # This fetches everything in ONE query instead of N+1 queries
+                # Cap the websites JSON list returned per technology. The badge count is
+                # always the true distinct-root-website count; this only bounds payload size
+                # so popular technologies (jQuery, etc.) don't ship megabytes per row.
+                websites_per_tech_limit = 100
+
+                # Performance design:
+                #   1. unique_websites: dedupe to one row per (tech, root_website). This is the
+                #      cardinality-reduction step — multiple URLs sharing a host:port collapse
+                #      into a single row before we count or aggregate.
+                #   2. ranked: a single window pass computes the true root-website count
+                #      (COUNT(*) OVER) and a row number used to cap the JSON payload.
+                #   3. tech_summary: json_agg ... FILTER (WHERE rn <= N) emits at most N
+                #      websites per technology while keeping website_count accurate.
                 sql_query = text(f"""
-                    WITH ranked_urls AS (
-                        SELECT 
-                            t.name as tech_name,
-                            u.id as url_id,
+                    WITH unique_websites AS (
+                        SELECT DISTINCT ON (t.name,
+                            CASE
+                                WHEN u.port IN (80, 443) OR u.port IS NULL THEN
+                                    COALESCE(u.scheme, 'http') || '://' || u.hostname
+                                ELSE
+                                    COALESCE(u.scheme, 'http') || '://' || u.hostname || ':' || u.port
+                            END)
+                            t.name AS tech_name,
+                            u.id AS url_id,
                             u.url,
                             u.hostname,
-                            u.scheme,
+                            COALESCE(u.scheme, 'http') AS scheme,
                             u.port,
-                            -- Create root website identifier
-                            CASE 
-                                WHEN u.port IN (80, 443) OR u.port IS NULL THEN 
+                            CASE
+                                WHEN u.port IN (80, 443) OR u.port IS NULL THEN
                                     COALESCE(u.scheme, 'http') || '://' || u.hostname
-                                ELSE 
+                                ELSE
                                     COALESCE(u.scheme, 'http') || '://' || u.hostname || ':' || u.port
-                            END as root_website,
-                            -- Rank URLs per technology to limit results
-                            ROW_NUMBER() OVER (PARTITION BY t.name ORDER BY u.url) as rn
+                            END AS root_website
                         FROM technologies t
                         JOIN url_technologies ut ON ut.technology_id = t.id
                         JOIN urls u ON u.id = ut.url_id
                         JOIN programs p ON p.id = t.program_id
                         WHERE {where_clause}
+                        ORDER BY t.name,
+                            CASE
+                                WHEN u.port IN (80, 443) OR u.port IS NULL THEN
+                                    COALESCE(u.scheme, 'http') || '://' || u.hostname
+                                ELSE
+                                    COALESCE(u.scheme, 'http') || '://' || u.hostname || ':' || u.port
+                            END,
+                            u.id
                     ),
-                    unique_websites AS (
-                        SELECT DISTINCT ON (tech_name, root_website)
+                    ranked AS (
+                        SELECT
                             tech_name,
                             url_id,
                             url,
                             hostname,
-                            COALESCE(scheme, 'http') as scheme,
+                            scheme,
                             port,
-                            root_website
-                        FROM ranked_urls
-                        WHERE rn <= 100  -- Limit to 100 URLs per technology for performance
+                            root_website,
+                            ROW_NUMBER() OVER (PARTITION BY tech_name ORDER BY root_website) AS rn,
+                            COUNT(*) OVER (PARTITION BY tech_name) AS website_count
+                        FROM unique_websites
                     ),
                     tech_summary AS (
-                        SELECT 
+                        SELECT
                             tech_name,
-                            COUNT(DISTINCT root_website) as website_count,
-                            json_agg(
-                                json_build_object(
-                                    'id', url_id,
-                                    'url', url,
-                                    'rootWebsite', root_website,
-                                    'host', hostname,
-                                    'scheme', scheme,
-                                    'port', port,
-                                    'technologies', ARRAY[tech_name]
-                                )
-                                ORDER BY root_website
-                            ) as websites
-                        FROM unique_websites
+                            MAX(website_count) AS website_count,
+                            COALESCE(
+                                json_agg(
+                                    json_build_object(
+                                        'id', url_id,
+                                        'url', url,
+                                        'rootWebsite', root_website,
+                                        'host', hostname,
+                                        'scheme', scheme,
+                                        'port', port,
+                                        'technologies', ARRAY[tech_name]
+                                    )
+                                    ORDER BY root_website
+                                ) FILTER (WHERE rn <= :website_limit),
+                                '[]'::json
+                            ) AS websites
+                        FROM ranked
                         GROUP BY tech_name
                     )
-                    SELECT 
+                    SELECT
                         tech_name,
                         website_count,
                         websites
@@ -1012,23 +1038,22 @@ class UrlAssetsRepository(ProgramAccessMixin):
                     {order_by}
                     LIMIT :limit OFFSET :offset
                 """)
-                
-                # Add pagination parameters
+
                 params['limit'] = page_size
                 params['offset'] = offset
-                
-                # Execute query with parameters
+                params['website_limit'] = websites_per_tech_limit
+
                 result = db.execute(sql_query, params)
                 rows = result.fetchall()
-                
-                # Format results
+
                 technologies = []
                 for row in rows:
                     tech_name, website_count, websites_json = row
+                    website_count = int(website_count or 0)
                     technologies.append({
                         'name': tech_name,
                         'count': website_count,
-                        'total_urls': website_count,  # Approximate since we limit
+                        'total_urls': website_count,
                         'websites': websites_json or []
                     })
                 
