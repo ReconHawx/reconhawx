@@ -74,7 +74,7 @@ port_scan:
 nuclei_scan:
   last_execution_threshold: 24
   timeout: 900
-  chunk_size: 10
+  chunk_size: 2
   template:
     official: []
     custom: []
@@ -123,7 +123,7 @@ detect_broken_links:
 screenshot_website:
   last_execution_threshold: 24
   timeout: 60
-  chunk_size: 10
+  chunk_size: 2
   input_types: [url]
   output_types: [screenshot]
 crawl_website:
@@ -136,7 +136,7 @@ crawl_website:
 fuzz_website:
   last_execution_threshold: 24
   timeout: 300
-  chunk_size: 5
+  chunk_size: 1
   wordlist: /workspace/files/webcontent_test.txt
   input_types: [url]
   output_types: [url]
