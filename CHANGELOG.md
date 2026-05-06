@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.30.0](https://github.com/ReconHawx/reconhawx/compare/v0.29.0...v0.30.0) (2026-05-06)
+
+
+### Features
+
+* **dashboard:** faster home dashboard with summary API and deep links ([d1be538](https://github.com/ReconHawx/reconhawx/commit/d1be538e982f7a9a3cab762dc1e485f67eb5563f))
+
+
+### Bug Fixes
+
+* **api:** report accurate website counts per technology ([a16af74](https://github.com/ReconHawx/reconhawx/commit/a16af7453b300d94a7aea7e2f3e61ad5b5930773))
+
 ## [0.29.0](https://github.com/ReconHawx/reconhawx/compare/v0.28.0...v0.29.0) (2026-05-03)
 
 
