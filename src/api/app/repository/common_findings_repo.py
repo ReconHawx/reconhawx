@@ -1,374 +1,412 @@
 from utils.query_filters import ProgramAccessMixin
-from typing import Optional, Dict, Any, List
+from typing import Dict, Any, List, Optional
+
 from models.base import utcnow
-from models.postgres import FindingsStatsResponse, AggregatedFindingsStatsResponse, NucleiFindingStats, TyposquatFindingStats
-from sqlalchemy import and_, desc
+from models.postgres import (
+    FindingsStatsResponse,
+    AggregatedFindingsStatsResponse,
+    NucleiFindingStats,
+    TyposquatFindingStats,
+    FindingsTrendBucket,
+    FindingsTrendsResponse,
+)
+from sqlalchemy import desc, func, case
 from models.postgres import Program, NucleiFinding, TyposquatDomain
-from db import get_db_session
+from db import SessionLocal
+from fastapi.concurrency import run_in_threadpool
+from sqlalchemy.orm import joinedload
 import logging
+from datetime import datetime, date, timedelta
 
 logger = logging.getLogger(__name__)
+
 
 class CommonFindingsRepository(ProgramAccessMixin):
     """PostgreSQL repository for findings operations"""
 
+    _FINDING_KEYS = frozenset({"nuclei", "typosquat"})
+
     @staticmethod
-    async def get_latest_findings(program_name: Optional[str] = None, limit: int = 5, days_ago: Optional[int] = None) -> Dict[str, List]:
-        """Get the latest findings of each type for dashboard display"""
+    def _normalize_finding_types(finding_types: Optional[List[str]]) -> frozenset:
+        if not finding_types:
+            return CommonFindingsRepository._FINDING_KEYS
+        out = set()
+        for raw in finding_types:
+            if raw is None or not str(raw).strip():
+                continue
+            k = str(raw).strip().lower()
+            if k in CommonFindingsRepository._FINDING_KEYS:
+                out.add(k)
+        return frozenset(out) if out else CommonFindingsRepository._FINDING_KEYS
+
+    @staticmethod
+    def _compute_findings_stats_bundle(db, program_ids: List[Any]):
+        nrow = (
+            db.query(
+                func.count(NucleiFinding.id),
+                func.count().filter(NucleiFinding.severity == "critical"),
+                func.count().filter(NucleiFinding.severity == "high"),
+                func.count().filter(NucleiFinding.severity == "medium"),
+                func.count().filter(NucleiFinding.severity == "low"),
+                func.count().filter(NucleiFinding.severity == "info"),
+            )
+            .filter(NucleiFinding.program_id.in_(program_ids))
+            .one()
+        )
+
+        trow = (
+            db.query(
+                func.count(TyposquatDomain.id),
+                func.count().filter(TyposquatDomain.status == "new"),
+                func.count().filter(TyposquatDomain.status == "investigating"),
+                func.count().filter(TyposquatDomain.status == "resolved"),
+                func.count().filter(TyposquatDomain.status == "dismissed"),
+            )
+            .filter(TyposquatDomain.program_id.in_(program_ids))
+            .one()
+        )
+
+        return dict(
+            nuclei_stats=NucleiFindingStats(
+                total=int(nrow[0] or 0),
+                critical=int(nrow[1] or 0),
+                high=int(nrow[2] or 0),
+                medium=int(nrow[3] or 0),
+                low=int(nrow[4] or 0),
+                info=int(nrow[5] or 0),
+            ),
+            typosquat_stats=TyposquatFindingStats(
+                total=int(trow[0] or 0),
+                new=int(trow[1] or 0),
+                inprogress=int(trow[2] or 0),
+                resolved=int(trow[3] or 0),
+                dismissed=int(trow[4] or 0),
+            ),
+        )
+
+    @staticmethod
+    def _get_detailed_findings_stats_sync(filter_data: Dict[str, Any]) -> FindingsStatsResponse:
+        program_name = filter_data.get("program_name")
+        if not program_name:
+            logger.warning("No program_name provided for findings stats")
+            return FindingsStatsResponse()
+
+        db = SessionLocal()
         try:
-            logger.info(f"Getting latest findings for program: {program_name}, limit: {limit}, days_ago: {days_ago}")
-            async with get_db_session() as db:
-                # Get program ID for filtering if specified
-                program_id = None
-                if program_name:
-                    program = db.query(Program).filter(Program.name == program_name).first()
-                    if not program:
-                        logger.warning(f"Program {program_name} not found")
-                        return {}
-                    program_id = program.id
-                    logger.info(f"Found program {program_name} with ID: {program_id}")
-                else:
-                    logger.info("No program specified, getting findings from all programs")
-                
-                # Calculate time filter if specified
-                from datetime import datetime, timedelta
-                time_filter = None
-                if days_ago:
-                    cutoff_date = utcnow() - timedelta(days=days_ago)
-                    time_filter = cutoff_date
-                    logger.info(f"Filtering findings created after: {cutoff_date}")
-                
-                latest_findings = {}
-                
-                try:
-                    # --- Latest Nuclei Findings ---
-                    nuclei_query = db.query(NucleiFinding).join(Program)
-                    
-                    if program_id:
-                        nuclei_query = nuclei_query.filter(NucleiFinding.program_id == program_id)
-                    
-                    if time_filter:
-                        nuclei_query = nuclei_query.filter(NucleiFinding.created_at >= time_filter)
-                    
-                    latest_nuclei = nuclei_query.order_by(desc(NucleiFinding.created_at)).limit(limit).all()
-                    
-                    # Also check total count for this program
-                    total_count_query = db.query(NucleiFinding).join(Program)
-                    if program_id:
-                        total_count_query = total_count_query.filter(NucleiFinding.program_id == program_id)
-                    total_count = total_count_query.count()
-                    
-                    latest_findings['nuclei'] = [
-                        {
-                            'id': finding.id,
-                            'name': finding.name,
-                            'severity': finding.severity,
-                            'url': finding.url,
-                            'template_id': finding.template_id,
-                            'created_at': finding.created_at,
-                            'program_name': finding.program.name if finding.program else None,
-                            'status': getattr(finding, 'status', 'unknown'),  # Handle missing status field
-                            'hostname': getattr(finding, 'hostname', None),
-                            'type': getattr(finding, 'finding_type', None)
-                        }
-                        for finding in latest_nuclei
-                    ]
-                    
-                except Exception as e:
-                    logger.error(f"Error getting nuclei findings: {e}")
-                    latest_findings['nuclei'] = []
-                
-                try:
-                    # --- Latest Typosquat Findings ---
-                    typosquat_query = db.query(TyposquatDomain).join(Program)
-                    if program_id:
-                        typosquat_query = typosquat_query.filter(TyposquatDomain.program_id == program_id)
-                    if time_filter:
-                        typosquat_query = typosquat_query.filter(TyposquatDomain.created_at >= time_filter)
-                    latest_typosquat = typosquat_query.order_by(desc(TyposquatDomain.created_at)).limit(limit).all()
-                    logger.info(f"Found {len(latest_typosquat)} latest typosquat findings")
-                    latest_findings['typosquat'] = [
-                        {
-                            'id': finding.id,
-                            'typo_domain': finding.typo_domain,
-                            'status': finding.status,
-                            'risk_score': finding.risk_score,
-                            'created_at': finding.created_at,
-                            'program_name': finding.program.name if finding.program else None
-                        }
-                        for finding in latest_typosquat
-                    ]
-                except Exception as e:
-                    logger.error(f"Error getting typosquat findings: {e}")
-                    latest_findings['typosquat'] = []
-                
-                logger.info(f"Returning latest findings: {list(latest_findings.keys())}")
-                return latest_findings
-                
-        except Exception as e:
-            logger.exception(f"Error getting latest findings: {str(e)}")
-            return {}
+            program = db.query(Program).filter(Program.name == program_name).first()
+            if not program:
+                logger.warning("Program %s not found", program_name)
+                return FindingsStatsResponse()
+
+            bundle = CommonFindingsRepository._compute_findings_stats_bundle(db, [program.id])
+            return FindingsStatsResponse(
+                nuclei_findings=bundle["nuclei_stats"],
+                typosquat_findings=bundle["typosquat_stats"],
+            )
+        except Exception as exc:
+            logger.exception("Error calculating detailed findings stats for filter %s: %s", filter_data, exc)
+            return FindingsStatsResponse(
+                nuclei_findings=NucleiFindingStats(),
+                typosquat_findings=TyposquatFindingStats(),
+            )
+        finally:
+            db.close()
+
+    @staticmethod
+    def _get_aggregated_findings_stats_sync(program_names: Optional[List[str]]) -> AggregatedFindingsStatsResponse:
+        db = SessionLocal()
+        try:
+            if program_names:
+                programs = db.query(Program).filter(Program.name.in_(program_names)).all()
+                program_ids = [p.id for p in programs]
+                total_programs = len(programs)
+            else:
+                programs = db.query(Program).all()
+                program_ids = [p.id for p in programs]
+                total_programs = len(programs)
+
+            if not program_ids:
+                logger.warning("No programs found for aggregated findings stats")
+                return AggregatedFindingsStatsResponse()
+
+            bundle = CommonFindingsRepository._compute_findings_stats_bundle(db, program_ids)
+            return AggregatedFindingsStatsResponse(
+                total_programs=total_programs,
+                nuclei_findings=bundle["nuclei_stats"],
+                typosquat_findings=bundle["typosquat_stats"],
+            )
+        except Exception as exc:
+            logger.exception("Error calculating aggregated findings stats: %s", exc)
+            return AggregatedFindingsStatsResponse(
+                total_programs=0,
+                nuclei_findings=NucleiFindingStats(),
+                typosquat_findings=TyposquatFindingStats(),
+            )
+        finally:
+            db.close()
 
     @staticmethod
     async def get_detailed_findings_stats(filter_data: Dict[str, Any]) -> FindingsStatsResponse:
         """Get detailed findings stats for a program"""
-        try:
-            # Extract program name from filter data
-            program_name = filter_data.get('program_name')
-            if not program_name:
-                logger.warning("No program_name provided for findings stats")
-                return FindingsStatsResponse()
-            
-            async with get_db_session() as db:
-                # Get program ID for filtering
-                program = db.query(Program).filter(Program.name == program_name).first()
-                if not program:
-                    logger.warning(f"Program {program_name} not found")
-                    return FindingsStatsResponse()
-                
-                program_id = program.id
-                
-                # --- Nuclei Findings Stats ---
-                # Get total nuclei findings
-                total_nuclei = db.query(NucleiFinding).filter(
-                    NucleiFinding.program_id == program_id
-                ).count()
-                
-                # Get counts by severity
-                critical_nuclei = db.query(NucleiFinding).filter(
-                    and_(
-                        NucleiFinding.program_id == program_id,
-                        NucleiFinding.severity == 'critical'
-                    )
-                ).count()
-                
-                high_nuclei = db.query(NucleiFinding).filter(
-                    and_(
-                        NucleiFinding.program_id == program_id,
-                        NucleiFinding.severity == 'high'
-                    )
-                ).count()
-                
-                medium_nuclei = db.query(NucleiFinding).filter(
-                    and_(
-                        NucleiFinding.program_id == program_id,
-                        NucleiFinding.severity == 'medium'
-                    )
-                ).count()
-                
-                low_nuclei = db.query(NucleiFinding).filter(
-                    and_(
-                        NucleiFinding.program_id == program_id,
-                        NucleiFinding.severity == 'low'
-                    )
-                ).count()
-                
-                info_nuclei = db.query(NucleiFinding).filter(
-                    and_(
-                        NucleiFinding.program_id == program_id,
-                        NucleiFinding.severity == 'info'
-                    )
-                ).count()
-                
-                nuclei_stats = NucleiFindingStats(
-                    total=total_nuclei,
-                    critical=critical_nuclei,
-                    high=high_nuclei,
-                    medium=medium_nuclei,
-                    low=low_nuclei,
-                    info=info_nuclei
-                )
-                
-                # --- Typosquat Findings Stats ---
-                # Get total typosquat findings
-                total_typosquat = db.query(TyposquatDomain).filter(
-                    TyposquatDomain.program_id == program_id
-                ).count()
-                
-                # Get counts by status
-                new_typosquat = db.query(TyposquatDomain).filter(
-                    and_(
-                        TyposquatDomain.program_id == program_id,
-                        TyposquatDomain.status == 'new'
-                    )
-                ).count()
-                
-                investigating_typosquat = db.query(TyposquatDomain).filter(
-                    and_(
-                        TyposquatDomain.program_id == program_id,
-                        TyposquatDomain.status == 'investigating'
-                    )
-                ).count()
-                
-                confirmed_typosquat = db.query(TyposquatDomain).filter(
-                    and_(
-                        TyposquatDomain.program_id == program_id,
-                        TyposquatDomain.status == 'confirmed'
-                    )
-                ).count()
-                
-                resolved_typosquat = db.query(TyposquatDomain).filter(
-                    and_(
-                        TyposquatDomain.program_id == program_id,
-                        TyposquatDomain.status == 'resolved'
-                    )
-                ).count()
-                
-                dismissed_typosquat = db.query(TyposquatDomain).filter(
-                    and_(
-                        TyposquatDomain.program_id == program_id,
-                        TyposquatDomain.status == 'dismissed'
-                    )
-                ).count()
-                
-                typosquat_stats = TyposquatFindingStats(
-                    total=total_typosquat,
-                    new=new_typosquat,
-                    inprogress=investigating_typosquat,
-                    resolved=resolved_typosquat,
-                    dismissed=dismissed_typosquat
-                )
-                
-                # --- Combine Results ---
-                return FindingsStatsResponse(
-                    nuclei_findings=nuclei_stats,
-                    typosquat_findings=typosquat_stats
-                )
-                
-        except Exception as e:
-            logger.exception(f"Error calculating detailed findings stats for filter {filter_data}: {str(e)}")
-            # Return default empty stats on error
-            return FindingsStatsResponse(
-                nuclei_findings=NucleiFindingStats(),
-                typosquat_findings=TyposquatFindingStats()
-            )
+        return await run_in_threadpool(CommonFindingsRepository._get_detailed_findings_stats_sync, filter_data)
 
     @staticmethod
-    async def get_aggregated_findings_stats(program_names: Optional[List[str]] = None) -> AggregatedFindingsStatsResponse:
+    async def get_aggregated_findings_stats(
+        program_names: Optional[List[str]] = None,
+    ) -> AggregatedFindingsStatsResponse:
         """Get aggregated findings stats across multiple programs"""
+        return await run_in_threadpool(CommonFindingsRepository._get_aggregated_findings_stats_sync, program_names)
+
+    @staticmethod
+    def _get_latest_findings_sync(
+        program_name: Optional[str],
+        limit: int,
+        days_ago: Optional[int],
+        finding_types: Optional[List[str]],
+        restrict_to_program_names: Optional[List[str]] = None,
+    ) -> Dict[str, List]:
+        want = CommonFindingsRepository._normalize_finding_types(finding_types)
+        db = SessionLocal()
+        out: Dict[str, List] = {}
         try:
-            async with get_db_session() as db:
-                # Build program filter
-                if program_names:
-                    programs = db.query(Program).filter(Program.name.in_(program_names)).all()
-                    program_ids = [p.id for p in programs]
-                    total_programs = len(programs)
-                else:
-                    # Get all programs if none specified
-                    programs = db.query(Program).all()
-                    program_ids = [p.id for p in programs]
-                    total_programs = len(programs)
-                
-                if not program_ids:
-                    logger.warning("No programs found for aggregated findings stats")
-                    return AggregatedFindingsStatsResponse()
-                
-                # --- Nuclei Findings Stats ---
-                # Get total nuclei findings
-                total_nuclei = db.query(NucleiFinding).filter(
-                    NucleiFinding.program_id.in_(program_ids)
-                ).count()
-                
-                # Get counts by severity
-                critical_nuclei = db.query(NucleiFinding).filter(
-                    and_(
-                        NucleiFinding.program_id.in_(program_ids),
-                        NucleiFinding.severity == 'critical'
+            program_ids_filter: Optional[List] = None
+            if program_name:
+                program = db.query(Program).filter(Program.name == program_name).first()
+                if not program:
+                    logger.warning("Program %s not found for latest findings", program_name)
+                    return {}
+                program_ids_filter = [program.id]
+            elif restrict_to_program_names is not None:
+                if len(restrict_to_program_names) == 0:
+                    return {}
+                programs = db.query(Program).filter(Program.name.in_(restrict_to_program_names)).all()
+                program_ids_filter = [p.id for p in programs]
+                if not program_ids_filter:
+                    return {}
+
+            time_filter = None
+            if days_ago:
+                time_filter = utcnow() - timedelta(days=days_ago)
+
+            if "nuclei" in want:
+                try:
+                    q = db.query(NucleiFinding).options(joinedload(NucleiFinding.program))
+                    if program_ids_filter:
+                        q = q.filter(NucleiFinding.program_id.in_(program_ids_filter))
+                    if time_filter:
+                        q = q.filter(NucleiFinding.created_at >= time_filter)
+                    rows = q.order_by(desc(NucleiFinding.created_at)).limit(limit).all()
+                    out["nuclei"] = [
+                        {
+                            "id": f.id,
+                            "name": f.name,
+                            "severity": f.severity,
+                            "url": f.url,
+                            "template_id": f.template_id,
+                            "created_at": f.created_at,
+                            "program_name": f.program.name if f.program else None,
+                            "status": getattr(f, "status", "unknown"),
+                            "hostname": getattr(f, "hostname", None),
+                            "type": getattr(f, "finding_type", None),
+                        }
+                        for f in rows
+                    ]
+                except Exception as exc:
+                    logger.error("Error getting nuclei findings: %s", exc)
+                    out["nuclei"] = []
+
+            if "typosquat" in want:
+                try:
+                    q = db.query(TyposquatDomain).options(joinedload(TyposquatDomain.program))
+                    if program_ids_filter:
+                        q = q.filter(TyposquatDomain.program_id.in_(program_ids_filter))
+                    if time_filter:
+                        q = q.filter(TyposquatDomain.created_at >= time_filter)
+                    rows = q.order_by(desc(TyposquatDomain.created_at)).limit(limit).all()
+                    out["typosquat"] = [
+                        {
+                            "id": finding.id,
+                            "typo_domain": finding.typo_domain,
+                            "status": finding.status,
+                            "risk_score": finding.risk_score,
+                            "created_at": finding.created_at,
+                            "program_name": finding.program.name if finding.program else None,
+                        }
+                        for finding in rows
+                    ]
+                except Exception as exc:
+                    logger.error("Error getting typosquat findings: %s", exc)
+                    out["typosquat"] = []
+
+            return out
+        except Exception as exc:
+            logger.exception("Error getting latest findings: %s", exc)
+            return {}
+        finally:
+            db.close()
+
+    @staticmethod
+    async def get_latest_findings(
+        program_name: Optional[str] = None,
+        limit: int = 5,
+        days_ago: Optional[int] = None,
+        finding_types: Optional[List[str]] = None,
+        restrict_to_program_names: Optional[List[str]] = None,
+    ) -> Dict[str, List]:
+        """Get the latest findings of each type for dashboard display"""
+        return await run_in_threadpool(
+            CommonFindingsRepository._get_latest_findings_sync,
+            program_name,
+            limit,
+            days_ago,
+            finding_types,
+            restrict_to_program_names,
+        )
+
+    @staticmethod
+    def _findings_trend_day_expr(created_at_column):
+        return func.date(func.timezone("UTC", created_at_column))
+
+    @staticmethod
+    def _get_findings_trends_body_sync(
+        program_names: Optional[List[str]],
+        sd: date,
+        ed: date,
+        num_days: int,
+        start_ts: datetime,
+        end_ts_excl: datetime,
+    ) -> FindingsTrendsResponse:
+        db = SessionLocal()
+        try:
+            if program_names:
+                programs = db.query(Program).filter(Program.name.in_(program_names)).all()
+                program_ids = [p.id for p in programs]
+            else:
+                programs = db.query(Program).all()
+                program_ids = [p.id for p in programs]
+
+            nuclei_by_day: Dict[date, Dict[str, int]] = {}
+            typo_by_day: Dict[date, Dict[str, int]] = {}
+
+            if program_ids:
+                nd = CommonFindingsRepository._findings_trend_day_expr(NucleiFinding.created_at)
+                nrows = (
+                    db.query(
+                        nd.label("d"),
+                        func.count().label("total"),
+                        func.coalesce(
+                            func.sum(case((NucleiFinding.severity == "critical", 1), else_=0)),
+                            0,
+                        ).label("crit"),
+                        func.coalesce(
+                            func.sum(case((NucleiFinding.severity == "high", 1), else_=0)),
+                            0,
+                        ).label("high"),
                     )
-                ).count()
-                
-                high_nuclei = db.query(NucleiFinding).filter(
-                    and_(
-                        NucleiFinding.program_id.in_(program_ids),
-                        NucleiFinding.severity == 'high'
-                    )
-                ).count()
-                
-                medium_nuclei = db.query(NucleiFinding).filter(
-                    and_(
-                        NucleiFinding.program_id.in_(program_ids),
-                        NucleiFinding.severity == 'medium'
-                    )
-                ).count()
-                
-                low_nuclei = db.query(NucleiFinding).filter(
-                    and_(
-                        NucleiFinding.program_id.in_(program_ids),
-                        NucleiFinding.severity == 'low'
-                    )
-                ).count()
-                
-                info_nuclei = db.query(NucleiFinding).filter(
-                    and_(
-                        NucleiFinding.program_id.in_(program_ids),
-                        NucleiFinding.severity == 'info'
-                    )
-                ).count()
-                
-                nuclei_stats = NucleiFindingStats(
-                    total=total_nuclei,
-                    critical=critical_nuclei,
-                    high=high_nuclei,
-                    medium=medium_nuclei,
-                    low=low_nuclei,
-                    info=info_nuclei
+                    .filter(NucleiFinding.program_id.in_(program_ids))
+                    .filter(NucleiFinding.created_at >= start_ts)
+                    .filter(NucleiFinding.created_at < end_ts_excl)
+                    .group_by(nd)
+                    .all()
                 )
-                
-                # --- Typosquat Findings Stats ---
-                # Get total typosquat findings
-                total_typosquat = db.query(TyposquatDomain).filter(
-                    TyposquatDomain.program_id.in_(program_ids)
-                ).count()
-                
-                # Get counts by status
-                new_typosquat = db.query(TyposquatDomain).filter(
-                    and_(
-                        TyposquatDomain.program_id.in_(program_ids),
-                        TyposquatDomain.status == 'new'
+                for r in nrows:
+                    dv = r.d
+                    if dv is None:
+                        continue
+                    if isinstance(dv, datetime):
+                        dv = dv.date()
+                    nuclei_by_day[dv] = {
+                        "total": int(r.total or 0),
+                        "critical": int(r.crit or 0),
+                        "high": int(r.high or 0),
+                    }
+
+                td = CommonFindingsRepository._findings_trend_day_expr(TyposquatDomain.created_at)
+                trows = (
+                    db.query(
+                        td.label("d"),
+                        func.count().label("total"),
+                        func.coalesce(
+                            func.sum(case((TyposquatDomain.status == "new", 1), else_=0)),
+                            0,
+                        ).label("newn"),
                     )
-                ).count()
-                
-                investigating_typosquat = db.query(TyposquatDomain).filter(
-                    and_(
-                        TyposquatDomain.program_id.in_(program_ids),
-                        TyposquatDomain.status == 'investigating'
-                    )
-                ).count()
-                
-                resolved_typosquat = db.query(TyposquatDomain).filter(
-                    and_(
-                        TyposquatDomain.program_id.in_(program_ids),
-                        TyposquatDomain.status == 'resolved'
-                    )
-                ).count()
-                
-                dismissed_typosquat = db.query(TyposquatDomain).filter(
-                    and_(
-                        TyposquatDomain.program_id.in_(program_ids),
-                        TyposquatDomain.status == 'dismissed'
-                    )
-                ).count()
-                
-                typosquat_stats = TyposquatFindingStats(
-                    total=total_typosquat,
-                    new=new_typosquat,
-                    inprogress=investigating_typosquat,
-                    resolved=resolved_typosquat,
-                    dismissed=dismissed_typosquat
+                    .filter(TyposquatDomain.program_id.in_(program_ids))
+                    .filter(TyposquatDomain.created_at >= start_ts)
+                    .filter(TyposquatDomain.created_at < end_ts_excl)
+                    .group_by(td)
+                    .all()
                 )
-                
-                # --- Combine Results ---
-                return AggregatedFindingsStatsResponse(
-                    total_programs=total_programs,
-                    nuclei_findings=nuclei_stats,
-                    typosquat_findings=typosquat_stats
+                for r in trows:
+                    dv = r.d
+                    if dv is None:
+                        continue
+                    if isinstance(dv, datetime):
+                        dv = dv.date()
+                    typo_by_day[dv] = {"total": int(r.total or 0), "new": int(r.newn or 0)}
+
+            buckets: List[FindingsTrendBucket] = []
+            for i in range(num_days):
+                dday = sd + timedelta(days=i)
+                n = nuclei_by_day.get(dday, {})
+                t = typo_by_day.get(dday, {})
+                buckets.append(
+                    FindingsTrendBucket(
+                        date=dday.isoformat(),
+                        nuclei_total=n.get("total", 0),
+                        nuclei_critical=n.get("critical", 0),
+                        nuclei_high=n.get("high", 0),
+                        typosquat_total=t.get("total", 0),
+                        typosquat_new=t.get("new", 0),
+                    )
                 )
-                
-        except Exception as e:
-            logger.exception(f"Error calculating aggregated findings stats: {str(e)}")
-            # Return default empty stats on error
-            return AggregatedFindingsStatsResponse(
-                total_programs=0,
-                nuclei_findings=NucleiFindingStats(),
-                typosquat_findings=TyposquatFindingStats()
+
+            return FindingsTrendsResponse(
+                days=num_days,
+                buckets=buckets,
+                start_date=sd.isoformat(),
+                end_date=ed.isoformat(),
             )
+        except Exception as exc:
+            logger.exception("Error calculating findings trends: %s", exc)
+            return FindingsTrendsResponse(days=0, buckets=[], start_date=None, end_date=None)
+        finally:
+            db.close()
+
+    @staticmethod
+    async def get_findings_trends(
+        *,
+        program_names: Optional[List[str]] = None,
+        start_day: Optional[date] = None,
+        end_day: Optional[date] = None,
+        days: int = 30,
+    ) -> FindingsTrendsResponse:
+        """Daily new-finding counts (UTC days) for Nuclei and Typosquat."""
+        try:
+            now = utcnow()
+            if start_day is not None and end_day is not None:
+                sd, ed = start_day, end_day
+            else:
+                ed = now.date()
+                sd = ed - timedelta(days=max(1, min(int(days), 366)) - 1)
+
+            if sd > ed:
+                raise ValueError("start_date must be on or before end_date")
+            if (ed - sd).days > 366:
+                raise ValueError("Date range cannot exceed 366 days")
+
+            num_days = (ed - sd).days + 1
+            start_ts = datetime.combine(sd, datetime.min.time())
+            end_ts_excl = datetime.combine(ed + timedelta(days=1), datetime.min.time())
+
+            return await run_in_threadpool(
+                CommonFindingsRepository._get_findings_trends_body_sync,
+                program_names,
+                sd,
+                ed,
+                num_days,
+                start_ts,
+                end_ts_excl,
+            )
+        except ValueError:
+            raise

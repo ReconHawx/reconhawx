@@ -3,13 +3,44 @@ import logging
 from datetime import datetime
 from models.base import utcnow
 from sqlalchemy import and_, or_, not_, desc, asc
+from sqlalchemy.orm import joinedload, defer
 from sqlalchemy.exc import SQLAlchemyError
 from models.postgres import WorkflowLog
-from db import get_db_session
+from db import get_db_session, SessionLocal
+from fastapi.concurrency import run_in_threadpool
 
 logger = logging.getLogger(__name__)
 
 class WorkflowRepository:
+    _WORKFLOW_DEFER_FIELDS = (
+        defer(WorkflowLog.result_data),
+        defer(WorkflowLog.workflow_steps),
+        defer(WorkflowLog.workflow_definition),
+        defer(WorkflowLog.runner_pod_output),
+        defer(WorkflowLog.task_execution_logs),
+        defer(WorkflowLog.waf_summary),
+    )
+
+    @staticmethod
+    def _workflow_log_row_lite(log: WorkflowLog) -> Dict[str, Any]:
+        """List-row shape without loading heavy JSONB/Text columns."""
+        return {
+            "id": str(log.id),
+            "workflow_id": str(log.workflow_id) if log.workflow_id else None,
+            "workflow_name": log.workflow_name,
+            "program_id": str(log.program_id),
+            "program_name": log.program.name if log.program else None,
+            "execution_id": log.execution_id,
+            "status": log.status,
+            "result": log.status,
+            "workflow_steps": [],
+            "total_steps": 0,
+            "started_at": log.started_at.isoformat() + "Z" if log.started_at else None,
+            "completed_at": log.completed_at.isoformat() + "Z" if log.completed_at else None,
+            "created_at": log.created_at.isoformat() + "Z" if log.created_at else None,
+            "updated_at": log.updated_at.isoformat() + "Z" if log.updated_at else None,
+        }
+
     @staticmethod
     async def create_workflow_log(log_object: Dict[str, Any]) -> str:
         """Create a new workflow log entry for each execution"""
@@ -274,30 +305,66 @@ class WorkflowRepository:
             raise
 
     @staticmethod
-    async def count_workflow_logs(query: Optional[Dict[str, Any]] = None) -> int:
-        """Count the number of workflow logs matching the query"""
+    def _count_workflow_logs_sync(query: Optional[Dict[str, Any]] = None) -> int:
+        db = SessionLocal()
         try:
-            async with get_db_session() as db:
-                if query is None:
-                    count = db.query(WorkflowLog).count()
-                else:
-                    # Convert MongoDB-style query to SQLAlchemy filter
-                    filter_conditions = WorkflowRepository._convert_query_to_filter(query)
-                    # Handle program_name joins if needed
-                    db_query = db.query(WorkflowLog)
-                    if any("program_name" in str(cond) for cond in filter_conditions):
-                        from models.postgres import Program
-                        db_query = db_query.join(Program)
-                    count = db_query.filter(*filter_conditions).count()
-                
-                logger.info(f"Count result: {count} documents")
-                return count
+            if query is None:
+                count = db.query(WorkflowLog).count()
+            else:
+                filter_conditions = WorkflowRepository._convert_query_to_filter(query)
+                db_query = db.query(WorkflowLog)
+                if any("program_name" in str(cond) for cond in filter_conditions):
+                    from models.postgres import Program
+
+                    db_query = db_query.join(Program)
+                count = db_query.filter(*filter_conditions).count()
+
+            logger.info("Count result: %s documents", count)
+            return count
         except SQLAlchemyError as e:
             logger.error(f"Database error counting workflow logs: {str(e)}")
             raise
         except Exception as e:
             logger.error(f"Error counting workflow logs: {str(e)}")
             raise
+        finally:
+            db.close()
+
+    @staticmethod
+    async def count_workflow_logs(query: Optional[Dict[str, Any]] = None) -> int:
+        """Count the number of workflow logs matching the query"""
+        return await run_in_threadpool(WorkflowRepository._count_workflow_logs_sync, query)
+
+    _ACTIVE_WORKFLOW_STATUSES = frozenset({"running", "started"})
+
+    @staticmethod
+    def _count_active_workflow_logs_sync(query: Optional[Dict[str, Any]] = None) -> int:
+        db = SessionLocal()
+        try:
+            db_query = db.query(WorkflowLog).filter(
+                WorkflowLog.status.in_(WorkflowRepository._ACTIVE_WORKFLOW_STATUSES)
+            )
+            if query:
+                filter_conditions = WorkflowRepository._convert_query_to_filter(query)
+                if any("program_name" in str(cond) for cond in filter_conditions):
+                    from models.postgres import Program
+
+                    db_query = db_query.join(Program)
+                db_query = db_query.filter(*filter_conditions)
+            return int(db_query.count())
+        except SQLAlchemyError as e:
+            logger.error(f"Database error counting active workflow logs: {str(e)}")
+            raise
+        except Exception as e:
+            logger.error(f"Error counting active workflow logs: {str(e)}")
+            raise
+        finally:
+            db.close()
+
+    @staticmethod
+    async def count_active_workflow_logs(query: Optional[Dict[str, Any]] = None) -> int:
+        """Count workflow logs in running/started status for the same filter as list/count."""
+        return await run_in_threadpool(WorkflowRepository._count_active_workflow_logs_sync, query)
 
     @staticmethod
     async def get_workflow_logs_by_execution_id(execution_id: str) -> Optional[Dict[str, Any]]:
@@ -439,57 +506,85 @@ class WorkflowRepository:
         return conditions
 
     @staticmethod
-    async def execute_query(query: Dict[str, Any], limit: Optional[int] = None, skip: int = 0, sort: Optional[Dict[str, int]] = None) -> List[Dict[str, Any]]:
-        """
-        Execute the sanitized query against the workflow logs with pagination support
-        """
+    def _execute_query_sync(
+        query: Dict[str, Any],
+        limit: Optional[int],
+        skip: int,
+        sort: Optional[Dict[str, int]],
+        *,
+        lite: bool,
+    ) -> List[Dict[str, Any]]:
+        db = SessionLocal()
         try:
-            logger.info(f"Executing query: {query}")
-            async with get_db_session() as db:
-                # Build query
+            logger.info("Executing query: %s lite=%s", query, lite)
+            if lite:
+                db_query = db.query(WorkflowLog).options(
+                    joinedload(WorkflowLog.program),
+                    *WorkflowRepository._WORKFLOW_DEFER_FIELDS,
+                )
+            else:
                 db_query = db.query(WorkflowLog)
-                
-                # Apply filters
-                if query:
-                    filter_conditions = WorkflowRepository._convert_query_to_filter(query)
-                    # Handle program_name joins if needed
-                    if any("program_name" in str(cond) for cond in filter_conditions):
+
+            if query:
+                filter_conditions = WorkflowRepository._convert_query_to_filter(query)
+                if any("program_name" in str(cond) for cond in filter_conditions):
+                    from models.postgres import Program
+
+                    db_query = db_query.join(Program)
+                db_query = db_query.filter(*filter_conditions)
+
+            if sort:
+                for field_name, direction in sort.items():
+                    if field_name == "program_name":
                         from models.postgres import Program
-                        db_query = db_query.join(Program)
-                    db_query = db_query.filter(*filter_conditions)
-                
-                # Apply sorting
-                if sort:
-                    for field_name, direction in sort.items():
-                        if field_name == "program_name":
-                            # Special handling for program_name sorting
-                            from models.postgres import Program
-                            if direction == 1:
-                                db_query = db_query.join(Program).order_by(asc(Program.name))
-                            else:
-                                db_query = db_query.join(Program).order_by(desc(Program.name))
-                        elif hasattr(WorkflowLog, field_name):
-                            field = getattr(WorkflowLog, field_name)
-                            if direction == 1:
-                                db_query = db_query.order_by(asc(field))
-                            else:
-                                db_query = db_query.order_by(desc(field))
-                
-                # Apply pagination
-                if skip:
-                    db_query = db_query.offset(skip)
-                if limit is not None:
-                    db_query = db_query.limit(limit)
-                
-                # Execute query
-                workflow_logs = db_query.all()
-                results = [workflow_log.to_dict() for workflow_log in workflow_logs]
-                                
-                return results
-                
+
+                        if direction == 1:
+                            db_query = db_query.join(Program).order_by(asc(Program.name))
+                        else:
+                            db_query = db_query.join(Program).order_by(desc(Program.name))
+                    elif hasattr(WorkflowLog, field_name):
+                        field = getattr(WorkflowLog, field_name)
+                        if direction == 1:
+                            db_query = db_query.order_by(asc(field))
+                        else:
+                            db_query = db_query.order_by(desc(field))
+
+            if skip:
+                db_query = db_query.offset(skip)
+            if limit is not None:
+                db_query = db_query.limit(limit)
+
+            workflow_logs = db_query.all()
+            if lite:
+                return [WorkflowRepository._workflow_log_row_lite(w) for w in workflow_logs]
+            return [workflow_log.to_dict() for workflow_log in workflow_logs]
         except SQLAlchemyError as e:
             logger.error(f"Database error executing query: {str(e)}")
             raise
         except Exception as e:
             logger.error(f"Error executing query: {str(e)}")
-            raise 
+            raise
+        finally:
+            db.close()
+
+    @staticmethod
+    async def execute_query(
+        query: Dict[str, Any],
+        limit: Optional[int] = None,
+        skip: int = 0,
+        sort: Optional[Dict[str, int]] = None,
+        *,
+        lite: bool = False,
+    ) -> List[Dict[str, Any]]:
+        """
+        Execute the sanitized query against the workflow logs with pagination support.
+        When ``lite=True``, omit heavy JSON/Text columns (dashboard list rows).
+        """
+        return await run_in_threadpool(
+            WorkflowRepository._execute_query_sync,
+            query,
+            limit,
+            skip,
+            sort,
+            lite=lite,
+        )

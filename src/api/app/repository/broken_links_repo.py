@@ -1,4 +1,4 @@
-from sqlalchemy import and_, desc, asc
+from sqlalchemy import and_, desc, asc, func
 from typing import Dict, Any, Optional, List
 import logging
 from datetime import datetime
@@ -7,7 +7,8 @@ from models.base import utcnow
 from models.postgres import (
     BrokenLink, Program
 )
-from db import get_db_session
+from db import get_db_session, SessionLocal
+from fastapi.concurrency import run_in_threadpool
 from utils.program_resolve import resolve_program_from_payload
 from utils.domain_utils import normalize_hostname
 from utils.url_utils import lower_url_host
@@ -349,38 +350,70 @@ class BrokenLinksRepository(ProgramAccessMixin):
                 raise
     
     @staticmethod
-    async def get_broken_links_stats(program_name: Optional[str] = None) -> Dict[str, Any]:
-        """Get statistics for broken links"""
-        async with get_db_session() as db:
-            try:
-                query = db.query(BrokenLink).join(Program)
-                
-                if program_name:
-                    query = query.filter(Program.name == program_name)
-                
-                total = query.count()
-                valid = query.filter(BrokenLink.status == 'valid').count()
-                broken = query.filter(BrokenLink.status == 'broken').count()
-                error = query.filter(BrokenLink.status == 'error').count()
-                throttled = query.filter(BrokenLink.status == 'throttled').count()
-                
-                # Count by media type
-                by_media_type = {}
-                for media_type in ['facebook', 'instagram', 'twitter', 'x', 'linkedin']:
-                    count = query.filter(BrokenLink.media_type == media_type).count()
-                    if count > 0:
-                        by_media_type[media_type] = count
-                
-                return {
-                    'total': total,
-                    'valid': valid,
-                    'broken': broken,
-                    'error': error,
-                    'throttled': throttled,
-                    'by_media_type': by_media_type
-                }
-                
-            except Exception as e:
-                logger.error(f"Error getting broken links stats: {str(e)}")
-                raise
+    def _get_broken_links_stats_sync(
+        program_name: Optional[str] = None,
+        restrict_to_program_names: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        db = SessionLocal()
+        try:
+            q = (
+                db.query(
+                    func.count(BrokenLink.id),
+                    func.count().filter(BrokenLink.status == "valid"),
+                    func.count().filter(BrokenLink.status == "broken"),
+                    func.count().filter(BrokenLink.status == "error"),
+                    func.count().filter(BrokenLink.status == "throttled"),
+                    func.count().filter(BrokenLink.media_type == "facebook"),
+                    func.count().filter(BrokenLink.media_type == "instagram"),
+                    func.count().filter(BrokenLink.media_type == "twitter"),
+                    func.count().filter(BrokenLink.media_type == "x"),
+                    func.count().filter(BrokenLink.media_type == "linkedin"),
+                )
+                .select_from(BrokenLink)
+                .join(Program, BrokenLink.program_id == Program.id)
+            )
+            if program_name:
+                q = q.filter(Program.name == program_name)
+            elif restrict_to_program_names is not None:
+                if len(restrict_to_program_names) == 0:
+                    return {
+                        "total": 0,
+                        "valid": 0,
+                        "broken": 0,
+                        "error": 0,
+                        "throttled": 0,
+                        "by_media_type": {},
+                    }
+                q = q.filter(Program.name.in_(restrict_to_program_names))
+            row = q.one()
+            labels = ["facebook", "instagram", "twitter", "x", "linkedin"]
+            by_media_type: Dict[str, int] = {}
+            for i, lab in enumerate(labels):
+                c = int(row[5 + i] or 0)
+                if c > 0:
+                    by_media_type[lab] = c
+            return {
+                "total": int(row[0] or 0),
+                "valid": int(row[1] or 0),
+                "broken": int(row[2] or 0),
+                "error": int(row[3] or 0),
+                "throttled": int(row[4] or 0),
+                "by_media_type": by_media_type,
+            }
+        except Exception as exc:
+            logger.error("Error getting broken links stats: %s", exc)
+            raise
+        finally:
+            db.close()
 
+    @staticmethod
+    async def get_broken_links_stats(
+        program_name: Optional[str] = None,
+        restrict_to_program_names: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        """Get statistics for broken links"""
+        return await run_in_threadpool(
+            BrokenLinksRepository._get_broken_links_stats_sync,
+            program_name,
+            restrict_to_program_names,
+        )

@@ -2,7 +2,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from routes import assets, programs, findings, workflows, auth, nuclei_templates, jobs, admin, admin_database, admin_database_maintenance, admin_system_upgrade, wordlists, scheduled_jobs, subdomain_assets, ip_assets, url_assets, service_assets, apexdomain_assets, certificate_assets, screenshot_assets, typosquat_findings, nuclei_findings, wpscan_findings, common_assets, common_findings, action_logs, broken_links, social_media_credentials, ai, event_handler_configs, ct_monitor_internal, internal_database_restore, internal_upgrade
+from routes import assets, programs, findings, workflows, auth, nuclei_templates, jobs, admin, admin_database, admin_database_maintenance, admin_system_upgrade, wordlists, scheduled_jobs, subdomain_assets, ip_assets, url_assets, service_assets, apexdomain_assets, certificate_assets, screenshot_assets, typosquat_findings, nuclei_findings, wpscan_findings, common_assets, common_findings, action_logs, broken_links, social_media_credentials, ai, event_handler_configs, ct_monitor_internal, internal_database_restore, internal_upgrade, dashboard
 from middleware.auth import AuthMiddleware
 from middleware.maintenance import MaintenanceMiddleware
 from config.settings import settings
@@ -46,7 +46,10 @@ app.include_router(apexdomain_assets.router, prefix="/assets")
 app.include_router(certificate_assets.router, prefix="/assets")
 app.include_router(screenshot_assets.router, prefix="/assets")
 app.include_router(common_assets.router, prefix="/assets")
+app.include_router(dashboard.router, prefix="/dashboard")
 app.include_router(programs.router, prefix="/programs")
+# Broken-link aggregate stats must register before any `/findings/broken-links/{id}` style routes elsewhere.
+app.include_router(broken_links.stats_router, prefix="/findings")
 app.include_router(findings.router, prefix="/findings")
 app.include_router(typosquat_findings.router, prefix="/findings")
 app.include_router(nuclei_findings.router, prefix="/findings")
@@ -68,6 +71,9 @@ app.include_router(internal_database_restore.internal_router, prefix="/internal"
 app.include_router(internal_upgrade.internal_router, prefix="/internal")
 app.include_router(ct_monitor_internal.internal_ct_monitor_router, prefix="/internal")
 app.include_router(workflows.router, prefix="/workflows")
+# Queue API: canonical /workflows/queue/* plus legacy /queue/* (cached bundles / old clients).
+app.include_router(workflows.workflow_queue_router, prefix="/workflows")
+app.include_router(workflows.workflow_queue_router, prefix="")
 app.include_router(action_logs.router, prefix="/action-logs")
 app.include_router(ai.router, prefix="/ai")
 

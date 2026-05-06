@@ -1,12 +1,11 @@
-from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, ForeignKey, ARRAY, BigInteger, SmallInteger, UniqueConstraint, LargeBinary, func, text
+from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, ForeignKey, ARRAY, BigInteger, SmallInteger, UniqueConstraint, LargeBinary, func, text, Index
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID, INET, JSONB
 from datetime import datetime
-from typing import Dict, Any
+from typing import Dict, Any, Optional, List
 import uuid
 from pydantic import BaseModel
-from typing import Optional
 
 from models.base import utcnow
 
@@ -90,6 +89,43 @@ class AggregatedFindingsStatsResponse(BaseModel):
     nuclei_findings: Optional[NucleiFindingStats] = None
     typosquat_findings: Optional[TyposquatFindingStats] = None
 
+
+# Daily trend buckets for dashboard charts (UTC calendar days)
+class AssetTrendBucket(BaseModel):
+    date: str
+    subdomains: int = 0
+    apex_domains: int = 0
+    ips: int = 0
+    urls: int = 0
+    services: int = 0
+    certificates: int = 0
+
+
+class AssetTrendsResponse(BaseModel):
+    days: int
+    buckets: List[AssetTrendBucket] = []
+    program_name: Optional[str] = None
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+
+
+class FindingsTrendBucket(BaseModel):
+    date: str
+    nuclei_total: int = 0
+    nuclei_critical: int = 0
+    nuclei_high: int = 0
+    typosquat_total: int = 0
+    typosquat_new: int = 0
+
+
+class FindingsTrendsResponse(BaseModel):
+    days: int
+    buckets: List[FindingsTrendBucket] = []
+    program_name: Optional[str] = None
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+
+
 class Program(Base):
     """Bug bounty programs - central entity for scoping assets"""
     __tablename__ = "programs"
@@ -169,6 +205,8 @@ class ApexDomain(Base):
     whois_raw_response = Column(Text, nullable=True)
     whois_error = Column(Text, nullable=True)
     whois_checked_at = Column(DateTime, nullable=True)
+
+    __table_args__ = (Index("ix_apex_domains_prog_created", "program_id", "created_at"),)
     
     # Relationships
     program = relationship("Program", back_populates="apex_domains")
@@ -186,6 +224,8 @@ class IP(Base):
     notes = Column(Text)
     created_at = Column(DateTime, default=utcnow, nullable=False)
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
+
+    __table_args__ = (Index("ix_ips_prog_created", "program_id", "created_at"),)
     
     # Relationships
     program = relationship("Program", back_populates="ips")
@@ -207,6 +247,8 @@ class Subdomain(Base):
     notes = Column(Text)
     created_at = Column(DateTime, default=utcnow, nullable=False)
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
+
+    __table_args__ = (Index("ix_subdomains_prog_created", "program_id", "created_at"),)
     
     # Relationships
     program = relationship("Program", back_populates="subdomains")
@@ -256,6 +298,7 @@ class Service(Base):
     # Unique constraint on ip_id + port
     __table_args__ = (
         UniqueConstraint('ip_id', 'port'),
+        Index('ix_services_prog_created', 'program_id', 'created_at'),
     )
 
 class Certificate(Base):
@@ -279,6 +322,8 @@ class Certificate(Base):
     notes = Column(Text)
     created_at = Column(DateTime, default=utcnow, nullable=False)
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
+
+    __table_args__ = (Index("ix_certificates_prog_created", "program_id", "created_at"),)
     
     # Relationships
     program = relationship("Program", back_populates="certificates")
@@ -324,6 +369,8 @@ class URL(Base):
     notes = Column(Text)
     created_at = Column(DateTime, default=utcnow, nullable=False)
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
+
+    __table_args__ = (Index("ix_urls_prog_created", "program_id", "created_at"),)
     
     # Relationships
     program = relationship("Program", back_populates="urls")
@@ -500,6 +547,7 @@ class NucleiFinding(Base):
     # Unique constraint to prevent duplicate findings
     __table_args__ = (
         UniqueConstraint('url', 'template_id', 'matcher_name', 'program_id', 'matched_at'),
+        Index("ix_nuclei_findings_prog_created", "program_id", "created_at"),
     )
 
 class TyposquatApexDomain(Base):
@@ -601,6 +649,8 @@ class TyposquatDomain(Base):
     # Denormalized: same instant as last closure_events[].closed_at (UTC naive)
     last_closure_at = Column(DateTime, nullable=True, index=True)
 
+    __table_args__ = (Index("ix_typosquat_domains_prog_created", "program_id", "created_at"),)
+
     # Relationships
     program = relationship("Program", back_populates="typosquat_findings")
     typosquat_apex = relationship("TyposquatApexDomain", back_populates="typosquat_findings")
@@ -630,6 +680,7 @@ class BrokenLink(Base):
     # Unique constraint to prevent duplicate findings
     __table_args__ = (
         UniqueConstraint('program_id', 'url', name='uq_broken_links_program_url'),
+        Index("ix_broken_links_prog_created", "program_id", "created_at"),
     )
     
     def to_dict(self) -> Dict[str, Any]:
@@ -786,7 +837,9 @@ class WorkflowLog(Base):
     completed_at = Column(DateTime, index=True)
     created_at = Column(DateTime, default=utcnow, server_default=func.now(), nullable=False)
     updated_at = Column(DateTime, default=utcnow, server_default=func.now(), onupdate=func.now(), nullable=False)
-    
+
+    __table_args__ = (Index("ix_workflow_logs_prog_created", "program_id", "created_at"),)
+
     # Relationships
     program = relationship("Program", back_populates="workflow_logs")
     workflow = relationship("Workflow", back_populates="logs")  # Add relationship to Workflow

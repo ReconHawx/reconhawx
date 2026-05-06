@@ -1,9 +1,11 @@
-from fastapi import APIRouter, HTTPException, Request, BackgroundTasks, Query
+from fastapi import APIRouter, HTTPException, Request, BackgroundTasks, Query, Depends
 from typing import Dict, Any, Optional, List, Union
 from pydantic import BaseModel, Field
 import logging
 from services.unified_asset_processor import unified_asset_processor
 from repository.common_assets_repo import CommonAssetsRepository
+from auth.dependencies import get_current_user_from_middleware, get_user_accessible_programs
+from models.user_postgres import UserResponse
 
 logger = logging.getLogger(__name__)
 
@@ -132,22 +134,46 @@ async def get_asset_job_status(job_id: str):
 async def get_latest_assets(
     program_name: Optional[str] = Query(None, description="Filter by program name"),
     limit: int = Query(5, ge=1, le=20, description="Number of latest items to return per type"),
-    days_ago: Optional[int] = Query(None, ge=1, le=365, description="Only return assets created within the last N days")
+    days_ago: Optional[int] = Query(None, ge=1, le=365, description="Only return assets created within the last N days"),
+    types: Optional[str] = Query(
+        None,
+        description="Comma-separated types: subdomains,urls,ips,services,certificates,apex_domains",
+    ),
+    current_user: UserResponse = Depends(get_current_user_from_middleware),
 ):
     """
     Get the latest assets for dashboard display
     """
     try:
-        # Get latest assets
-        latest_assets = await CommonAssetsRepository.get_latest_assets(program_name, limit, days_ago)
-        
+        unrestricted = current_user.is_superuser or "admin" in current_user.roles
+        restrict_to_program_names: Optional[List[str]] = None
+        if program_name:
+            if not unrestricted:
+                acc = get_user_accessible_programs(current_user)
+                if acc and program_name not in acc:
+                    raise HTTPException(status_code=403, detail="Access denied to this program")
+        elif not unrestricted:
+            acc = list(get_user_accessible_programs(current_user))
+            if not acc:
+                return {"status": "success", "data": {"latest_assets": {}}}
+            restrict_to_program_names = acc
+
+        asset_types = (
+            [x.strip().lower() for x in types.split(",") if x.strip()] if types else None
+        )
+        latest_assets = await CommonAssetsRepository.get_latest_assets(
+            program_name, limit, days_ago, asset_types, restrict_to_program_names
+        )
+
         return {
             "status": "success",
             "data": {
                 "latest_assets": latest_assets
             }
         }
-        
+
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error getting latest assets: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to get latest assets: {str(e)}")

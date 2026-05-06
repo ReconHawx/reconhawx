@@ -396,19 +396,44 @@ async def get_external_links(
 async def get_latest_findings(
     program_name: Optional[str] = Query(None, description="Filter by program name"),
     limit: int = Query(5, ge=1, le=20, description="Number of latest items to return per type"),
-    days_ago: Optional[int] = Query(None, ge=1, le=365, description="Only return findings created within the last N days")
+    days_ago: Optional[int] = Query(None, ge=1, le=365, description="Only return findings created within the last N days"),
+    types: Optional[str] = Query(
+        None,
+        description="Comma-separated finding kinds: nuclei, typosquat",
+    ),
+    current_user: UserResponse = Depends(get_current_user_from_middleware),
 ):
     """
     Get the latest findings for dashboard display
     """
     try:
-        latest_findings = await CommonFindingsRepository.get_latest_findings(program_name, limit, days_ago)
-        
+        unrestricted = current_user.is_superuser or "admin" in current_user.roles
+        restrict_to_program_names: Optional[List[str]] = None
+        if program_name:
+            if not unrestricted:
+                acc = get_user_accessible_programs(current_user)
+                if acc and program_name not in acc:
+                    raise HTTPException(status_code=403, detail="Access denied to this program")
+        elif not unrestricted:
+            acc = list(get_user_accessible_programs(current_user))
+            if not acc:
+                return {"status": "success", "data": {}}
+            restrict_to_program_names = acc
+
+        finding_types = (
+            [x.strip().lower() for x in types.split(",") if x.strip()] if types else None
+        )
+        latest_findings = await CommonFindingsRepository.get_latest_findings(
+            program_name, limit, days_ago, finding_types, restrict_to_program_names
+        )
+
         return {
             "status": "success",
             "data": latest_findings
         }
-        
+
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error getting latest findings: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to get latest findings: {str(e)}")

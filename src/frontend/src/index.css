@@ -361,6 +361,14 @@ code {
   border-color: var(--bs-card-border-color) !important;
 }
 
+/* Dashboard / subtle interactive emphasis */
+.hover-link:hover {
+  opacity: 0.88;
+  transform: scale(1.02);
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  cursor: pointer;
+}
+
 /* Elevated section cards: no outline — soft shadow (light); colored headers carry section identity */
 [data-theme="light"] .rh-elevated-card.card {
   border: none !important;

@@ -180,6 +180,22 @@ export const workflowAPI = {
     return response.data;
   },
 
+  // Get recent workflow executions (dashboard table)
+  getRecentWorkflowRuns: async (limit = 8, programName = null) => {
+    const params = new URLSearchParams({
+      page: '1',
+      limit: String(limit),
+    });
+    if (programName) {
+      params.append('program_name', programName);
+    }
+    params.append('sort_field', 'started_at');
+    params.append('sort_order', 'desc');
+    params.append('lite', 'true');
+    const response = await api.get(`/workflows/executions?${params}`);
+    return response.data;
+  },
+
   // Get workflow execution status list (paginated)
   getWorkflowStatus: async (page = 1, limit = 25, programName = null, sortField = null, sortOrder = 'desc') => {
     const params = new URLSearchParams({
@@ -247,17 +263,17 @@ export const workflowAPI = {
 // Queue API calls
 export const queueAPI = {
   getStatus: async () => {
-    const response = await api.get('/queue/status');
+    const response = await api.get('/workflows/queue/status');
     return response.data;
   },
 
   getJobs: async () => {
-    const response = await api.get('/queue/jobs');
+    const response = await api.get('/workflows/queue/workloads');
     return response.data;
   },
 
   clearQueue: async () => {
-    const response = await api.delete('/queue/clear');
+    const response = await api.delete('/workflows/queue/clear');
     return response.data;
   }
 };

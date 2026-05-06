@@ -28,6 +28,8 @@ from utils import create_status_url
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+# Mounted under /workflows and at / for backward compatibility (legacy /queue/* paths).
+workflow_queue_router = APIRouter()
 
 # Terminal workflow `result` values from the runner; used to trigger ConfigMap cleanup on log POST.
 _TERMINAL_WORKFLOW_RESULTS = frozenset(
@@ -332,6 +334,63 @@ class WorkflowStatusListResponse(BaseModel):
     current_page: int
     total_items: int
 
+
+def transform_workflow_executions_for_status_list(
+    executions: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Shared shape for workflow execution list rows (full or lite log dicts)."""
+    transformed_executions: List[Dict[str, Any]] = []
+    for execution in executions:
+        execution_data = {
+            "id": execution.get("execution_id", execution.get("workflow_id", execution.get("_id", ""))),
+            "workflow_name": execution.get("workflow_name", execution.get("workflow_id", "Unknown")),
+            "program_name": execution.get("program_name", "Unknown"),
+            "status": execution.get("result", "unknown").lower(),
+            "started_at": execution.get("created_at"),
+            "completed_at": execution.get("updated_at")
+            if execution.get("result")
+            in ["success", "completed", "failed", "cancelled_waf", "partial_waf"]
+            else None,
+            "progress": {
+                "completed": 0,
+                "total": 0,
+                "percentage": 0,
+            },
+            "workflow_steps": execution.get("workflow_steps", []),
+        }
+
+        completed_steps = 0
+        total_steps = execution.get("total_steps", 0)
+
+        if "workflow_steps" in execution and execution["workflow_steps"]:
+            for step in execution["workflow_steps"]:
+                if isinstance(step, dict):
+                    for _step_name, step_data in step.items():
+                        if step_data and isinstance(step_data, dict) and step_data:
+                            completed_steps += 1
+                            break
+
+        if total_steps == 0:
+            if "workflow_steps" in execution and execution["workflow_steps"]:
+                total_steps = len(execution["workflow_steps"])
+            else:
+                if execution.get("result") == "running":
+                    total_steps = 1
+                elif execution.get("result") in ["success", "failed", "completed"]:
+                    total_steps = 1
+                    if execution.get("result") == "success":
+                        completed_steps = 1
+
+        execution_data["progress"] = {
+            "completed": completed_steps,
+            "total": total_steps,
+            "percentage": (completed_steps / total_steps * 100) if total_steps > 0 else 0,
+        }
+
+        transformed_executions.append(execution_data)
+    return transformed_executions
+
+
 @router.post("/run", response_model=WorkflowCreateResponse)
 async def run_workflow(
     request: Request, 
@@ -461,6 +520,10 @@ async def get_workflow_executions(
     program_name: Optional[str] = Query(None, description="Filter by program name"),
     sort_field: Optional[str] = Query(None, description="Field to sort by"),
     sort_order: Optional[str] = Query("desc", description="Sort order (asc or desc)"),
+    lite: bool = Query(
+        False,
+        description="Omit heavy workflow log JSON/text columns (dashboard list rows)",
+    ),
     current_user: UserResponse = Depends(get_current_user_from_middleware)
 ):
     """Get paginated list of workflow executions"""
@@ -507,70 +570,14 @@ async def get_workflow_executions(
             sanitized_query,
             limit=limit,
             skip=skip,
-            sort=sort_param
+            sort=sort_param,
+            lite=lite,
         )
         
         logger.info(f"Retrieved {len(executions)} executions from database")
-        
-        # Transform executions for frontend consumption
-        transformed_executions = []
-        for execution in executions:
-            # Extract execution info from workflow log structure
-            execution_data = {
-                "id": execution.get("execution_id", execution.get("workflow_id", execution.get("_id", ""))),
-                "workflow_name": execution.get("workflow_name", execution.get("workflow_id", "Unknown")),
-                "program_name": execution.get("program_name", "Unknown"),
-                "status": execution.get("result", "unknown").lower(),
-                "started_at": execution.get("created_at"),
-                "completed_at": execution.get("updated_at")
-                if execution.get("result")
-                in ["success", "completed", "failed", "cancelled_waf", "partial_waf"]
-                else None,
-                "progress": {
-                    "completed": 0,
-                    "total": 0,
-                    "percentage": 0
-                },
-                "workflow_steps": execution.get("workflow_steps", [])
-            }
-            
-            # Calculate progress based on workflow steps
-            completed_steps = 0
-            total_steps = execution.get("total_steps", 0)  # Use stored total_steps if available
-            
-            # Count completed steps from workflow_steps execution results  
-            if "workflow_steps" in execution and execution["workflow_steps"]:
-                for step in execution["workflow_steps"]:
-                    if isinstance(step, dict):
-                        for step_name, step_data in step.items():
-                            # If step_data has content (like {"domain": 1, "ip": 1}), consider it completed
-                            if step_data and isinstance(step_data, dict) and step_data:
-                                completed_steps += 1
-                                break  # Only count the step once
-            
-            # Fallback logic if we don't have total_steps stored
-            if total_steps == 0:
-                if "workflow_steps" in execution and execution["workflow_steps"]:
-                    # For older logs without total_steps, use the length of workflow_steps as total
-                    total_steps = len(execution["workflow_steps"])
-                else:
-                    # For workflows with no steps yet, estimate from result status
-                    if execution.get("result") == "running":
-                        total_steps = 1  # Assume at least 1 step for running workflows
-                    elif execution.get("result") in ["success", "failed", "completed"]:
-                        total_steps = 1
-                        if execution.get("result") == "success":
-                            completed_steps = 1
-            
-            # Set progress information
-            execution_data["progress"] = {
-                "completed": completed_steps,
-                "total": total_steps,
-                "percentage": (completed_steps / total_steps * 100) if total_steps > 0 else 0
-            }
-            
-            transformed_executions.append(execution_data)
-        
+
+        transformed_executions = transform_workflow_executions_for_status_list(executions)
+
         logger.info(f"Transformed {len(transformed_executions)} executions for frontend")
         
         return WorkflowStatusListResponse(
@@ -1080,7 +1087,7 @@ class QueueCapacityResponse(BaseModel):
 class PriorityUpdateRequest(BaseModel):
     priority: str = Field(..., description="Priority level: low, normal, high, critical")
 
-@router.get("/queue/status", response_model=QueueCapacityResponse)
+@workflow_queue_router.get("/queue/status", response_model=QueueCapacityResponse)
 async def get_queue_status(
     current_user: UserResponse = Depends(get_current_user_from_middleware)
 ):
@@ -1092,7 +1099,7 @@ async def get_queue_status(
         logger.error(f"Error getting queue status: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/queue/workloads", response_model=WorkloadListResponse)
+@workflow_queue_router.get("/queue/workloads", response_model=WorkloadListResponse)
 async def list_queue_workloads(
     program_name: Optional[str] = Query(None, description="Filter by program name"),
     current_user: UserResponse = Depends(get_current_user_from_middleware)
@@ -1127,7 +1134,7 @@ async def list_queue_workloads(
         logger.error(f"Error listing queue workloads: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/queue/workloads/{execution_id}", response_model=WorkloadStatusResponse)
+@workflow_queue_router.get("/queue/workloads/{execution_id}", response_model=WorkloadStatusResponse)
 async def get_workload_status(
     execution_id: str,
     current_user: UserResponse = Depends(get_current_user_from_middleware)
@@ -1150,7 +1157,7 @@ async def get_workload_status(
         logger.error(f"Error getting workload status: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.put("/queue/workloads/{execution_id}/priority")
+@workflow_queue_router.put("/queue/workloads/{execution_id}/priority")
 async def update_workload_priority(
     execution_id: str,
     priority_request: PriorityUpdateRequest,
@@ -1183,7 +1190,7 @@ async def update_workload_priority(
         logger.error(f"Error updating workload priority: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.delete("/queue/workloads/{execution_id}")
+@workflow_queue_router.delete("/queue/workloads/{execution_id}")
 async def delete_workload(
     execution_id: str,
     current_user: UserResponse = Depends(get_current_user_from_middleware)
@@ -1206,7 +1213,7 @@ async def delete_workload(
         logger.error(f"Error deleting workload: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/queue/workloads/{execution_id}/position")
+@workflow_queue_router.get("/queue/workloads/{execution_id}/position")
 async def get_workload_queue_position(
     execution_id: str,
     current_user: UserResponse = Depends(get_current_user_from_middleware)
