@@ -156,7 +156,7 @@ async def get_dashboard_summary(
 
     la_program, la_restrict, la_deny = _restricted_latest_program_scope(current_user, program_name)
     latest_assets_empty: Dict[str, Any] = {"subdomains": [], "urls": []}
-    latest_findings_empty: Dict[str, Any] = {"nuclei": [], "typosquat": []}
+    latest_findings_empty: Dict[str, Any] = {"nuclei": [], "typosquat": [], "wpscan": []}
 
     workflow_filter: Dict[str, Any] = {}
     if program_name:
@@ -227,7 +227,7 @@ async def get_dashboard_summary(
                 la_program,
                 latest_limit,
                 None,
-                ["nuclei", "typosquat"],
+                ["nuclei", "typosquat", "wpscan"],
                 la_restrict,
             )
         except Exception as exc:

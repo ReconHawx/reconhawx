@@ -67,7 +67,7 @@ async def test_dashboard_summary_ok(
         end_date="2026-01-01",
     )
     mock_latest_assets.return_value = {"subdomains": [], "urls": []}
-    mock_latest_findings.return_value = {"nuclei": [], "typosquat": []}
+    mock_latest_findings.return_value = {"nuclei": [], "typosquat": [], "wpscan": []}
     mock_exec.return_value = []
     mock_active.return_value = 0
     mock_tech_urls.return_value = {"items": [], "pagination": {"total_items": 0}}

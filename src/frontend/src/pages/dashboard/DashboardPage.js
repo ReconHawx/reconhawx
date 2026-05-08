@@ -21,7 +21,6 @@ import {
   buildTrendApiParams,
   buildDashboardListHref,
   itemInCustomRange,
-  averageRiskScore,
 } from './dashboardUtils';
 import CustomizeDashboardModal from './CustomizeDashboardModal';
 import KPICard from './widgets/KPICard';
@@ -40,7 +39,7 @@ const initialStats = {
   urls: 0,
   certificates: 0,
   nucleiFindings: 0,
-  typosquatFindings: 0,
+  wpscanFindings: 0,
   activeWorkflows: 0,
   subdomainBreakdown: { resolved: 0, unresolved: 0, wildcard: 0 },
   ipBreakdown: { resolved: 0, unresolved: 0 },
@@ -53,6 +52,16 @@ const initialStats = {
     wildcards: 0,
   },
 };
+
+function wpscanSeverityBootstrapVariant(severity) {
+  const s = String(severity || '').toLowerCase();
+  if (s === 'critical') return 'danger';
+  if (s === 'high') return 'warning';
+  if (s === 'medium') return 'info';
+  if (s === 'low') return 'secondary';
+  if (s === 'info') return 'primary';
+  return 'dark';
+}
 
 export default function DashboardPage() {
   usePageTitle(formatPageTitle('Dashboard'));
@@ -75,13 +84,13 @@ export default function DashboardPage() {
   const [stats, setStats] = useState(initialStats);
   const [findingsDetails, setFindingsDetails] = useState({
     nuclei: { critical: 0, high: 0, medium: 0, low: 0, info: 0 },
-    typosquat: { new: 0, inprogress: 0, resolved: 0, dismissed: 0 },
+    wpscan: { critical: 0, high: 0, medium: 0, low: 0, info: 0 },
   });
   const [latestAssets, setLatestAssets] = useState({
     subdomains: [],
     urls: [],
   });
-  const [latestFindings, setLatestFindings] = useState({ nuclei: [], typosquat: [] });
+  const [latestFindings, setLatestFindings] = useState({ nuclei: [], wpscan: [] });
   const [assetTrends, setAssetTrends] = useState(null);
   const [findingsTrends, setFindingsTrends] = useState(null);
   const [recentRuns, setRecentRuns] = useState([]);
@@ -132,7 +141,7 @@ export default function DashboardPage() {
           urls: assetStats.url_details?.total || 0,
           certificates: assetStats.certificate_details?.total || 0,
           nucleiFindings: findingsStats.nuclei_findings?.total || 0,
-          typosquatFindings: findingsStats.typosquat_findings?.total || 0,
+          wpscanFindings: findingsStats.wpscan_findings?.total || 0,
           activeWorkflows: summary.active_workflows ?? 0,
           subdomainBreakdown: {
             resolved: assetStats.subdomain_details?.resolved || 0,
@@ -166,11 +175,12 @@ export default function DashboardPage() {
             low: findingsStats.nuclei_findings?.low || 0,
             info: findingsStats.nuclei_findings?.info || 0,
           },
-          typosquat: {
-            new: findingsStats.typosquat_findings?.new || 0,
-            inprogress: findingsStats.typosquat_findings?.inprogress || 0,
-            resolved: findingsStats.typosquat_findings?.resolved || 0,
-            dismissed: findingsStats.typosquat_findings?.dismissed || 0,
+          wpscan: {
+            critical: findingsStats.wpscan_findings?.critical || 0,
+            high: findingsStats.wpscan_findings?.high || 0,
+            medium: findingsStats.wpscan_findings?.medium || 0,
+            low: findingsStats.wpscan_findings?.low || 0,
+            info: findingsStats.wpscan_findings?.info || 0,
           },
         });
 
@@ -183,7 +193,7 @@ export default function DashboardPage() {
         });
         setLatestFindings({
           nuclei: (lf.nuclei || []).filter(filterRow),
-          typosquat: (lf.typosquat || []).filter(filterRow),
+          wpscan: (lf.wpscan || []).filter(filterRow),
         });
 
         setAssetTrends(summary.asset_trends || null);
@@ -235,11 +245,6 @@ export default function DashboardPage() {
     loadDashboardData();
   }, [loadDashboardData]);
 
-  const avgRisk = useMemo(
-    () => averageRiskScore(latestFindings.typosquat),
-    [latestFindings.typosquat]
-  );
-
   const assetBuckets = assetTrends?.buckets || [];
   const findingsBuckets = findingsTrends?.buckets || [];
 
@@ -255,14 +260,24 @@ export default function DashboardPage() {
         label: f.name || f.url || 'Finding',
         href: `/findings/nuclei/details?id=${f.id}`,
         createdAt: f.created_at,
+        source: (
+          <Badge bg="danger" pill>
+            Nuclei
+          </Badge>
+        ),
         right: <Badge bg="danger">{f.severity || '—'}</Badge>,
       })),
-      ...(latestFindings.typosquat || []).map((f) => ({
-        key: `t-${f.id}`,
-        label: f.typo_domain || 'Typosquat',
-        href: `/findings/typosquat/details?id=${f.id}`,
+      ...(latestFindings.wpscan || []).map((f) => ({
+        key: `w-${f.id}`,
+        label: f.item_name || f.url || 'WPScan',
+        href: `/findings/wpscan/details?id=${f.id}`,
         createdAt: f.created_at,
-        right: <Badge bg="info">{f.status || '—'}</Badge>,
+        source: (
+          <Badge bg="primary" pill>
+            WPScan
+          </Badge>
+        ),
+        right: <Badge bg={wpscanSeverityBootstrapVariant(f.severity)}>{f.severity || '—'}</Badge>,
       })),
     ];
     rows.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
@@ -396,13 +411,12 @@ export default function DashboardPage() {
             <SecurityPostureCards
               nucleiTotal={stats.nucleiFindings}
               nucleiDetails={findingsDetails.nuclei}
-              typosquatTotal={stats.typosquatFindings}
-              typosquatDetails={findingsDetails.typosquat}
+              wpscanTotal={stats.wpscanFindings}
+              wpscanDetails={findingsDetails.wpscan}
               certificateStats={{
                 total: stats.certificates,
                 ...stats.certificateBreakdown,
               }}
-              avgTyposquatRisk={avgRisk}
               programParam={programParam}
               programName={selectedProgram}
             />
@@ -464,6 +478,12 @@ export default function DashboardPage() {
                           label: 'Typosquat',
                           color: 'var(--bs-secondary)',
                           values: findingsBuckets.map((b) => b.typosquat_total),
+                        },
+                        {
+                          key: 'w',
+                          label: 'WPScan',
+                          color: 'var(--bs-primary)',
+                          values: findingsBuckets.map((b) => b.wpscan_total ?? 0),
                         },
                       ]}
                     />

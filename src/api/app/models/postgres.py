@@ -69,10 +69,21 @@ class TyposquatFindingStats(BaseModel):
     resolved: int = 0
     dismissed: int = 0
 
+
+class WpscanFindingStats(BaseModel):
+    total: int = 0
+    critical: int = 0
+    high: int = 0
+    medium: int = 0
+    low: int = 0
+    info: int = 0
+
+
 # Response Model for Findings Stats
 class FindingsStatsResponse(BaseModel):
     nuclei_findings: Optional[NucleiFindingStats] = None
     typosquat_findings: Optional[TyposquatFindingStats] = None
+    wpscan_findings: Optional[WpscanFindingStats] = None
 
 # Aggregated Stats Models for Multiple Programs
 class AggregatedAssetStatsResponse(BaseModel):
@@ -88,6 +99,7 @@ class AggregatedFindingsStatsResponse(BaseModel):
     total_programs: int = 0
     nuclei_findings: Optional[NucleiFindingStats] = None
     typosquat_findings: Optional[TyposquatFindingStats] = None
+    wpscan_findings: Optional[WpscanFindingStats] = None
 
 
 # Daily trend buckets for dashboard charts (UTC calendar days)
@@ -116,6 +128,9 @@ class FindingsTrendBucket(BaseModel):
     nuclei_high: int = 0
     typosquat_total: int = 0
     typosquat_new: int = 0
+    wpscan_total: int = 0
+    wpscan_critical: int = 0
+    wpscan_high: int = 0
 
 
 class FindingsTrendsResponse(BaseModel):

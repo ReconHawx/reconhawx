@@ -25,6 +25,11 @@ export default function LatestActivityList({
                   key={row.key}
                   className="list-group-item px-0 py-2 d-flex justify-content-between align-items-center"
                 >
+                  {row.source && (
+                    <span className="me-2 flex-shrink-0" style={{ minWidth: 70 }}>
+                      {row.source}
+                    </span>
+                  )}
                   <Link to={row.href} className="text-decoration-none flex-grow-1 me-2 text-truncate">
                     <small>{truncateText(row.label, 40)}</small>
                   </Link>

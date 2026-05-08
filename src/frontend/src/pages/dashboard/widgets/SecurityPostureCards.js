@@ -3,12 +3,12 @@ import { Row, Col, Card, Badge, ProgressBar } from 'react-bootstrap';
 import { Link } from 'react-router-dom';
 import { formatInt, buildDashboardListHref } from '../dashboardUtils';
 
-function SeverityBar({ nuclei }) {
-  const c = nuclei?.critical || 0;
-  const h = nuclei?.high || 0;
-  const m = nuclei?.medium || 0;
-  const l = nuclei?.low || 0;
-  const inf = nuclei?.info || 0;
+function SeverityBar({ details }) {
+  const c = details?.critical || 0;
+  const h = details?.high || 0;
+  const m = details?.medium || 0;
+  const l = details?.low || 0;
+  const inf = details?.info || 0;
   const sum = c + h + m + l + inf || 1;
   return (
     <div className="rounded overflow-hidden" style={{ height: 10 }}>
@@ -28,14 +28,13 @@ export default function SecurityPostureCards({
   programName = null,
   nucleiTotal = 0,
   nucleiDetails = {},
-  typosquatTotal = 0,
-  typosquatDetails = {},
+  wpscanTotal = 0,
+  wpscanDetails = {},
   certificateStats = {},
-  avgTyposquatRisk = null,
 }) {
   const cert = certificateStats || {};
   const nucleiSeverityHref = (sev) => buildDashboardListHref('/findings/nuclei', programName, { severity: sev });
-  const typosquatStatusHref = (status) => buildDashboardListHref('/findings/typosquat', programName, { status });
+  const wpscanSeverityHref = (sev) => buildDashboardListHref('/findings/wpscan', programName, { severity: sev });
   const certStatusHref = (status) => buildDashboardListHref('/assets/certificates', programName, { status });
   const certListHref = buildDashboardListHref('/assets/certificates', programName, {});
 
@@ -50,7 +49,7 @@ export default function SecurityPostureCards({
             </Link>
           </Card.Header>
           <Card.Body>
-            <SeverityBar nuclei={nucleiDetails} />
+            <SeverityBar details={nucleiDetails} />
             <div className="d-flex flex-wrap gap-1 mt-3 small">
               {nucleiDetails?.critical > 0 && (
                 <Link to={nucleiSeverityHref('critical')} className="text-decoration-none">
@@ -86,39 +85,42 @@ export default function SecurityPostureCards({
       <Col md={4}>
         <Card className="rh-elevated-card h-100">
           <Card.Header className="rh-card-header-table d-flex justify-content-between align-items-center">
-            <h6 className="mb-0">Typosquat</h6>
-            <Link to={`/findings/typosquat${programParam}`} className="small text-decoration-none">
-              {formatInt(typosquatTotal)}
+            <h6 className="mb-0">WPScan</h6>
+            <Link to={`/findings/wpscan${programParam}`} className="small text-decoration-none">
+              {formatInt(wpscanTotal)}
             </Link>
           </Card.Header>
           <Card.Body>
-            <div className="d-flex flex-wrap gap-1 small mb-2">
-              {(typosquatDetails?.new || 0) > 0 && (
-                <Link to={typosquatStatusHref('new')} className="text-decoration-none">
-                  <Badge bg="info">New {typosquatDetails.new}</Badge>
+            <SeverityBar details={wpscanDetails} />
+            <div className="d-flex flex-wrap gap-1 mt-3 small">
+              {wpscanDetails?.critical > 0 && (
+                <Link to={wpscanSeverityHref('critical')} className="text-decoration-none">
+                  <Badge bg="danger">Critical {wpscanDetails.critical}</Badge>
                 </Link>
               )}
-              {(typosquatDetails?.inprogress || 0) > 0 && (
-                <Link to={typosquatStatusHref('inprogress')} className="text-decoration-none">
-                  <Badge bg="primary">In progress {typosquatDetails.inprogress}</Badge>
+              {wpscanDetails?.high > 0 && (
+                <Link to={wpscanSeverityHref('high')} className="text-decoration-none">
+                  <Badge bg="warning" text="dark">
+                    High {wpscanDetails.high}
+                  </Badge>
                 </Link>
               )}
-              {(typosquatDetails?.resolved || 0) > 0 && (
-                <Link to={typosquatStatusHref('resolved')} className="text-decoration-none">
-                  <Badge bg="success">Resolved {typosquatDetails.resolved}</Badge>
+              {wpscanDetails?.medium > 0 && (
+                <Link to={wpscanSeverityHref('medium')} className="text-decoration-none">
+                  <Badge bg="info">Medium {wpscanDetails.medium}</Badge>
                 </Link>
               )}
-              {(typosquatDetails?.dismissed || 0) > 0 && (
-                <Link to={typosquatStatusHref('dismissed')} className="text-decoration-none">
-                  <Badge bg="secondary">Dismissed {typosquatDetails.dismissed}</Badge>
+              {wpscanDetails?.low > 0 && (
+                <Link to={wpscanSeverityHref('low')} className="text-decoration-none">
+                  <Badge bg="secondary">Low {wpscanDetails.low}</Badge>
+                </Link>
+              )}
+              {wpscanDetails?.info > 0 && (
+                <Link to={wpscanSeverityHref('info')} className="text-decoration-none">
+                  <Badge bg="dark">Info {wpscanDetails.info}</Badge>
                 </Link>
               )}
             </div>
-            {avgTyposquatRisk != null && (
-              <div className="text-muted small">
-                Avg. risk score: <span className="text-body fw-semibold">{avgTyposquatRisk.toFixed(1)}</span>
-              </div>
-            )}
           </Card.Body>
         </Card>
       </Col>

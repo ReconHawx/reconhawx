@@ -7,11 +7,12 @@ from models.postgres import (
     AggregatedFindingsStatsResponse,
     NucleiFindingStats,
     TyposquatFindingStats,
+    WpscanFindingStats,
     FindingsTrendBucket,
     FindingsTrendsResponse,
 )
 from sqlalchemy import desc, func, case
-from models.postgres import Program, NucleiFinding, TyposquatDomain
+from models.postgres import Program, NucleiFinding, TyposquatDomain, WPScanFinding
 from db import SessionLocal
 from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.orm import joinedload
@@ -24,7 +25,7 @@ logger = logging.getLogger(__name__)
 class CommonFindingsRepository(ProgramAccessMixin):
     """PostgreSQL repository for findings operations"""
 
-    _FINDING_KEYS = frozenset({"nuclei", "typosquat"})
+    _FINDING_KEYS = frozenset({"nuclei", "typosquat", "wpscan"})
 
     @staticmethod
     def _normalize_finding_types(finding_types: Optional[List[str]]) -> frozenset:
@@ -66,6 +67,19 @@ class CommonFindingsRepository(ProgramAccessMixin):
             .one()
         )
 
+        wrow = (
+            db.query(
+                func.count(WPScanFinding.id),
+                func.count().filter(WPScanFinding.severity == "critical"),
+                func.count().filter(WPScanFinding.severity == "high"),
+                func.count().filter(WPScanFinding.severity == "medium"),
+                func.count().filter(WPScanFinding.severity == "low"),
+                func.count().filter(WPScanFinding.severity == "info"),
+            )
+            .filter(WPScanFinding.program_id.in_(program_ids))
+            .one()
+        )
+
         return dict(
             nuclei_stats=NucleiFindingStats(
                 total=int(nrow[0] or 0),
@@ -81,6 +95,14 @@ class CommonFindingsRepository(ProgramAccessMixin):
                 inprogress=int(trow[2] or 0),
                 resolved=int(trow[3] or 0),
                 dismissed=int(trow[4] or 0),
+            ),
+            wpscan_stats=WpscanFindingStats(
+                total=int(wrow[0] or 0),
+                critical=int(wrow[1] or 0),
+                high=int(wrow[2] or 0),
+                medium=int(wrow[3] or 0),
+                low=int(wrow[4] or 0),
+                info=int(wrow[5] or 0),
             ),
         )
 
@@ -102,12 +124,14 @@ class CommonFindingsRepository(ProgramAccessMixin):
             return FindingsStatsResponse(
                 nuclei_findings=bundle["nuclei_stats"],
                 typosquat_findings=bundle["typosquat_stats"],
+                wpscan_findings=bundle["wpscan_stats"],
             )
         except Exception as exc:
             logger.exception("Error calculating detailed findings stats for filter %s: %s", filter_data, exc)
             return FindingsStatsResponse(
                 nuclei_findings=NucleiFindingStats(),
                 typosquat_findings=TyposquatFindingStats(),
+                wpscan_findings=WpscanFindingStats(),
             )
         finally:
             db.close()
@@ -134,6 +158,7 @@ class CommonFindingsRepository(ProgramAccessMixin):
                 total_programs=total_programs,
                 nuclei_findings=bundle["nuclei_stats"],
                 typosquat_findings=bundle["typosquat_stats"],
+                wpscan_findings=bundle["wpscan_stats"],
             )
         except Exception as exc:
             logger.exception("Error calculating aggregated findings stats: %s", exc)
@@ -141,6 +166,7 @@ class CommonFindingsRepository(ProgramAccessMixin):
                 total_programs=0,
                 nuclei_findings=NucleiFindingStats(),
                 typosquat_findings=TyposquatFindingStats(),
+                wpscan_findings=WpscanFindingStats(),
             )
         finally:
             db.close()
@@ -238,6 +264,31 @@ class CommonFindingsRepository(ProgramAccessMixin):
                     logger.error("Error getting typosquat findings: %s", exc)
                     out["typosquat"] = []
 
+            if "wpscan" in want:
+                try:
+                    q = db.query(WPScanFinding).options(joinedload(WPScanFinding.program))
+                    if program_ids_filter:
+                        q = q.filter(WPScanFinding.program_id.in_(program_ids_filter))
+                    if time_filter:
+                        q = q.filter(WPScanFinding.created_at >= time_filter)
+                    rows = q.order_by(desc(WPScanFinding.created_at)).limit(limit).all()
+                    out["wpscan"] = [
+                        {
+                            "id": f.id,
+                            "item_name": f.item_name,
+                            "item_type": f.item_type,
+                            "severity": f.severity,
+                            "url": f.url,
+                            "hostname": f.hostname,
+                            "created_at": f.created_at,
+                            "program_name": f.program.name if f.program else None,
+                        }
+                        for f in rows
+                    ]
+                except Exception as exc:
+                    logger.error("Error getting wpscan findings: %s", exc)
+                    out["wpscan"] = []
+
             return out
         except Exception as exc:
             logger.exception("Error getting latest findings: %s", exc)
@@ -287,6 +338,7 @@ class CommonFindingsRepository(ProgramAccessMixin):
 
             nuclei_by_day: Dict[date, Dict[str, int]] = {}
             typo_by_day: Dict[date, Dict[str, int]] = {}
+            wpscan_by_day: Dict[date, Dict[str, int]] = {}
 
             if program_ids:
                 nd = CommonFindingsRepository._findings_trend_day_expr(NucleiFinding.created_at)
@@ -345,11 +397,44 @@ class CommonFindingsRepository(ProgramAccessMixin):
                         dv = dv.date()
                     typo_by_day[dv] = {"total": int(r.total or 0), "new": int(r.newn or 0)}
 
+                wd = CommonFindingsRepository._findings_trend_day_expr(WPScanFinding.created_at)
+                wrows = (
+                    db.query(
+                        wd.label("d"),
+                        func.count().label("total"),
+                        func.coalesce(
+                            func.sum(case((WPScanFinding.severity == "critical", 1), else_=0)),
+                            0,
+                        ).label("crit"),
+                        func.coalesce(
+                            func.sum(case((WPScanFinding.severity == "high", 1), else_=0)),
+                            0,
+                        ).label("high"),
+                    )
+                    .filter(WPScanFinding.program_id.in_(program_ids))
+                    .filter(WPScanFinding.created_at >= start_ts)
+                    .filter(WPScanFinding.created_at < end_ts_excl)
+                    .group_by(wd)
+                    .all()
+                )
+                for r in wrows:
+                    dv = r.d
+                    if dv is None:
+                        continue
+                    if isinstance(dv, datetime):
+                        dv = dv.date()
+                    wpscan_by_day[dv] = {
+                        "total": int(r.total or 0),
+                        "critical": int(r.crit or 0),
+                        "high": int(r.high or 0),
+                    }
+
             buckets: List[FindingsTrendBucket] = []
             for i in range(num_days):
                 dday = sd + timedelta(days=i)
                 n = nuclei_by_day.get(dday, {})
                 t = typo_by_day.get(dday, {})
+                w = wpscan_by_day.get(dday, {})
                 buckets.append(
                     FindingsTrendBucket(
                         date=dday.isoformat(),
@@ -358,6 +443,9 @@ class CommonFindingsRepository(ProgramAccessMixin):
                         nuclei_high=n.get("high", 0),
                         typosquat_total=t.get("total", 0),
                         typosquat_new=t.get("new", 0),
+                        wpscan_total=w.get("total", 0),
+                        wpscan_critical=w.get("critical", 0),
+                        wpscan_high=w.get("high", 0),
                     )
                 )
 
@@ -381,7 +469,7 @@ class CommonFindingsRepository(ProgramAccessMixin):
         end_day: Optional[date] = None,
         days: int = 30,
     ) -> FindingsTrendsResponse:
-        """Daily new-finding counts (UTC days) for Nuclei and Typosquat."""
+        """Daily new-finding counts (UTC days) for Nuclei, Typosquat, and WPScan."""
         try:
             now = utcnow()
             if start_day is not None and end_day is not None:

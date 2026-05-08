@@ -399,7 +399,7 @@ async def get_latest_findings(
     days_ago: Optional[int] = Query(None, ge=1, le=365, description="Only return findings created within the last N days"),
     types: Optional[str] = Query(
         None,
-        description="Comma-separated finding kinds: nuclei, typosquat",
+        description="Comma-separated finding kinds: nuclei, typosquat, wpscan",
     ),
     current_user: UserResponse = Depends(get_current_user_from_middleware),
 ):

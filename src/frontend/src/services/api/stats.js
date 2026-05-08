@@ -57,7 +57,7 @@ export const commonStatsAPI = {
     const assetsParams = new URLSearchParams(params);
     const findingsParams = new URLSearchParams(params);
     findingsParams.delete('types');
-    findingsParams.append('types', 'nuclei,typosquat');
+    findingsParams.append('types', 'nuclei,typosquat,wpscan');
 
     const [assetsResponse, findingsResponse] = await Promise.allSettled([
       api.get(`/assets/common/latest?${assetsParams.toString()}`),
