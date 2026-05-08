@@ -54,9 +54,9 @@ class WPScan(Task):
         if enumerate_options:
             enumerate_str = ','.join(enumerate_options)
             base_command_parts.extend(["--enumerate", enumerate_str])
-        else:
-            # Default enumeration: vulnerable plugins, vulnerable themes, users
-            base_command_parts.extend(["--enumerate", "ap,at,u"])
+        #else:
+        #    # Default enumeration: vulnerable plugins, vulnerable themes, users
+        #    base_command_parts.extend(["--enumerate", "ap,at,u"])
         
         # Generate one command per URL
         commands = []
