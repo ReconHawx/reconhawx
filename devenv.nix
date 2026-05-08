@@ -39,6 +39,7 @@
     katana
     httpx
     nuclei
+    wpscan
   ];
   env = {};
   processes = {};
