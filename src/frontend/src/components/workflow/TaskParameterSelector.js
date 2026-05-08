@@ -1,8 +1,11 @@
 import React from 'react';
-import { Form, Card } from 'react-bootstrap';
+import { Form, Card, Row, Col } from 'react-bootstrap';
 import { TASK_TYPES } from './constants';
 import NucleiTemplateSelector from './NucleiTemplateSelector';
 import WordlistSelector from './WordlistSelector';
+
+/** Nuclei (and similar) numeric flags: omit from saved params when cleared = CLI default. */
+const OPTIONAL_NUMBER_PARAMS = new Set(['rate_limit', 'http_timeout', 'retries']);
 
 function TaskParameterSelector({
   taskType,
@@ -89,52 +92,74 @@ function TaskParameterSelector({
   };
 
   const renderParameterInput = (paramName, paramConfig) => {
-    // For timeout, use empty string if not set (don't use default)
+    // For timeout / optional nuclei numerics, use empty string if not set (don't use default)
     const isTimeout = paramName === 'timeout';
-    const currentValue = taskParams[paramName] !== undefined 
-      ? taskParams[paramName] 
-      : (isTimeout ? '' : paramConfig.default);
+    const isOptionalNumber = OPTIONAL_NUMBER_PARAMS.has(paramName);
+    const currentValue = taskParams[paramName] !== undefined
+      ? taskParams[paramName]
+      : (isTimeout || isOptionalNumber ? '' : paramConfig.default);
 
     switch (paramConfig.type) {
       case 'boolean':
         return (
           <Form.Check
             type="checkbox"
-            checked={currentValue}
+            checked={!!currentValue}
             onChange={(e) => handleParamChange(paramName, e.target.checked)}
           />
         );
 
-      case 'number':
+      case 'number': {
+        const optionalNumeric = isTimeout || isOptionalNumber;
+        const displayEmpty = optionalNumeric && (currentValue === undefined || currentValue === '');
         return (
           <Form.Control
             type="number"
-            value={isTimeout && (currentValue === undefined || currentValue === '') ? '' : currentValue}
+            min={paramName === 'retries' ? 0 : undefined}
+            value={displayEmpty ? '' : currentValue}
             onChange={(e) => {
-              const value = e.target.value.trim();
-              if (isTimeout && value === '') {
-                // Clear timeout - remove from params
+              const raw = e.target.value.trim();
+              if (optionalNumeric && raw === '') {
+                const updatedParams = { ...taskParams };
+                delete updatedParams[paramName];
+                onParameterChange(updatedParams);
+                return;
+              }
+              const numValue = parseInt(raw, 10);
+              if (paramName === 'retries') {
+                if (!Number.isNaN(numValue) && numValue >= 0) {
+                  handleParamChange(paramName, numValue);
+                } else if (optionalNumeric) {
+                  const updatedParams = { ...taskParams };
+                  delete updatedParams[paramName];
+                  onParameterChange(updatedParams);
+                }
+                return;
+              }
+              if (!Number.isNaN(numValue) && numValue > 0) {
+                handleParamChange(paramName, numValue);
+                return;
+              }
+              if (isTimeout) {
+                const updatedParams = { ...taskParams };
+                delete updatedParams[paramName];
+                onParameterChange(updatedParams);
+              } else if (optionalNumeric) {
                 const updatedParams = { ...taskParams };
                 delete updatedParams[paramName];
                 onParameterChange(updatedParams);
               } else {
-                const numValue = parseInt(value);
-                if (!isNaN(numValue) && numValue > 0) {
-                  handleParamChange(paramName, numValue);
-                } else if (isTimeout) {
-                  // Invalid timeout - remove from params
-                  const updatedParams = { ...taskParams };
-                  delete updatedParams[paramName];
-                  onParameterChange(updatedParams);
-                } else {
-                  // For non-timeout numbers, fall back to default
-                  handleParamChange(paramName, parseInt(value) || paramConfig.default);
-                }
+                handleParamChange(paramName, parseInt(raw, 10) || paramConfig.default);
               }
             }}
-            placeholder={isTimeout ? 'Use system default' : undefined}
+            placeholder={
+              isTimeout
+                ? 'Use system default'
+                : (paramConfig.placeholder || undefined)
+            }
           />
         );
+      }
 
       case 'array':
         const textareaValue = Array.isArray(currentValue) ? currentValue.join('\n') : '';
@@ -195,9 +220,9 @@ function TaskParameterSelector({
         return (
           <Form.Control
             type="text"
-            value={currentValue}
+            value={currentValue ?? ''}
             onChange={(e) => handleParamChange(paramName, e.target.value)}
-            placeholder={paramConfig.description}
+            placeholder={paramConfig.placeholder || paramConfig.description}
           />
         );
     }
@@ -244,33 +269,92 @@ function TaskParameterSelector({
             onCustomTemplatesChange={onCustomTemplatesChange}
           />
 
-          {/* Render cmd_args parameter */}
-          {Object.entries(taskConfig.params).map(([paramName, paramConfig]) => {
-            if (paramName === 'template') return null; // Handled by NucleiTemplateSelector
+          {(() => {
+            const nucleiNumericRowParams = ['rate_limit', 'http_timeout', 'retries'];
+            const nucleiBooleanRowParams = ['automatic_scan', 'headless'];
+            const nucleiInteractshRowParams = ['interactsh_server', 'interactsh_token'];
+            const nucleiRowGrouped = new Set([
+              ...nucleiNumericRowParams,
+              ...nucleiBooleanRowParams,
+              ...nucleiInteractshRowParams,
+            ]);
 
-            // Special handling for timeout
-            if (paramName === 'timeout') {
+            const renderNucleiParamGroup = (paramName, paramConfig, groupClassName = 'mb-3') => {
+              const labelText = paramName.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
+              if (paramName === 'timeout') {
+                return (
+                  <Form.Group className={groupClassName}>
+                    <Form.Label>{labelText}</Form.Label>
+                    {renderParameterInput(paramName, paramConfig)}
+                    <Form.Text className="text-muted">
+                      Optional: Overrides system default timeout. Leave empty to use system default.
+                    </Form.Text>
+                  </Form.Group>
+                );
+              }
               return (
-                <Form.Group key={paramName} className="mb-3">
-                  <Form.Label>{paramName}</Form.Label>
+                <Form.Group className={groupClassName}>
+                  <Form.Label>{labelText}</Form.Label>
                   {renderParameterInput(paramName, paramConfig)}
-                  <Form.Text className="text-muted">
-                    Optional: Overrides system default timeout. Leave empty to use system default.
-                  </Form.Text>
+                  <Form.Text className="text-muted">{paramConfig.description}</Form.Text>
                 </Form.Group>
               );
-            }
+            };
 
             return (
-              <Form.Group key={paramName} className="mb-3">
-                <Form.Label>{paramName}</Form.Label>
-                {renderParameterInput(paramName, paramConfig)}
-                <Form.Text className="text-muted">
-                  {paramConfig.description}
-                </Form.Text>
-              </Form.Group>
+              <>
+                <Row className="g-3 mb-3 align-items-start">
+                  {nucleiNumericRowParams.map((paramName) => {
+                    const paramConfig = taskConfig.params[paramName];
+                    if (!paramConfig) return null;
+                    return (
+                      <Col xs={12} md="auto" key={paramName}>
+                        <div style={{ maxWidth: '9rem' }}>
+                          {renderNucleiParamGroup(paramName, paramConfig, 'mb-0')}
+                        </div>
+                      </Col>
+                    );
+                  })}
+                </Row>
+                <Row className="g-3 mb-3 align-items-start">
+                  {nucleiBooleanRowParams.map((paramName) => {
+                    const paramConfig = taskConfig.params[paramName];
+                    if (!paramConfig) return null;
+                    return (
+                      <Col xs={12} md="auto" key={paramName}>
+                        <div style={{ maxWidth: 'min(100%, 22rem)' }}>
+                          {renderNucleiParamGroup(paramName, paramConfig, 'mb-0')}
+                        </div>
+                      </Col>
+                    );
+                  })}
+                </Row>
+                <Row className="g-3 mb-3 align-items-start">
+                  {nucleiInteractshRowParams.map((paramName) => {
+                    const paramConfig = taskConfig.params[paramName];
+                    if (!paramConfig) return null;
+                    return (
+                      <Col xs={12} md="auto" key={paramName}>
+                        <div style={{ maxWidth: 'min(100%, 26rem)' }}>
+                          {renderNucleiParamGroup(paramName, paramConfig, 'mb-0')}
+                        </div>
+                      </Col>
+                    );
+                  })}
+                </Row>
+                {Object.entries(taskConfig.params).map(([paramName, paramConfig]) => {
+                  if (paramName === 'template') return null;
+                  if (nucleiRowGrouped.has(paramName)) return null;
+
+                  return (
+                    <React.Fragment key={paramName}>
+                      {renderNucleiParamGroup(paramName, paramConfig)}
+                    </React.Fragment>
+                  );
+                })}
+              </>
             );
-          })}
+          })()}
         </Card.Body>
       </Card>
     );

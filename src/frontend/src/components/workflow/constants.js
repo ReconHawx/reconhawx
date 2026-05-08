@@ -97,12 +97,69 @@ export const TASK_TYPES = {
     category: 'Vulnerability',
     icon: '🔬',
     params: {
-      template: { 
-        type: 'nuclei_template_object', 
-        default: { official: [], custom: [] }, 
-        description: 'Nuclei templates to use (official and custom arrays)' 
+      template: {
+        type: 'nuclei_template_object',
+        default: { official: [], custom: [] },
+        description: 'Nuclei templates to use (official and custom arrays)'
       },
-      cmd_args: { type: 'array', default: [], description: 'Additional command arguments (one per line, e.g., -silent, -rate-limit 100)' }
+      rate_limit: {
+        type: 'number',
+        description: 'Maximum requests per second (-rate-limit). Leave empty for nuclei default (150).',
+        placeholder: '150'
+      },
+      automatic_scan: {
+        type: 'boolean',
+        default: false,
+        description: 'Automatic web scan (-automatic-scan) using Wappalyzer technology-to-tags mapping.'
+      },
+      tags: {
+        type: 'string',
+        default: '',
+        description: 'Run templates matching these tags (-tags), comma-separated.'
+      },
+      severity: {
+        type: 'checkbox-group',
+        default: [],
+        description: 'Run templates matching these severities (-severity). Leave all unchecked to not filter by severity.',
+        options: [
+          { value: 'info', label: 'Info' },
+          { value: 'low', label: 'Low' },
+          { value: 'medium', label: 'Medium' },
+          { value: 'high', label: 'High' },
+          { value: 'critical', label: 'Critical' },
+          { value: 'unknown', label: 'Unknown' }
+        ]
+      },
+      interactsh_server: {
+        type: 'string',
+        default: '',
+        description: 'Interactsh server URL for self-hosted instance (-interactsh-server). Leave empty for nuclei defaults.'
+      },
+      interactsh_token: {
+        type: 'string',
+        default: '',
+        description: 'Interactsh authentication token (-interactsh-token) for self-hosted servers.'
+      },
+      http_timeout: {
+        type: 'number',
+        description: 'Per-request timeout in seconds (-timeout). Leave empty for nuclei default (10).',
+        placeholder: '10'
+      },
+      retries: {
+        type: 'number',
+        description: 'Retries for failed requests (-retries). Leave empty for nuclei default (1).',
+        placeholder: '1'
+      },
+      headless: {
+        type: 'boolean',
+        default: false,
+        description: 'Enable templates that require headless browser support (-headless).'
+      },
+      cmd_args: {
+        type: 'array',
+        default: [],
+        description: 'Additional nuclei arguments (one per line); appended after the options above.'
+      }
     }
   },
   wpscan: {

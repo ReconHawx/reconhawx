@@ -1,6 +1,7 @@
 from typing import Dict, List, Any, Optional
 import json
 import logging
+import shlex
 from .base import Task, AssetType, FindingType
 from models.assets import Url, Domain, Service, Ip
 from models.findings import NucleiFinding
@@ -10,6 +11,73 @@ import base64
 import re
 
 logger = logging.getLogger(__name__)
+
+_ALLOWED_NUCLEI_SEVERITIES = frozenset({"info", "low", "medium", "high", "critical", "unknown"})
+
+
+def _nuclei_structured_cli_suffix(params: Optional[Dict[str, Any]]) -> str:
+    """Build nuclei CLI tokens from structured workflow params (before cmd_args)."""
+    if not params:
+        return ""
+
+    tokens: List[str] = []
+
+    rl = params.get("rate_limit")
+    if rl is not None and rl != "":
+        try:
+            n = int(rl)
+            if n > 0:
+                tokens.extend(["-rate-limit", str(n)])
+        except (TypeError, ValueError):
+            pass
+
+    if params.get("automatic_scan") is True:
+        tokens.append("-automatic-scan")
+
+    tags = params.get("tags")
+    if isinstance(tags, str) and tags.strip():
+        tokens.extend(["-tags", shlex.quote(tags.strip())])
+
+    severities = params.get("severity")
+    if isinstance(severities, list) and severities:
+        cleaned: List[str] = []
+        for s in severities:
+            if isinstance(s, str) and s.strip().lower() in _ALLOWED_NUCLEI_SEVERITIES:
+                cleaned.append(s.strip().lower())
+        if cleaned:
+            tokens.extend(["-severity", ",".join(cleaned)])
+
+    server = params.get("interactsh_server")
+    if isinstance(server, str) and server.strip():
+        tokens.extend(["-interactsh-server", shlex.quote(server.strip())])
+
+    token = params.get("interactsh_token")
+    if isinstance(token, str) and token.strip():
+        tokens.extend(["-interactsh-token", shlex.quote(token.strip())])
+
+    ht = params.get("http_timeout")
+    if ht is not None and ht != "":
+        try:
+            n = int(ht)
+            if n > 0:
+                tokens.extend(["-timeout", str(n)])
+        except (TypeError, ValueError):
+            pass
+
+    retries = params.get("retries")
+    if retries is not None and retries != "":
+        try:
+            n = int(retries)
+            if n >= 0:
+                tokens.extend(["-retries", str(n)])
+        except (TypeError, ValueError):
+            pass
+
+    if params.get("headless") is True:
+        tokens.append("-headless")
+
+    return (" " + " ".join(tokens)) if tokens else ""
+
 
 class NucleiScan(Task):
     name = "nuclei_scan"
@@ -62,7 +130,9 @@ class NucleiScan(Task):
         # Handle custom templates
         for t in template.get("custom", []):
             nuclei_command += f" -t http://api.recon.svc.cluster.local:8000/nuclei-templates/raw/{t}.yaml"
-        
+
+        nuclei_command += _nuclei_structured_cli_suffix(params)
+
         if cmd_args:
             nuclei_command += f" {' '.join(cmd_args)}"
         command = f"cat << 'EOF' | {nuclei_command}\n{targets_text}\nEOF"

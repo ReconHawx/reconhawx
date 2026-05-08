@@ -78,6 +78,12 @@ nuclei_scan:
   template:
     official: []
     custom: []
+  automatic_scan: false
+  tags: ''
+  severity: []
+  interactsh_server: ''
+  interactsh_token: ''
+  headless: false
   cmd_args: []
   input_types: [subdomain, ip, url]
   output_types: [nuclei, subdomain, ip, service, url]

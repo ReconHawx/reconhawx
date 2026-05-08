@@ -56,6 +56,47 @@ def test_get_command_custom_templates_build_api_url(task: NucleiScan) -> None:
     assert "http://api.recon.svc.cluster.local:8000/nuclei-templates/raw/mine.yaml" in cmd
 
 
+def test_get_command_structured_options_before_cmd_args(task: NucleiScan) -> None:
+    cmd = task.get_command(
+        ["https://t.example"],
+        params={
+            "template": {"official": ["http/cves"]},
+            "rate_limit": 50,
+            "automatic_scan": True,
+            "tags": "cve,xss",
+            "severity": ["high", "critical"],
+            "interactsh_server": "https://oast.example",
+            "interactsh_token": "secret",
+            "http_timeout": 30,
+            "retries": 2,
+            "headless": True,
+            "cmd_args": ["-verbose"],
+        },
+    )
+    assert "https://t.example" in cmd
+    assert "-t http/cves" in cmd
+    assert "-rate-limit 50" in cmd
+    assert "-automatic-scan" in cmd
+    assert "-tags" in cmd and "cve,xss" in cmd
+    assert "-severity high,critical" in cmd
+    assert "-interactsh-server" in cmd and "oast.example" in cmd
+    assert "-interactsh-token" in cmd and "secret" in cmd
+    assert "-timeout 30" in cmd
+    assert "-retries 2" in cmd
+    assert "-headless" in cmd
+    idx_verbose = cmd.index("-verbose")
+    idx_headless = cmd.index("-headless")
+    assert idx_headless < idx_verbose
+
+
+def test_get_command_structured_options_skipped_when_empty(task: NucleiScan) -> None:
+    cmd = task.get_command(["x"], params={"template": {}, "severity": [], "tags": ""})
+    assert "-rate-limit" not in cmd
+    assert "-severity" not in cmd
+    assert "-tags" not in cmd
+    assert "-automatic-scan" not in cmd
+
+
 def test_parse_output_emits_finding_plus_derived_assets(
     task: NucleiScan, load_fixture
 ) -> None:
