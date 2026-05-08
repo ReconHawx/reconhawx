@@ -287,3 +287,40 @@ handlers:
               values: "{domain_list_array}"
               value_type: "domains"
           workflow_definition_id: ""
+
+  - id: system_wordpress_url_wpscan
+    event_type: [assets.url.created]
+    description: Trigger wpscan workflow for new WordPress URLs
+    conditions:
+      - type: field_value
+        field: technologies
+        operator: contains
+        expected_value: "wordpress"
+    actions:
+      - type: workflow_trigger
+        api_url: "{api_base_url}"
+        api_key: "{internal_api_key}"
+        use_custom_payload: true
+        batching:
+          max_events: 50
+          max_delay_seconds: 120
+        parameters:
+          workflow_name: "wordpress_url_wpscan"
+          program_name: "{program_name}"
+          description: "Batch WPScan scan for {event_count} WordPress URL(s)"
+          steps:
+            - name: "wpscan"
+              tasks:
+                - name: "wpscan"
+                  force: false
+                  task_type: "wpscan"
+                  params: {}
+                  input_mapping:
+                    urls: "inputs.urls"
+          variables: {}
+          inputs:
+            urls:
+              type: "direct"
+              values: "{url_list_array}"
+              value_type: "urls"
+          workflow_definition_id: ""
