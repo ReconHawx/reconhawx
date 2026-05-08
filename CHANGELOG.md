@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.31.0](https://github.com/ReconHawx/reconhawx/compare/v0.30.0...v0.31.0) (2026-05-08)
+
+
+### Features
+
+* **frontend:** choose WPScan enumerate options with checkboxes ([3df74d2](https://github.com/ReconHawx/reconhawx/commit/3df74d2fd82c61898eb398c9ccc7fbc4b8ead5ac))
+* **workflow:** configure nuclei scan options from the workflow builder ([28a3cf4](https://github.com/ReconHawx/reconhawx/commit/28a3cf4350f8972f5b1774a02700b14887a8bd3a))
+
+
+### Bug Fixes
+
+* **runner:** omit --enumerate when WPScan enumerate param is empty ([0b1ae8d](https://github.com/ReconHawx/reconhawx/commit/0b1ae8d2bdbb8f6cd32be96306e7249624eb331a))
+
 ## [0.30.0](https://github.com/ReconHawx/reconhawx/compare/v0.29.0...v0.30.0) (2026-05-06)
 
 
