@@ -119,7 +119,21 @@ class SimpleEventHandler:
             if not self._evaluate_condition(condition, event_data):
                 return False
         return True
-    
+
+    @staticmethod
+    def _value_contains(actual: Any, expected: Any) -> bool:
+        """Case-insensitive substring match: ``expected`` in each list element or in ``str(actual)``."""
+        if expected is None:
+            return False
+        needle = str(expected).strip().lower()
+        if not needle:
+            return False
+        if actual is None:
+            return False
+        if isinstance(actual, list):
+            return any(needle in str(item).lower() for item in actual if item is not None)
+        return needle in str(actual).lower()
+
     def _evaluate_condition(self, condition: Dict[str, Any], event_data: Dict[str, Any]) -> bool:
         """Evaluate a single condition"""
         condition_type = condition.get('type')
@@ -155,7 +169,13 @@ class SimpleEventHandler:
                     return actual in expected
                 else:
                     return actual == expected
-        
+            elif operator == 'contains':
+                return self._value_contains(actual, expected)
+            elif operator == 'not_contains':
+                if actual is None or actual == "" or (isinstance(actual, list) and len(actual) == 0):
+                    return True
+                return not self._value_contains(actual, expected)
+
         elif condition_type == 'asset_filter':
             # For asset filtering, check if the event itself matches the filter
             asset_field = condition.get('asset_field', 'assets')

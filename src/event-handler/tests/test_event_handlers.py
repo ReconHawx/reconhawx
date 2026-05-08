@@ -84,6 +84,88 @@ class TestSimpleEventHandler:
         assert handler.check_conditions({"status": "pending"}) is True
         assert handler.check_conditions({"status": "done"}) is False
 
+    def test_check_conditions_field_value_contains_list(self):
+        config = {
+            "event_type": "test",
+            "conditions": [
+                {
+                    "type": "field_value",
+                    "field": "technologies",
+                    "operator": "contains",
+                    "expected_value": "nginx",
+                }
+            ],
+            "actions": [{"type": "log"}],
+        }
+        handler = SimpleEventHandler("test", config)
+        assert handler.check_conditions(
+            {"technologies": ["Nginx", "OpenResty:1.29.2.3"]}
+        ) is True
+        assert handler.check_conditions({"technologies": ["Apache", "PHP"]}) is False
+
+    def test_check_conditions_field_value_contains_scalar_string(self):
+        config = {
+            "event_type": "test",
+            "conditions": [
+                {
+                    "type": "field_value",
+                    "field": "title",
+                    "operator": "contains",
+                    "expected_value": "moment",
+                }
+            ],
+            "actions": [{"type": "log"}],
+        }
+        handler = SimpleEventHandler("test", config)
+        assert handler.check_conditions({"title": "One moment, please..."}) is True
+        assert handler.check_conditions({"title": "Done"}) is False
+
+    def test_check_conditions_field_value_contains_missing_or_empty(self):
+        config = {
+            "event_type": "test",
+            "conditions": [
+                {"type": "field_value", "field": "technologies", "operator": "contains", "expected_value": "x"}
+            ],
+            "actions": [{"type": "log"}],
+        }
+        handler = SimpleEventHandler("test", config)
+        assert handler.check_conditions({}) is False
+        assert handler.check_conditions({"technologies": None}) is False
+        assert handler.check_conditions({"technologies": ""}) is False
+        assert handler.check_conditions({"technologies": []}) is False
+
+    def test_check_conditions_field_value_contains_empty_needle(self):
+        config = {
+            "event_type": "test",
+            "conditions": [
+                {"type": "field_value", "field": "title", "operator": "contains", "expected_value": ""}
+            ],
+            "actions": [{"type": "log"}],
+        }
+        handler = SimpleEventHandler("test", config)
+        assert handler.check_conditions({"title": "anything"}) is False
+
+    def test_check_conditions_field_value_not_contains(self):
+        config = {
+            "event_type": "test",
+            "conditions": [
+                {
+                    "type": "field_value",
+                    "field": "technologies",
+                    "operator": "not_contains",
+                    "expected_value": "apache",
+                }
+            ],
+            "actions": [{"type": "log"}],
+        }
+        handler = SimpleEventHandler("test", config)
+        assert handler.check_conditions({"technologies": ["Nginx", "OpenResty:1.29.2.3"]}) is True
+        assert handler.check_conditions({"technologies": ["Apache", "PHP"]}) is False
+        assert handler.check_conditions({}) is True
+        assert handler.check_conditions({"technologies": None}) is True
+        assert handler.check_conditions({"technologies": ""}) is True
+        assert handler.check_conditions({"technologies": []}) is True
+
     def test_get_nested_value_simple(self):
         config = {"event_type": "test", "conditions": [], "actions": []}
         handler = SimpleEventHandler("test", config)

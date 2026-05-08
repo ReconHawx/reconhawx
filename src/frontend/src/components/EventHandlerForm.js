@@ -50,7 +50,7 @@ const EVENT_TYPES = [
 
 const CONDITION_OPERATORS = [
   'equals', 'not_equals', 'null_or_empty', 'not_exists', 'exists',
-  'greater_than', 'less_than', 'not_empty', 'in'
+  'greater_than', 'less_than', 'not_empty', 'in', 'contains', 'not_contains'
 ];
 
 const ACTION_TYPES = [

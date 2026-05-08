@@ -129,6 +129,18 @@ conditions:
     field: severity
     operator: in
     expected_value: [high, critical]
+
+  # Contains (case-insensitive substring; matches str or each element of a list of str)
+  - type: field_value
+    field: technologies
+    operator: contains
+    expected_value: nginx
+
+  # Not contains (true when missing, empty '', or []; true when haystack lacks needle)
+  - type: field_value
+    field: technologies
+    operator: not_contains
+    expected_value: apache
 ```
 
 ### asset_filter
