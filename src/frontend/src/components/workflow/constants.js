@@ -112,7 +112,25 @@ export const TASK_TYPES = {
     icon: '🔒',
     params: {
       api_token: { type: 'string', default: '', description: 'WPScan API token (optional, improves vulnerability detection)' },
-      enumerate: { type: 'array', default: [], description: 'WPScan --enumerate tokens, one per line (e.g. vp, vt, u, ap, at). If empty, the runner uses ap,at,u (aggressive plugins, aggressive themes, users)' }
+      enumerate: {
+        type: 'checkbox-group',
+        default: [],
+        description: 'WPScan --enumerate options. Leave all unchecked so WPScan uses its built-in default enumeration.',
+        options: [
+          { value: 'vp', label: 'Vulnerable plugins (vp)', group: 'plugins' },
+          { value: 'ap', label: 'All plugins (ap)', group: 'plugins' },
+          { value: 'p', label: 'Popular plugins (p)', group: 'plugins' },
+          { value: 'vt', label: 'Vulnerable themes (vt)', group: 'themes' },
+          { value: 'at', label: 'All themes (at)', group: 'themes' },
+          { value: 't', label: 'Popular themes (t)', group: 'themes' },
+          { value: 'tt', label: 'Timthumbs (tt)' },
+          { value: 'cb', label: 'Config backups (cb)' },
+          { value: 'dbe', label: 'DB exports (dbe)' },
+          { value: 'u', label: 'User IDs (u)' },
+          { value: 'm', label: 'Media IDs (m)' },
+        ],
+        exclusiveGroups: ['plugins', 'themes'],
+      },
     }
   },
   test_http: {

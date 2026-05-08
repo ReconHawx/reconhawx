@@ -153,6 +153,43 @@ function TaskParameterSelector({
           </>
         );
 
+      case 'checkbox-group': {
+        const selected = Array.isArray(currentValue) ? currentValue : [];
+        const options = paramConfig.options || [];
+        const exclusiveGroups = new Set(paramConfig.exclusiveGroups || []);
+
+        const toggle = (option, checked) => {
+          let next = selected.filter((v) => v !== option.value);
+          if (checked) {
+            if (option.group && exclusiveGroups.has(option.group)) {
+              const siblings = options
+                .filter((o) => o.group === option.group)
+                .map((o) => o.value);
+              next = next.filter((v) => !siblings.includes(v));
+            }
+            next.push(option.value);
+          }
+          const order = new Map(options.map((o, i) => [o.value, i]));
+          next.sort((a, b) => (order.get(a) ?? 0) - (order.get(b) ?? 0));
+          handleParamChange(paramName, next);
+        };
+
+        return (
+          <div>
+            {options.map((opt) => (
+              <Form.Check
+                key={opt.value}
+                type="checkbox"
+                id={`${paramName}-${opt.value}`}
+                label={opt.label}
+                checked={selected.includes(opt.value)}
+                onChange={(e) => toggle(opt, e.target.checked)}
+              />
+            ))}
+          </div>
+        );
+      }
+
       case 'string':
       default:
         return (
