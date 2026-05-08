@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.32.0](https://github.com/ReconHawx/reconhawx/compare/v0.31.0...v0.32.0) (2026-05-08)
+
+
+### Features
+
+* **api:** seed WordPress URL handler that triggers batched WPScan ([788ec0b](https://github.com/ReconHawx/reconhawx/commit/788ec0b3c95bebb747273b008e4e69ee300b6726))
+* **dashboard:** show WPScan in trends, posture, and latest findings ([8f1e160](https://github.com/ReconHawx/reconhawx/commit/8f1e160ad8771dd26a41f9b5b489bdb95487bd7e))
+* **event-handler:** add substring contains conditions for event handlers ([74c5f91](https://github.com/ReconHawx/reconhawx/commit/74c5f91fb32fb44dca7dee6f266275a16ad723df))
+
+
+### Bug Fixes
+
+* **worker:** avoid failing WPScan worker jobs on non-WordPress targets ([acd4fd6](https://github.com/ReconHawx/reconhawx/commit/acd4fd6f87ca7eed6ab643748eca47dd06c47965))
+
 ## [0.31.0](https://github.com/ReconHawx/reconhawx/compare/v0.30.0...v0.31.0) (2026-05-08)
 
 
