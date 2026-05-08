@@ -139,6 +139,8 @@ COPY ./app/puredns_wrapper.py .
 
 COPY ./app/port_scan_wrapper.py .
 
+COPY ./app/wpscan_wrapper.py .
+
 COPY ./files/ /workspace/files/
 
 COPY --from=builder /usr/local/go/bin/* /usr/local/bin/

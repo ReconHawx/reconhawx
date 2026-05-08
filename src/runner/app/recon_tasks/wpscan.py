@@ -43,8 +43,16 @@ class WPScan(Task):
         api_token = params.get("api_token") if params else None
         enumerate_options = params.get("enumerate", []) if params else []
         
-        # Build base command
-        base_command_parts = ["wpscan", "--ignore-main-redirect", "--random-user-agent", "--no-banner", "-f", "json"]
+        # Build base command (worker runs via wrapper so scan_aborted exit codes map to success)
+        base_command_parts = [
+            "python3",
+            "/workspace/wpscan_wrapper.py",
+            "--ignore-main-redirect",
+            "--random-user-agent",
+            "--no-banner",
+            "-f",
+            "json",
+        ]
         
         # Add API token if provided
         if api_token:

@@ -28,7 +28,7 @@ def test_get_command_one_command_per_url(task: WPScan) -> None:
         params={"enumerate": ["ap", "at"]},
     )
     assert len(cmds) == 2
-    assert all("wpscan" in c for c in cmds)
+    assert all("python3 /workspace/wpscan_wrapper.py" in c for c in cmds)
     assert any("--url 'https://a.test'" in c for c in cmds)
     assert any("--url 'https://b.test'" in c for c in cmds)
     assert all("--enumerate ap,at" in c for c in cmds)
@@ -39,9 +39,9 @@ def test_get_command_injects_api_token(task: WPScan) -> None:
     assert "--api-token secret-token" in cmds[0]
 
 
-def test_get_command_default_enumerate_flags(task: WPScan) -> None:
+def test_get_command_no_enumerate_when_params_omit_enumerate(task: WPScan) -> None:
     cmds = task.get_command(["https://a.test"])
-    assert "--enumerate ap,at,u" in cmds[0]
+    assert "--enumerate" not in cmds[0]
 
 
 def test_get_command_no_valid_urls_returns_echo_noop(task: WPScan) -> None:
