@@ -194,10 +194,9 @@ Zero-trust networking with explicit allowlists in `base/config/security-policies
 ## Deployment Commands
 
 ```bash
-# Using deploy.py (recommended)
-python scripts/deploy.py -e dev deploy all          # Deploy all to dev
-python scripts/deploy.py -e prod deploy all         # Deploy all to production
-python scripts/deploy.py -e dev bd api              # Build and deploy API
+# Minikube dev helper (kubectl context dev; applies kubernetes/overlays/dev)
+python scripts/deploy.py d
+python scripts/deploy.py bd api
 
 # Manual Kustomize
 kubectl apply -k kubernetes/overlays/dev                   # Apply dev overlay
@@ -277,6 +276,6 @@ Program notification settings are also fetched from the API at runtime.
 ## References
 
 - Architecture doc: `kubernetes/ARCHITECTURE.md`
-- Deploy script: `scripts/deploy.py`
+- Deploy script: `scripts/deploy.py` (Minikube dev; `kubectl` context `dev`)
 - NATS init script: `kubernetes/base/nats/init.sh`
 - Kueue config: `kubernetes/kueue-config.yaml`

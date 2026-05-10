@@ -1,9 +1,9 @@
 ---
 name: kubernetes-deploy
 description: >-
-  Builds and deploys Recon services to Kubernetes/k3s using scripts/deploy.py and kubernetes/
-  overlays (including Kueue-related ordering). Use when the user mentions deploy, kubectl,
-  kustomize, environments (dev/prod), or cluster operations for this project.
+  Builds and deploys Recon services: local Minikube uses scripts/deploy.py (kubectl context dev,
+  kubernetes/overlays/dev); other environments use kubectl/kustomize. Use when the user mentions
+  deploy, kubectl, kustomize, Minikube, or cluster operations for this project.
 ---
 
 # Kubernetes deploy (Recon)
@@ -16,15 +16,15 @@ Requires **Docker**, **kubectl**, and Python deps **`rich`**, **`pyyaml`** for `
 
 ## Common commands
 
-From the repository root:
+From the repository root (Minikube dev only; **`kubectl` context `dev`**):
 
 ```bash
-python scripts/deploy.py -e dev d all
-python scripts/deploy.py -e dev d api
-python scripts/deploy.py -e dev bd api
+python scripts/deploy.py d all
+python scripts/deploy.py d api          # d ignores service arg; same as d
+python scripts/deploy.py bd api
 ```
 
-Public deployment uses `kubectl apply -k kubernetes/base/` directly (see `kubernetes/README.md`). Internal environments use overlays under `kubernetes/overlays/` (gitignored).
+Public / other clusters: **`kubectl apply -k kubernetes/base/`** or the appropriate overlay—see [`kubernetes/README.md`](../../kubernetes/README.md). Internal dev overlay path: **`kubernetes/overlays/dev`**.
 
 ## Dependency order
 

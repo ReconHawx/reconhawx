@@ -8,23 +8,24 @@ For a short command index and links to READMEs, see **`AGENTS.md`** at the repos
 
 ## Deployment Methods
 
-### Method 1: Deploy Script (Recommended)
+### Method 1: Deploy Script (Minikube dev only)
+
+[`scripts/deploy.py`](../../scripts/deploy.py) targets **local Minikube** with **`kubectl --context dev`** and applies **`kubernetes/overlays/dev`**. It does **not** accept `-e` / `-f`; **`d`** always applies the full dev overlay.
 
 ```bash
-# Deploy to dev environment (default); subcommands: b=build, d=deploy, bd=both
-python scripts/deploy.py -e dev d all
+# Deploy full dev overlay (positional service argument ignored)
+python scripts/deploy.py d
 
-# Deploy specific service
-python scripts/deploy.py -e dev d api
-python scripts/deploy.py -e dev d frontend
+# Build images (minikube/linux/amd64) + rollout restart app Deployments
+python scripts/deploy.py b
+python scripts/deploy.py b api
 
-# Build and deploy (rebuilds container / image first)
-python scripts/deploy.py -e dev bd api
-python scripts/deploy.py -e dev bd event-handler
-
-# Production deployment
-python scripts/deploy.py -e production d all
+# Apply overlay, then build (all or selected services)
+python scripts/deploy.py bd
+python scripts/deploy.py bd event-handler
 ```
+
+For **production** and other environments, use **Method 2** or cluster-specific overlays.
 
 ### Method 2: Direct Kustomize
 
@@ -68,13 +69,11 @@ kubectl apply -k kubernetes/overlays/dev/runner
 kubectl apply -k kubernetes/overlays/dev/worker
 ```
 
-## Environment Selection
+## Overlays and clusters
 
-| Environment | Overlay Path | Cluster | Use Case |
-|-------------|--------------|---------|----------|
-| dev | `overlays/dev/` | dev | Local development, testing |
-| production | `overlays/production/` | prod | Production deployment |
-| vrev | `overlays/vrev/` | vrev | VRev-specific configuration |
+**`scripts/deploy.py`** is **Minikube dev only** (`kubectl` context **`dev`**, overlay **`kubernetes/overlays/dev`**).
+
+For **production**, **vrev**, or other clusters, use **`kubectl apply -k`** with the matching overlay (e.g. `kubernetes/overlays/production`) or public **`kubernetes/base/`** as documented in [`kubernetes/README.md`](../../kubernetes/README.md).
 
 ## Common Operations
 
@@ -344,7 +343,10 @@ kubectl diff -k kubernetes/overlays/dev
 ```
 
 ### Automated Deployment
+
 ```bash
-# In CI pipeline (ensure KUBECONFIG / kubeconfig paths match deploy.py expectations)
-python scripts/deploy.py -e ${ENVIRONMENT} d all
+# CI / non-interactive: use kubectl with the target context and overlay
+kubectl apply -k kubernetes/overlays/dev    # example: dev cluster
 ```
+
+For Minikube, you may run **`python scripts/deploy.py d`** locally instead; it is not multi-environment.

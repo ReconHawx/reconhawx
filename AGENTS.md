@@ -79,16 +79,17 @@ Superusers can trigger an in-cluster upgrade from **Admin → System upgrade** (
 
 ### Kubernetes deploy
 
-Preferred entrypoint is [`scripts/deploy.py`](scripts/deploy.py) (requires `rich`, `pyyaml`; Docker + `kubectl` for real deploys).
+Preferred entrypoint for **local Minikube dev** is [`scripts/deploy.py`](scripts/deploy.py) (requires `rich`, `pyyaml`; Docker + `kubectl`). It uses **`kubectl --context dev`** with your default **`~/.kube/config`**, runs each service’s **`src/<service>/build.sh minikube linux/amd64`**, applies **`kubernetes/overlays/dev`**, and **`kubectl rollout restart`** for app Deployments after a build.
 
 ```bash
-python scripts/deploy.py -e dev d all
-python scripts/deploy.py -e dev d api
-python scripts/deploy.py -e dev bd api
-python scripts/deploy.py -e production d all
+python scripts/deploy.py d all          # kubectl apply -k kubernetes/overlays/dev
+python scripts/deploy.py b api         # build api + rollout restart
+python scripts/deploy.py bd api        # apply overlay, then build api + rollout
 ```
 
-(Subcommands: `b` build, `d` deploy, `bd` build+deploy—see [`scripts/README.md`](scripts/README.md).)
+(Subcommands: `b` build, `d` deploy full overlay only, `bd` deploy then build—see [`scripts/README.md`](scripts/README.md). **`d`** ignores any service argument and always applies the full dev overlay.)
+
+For **production** or other clusters, use **`kubectl apply -k`** with the right overlay or [`kubernetes/base/`](kubernetes/base/) (see [`kubernetes/README.md`](kubernetes/README.md)).
 
 **Detail** (service list, flags, build/deploy flows): [`scripts/README.md`](scripts/README.md), [`kubernetes/README.md`](kubernetes/README.md). **Ordering, kubectl snippets, environments**: [`.cursor/rules/kubernetes-deployment-operations.mdc`](.cursor/rules/kubernetes-deployment-operations.mdc).
 
@@ -150,7 +151,7 @@ Agent skills are markdown guides under [`.cursor/skills/`](.cursor/skills/). Cur
 ## Agent workflow (minimal)
 
 1. **Schema changes**: Add a new migration under `src/migrations/`; do not rewrite applied migration files. Keep SQLAlchemy models in sync (see migrations rule). Write **idempotent** UP SQL (same rule as above). Verify with `status` / `run --dry-run` before applying.
-2. **Deploy / Kueue**: Public users deploy directly from `kubernetes/base/` (see [`kubernetes/README.md`](kubernetes/README.md)). Internal environments use `scripts/deploy.py` with private overlays under `kubernetes/overlays/` (gitignored). Respect infrastructure and app ordering from the k8s deployment rule when applying manually.
+2. **Deploy / Kueue**: Public users deploy directly from `kubernetes/base/` (see [`kubernetes/README.md`](kubernetes/README.md)). Local Minikube dev may use `scripts/deploy.py` (applies `kubernetes/overlays/dev` only). Respect infrastructure and app ordering from the k8s deployment rule when applying manually.
 3. **Feature work**: Use the **Scoped Cursor rules** table above for the area you edit (API, frontend, runner, worker, event-handler, ct-monitor, k8s).
 
 ## Maintenance
