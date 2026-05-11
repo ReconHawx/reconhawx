@@ -118,20 +118,32 @@ function Navigation() {
                 <Dropdown.Item as={Link} to="/findings/external-links">
                   🔗 External Links
                 </Dropdown.Item>
-                <Dropdown.Divider />
+              </Dropdown.Menu>
+            </Dropdown>
+
+            {/* Brand Protection Dropdown */}
+            <Dropdown as={Nav.Item} className="me-2">
+              <Dropdown.Toggle as={Nav.Link} className="dropdown-toggle">
+                🛡️ Brand Protection
+              </Dropdown.Toggle>
+              <Dropdown.Menu>
                 <Dropdown.Header>🔤 Typosquats</Dropdown.Header>
-                <Dropdown.Item as={Link} to="/findings/typosquat/dashboard">
+                <Dropdown.Item as={Link} to="/brand-protection/typosquat/dashboard">
                   📊 Typosquat Dashboard
                 </Dropdown.Item>
                 <Dropdown.Divider />
-                <Dropdown.Item as={Link} to="/findings/typosquat">
+                <Dropdown.Item as={Link} to="/brand-protection/typosquat">
                   🔤 Typosquat Domains
                 </Dropdown.Item>
-                <Dropdown.Item as={Link} to="/findings/typosquat-urls">
+                <Dropdown.Item as={Link} to="/brand-protection/typosquat-urls">
                   🔗 Typosquat URLs
                 </Dropdown.Item>
-                <Dropdown.Item as={Link} to="/findings/typosquat-screenshots">
+                <Dropdown.Item as={Link} to="/brand-protection/typosquat-screenshots">
                   📸 Typosquat Screenshots
+                </Dropdown.Item>
+                <Dropdown.Divider />
+                <Dropdown.Item as={Link} to="/brand-protection/typosquat/logs">
+                  📋 Typosquat Action Logs
                 </Dropdown.Item>
               </Dropdown.Menu>
             </Dropdown>

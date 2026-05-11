@@ -120,7 +120,7 @@ function TyposquatUrlDetails() {
       setDeleting(true);
       await typosquatAPI.deleteUrl(url.id || url._id);
       setShowDeleteModal(false);
-      navigate('/findings/typosquat');
+      navigate('/brand-protection/typosquat');
     } catch (err) {
       setError('Failed to delete typosquat URL: ' + err.message);
     } finally {
@@ -323,7 +323,7 @@ function TyposquatUrlDetails() {
                 <p className="text-muted">URLs associated with: <strong>{domainParam}</strong></p>
               </div>
               <div>
-                <Button variant="outline-primary" onClick={() => navigate('/findings/typosquat')}>
+                <Button variant="outline-primary" onClick={() => navigate('/brand-protection/typosquat')}>
                   ← Back to Typosquat Findings
                 </Button>
               </div>
@@ -354,7 +354,7 @@ function TyposquatUrlDetails() {
                         <td>
                           <div className="text-break" style={{ maxWidth: '300px' }}>
                             <button
-                              onClick={() => navigate(`/findings/typosquat-urls/details?id=${urlData.id || urlData._id}`)}
+                              onClick={() => navigate(`/brand-protection/typosquat-urls/details?id=${urlData.id || urlData._id}`)}
                               className="btn btn-link text-decoration-none text-primary p-0 border-0 bg-transparent"
                               style={{ cursor: 'pointer' }}
                               title="Click to view URL details"
@@ -448,7 +448,7 @@ function TyposquatUrlDetails() {
               >
                 🗑️ Delete
               </Button>
-              <Button variant="outline-primary" onClick={() => navigate('/findings/typosquat')}>
+              <Button variant="outline-primary" onClick={() => navigate('/brand-protection/typosquat')}>
                 ← Back to Typosquat URLs
               </Button>
             </div>
@@ -540,7 +540,7 @@ function TyposquatUrlDetails() {
                       <tr>
                         <td><strong>Hostname:</strong></td>
                         <td>
-                          <a href={`/findings/typosquat/details?id=${url.typosquat_domain_id}`} target="_blank" rel="noopener noreferrer" className="text-break">
+                          <a href={`/brand-protection/typosquat/details?id=${url.typosquat_domain_id}`} target="_blank" rel="noopener noreferrer" className="text-break">
                             {parsedUrl.hostname}
                           </a>
                         </td>

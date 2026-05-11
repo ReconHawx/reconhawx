@@ -374,7 +374,7 @@ function TyposquatScreenshots() {
 
   const handleUrlClick = (screenshot) => {
     if (!screenshot || !screenshot.url_id) return;
-    navigate(`/findings/typosquat-urls/details?id=${screenshot.url_id}`);
+    navigate(`/brand-protection/typosquat-urls/details?id=${screenshot.url_id}`);
   };
 
   const formatScreenshotDate = (dateString) => {

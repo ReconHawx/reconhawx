@@ -748,7 +748,7 @@ function TyposquatFindings() {
 
   // Handle finding click
   const handleFindingClick = (finding) => {
-    navigate(`/findings/typosquat/details?id=${finding.id}`);
+    navigate(`/brand-protection/typosquat/details?id=${finding.id}`);
   };
 
   // Batch delete handlers
@@ -2567,7 +2567,7 @@ function TyposquatFindings() {
                             <Button
                               variant="outline-primary"
                               size="sm"
-                              onClick={() => navigate(`/findings/typosquat/details?id=${finding.id}`)}
+                              onClick={() => navigate(`/brand-protection/typosquat/details?id=${finding.id}`)}
                               title="View Details"
                             >
                               <i className="bi bi-eye"></i>
@@ -2575,7 +2575,7 @@ function TyposquatFindings() {
                             <Button
                               variant="outline-info"
                               size="sm"
-                              onClick={() => navigate(`/findings/typosquat-urls?domain=${finding.typo_domain}`)}
+                              onClick={() => navigate(`/brand-protection/typosquat-urls?domain=${finding.typo_domain}`)}
                               title="View URLs"
                             >
                               <i className="bi bi-link-45deg"></i>
