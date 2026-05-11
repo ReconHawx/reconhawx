@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.33.0](https://github.com/ReconHawx/reconhawx/compare/v0.32.0...v0.33.0) (2026-05-11)
+
+
+### ⚠ BREAKING CHANGES
+
+* **frontend:** Deep links and bookmarks using /findings/typosquat, /findings/typosquat-urls*, and /findings/typosquat-screenshots no longer route to the typosquat UI (they fall through to the app default route).
+
+### Features
+
+* **frontend:** expose typosquat under Brand Protection with new URLs ([8b90260](https://github.com/ReconHawx/reconhawx/commit/8b902608fd5eacff2d210622eddd932c7b8f091a))
+
 ## [0.32.0](https://github.com/ReconHawx/reconhawx/compare/v0.31.0...v0.32.0) (2026-05-08)
 
 
