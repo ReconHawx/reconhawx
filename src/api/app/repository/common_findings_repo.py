@@ -12,7 +12,8 @@ from models.postgres import (
     FindingsTrendsResponse,
 )
 from sqlalchemy import desc, func, case
-from models.postgres import Program, NucleiFinding, TyposquatDomain, WPScanFinding
+from models.postgres import Program, Finding, TyposquatDomain
+from repository.findings_repo import SOURCE_NUCLEI, SOURCE_WPSCAN
 from db import SessionLocal
 from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.orm import joinedload
@@ -44,14 +45,17 @@ class CommonFindingsRepository(ProgramAccessMixin):
     def _compute_findings_stats_bundle(db, program_ids: List[Any]):
         nrow = (
             db.query(
-                func.count(NucleiFinding.id),
-                func.count().filter(NucleiFinding.severity == "critical"),
-                func.count().filter(NucleiFinding.severity == "high"),
-                func.count().filter(NucleiFinding.severity == "medium"),
-                func.count().filter(NucleiFinding.severity == "low"),
-                func.count().filter(NucleiFinding.severity == "info"),
+                func.count(Finding.id),
+                func.count().filter(Finding.severity == "critical"),
+                func.count().filter(Finding.severity == "high"),
+                func.count().filter(Finding.severity == "medium"),
+                func.count().filter(Finding.severity == "low"),
+                func.count().filter(Finding.severity == "info"),
             )
-            .filter(NucleiFinding.program_id.in_(program_ids))
+            .filter(
+                Finding.program_id.in_(program_ids),
+                Finding.source == SOURCE_NUCLEI,
+            )
             .one()
         )
 
@@ -69,14 +73,17 @@ class CommonFindingsRepository(ProgramAccessMixin):
 
         wrow = (
             db.query(
-                func.count(WPScanFinding.id),
-                func.count().filter(WPScanFinding.severity == "critical"),
-                func.count().filter(WPScanFinding.severity == "high"),
-                func.count().filter(WPScanFinding.severity == "medium"),
-                func.count().filter(WPScanFinding.severity == "low"),
-                func.count().filter(WPScanFinding.severity == "info"),
+                func.count(Finding.id),
+                func.count().filter(Finding.severity == "critical"),
+                func.count().filter(Finding.severity == "high"),
+                func.count().filter(Finding.severity == "medium"),
+                func.count().filter(Finding.severity == "low"),
+                func.count().filter(Finding.severity == "info"),
             )
-            .filter(WPScanFinding.program_id.in_(program_ids))
+            .filter(
+                Finding.program_id.in_(program_ids),
+                Finding.source == SOURCE_WPSCAN,
+            )
             .one()
         )
 
@@ -216,24 +223,26 @@ class CommonFindingsRepository(ProgramAccessMixin):
 
             if "nuclei" in want:
                 try:
-                    q = db.query(NucleiFinding).options(joinedload(NucleiFinding.program))
+                    q = db.query(Finding).options(joinedload(Finding.program)).filter(
+                        Finding.source == SOURCE_NUCLEI
+                    )
                     if program_ids_filter:
-                        q = q.filter(NucleiFinding.program_id.in_(program_ids_filter))
+                        q = q.filter(Finding.program_id.in_(program_ids_filter))
                     if time_filter:
-                        q = q.filter(NucleiFinding.created_at >= time_filter)
-                    rows = q.order_by(desc(NucleiFinding.created_at)).limit(limit).all()
+                        q = q.filter(Finding.created_at >= time_filter)
+                    rows = q.order_by(desc(Finding.created_at)).limit(limit).all()
                     out["nuclei"] = [
                         {
                             "id": f.id,
-                            "name": f.name,
+                            "name": f.title,
                             "severity": f.severity,
                             "url": f.url,
-                            "template_id": f.template_id,
+                            "template_id": (f.details or {}).get("template_id"),
                             "created_at": f.created_at,
                             "program_name": f.program.name if f.program else None,
                             "status": getattr(f, "status", "unknown"),
                             "hostname": getattr(f, "hostname", None),
-                            "type": getattr(f, "finding_type", None),
+                            "type": (f.details or {}).get("type"),
                         }
                         for f in rows
                     ]
@@ -266,17 +275,19 @@ class CommonFindingsRepository(ProgramAccessMixin):
 
             if "wpscan" in want:
                 try:
-                    q = db.query(WPScanFinding).options(joinedload(WPScanFinding.program))
+                    q = db.query(Finding).options(joinedload(Finding.program)).filter(
+                        Finding.source == SOURCE_WPSCAN
+                    )
                     if program_ids_filter:
-                        q = q.filter(WPScanFinding.program_id.in_(program_ids_filter))
+                        q = q.filter(Finding.program_id.in_(program_ids_filter))
                     if time_filter:
-                        q = q.filter(WPScanFinding.created_at >= time_filter)
-                    rows = q.order_by(desc(WPScanFinding.created_at)).limit(limit).all()
+                        q = q.filter(Finding.created_at >= time_filter)
+                    rows = q.order_by(desc(Finding.created_at)).limit(limit).all()
                     out["wpscan"] = [
                         {
                             "id": f.id,
-                            "item_name": f.item_name,
-                            "item_type": f.item_type,
+                            "item_name": (f.details or {}).get("item_name"),
+                            "item_type": (f.details or {}).get("item_type"),
                             "severity": f.severity,
                             "url": f.url,
                             "hostname": f.hostname,
@@ -341,23 +352,24 @@ class CommonFindingsRepository(ProgramAccessMixin):
             wpscan_by_day: Dict[date, Dict[str, int]] = {}
 
             if program_ids:
-                nd = CommonFindingsRepository._findings_trend_day_expr(NucleiFinding.created_at)
+                nd = CommonFindingsRepository._findings_trend_day_expr(Finding.created_at)
                 nrows = (
                     db.query(
                         nd.label("d"),
                         func.count().label("total"),
                         func.coalesce(
-                            func.sum(case((NucleiFinding.severity == "critical", 1), else_=0)),
+                            func.sum(case((Finding.severity == "critical", 1), else_=0)),
                             0,
                         ).label("crit"),
                         func.coalesce(
-                            func.sum(case((NucleiFinding.severity == "high", 1), else_=0)),
+                            func.sum(case((Finding.severity == "high", 1), else_=0)),
                             0,
                         ).label("high"),
                     )
-                    .filter(NucleiFinding.program_id.in_(program_ids))
-                    .filter(NucleiFinding.created_at >= start_ts)
-                    .filter(NucleiFinding.created_at < end_ts_excl)
+                    .filter(Finding.program_id.in_(program_ids))
+                    .filter(Finding.source == SOURCE_NUCLEI)
+                    .filter(Finding.created_at >= start_ts)
+                    .filter(Finding.created_at < end_ts_excl)
                     .group_by(nd)
                     .all()
                 )
@@ -397,23 +409,24 @@ class CommonFindingsRepository(ProgramAccessMixin):
                         dv = dv.date()
                     typo_by_day[dv] = {"total": int(r.total or 0), "new": int(r.newn or 0)}
 
-                wd = CommonFindingsRepository._findings_trend_day_expr(WPScanFinding.created_at)
+                wd = CommonFindingsRepository._findings_trend_day_expr(Finding.created_at)
                 wrows = (
                     db.query(
                         wd.label("d"),
                         func.count().label("total"),
                         func.coalesce(
-                            func.sum(case((WPScanFinding.severity == "critical", 1), else_=0)),
+                            func.sum(case((Finding.severity == "critical", 1), else_=0)),
                             0,
                         ).label("crit"),
                         func.coalesce(
-                            func.sum(case((WPScanFinding.severity == "high", 1), else_=0)),
+                            func.sum(case((Finding.severity == "high", 1), else_=0)),
                             0,
                         ).label("high"),
                     )
-                    .filter(WPScanFinding.program_id.in_(program_ids))
-                    .filter(WPScanFinding.created_at >= start_ts)
-                    .filter(WPScanFinding.created_at < end_ts_excl)
+                    .filter(Finding.program_id.in_(program_ids))
+                    .filter(Finding.source == SOURCE_WPSCAN)
+                    .filter(Finding.created_at >= start_ts)
+                    .filter(Finding.created_at < end_ts_excl)
                     .group_by(wd)
                     .all()
                 )
