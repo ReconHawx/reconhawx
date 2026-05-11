@@ -22,7 +22,10 @@ from models.postgres import (
     Certificate,
     ApexDomain,
     UserProgramPermission,
+    Finding,
     NucleiFinding,
+    WPScanFinding,
+    BrokenLink,
     TyposquatDomain,
     TyposquatURL,
     TyposquatCertificate,
@@ -30,6 +33,7 @@ from models.postgres import (
     WorkflowLog,
     Wordlist,
 )
+from repository.findings_repo import SOURCE_BROKEN_LINK, SOURCE_NUCLEI, SOURCE_WPSCAN
 
 logger = logging.getLogger(__name__)
 
@@ -305,7 +309,30 @@ class ProgramRepository(ProgramAccessMixin):
                 counts['certificates'] = db.query(Certificate).filter(Certificate.program_id == program_uuid).count()
                 counts['apex_domains'] = db.query(ApexDomain).filter(ApexDomain.program_id == program_uuid).count()
                 counts['user_permissions'] = db.query(UserProgramPermission).filter(UserProgramPermission.program_id == program_uuid).count()
-                counts['nuclei_findings'] = db.query(NucleiFinding).filter(NucleiFinding.program_id == program_uuid).count()
+                counts['nuclei_findings'] = (
+                    db.query(Finding)
+                    .filter(
+                        Finding.program_id == program_uuid,
+                        Finding.source == SOURCE_NUCLEI,
+                    )
+                    .count()
+                )
+                counts['wpscan_findings'] = (
+                    db.query(Finding)
+                    .filter(
+                        Finding.program_id == program_uuid,
+                        Finding.source == SOURCE_WPSCAN,
+                    )
+                    .count()
+                )
+                counts['broken_links'] = (
+                    db.query(Finding)
+                    .filter(
+                        Finding.program_id == program_uuid,
+                        Finding.source == SOURCE_BROKEN_LINK,
+                    )
+                    .count()
+                )
                 counts['typosquat_domains'] = db.query(TyposquatDomain).filter(TyposquatDomain.program_id == program_uuid).count()
                 counts['workflows'] = db.query(Workflow).filter(Workflow.program_id == program_uuid).count()
                 counts['workflow_logs'] = db.query(WorkflowLog).filter(WorkflowLog.program_id == program_uuid).count()
@@ -331,8 +358,19 @@ class ProgramRepository(ProgramAccessMixin):
                 # Delete subdomains
                 db.query(Subdomain).filter(Subdomain.program_id == program_uuid).delete()
                 
-                # Delete nuclei findings first (they reference ips via ip_id)
-                db.query(NucleiFinding).filter(NucleiFinding.program_id == program_uuid).delete()
+                # Unified findings + legacy tables (may still hold rows pre-migration)
+                db.query(Finding).filter(Finding.program_id == program_uuid).delete(
+                    synchronize_session=False
+                )
+                db.query(NucleiFinding).filter(NucleiFinding.program_id == program_uuid).delete(
+                    synchronize_session=False
+                )
+                db.query(WPScanFinding).filter(WPScanFinding.program_id == program_uuid).delete(
+                    synchronize_session=False
+                )
+                db.query(BrokenLink).filter(BrokenLink.program_id == program_uuid).delete(
+                    synchronize_session=False
+                )
                 
                 # Delete IPs
                 db.query(IP).filter(IP.program_id == program_uuid).delete()

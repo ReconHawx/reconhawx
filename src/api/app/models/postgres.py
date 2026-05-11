@@ -187,6 +187,7 @@ class Program(Base):
     )
     broken_links = relationship("BrokenLink", back_populates="program", cascade="all, delete-orphan")
     wpscan_findings = relationship("WPScanFinding", back_populates="program", cascade="all, delete-orphan")
+    findings = relationship("Finding", back_populates="program", cascade="all, delete-orphan")
     workflows = relationship("Workflow", back_populates="program", cascade="all, delete-orphan")
     workflow_logs = relationship("WorkflowLog", back_populates="program", cascade="all, delete-orphan")
     wordlists = relationship("Wordlist", back_populates="program")
@@ -247,6 +248,7 @@ class IP(Base):
     subdomain_ips = relationship("SubdomainIP", back_populates="ip", cascade="all, delete-orphan")
     services = relationship("Service", back_populates="ip", cascade="all, delete-orphan")
     nuclei_findings = relationship("NucleiFinding", back_populates="ip")
+    findings = relationship("Finding", back_populates="ip")
 
 class Subdomain(Base):
     """Subdomains with DNS resolution data"""
@@ -750,6 +752,44 @@ class WPScanFinding(Base):
     __table_args__ = (
         UniqueConstraint('url', 'item_name', 'program_id', name='uq_wpscan_findings_url_item_program'),
     )
+
+
+class Finding(Base):
+    """Unified scanner/tool findings (Nuclei, WPScan, Broken Links, future scanners)."""
+
+    __tablename__ = "findings"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    program_id = Column(UUID(as_uuid=True), ForeignKey("programs.id"), nullable=False, index=True)
+    # Scanner category: nuclei, wpscan, broken_link, future_tool_name
+    source = Column(String(64), nullable=False, index=True)
+    fingerprint = Column(String(64), nullable=False)
+    title = Column(String(2000), nullable=True, index=True)
+    description = Column(Text, nullable=True)
+    severity = Column(String(50), nullable=True, index=True)
+    url = Column(Text, nullable=True, index=True)
+    hostname = Column(String(255), nullable=True, index=True)
+    port = Column(Integer, nullable=True)
+    scheme = Column(String(10), nullable=True)
+    ip_id = Column(UUID(as_uuid=True), ForeignKey("ips.id"), nullable=True, index=True)
+    observed_at = Column(DateTime, nullable=True, index=True)
+    notes = Column(Text, nullable=True)
+    details = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
+
+    program = relationship("Program", back_populates="findings")
+    ip = relationship("IP", back_populates="findings")
+
+    __table_args__ = (
+        UniqueConstraint("program_id", "source", "fingerprint", name="uq_findings_prog_source_fingerprint"),
+        Index("ix_findings_prog_source_created", "program_id", "source", "created_at"),
+        Index("ix_findings_prog_source_updated", "program_id", "source", "updated_at"),
+        Index("ix_findings_prog_source_severity", "program_id", "source", "severity"),
+        Index("ix_findings_prog_source_hostname", "program_id", "source", "hostname"),
+        Index("ix_findings_prog_source_observed_at", "program_id", "source", "observed_at"),
+    )
+
 
 class SocialMediaCredentials(Base):
     """Social media credentials for system-wide use"""
