@@ -204,37 +204,37 @@ function AppContent() {
                     <WPScanFindingDetail />
                   </ProtectedRoute>
                 } />
-                <Route path="/findings/typosquat" element={
+                <Route path="/brand-protection/typosquat" element={
                   <ProtectedRoute>
                     <TyposquatFindings />
                   </ProtectedRoute>
                 } />
-                <Route path="/findings/typosquat/dashboard" element={
+                <Route path="/brand-protection/typosquat/dashboard" element={
                   <ProtectedRoute>
                     <TyposquatDashboard />
                   </ProtectedRoute>
                 } />
-                <Route path="/findings/typosquat/logs" element={
+                <Route path="/brand-protection/typosquat/logs" element={
                   <ProtectedRoute>
                     <TyposquatActionLogs />
                   </ProtectedRoute>
                 } />
-                <Route path="/findings/typosquat/details" element={
+                <Route path="/brand-protection/typosquat/details" element={
                   <ProtectedRoute>
                     <TyposquatFindingDetail />
                   </ProtectedRoute>
                 } />
-                <Route path="/findings/typosquat-urls" element={
+                <Route path="/brand-protection/typosquat-urls" element={
                   <ProtectedRoute>
                     <TyposquatUrls />
                   </ProtectedRoute>
                 } />
-                <Route path="/findings/typosquat-urls/details" element={
+                <Route path="/brand-protection/typosquat-urls/details" element={
                   <ProtectedRoute>
                     <TyposquatUrlDetails />
                   </ProtectedRoute>
                 } />
-                <Route path="/findings/typosquat-screenshots" element={
+                <Route path="/brand-protection/typosquat-screenshots" element={
                   <ProtectedRoute>
                     <TyposquatScreenshots />
                   </ProtectedRoute>

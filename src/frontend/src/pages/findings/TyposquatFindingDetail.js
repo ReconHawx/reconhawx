@@ -806,7 +806,7 @@ function TyposquatFindingDetail() {
       await api.findings.typosquat.delete(findingId, deleteRelated);
       setShowDeleteModal(false);
       setDeleteRelated(false); // Reset the checkbox
-      navigate('/findings/typosquat');
+      navigate('/brand-protection/typosquat');
     } catch (err) {
       console.error('Error deleting typosquat finding:', err);
       alert('Failed to delete typosquat finding: ' + (err.response?.data?.detail || err.message));
@@ -1311,7 +1311,7 @@ function TyposquatFindingDetail() {
           >
             <i className="bi bi-trash"></i> Delete
           </Button>
-          <Button variant="outline-primary" onClick={() => navigate('/findings/typosquat')} className="me-3">
+          <Button variant="outline-primary" onClick={() => navigate('/brand-protection/typosquat')} className="me-3">
             ← Back to Typosquat Domains
           </Button>
         </div>
@@ -3201,7 +3201,7 @@ function TyposquatFindingDetail() {
                         <Button
                           variant="outline-primary"
                           size="sm"
-                          onClick={() => navigate(`/findings/typosquat/details?id=${encodeURIComponent(domain.id)}`)}
+                          onClick={() => navigate(`/brand-protection/typosquat/details?id=${encodeURIComponent(domain.id)}`)}
                           title="View typosquat finding details"
                         >
                           <i className="bi bi-eye"></i>
@@ -3283,7 +3283,7 @@ function TyposquatFindingDetail() {
                       <td>
                         <div className="text-break" style={{ maxWidth: '300px' }}>
                           <button
-                            onClick={() => navigate(`/findings/typosquat-urls/details?id=${urlData.id || urlData._id}`)}
+                            onClick={() => navigate(`/brand-protection/typosquat-urls/details?id=${urlData.id || urlData._id}`)}
                             className="btn btn-link text-decoration-none text-primary p-0 border-0 bg-transparent"
                             style={{ cursor: 'pointer' }}
                             title="Click to view URL details"

@@ -277,7 +277,7 @@ function TyposquatUrls() {
   };
 
   const handleUrlClick = (url) => {
-    navigate(`/findings/typosquat-urls/details?id=${encodeURIComponent(url.id || '')}`);
+    navigate(`/brand-protection/typosquat-urls/details?id=${encodeURIComponent(url.id || '')}`);
   };
 
   // Batch delete handlers
