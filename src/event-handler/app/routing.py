@@ -188,8 +188,16 @@ def normalize_event_data(subject: str, payload: Dict[str, Any]) -> Dict[str, Any
                     normalized['url_list'] = urls[0]
                     normalized['url_list_array'] = urls
                     normalized['url_count'] = 1
-    
-    # Handle special finding cases  
+
+            # External (out-of-scope) link discovered on a crawled page; link URL in name from API
+            elif event_type.startswith('assets.external_link'):
+                link_urls = []
+                if payload.get('name'):
+                    link_urls.append(payload['name'])
+                if link_urls:
+                    normalized['url_list'] = link_urls[0]
+                    normalized['url_list_array'] = link_urls
+                    normalized['url_count'] = 1
     elif event_type.startswith('findings.'):
         if event_type.startswith('findings.typosquat'):
             # Promote typosquat-specific fields

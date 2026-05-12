@@ -16,8 +16,47 @@ from utils import get_root_url
 from utils.domain_utils import normalize_hostname
 from utils.url_utils import lower_url_host
 from repository.program_repo import ProgramRepository
+from services.event_publisher import publisher
 
 logger = logging.getLogger(__name__)
+
+
+async def _publish_external_link_created(
+    *,
+    extracted_link_id,
+    link_url: str,
+    program_name: str,
+    source_url_id,
+    source_url: Optional[str],
+) -> None:
+    """Publish NATS event after a new extracted_links (external link) row is committed."""
+    await publisher.publish(
+        "events.assets.external_link.created",
+        {
+            "event": "asset.created",
+            "asset_type": "external_link",
+            "record_id": str(extracted_link_id),
+            "name": link_url,
+            "program_name": program_name,
+            "source_url_id": str(source_url_id),
+            "source_url": source_url or "",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "source": "api",
+        },
+    )
+
+
+async def publish_pending_external_link_events(pending: List[Dict[str, Any]]) -> None:
+    """Publish NATS events for new extracted_links rows. Call from the main asyncio loop (not worker threads)."""
+    for ev in pending:
+        await _publish_external_link_created(
+            extracted_link_id=ev["extracted_link_id"],
+            link_url=ev["link_url"],
+            program_name=ev["program_name"],
+            source_url_id=ev["source_url_id"],
+            source_url=ev.get("source_url"),
+        )
+
 
 class UrlAssetsRepository(ProgramAccessMixin):
     """PostgreSQL repository for assets operations"""
@@ -262,11 +301,19 @@ class UrlAssetsRepository(ProgramAccessMixin):
                 raise
 
     @staticmethod
-    async def _update_extracted_links(db, url_obj: URL, new_links: List[str], program_id: str, program_name: str) -> bool:
+    async def _update_extracted_links(
+        db, url_obj: URL, new_links: List[str], program_name: str
+    ) -> tuple[bool, List[Dict[str, Any]]]:
         """
-        Update extracted links for a URL. Returns True if changes were made.
+        Update extracted links for a URL. Returns (changed, pending_publish).
+
+        pending_publish: NATS payloads for each *new* (source_url_id, extracted_link_id)
+        association compared to the associations that existed before this update. Rebuild deletes and
+        re-adds junction rows, so we compare against a snapshot to avoid noise when the link set is
+        unchanged. Globally unique link_url means ExtractedLink rows are often reused across crawls.
         Only inserts links whose hostnames are NOT in scope.
         """
+        pending_publish: List[Dict[str, Any]] = []
         # Get current links for this URL
         current_links = {source.extracted_link.link_url for source in url_obj.extracted_link_sources}
         new_links_set = set()
@@ -298,7 +345,12 @@ class UrlAssetsRepository(ProgramAccessMixin):
 
         # Check if there are any changes
         if current_links == filtered_links:
-            return False
+            return False, []
+
+        prev_pairs = {
+            (str(source.source_url_id), str(source.extracted_link_id))
+            for source in url_obj.extracted_link_sources
+        }
 
         # Remove all existing link sources for this URL
         for source in url_obj.extracted_link_sources:
@@ -306,17 +358,16 @@ class UrlAssetsRepository(ProgramAccessMixin):
 
         # Add new links (only external ones)
         for link_url in filtered_links:
-            # Check if the extracted link already exists
+            # link_url is globally unique in extracted_links — look up by URL only
             extracted_link = db.query(ExtractedLink).filter(
                 ExtractedLink.link_url == link_url,
-                ExtractedLink.program_id == program_id
             ).first()
 
             if not extracted_link:
                 # Create new extracted link
                 extracted_link = ExtractedLink(
                     link_url=link_url,
-                    program_id=program_id
+                    program_id=url_obj.program_id,
                 )
                 db.add(extracted_link)
                 db.flush()  # Get the ID
@@ -328,7 +379,17 @@ class UrlAssetsRepository(ProgramAccessMixin):
             )
             db.add(source)
 
-        return True
+            pair = (str(url_obj.id), str(extracted_link.id))
+            if pair not in prev_pairs:
+                pending_publish.append({
+                    "extracted_link_id": extracted_link.id,
+                    "link_url": link_url,
+                    "program_name": program_name,
+                    "source_url_id": url_obj.id,
+                    "source_url": url_obj.url,
+                })
+
+        return True, pending_publish
 
     @staticmethod
     def _update_url_technologies(db, url_obj: URL, new_technologies: List[str], program_id: str) -> bool:
@@ -482,9 +543,12 @@ class UrlAssetsRepository(ProgramAccessMixin):
         return True
 
     @staticmethod
-    async def create_or_update_url(url_data: Dict[str, Any]) -> tuple[Optional[str], str]:
+    async def create_or_update_url(
+        url_data: Dict[str, Any],
+    ) -> tuple[Optional[str], str, List[Dict[str, Any]]]:
         """Create a new URL or update if exists with merged data.
-        Returns (url_id, action) where action is 'created', 'updated', or 'skipped'."""
+        Returns (url_id, action, pending_external_link_events). Pending events must be published on the
+        main API event loop (see BatchRepository / unified processor); not inside thread workers."""
         async with get_db_session() as db:
             try:
                 logger.debug(f"create_or_update_url called with URL data: {url_data}")
@@ -511,7 +575,7 @@ class UrlAssetsRepository(ProgramAccessMixin):
 
                 if not is_in_scope:
                     logger.debug(f"URL {url_data.get('url')} is not in scope, skipping")
-                    return None, "skipped"
+                    return None, "skipped", []
 
                 # Resolve relations (certificate, services, subdomain) - processed in same batch
                 certificate_id, service_ids, subdomain_id = UrlAssetsRepository._resolve_url_relations(
@@ -531,6 +595,7 @@ class UrlAssetsRepository(ProgramAccessMixin):
                 if existing:
                     # Track what fields actually changed for meaningful update detection
                     meaningful_changes = []
+                    external_link_events: List[Dict[str, Any]] = []
 
                     # Define simple fields that should be compared for changes
                     simple_fields = [
@@ -555,7 +620,10 @@ class UrlAssetsRepository(ProgramAccessMixin):
 
                     # Handle extracted links
                     if 'extracted_links' in url_data and isinstance(url_data['extracted_links'], list):
-                        if await UrlAssetsRepository._update_extracted_links(db, existing, url_data['extracted_links'], str(program.id), program.name):
+                        links_changed, external_link_events = await UrlAssetsRepository._update_extracted_links(
+                            db, existing, url_data['extracted_links'], program.name
+                        )
+                        if links_changed:
                             meaningful_changes.append('extracted_links')
 
                     # Update notes if provided and different (notes is not in the main meaningful fields list)
@@ -593,7 +661,7 @@ class UrlAssetsRepository(ProgramAccessMixin):
                         action = "skipped"
                         logger.debug(f"URL {url_data.get('url')} had no meaningful changes, marked as skipped")
 
-                    return str(existing.id), action
+                    return str(existing.id), action, external_link_events
                 else:
                     # Create new URL (without technologies - they'll be added via relationship)
                     url = URL(
@@ -642,6 +710,8 @@ class UrlAssetsRepository(ProgramAccessMixin):
                         db.commit()
 
                     # Add extracted links if provided (only external ones)
+                    create_external_link_events: List[Dict[str, Any]] = []
+                    emitted_link_pairs: set[tuple[str, str]] = set()
                     if 'extracted_links' in url_data and isinstance(url_data['extracted_links'], list):
                         for link_url in url_data['extracted_links']:
                             if link_url and link_url.strip():
@@ -665,10 +735,9 @@ class UrlAssetsRepository(ProgramAccessMixin):
                                     logger.debug(f"Error parsing link during URL creation {link_url}: {e}")
                                     continue
 
-                                # Check if the extracted link already exists
+                                # Globally unique link_url — look up by URL only
                                 extracted_link = db.query(ExtractedLink).filter(
                                     ExtractedLink.link_url == link_url,
-                                    ExtractedLink.program_id == program.id
                                 ).first()
 
                                 if not extracted_link:
@@ -686,9 +755,20 @@ class UrlAssetsRepository(ProgramAccessMixin):
                                     source_url_id=url.id
                                 )
                                 db.add(source)
+
+                                pair_key = (str(url.id), str(extracted_link.id))
+                                if pair_key not in emitted_link_pairs:
+                                    emitted_link_pairs.add(pair_key)
+                                    create_external_link_events.append({
+                                        "extracted_link_id": extracted_link.id,
+                                        "link_url": link_url,
+                                        "program_name": program.name,
+                                        "source_url_id": url.id,
+                                        "source_url": url.url,
+                                    })
                         db.commit()
-                
-                return str(url.id), "created"  # Newly created asset
+
+                return str(url.id), "created", create_external_link_events  # Newly created asset
                 
             except Exception as e:
                 db.rollback()
@@ -736,11 +816,10 @@ class UrlAssetsRepository(ProgramAccessMixin):
 
                 # Add new links (avoiding duplicates)
                 links_added = 0
+                new_external_link_events: List[Dict[str, Any]] = []
                 for link_url in filtered_links:
-                    # Check if the extracted link already exists
                     extracted_link = db.query(ExtractedLink).filter(
                         ExtractedLink.link_url == link_url,
-                        ExtractedLink.program_id == url.program_id
                     ).first()
 
                     if not extracted_link:
@@ -766,9 +845,24 @@ class UrlAssetsRepository(ProgramAccessMixin):
                         )
                         db.add(source)
                         links_added += 1
+                        new_external_link_events.append({
+                            "extracted_link_id": extracted_link.id,
+                            "link_url": link_url,
+                            "program_name": program.name,
+                            "source_url_id": url.id,
+                            "source_url": url.url,
+                        })
 
                 if links_added > 0:
                     db.commit()
+                    for ev in new_external_link_events:
+                        await _publish_external_link_created(
+                            extracted_link_id=ev["extracted_link_id"],
+                            link_url=ev["link_url"],
+                            program_name=ev["program_name"],
+                            source_url_id=ev["source_url_id"],
+                            source_url=ev.get("source_url"),
+                        )
                     logger.debug(f"Added {links_added} external extracted links to URL {url_id}")
                 elif filtered_links:
                     logger.debug(f"No new external links to add for URL {url_id} (all were duplicates)")

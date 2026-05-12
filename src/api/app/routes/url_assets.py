@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends, Query
 from typing import Dict, Any, Optional, List, Literal, Union
 from repository import ProgramRepository, UrlAssetsRepository
+from repository.url_assets_repo import publish_pending_external_link_events
 from pydantic import BaseModel, Field
 from auth.dependencies import get_current_user_from_middleware, get_user_accessible_programs, require_admin_or_manager
 from models.user_postgres import UserResponse
@@ -219,7 +220,10 @@ async def import_urls(request: URLImportRequest, current_user: UserResponse = De
                 url_dict = {k: v for k, v in url_dict.items() if v is not None and v != "" and v != "null"}
                 
                 # Use create_or_update_url which handles merging automatically
-                url_id = await UrlAssetsRepository.create_or_update_url(url_dict)
+                _tid, _action, pending_links = await UrlAssetsRepository.create_or_update_url(url_dict)
+                url_id = _tid
+                if pending_links:
+                    await publish_pending_external_link_events(pending_links)
                 if url_id:
                     imported_count += 1
                     logger.debug(f"Imported/updated URL: {url_dict['url']}")

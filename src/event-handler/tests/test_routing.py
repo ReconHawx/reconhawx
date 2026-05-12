@@ -23,6 +23,9 @@ class TestParseEventType:
     def test_assets_subdomain_resolved(self):
         assert parse_event_type("events.assets.subdomain.resolved") == "assets.subdomain.resolved"
 
+    def test_assets_external_link_created(self):
+        assert parse_event_type("events.assets.external_link.created") == "assets.external_link.created"
+
     def test_findings_typosquat_created(self):
         result = parse_event_type("events.findings.typosquat.created")
         assert result == "findings.typosquat.created"
@@ -105,6 +108,20 @@ class TestNormalizeEventData:
         assert "b.example.com" in result["domain_list"]
         assert result["domain_list_array"] == ["a.example.com", "b.example.com"]
         assert result["domain_count"] == 2
+
+    def test_external_link_creates_url_list_vars(self):
+        payload = {
+            "program_name": "p1",
+            "name": "https://evil.example/page",
+            "record_id": "abc-uuid",
+            "source_url": "https://scope.example/",
+        }
+        result = normalize_event_data("events.assets.external_link.created", payload)
+        assert result["event_type"] == "assets.external_link.created"
+        assert result["url_list"] == "https://evil.example/page"
+        assert result["url_list_array"] == ["https://evil.example/page"]
+        assert result["url_count"] == 1
+        assert result["source_url"] == "https://scope.example/"
 
     def test_findings_typosquat_promotes_fields(self):
         payload = {

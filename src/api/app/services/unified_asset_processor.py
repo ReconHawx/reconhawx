@@ -22,7 +22,7 @@ from repository.subdomain_assets_repo import SubdomainAssetsRepository
 from repository.ip_assets_repo import IPAssetsRepository
 from repository.service_assets_repo import ServiceAssetsRepository
 from repository.certificate_assets_repo import CertificateAssetsRepository
-from repository.url_assets_repo import UrlAssetsRepository
+from repository.url_assets_repo import UrlAssetsRepository, publish_pending_external_link_events
 from repository.batch_repository import BatchRepository
 from repository.program_repo import ProgramRepository
 from .event_publisher import publisher
@@ -673,11 +673,14 @@ class UnifiedAssetProcessor:
         else:
             result_tuple = await UrlAssetsRepository.create_or_update_url(assets[0])
             if len(result_tuple) == 3:
-                record_id, action, event_data = result_tuple
+                record_id, action, pending_external = result_tuple
             else:
-                # Fallback for old format
+                # Fallback for older callers
                 record_id, action = result_tuple
-                event_data = None
+                pending_external = []
+            if pending_external:
+                await publish_pending_external_link_events(pending_external)
+            event_data = None
             return record_id, action, event_data
 
     async def _handle_service_assets(self, assets: List[Dict], program_id: str, bulk: bool = False) -> Tuple:

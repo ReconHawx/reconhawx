@@ -324,3 +324,36 @@ handlers:
               values: "{url_list_array}"
               value_type: "urls"
           workflow_definition_id: ""
+
+  - id: system_external_links_broken_links_detection
+    event_type: [assets.external_link.created]
+    description: Trigger broken links detection workflow for new external links
+    conditions: []
+    actions:
+      - type: workflow_trigger
+        api_url: "{api_base_url}"
+        api_key: "{internal_api_key}"
+        use_custom_payload: true
+        batching:
+          max_events: 50
+          max_delay_seconds: 120
+        parameters:
+          workflow_name: "external_links_broken_links_detection"
+          program_name: "{program_name}"
+          description: "Batch broken links detection for {event_count} external link(s)"
+          steps:
+            - name: "broken_links_detection"
+              tasks:
+                - name: "broken_links_detection"
+                  force: false
+                  task_type: "detect_broken_links"
+                  params: {}
+                  input_mapping:
+                    links: "inputs.links"
+          variables: {}
+          inputs:
+            links:
+              type: "direct"
+              values: "{url_list_array}"
+              value_type: "urls"
+          workflow_definition_id: ""

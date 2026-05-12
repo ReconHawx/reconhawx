@@ -27,7 +27,7 @@ from repository.program_repo import ProgramRepository
 from repository.subdomain_assets_repo import SubdomainAssetsRepository
 from repository.ip_assets_repo import IPAssetsRepository
 from repository.service_assets_repo import ServiceAssetsRepository
-from repository.url_assets_repo import UrlAssetsRepository
+from repository.url_assets_repo import UrlAssetsRepository, publish_pending_external_link_events
 from repository.certificate_assets_repo import CertificateAssetsRepository
 from repository.apexdomain_assets_repo import ApexDomainAssetsRepository
 from repository.bulk_sql import (
@@ -534,10 +534,13 @@ class BatchRepository:
                 continue
 
             if len(result_or_error) == 3:
-                record_id, action, event_data = result_or_error
+                record_id, action, pending_external_link_events = result_or_error
             else:
                 record_id, action = result_or_error
-                event_data = None
+                pending_external_link_events = []
+
+            if pending_external_link_events:
+                await publish_pending_external_link_events(pending_external_link_events)
 
             if record_id:
                 success_count += 1
