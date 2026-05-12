@@ -20,6 +20,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    op.execute(sa.text("CREATE EXTENSION IF NOT EXISTS pgcrypto;"))
     op.execute(
         sa.text(
             """
@@ -102,7 +103,7 @@ def upgrade() -> None:
                             || coalesce(n.matched_at, ''),
                             'UTF8'
                         ),
-                        'sha256'
+                        'sha256'::text
                     ),
                     'hex'
                 ),
@@ -157,7 +158,7 @@ def upgrade() -> None:
                             || w.program_id::text,
                             'UTF8'
                         ),
-                        'sha256'
+                        'sha256'::text
                     ),
                     'hex'
                 ),
@@ -207,7 +208,7 @@ def upgrade() -> None:
                             b.program_id::text || '|' || coalesce(b.url, ''),
                             'UTF8'
                         ),
-                        'sha256'
+                        'sha256'::text
                     ),
                     'hex'
                 ),
