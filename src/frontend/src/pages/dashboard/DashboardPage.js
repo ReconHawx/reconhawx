@@ -474,10 +474,10 @@ export default function DashboardPage() {
                           values: findingsBuckets.map((b) => b.nuclei_total),
                         },
                         {
-                          key: 't',
-                          label: 'Typosquat',
+                          key: 'bl',
+                          label: 'Broken links',
                           color: 'var(--bs-secondary)',
-                          values: findingsBuckets.map((b) => b.typosquat_total),
+                          values: findingsBuckets.map((b) => b.broken_links_total ?? 0),
                         },
                         {
                           key: 'w',

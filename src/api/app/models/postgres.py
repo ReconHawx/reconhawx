@@ -131,6 +131,7 @@ class FindingsTrendBucket(BaseModel):
     wpscan_total: int = 0
     wpscan_critical: int = 0
     wpscan_high: int = 0
+    broken_links_total: int = 0
 
 
 class FindingsTrendsResponse(BaseModel):

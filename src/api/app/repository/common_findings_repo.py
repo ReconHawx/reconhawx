@@ -13,7 +13,7 @@ from models.postgres import (
 )
 from sqlalchemy import desc, func, case
 from models.postgres import Program, Finding, TyposquatDomain
-from repository.findings_repo import SOURCE_NUCLEI, SOURCE_WPSCAN
+from repository.findings_repo import SOURCE_BROKEN_LINK, SOURCE_NUCLEI, SOURCE_WPSCAN
 from db import SessionLocal
 from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.orm import joinedload
@@ -350,6 +350,7 @@ class CommonFindingsRepository(ProgramAccessMixin):
             nuclei_by_day: Dict[date, Dict[str, int]] = {}
             typo_by_day: Dict[date, Dict[str, int]] = {}
             wpscan_by_day: Dict[date, Dict[str, int]] = {}
+            broken_links_by_day: Dict[date, int] = {}
 
             if program_ids:
                 nd = CommonFindingsRepository._findings_trend_day_expr(Finding.created_at)
@@ -442,12 +443,31 @@ class CommonFindingsRepository(ProgramAccessMixin):
                         "high": int(r.high or 0),
                     }
 
+                bd = CommonFindingsRepository._findings_trend_day_expr(Finding.created_at)
+                brows = (
+                    db.query(bd.label("d"), func.count().label("total"))
+                    .filter(Finding.program_id.in_(program_ids))
+                    .filter(Finding.source == SOURCE_BROKEN_LINK)
+                    .filter(Finding.created_at >= start_ts)
+                    .filter(Finding.created_at < end_ts_excl)
+                    .group_by(bd)
+                    .all()
+                )
+                for r in brows:
+                    dv = r.d
+                    if dv is None:
+                        continue
+                    if isinstance(dv, datetime):
+                        dv = dv.date()
+                    broken_links_by_day[dv] = int(r.total or 0)
+
             buckets: List[FindingsTrendBucket] = []
             for i in range(num_days):
                 dday = sd + timedelta(days=i)
                 n = nuclei_by_day.get(dday, {})
                 t = typo_by_day.get(dday, {})
                 w = wpscan_by_day.get(dday, {})
+                bl = broken_links_by_day.get(dday, 0)
                 buckets.append(
                     FindingsTrendBucket(
                         date=dday.isoformat(),
@@ -459,6 +479,7 @@ class CommonFindingsRepository(ProgramAccessMixin):
                         wpscan_total=w.get("total", 0),
                         wpscan_critical=w.get("critical", 0),
                         wpscan_high=w.get("high", 0),
+                        broken_links_total=bl,
                     )
                 )
 
@@ -482,7 +503,7 @@ class CommonFindingsRepository(ProgramAccessMixin):
         end_day: Optional[date] = None,
         days: int = 30,
     ) -> FindingsTrendsResponse:
-        """Daily new-finding counts (UTC days) for Nuclei, Typosquat, and WPScan."""
+        """Daily new-finding counts (UTC days) for Nuclei, Typosquat, WPScan, and broken links."""
         try:
             now = utcnow()
             if start_day is not None and end_day is not None:
