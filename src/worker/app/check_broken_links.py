@@ -402,7 +402,7 @@ async def check_broken_links():
 
 
 async def process_social_media_link(session, url, media_type, api_base_url, internal_api_key):
-    """Process a social media link and return finding"""
+    """Process a social media link; return a finding dict only when status is broken."""
     try:
         # Fetch credentials if available
         creds = None
@@ -430,13 +430,19 @@ async def process_social_media_link(session, url, media_type, api_base_url, inte
             except Exception as e:
                 logger.warning(f"Could not fetch credentials for {media_type}: {e}")
         
-        # Check the platform
+        # Check the platform — only emit findings for confirmed broken profiles
         finding = await check_platform(session, media_type, creds, url)
-        if finding:
-            finding["link_type"] = "social_media"
-            # Return all statuses (valid, broken, error, throttled)
-            return finding
-        return None
+        if not finding:
+            return None
+        if finding.get("status") != "broken":
+            logger.debug(
+                "Skipping social media link (not broken): url=%s status=%s",
+                url,
+                finding.get("status"),
+            )
+            return None
+        finding["link_type"] = "social_media"
+        return finding
     except Exception as e:
         logger.error(f"Error processing social media link {url}: {e}")
         return None

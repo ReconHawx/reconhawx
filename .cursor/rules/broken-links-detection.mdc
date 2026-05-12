@@ -86,21 +86,19 @@ def parse_output(self, output, params: Optional[Dict] = None) -> Dict[AssetType,
     # 1. Normalize output format (handles string or dict from WorkerJobManager)
     normalized_output = self.normalize_output_for_parsing(output)
     
-    # 2. Try to parse as JSON
-    try:
-        data = json.loads(normalized_output)
-        findings = data if isinstance(data, list) else [data]
-    except json.JSONDecodeError:
-        # Fallback: find JSON in line-by-line output
-        for line in normalized_output.strip().split('\n'):
-            if line.strip().startswith(('{', '[')):
-                try:
-                    findings.extend(json.loads(line))
-                except json.JSONDecodeError:
-                    continue
+    # 2. Try to parse as JSON into `findings` (list of dicts)
+    ...
     
-    # 3. Return as BROKEN_LINK findings
-    return {FindingType.BROKEN_LINK: findings}
+    # 3. Filter: drop social_media unless status == "broken"
+    broken_link_findings = [
+        f for f in findings
+        if isinstance(f, dict)
+        and not (
+            f.get("link_type") == "social_media"
+            and f.get("status") != "broken"
+        )
+    ]
+    return {FindingType.BROKEN_LINK: broken_link_findings}
 ```
 
 ## Worker Script: check_broken_links.py
@@ -138,6 +136,8 @@ https://example-unregistered-domain.xyz/page
   }
 ]
 ```
+
+**Emitted to stdout:** General-link rows are only added when the domain is unregistered (`status: broken`). Social-media rows are only added when the platform check returns **`status: broken`**; `valid`, `error`, and `throttled` social results are not included in the JSON array. The runner’s `parse_output` also skips any dict with `link_type: social_media` unless `status == broken` (defense in depth for older workers).
 
 ### Finding Status Values
 

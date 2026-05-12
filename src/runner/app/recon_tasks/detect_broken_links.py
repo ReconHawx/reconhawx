@@ -85,10 +85,15 @@ class DetectBrokenLinks(Task):
                             except json.JSONDecodeError:
                                 continue
             
-            # Convert to finding objects
+            # Convert to finding objects; social media is ingested only when broken
             broken_link_findings = []
             for finding_data in findings:
                 if isinstance(finding_data, dict):
+                    if (
+                        finding_data.get("link_type") == "social_media"
+                        and finding_data.get("status") != "broken"
+                    ):
+                        continue
                     broken_link_findings.append(finding_data)
             
             logger.info(f"Parsed {len(broken_link_findings)} broken link findings")

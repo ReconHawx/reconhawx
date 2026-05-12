@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import json
 
 import pytest
 
@@ -85,3 +86,35 @@ def test_parse_output_empty_returns_empty(task: DetectBrokenLinks) -> None:
 
 def test_parse_output_completely_unparseable_returns_empty(task: DetectBrokenLinks) -> None:
     assert task.parse_output("nothing to see here") == {FindingType.BROKEN_LINK: []}
+
+
+def test_parse_output_filters_social_media_non_broken(task: DetectBrokenLinks) -> None:
+    raw = json.dumps(
+        [
+            {
+                "link_type": "social_media",
+                "status": "valid",
+                "url": "https://twitter.com/example",
+                "media_type": "twitter",
+            },
+            {
+                "link_type": "social_media",
+                "status": "broken",
+                "url": "https://twitter.com/deleted",
+                "media_type": "twitter",
+            },
+            {
+                "link_type": "general",
+                "status": "broken",
+                "url": "https://dead.test/x",
+                "domain": "dead.test",
+            },
+        ]
+    )
+    result = task.parse_output(raw)
+    findings = result[FindingType.BROKEN_LINK]
+    assert len(findings) == 2
+    urls = {f["url"] for f in findings}
+    assert "https://twitter.com/example" not in urls
+    assert "https://twitter.com/deleted" in urls
+    assert "https://dead.test/x" in urls
