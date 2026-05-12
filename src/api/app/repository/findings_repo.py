@@ -164,6 +164,13 @@ def _wpscan_dict_from_finding(f: Finding) -> Dict[str, Any]:
 
 
 def _broken_payload_to_details(finding_data: Dict[str, Any]) -> Dict[str, Any]:
+    # ``details`` is a JSONB column, so any datetime must be serialized to a
+    # string here — Pydantic's ``SerializedDatetime`` only kicks in for
+    # ``model_dump(mode="json")``, and callers (e.g. the route) use the default
+    # python-mode dump, which leaves ``checked_at`` as a raw ``datetime``.
+    checked_at = finding_data.get("checked_at")
+    if isinstance(checked_at, datetime):
+        checked_at = checked_at.isoformat()
     return {
         "link_type": finding_data.get("link_type", "social_media"),
         "media_type": finding_data.get("media_type"),
@@ -171,7 +178,7 @@ def _broken_payload_to_details(finding_data: Dict[str, Any]) -> Dict[str, Any]:
         "reason": finding_data.get("reason"),
         "error_code": finding_data.get("error_code"),
         "response_data": finding_data.get("response_data"),
-        "checked_at": finding_data.get("checked_at"),
+        "checked_at": checked_at,
         "status": finding_data.get("status"),
     }
 
