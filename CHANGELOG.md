@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.34.0](https://github.com/ReconHawx/reconhawx/compare/v0.33.0...v0.34.0) (2026-05-12)
+
+
+### ⚠ BREAKING CHANGES
+
+* **migrations:** Upgrades after v014 must run v015 before relying on a DB that still has nuclei_findings or wpscan_findings; deploy migrations with the API.
+
+### refactor
+
+* **migrations:** drop legacy Nuclei and WPScan finding tables ([cf12629](https://github.com/ReconHawx/reconhawx/commit/cf1262929323d2a72bd70391079af2f4ff440927))
+
+
+### Features
+
+* **api:** publish external link events for new outbound associations ([424c340](https://github.com/ReconHawx/reconhawx/commit/424c340bbe7a78eb0b0632f82adab391740fbaf9))
+* **dashboard:** add broken links to findings trend ([0c43363](https://github.com/ReconHawx/reconhawx/commit/0c43363306029a6a76601dad7cfaa2d878ddccc0))
+
+
+### Bug Fixes
+
+* **api:** serialize broken-link checked_at for JSONB details ([40a7ec4](https://github.com/ReconHawx/reconhawx/commit/40a7ec41984592e6b4c6d6c3a245baa9b47861b0))
+* **migrations:** enable pgcrypto before unified findings backfill ([5a5d815](https://github.com/ReconHawx/reconhawx/commit/5a5d8156e488fb698788a9456cc50fbc2dfd6498))
+* **worker:** only ingest broken social links from profile checks ([16e4df8](https://github.com/ReconHawx/reconhawx/commit/16e4df8b936ea1441b8e14df19f0b9db18553c2f))
+* **worker:** pass integer katana connection timeout ([d3fbd4a](https://github.com/ReconHawx/reconhawx/commit/d3fbd4aa6f10291f0e6e9819115010fb32e3ef11))
+
 ## [0.33.0](https://github.com/ReconHawx/reconhawx/compare/v0.32.0...v0.33.0) (2026-05-11)
 
 
