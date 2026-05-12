@@ -187,7 +187,8 @@ async def debug_common_endpoints(
     Debug endpoint to help troubleshoot common endpoints
     """
     try:
-        from models.postgres import Program, ApexDomain, Subdomain, IP, Service, URL, Certificate, NucleiFinding, TyposquatDomain
+        from models.postgres import Program, ApexDomain, Subdomain, IP, Service, URL, Certificate, Finding, TyposquatDomain
+        from repository.findings_repo import SOURCE_NUCLEI
         from db import get_db_session
         
         async with get_db_session() as db:
@@ -211,7 +212,9 @@ async def debug_common_endpoints(
                     'urls': db.query(URL).filter(URL.program_id == program_id).count(),
                     'services': db.query(Service).filter(Service.program_id == program_id).count(),
                     'certificates': db.query(Certificate).filter(Certificate.program_id == program_id).count(),
-                    'nuclei_findings': db.query(NucleiFinding).filter(NucleiFinding.program_id == program_id).count(),
+                    'nuclei_findings': db.query(Finding)
+                    .filter(Finding.program_id == program_id, Finding.source == SOURCE_NUCLEI)
+                    .count(),
                     'typosquat_findings': db.query(TyposquatDomain).filter(TyposquatDomain.program_id == program_id).count()
                 }
             else:
@@ -222,7 +225,7 @@ async def debug_common_endpoints(
                     'urls': db.query(URL).count(),
                     'services': db.query(Service).count(),
                     'certificates': db.query(Certificate).count(),
-                    'nuclei_findings': db.query(NucleiFinding).count(),
+                    'nuclei_findings': db.query(Finding).filter(Finding.source == SOURCE_NUCLEI).count(),
                     'typosquat_findings': db.query(TyposquatDomain).count()
                 }
             

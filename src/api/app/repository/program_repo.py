@@ -23,8 +23,6 @@ from models.postgres import (
     ApexDomain,
     UserProgramPermission,
     Finding,
-    NucleiFinding,
-    WPScanFinding,
     BrokenLink,
     TyposquatDomain,
     TyposquatURL,
@@ -358,14 +356,8 @@ class ProgramRepository(ProgramAccessMixin):
                 # Delete subdomains
                 db.query(Subdomain).filter(Subdomain.program_id == program_uuid).delete()
                 
-                # Unified findings + legacy tables (may still hold rows pre-migration)
+                # Unified findings + legacy broken_links (may still hold rows pre-migration)
                 db.query(Finding).filter(Finding.program_id == program_uuid).delete(
-                    synchronize_session=False
-                )
-                db.query(NucleiFinding).filter(NucleiFinding.program_id == program_uuid).delete(
-                    synchronize_session=False
-                )
-                db.query(WPScanFinding).filter(WPScanFinding.program_id == program_uuid).delete(
                     synchronize_session=False
                 )
                 db.query(BrokenLink).filter(BrokenLink.program_id == program_uuid).delete(

@@ -446,7 +446,8 @@ async def debug_findings_endpoints(
     Debug endpoint to help troubleshoot findings endpoints
     """
     try:
-        from models.postgres import Program, NucleiFinding, TyposquatDomain
+        from models.postgres import Program, Finding, TyposquatDomain
+        from repository.findings_repo import SOURCE_NUCLEI
         from db import get_db_session
         
         async with get_db_session() as db:
@@ -464,12 +465,14 @@ async def debug_findings_endpoints(
             if target_program:
                 program_id = target_program.id
                 counts = {
-                    'nuclei_findings': db.query(NucleiFinding).filter(NucleiFinding.program_id == program_id).count(),
+                    'nuclei_findings': db.query(Finding)
+                    .filter(Finding.program_id == program_id, Finding.source == SOURCE_NUCLEI)
+                    .count(),
                     'typosquat_findings': db.query(TyposquatDomain).filter(TyposquatDomain.program_id == program_id).count()
                 }
             else:
                 counts = {
-                    'nuclei_findings': db.query(NucleiFinding).count(),
+                    'nuclei_findings': db.query(Finding).filter(Finding.source == SOURCE_NUCLEI).count(),
                     'typosquat_findings': db.query(TyposquatDomain).count()
                 }
             

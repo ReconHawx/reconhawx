@@ -181,13 +181,11 @@ class Program(Base):
     certificates = relationship("Certificate", back_populates="program", cascade="all, delete-orphan")
     extracted_links = relationship("ExtractedLink", back_populates="program", cascade="all, delete-orphan")
     technologies = relationship("Technology", overlaps="program", cascade="all, delete-orphan")
-    nuclei_findings = relationship("NucleiFinding", back_populates="program", cascade="all, delete-orphan")
     typosquat_findings = relationship("TyposquatDomain", back_populates="program", cascade="all, delete-orphan")
     typosquat_apex_domains = relationship(
         "TyposquatApexDomain", back_populates="program", cascade="all, delete-orphan"
     )
     broken_links = relationship("BrokenLink", back_populates="program", cascade="all, delete-orphan")
-    wpscan_findings = relationship("WPScanFinding", back_populates="program", cascade="all, delete-orphan")
     findings = relationship("Finding", back_populates="program", cascade="all, delete-orphan")
     workflows = relationship("Workflow", back_populates="program", cascade="all, delete-orphan")
     workflow_logs = relationship("WorkflowLog", back_populates="program", cascade="all, delete-orphan")
@@ -248,7 +246,6 @@ class IP(Base):
     program = relationship("Program", back_populates="ips")
     subdomain_ips = relationship("SubdomainIP", back_populates="ip", cascade="all, delete-orphan")
     services = relationship("Service", back_populates="ip", cascade="all, delete-orphan")
-    nuclei_findings = relationship("NucleiFinding", back_populates="ip")
     findings = relationship("Finding", back_populates="ip")
 
 class Subdomain(Base):
@@ -522,52 +519,6 @@ class Screenshot(Base):
 
 # === FINDINGS MODELS ===
 
-class NucleiFinding(Base):
-    """Security findings from Nuclei scanner"""
-    __tablename__ = "nuclei_findings"
-    
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    url = Column(Text, index=True)
-    template_id = Column(String(255), nullable=False, index=True)
-    template_url = Column(Text)
-    template_path = Column(Text)
-    name = Column(String(500), nullable=False)
-    severity = Column(String(20), nullable=False, index=True)  # low, medium, high, critical
-    finding_type = Column(String(50), nullable=False)  # http, dns, etc.
-    tags = Column(ARRAY(String(100)))
-    description = Column(Text)
-    matched_at = Column(Text, index=True)
-    matcher_name = Column(String(255))
-    
-    # Network Information
-    ip_id = Column(UUID(as_uuid=True), ForeignKey("ips.id"), nullable=True, index=True)
-    hostname = Column(String(255), index=True)
-    port = Column(Integer)
-    scheme = Column(String(10))
-    protocol = Column(String(10))
-    
-    # Finding Details
-    matched_line = Column(Text)
-    extracted_results = Column(ARRAY(Text))
-    info_data = Column(JSONB)  # Additional structured data
-    
-    # Program Association
-    program_id = Column(UUID(as_uuid=True), ForeignKey("programs.id"), nullable=False, index=True)
-    
-    notes = Column(Text)
-    created_at = Column(DateTime, default=utcnow, nullable=False)
-    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
-    
-    # Relationships
-    program = relationship("Program", back_populates="nuclei_findings")
-    ip = relationship("IP", back_populates="nuclei_findings")
-    
-    # Unique constraint to prevent duplicate findings
-    __table_args__ = (
-        UniqueConstraint('url', 'template_id', 'matcher_name', 'program_id', 'matched_at'),
-        Index("ix_nuclei_findings_prog_created", "program_id", "created_at"),
-    )
-
 class TyposquatApexDomain(Base):
     """Registrable (apex) typosquat domain — WHOIS and DNS registration metadata"""
 
@@ -719,40 +670,6 @@ class BrokenLink(Base):
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None
         }
-
-class WPScanFinding(Base):
-    """Security findings from WPScan scanner"""
-    __tablename__ = "wpscan_findings"
-    
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    url = Column(Text, nullable=False, index=True)
-    program_id = Column(UUID(as_uuid=True), ForeignKey("programs.id"), nullable=False, index=True)
-    item_name = Column(String(255), nullable=False, index=True)
-    item_type = Column(String(50), nullable=False, index=True)  # 'wordpress'|'plugin'|'theme'
-    vulnerability_type = Column(String(100))
-    severity = Column(String(20), index=True)
-    title = Column(Text)
-    description = Column(Text)
-    fixed_in = Column(String(100))
-    references = Column(ARRAY(Text), name='references')
-    cve_ids = Column(ARRAY(Text))
-    enumeration_data = Column(JSONB)  # Stores discovered plugins/themes/usernames
-    hostname = Column(String(255), index=True)
-    port = Column(Integer)
-    scheme = Column(String(10))
-    notes = Column(Text)
-    status = Column(String(50), index=True)
-    assigned_to = Column(String(255))
-    created_at = Column(DateTime, default=utcnow, nullable=False, index=True)
-    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
-    
-    # Relationships
-    program = relationship("Program", back_populates="wpscan_findings")
-    
-    # Unique constraint to prevent duplicate findings
-    __table_args__ = (
-        UniqueConstraint('url', 'item_name', 'program_id', name='uq_wpscan_findings_url_item_program'),
-    )
 
 
 class Finding(Base):

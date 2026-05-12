@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict Ei7URu6RndHzDbbtAh1tq6LEUt25x54jgyvPh33LWngezWNWpBB3lby88K5eNFn
+\restrict NjG2UkelmScUwuIFBiaFLogXItVyYCyZJ9PaD2G579Ut2Z3kRgYBDAN1BtDS0x2
 
 -- Dumped from database version 15.17 (Debian 15.17-1.pgdg13+1)
 -- Dumped by pg_dump version 15.17
@@ -793,6 +793,31 @@ CREATE TABLE public.extracted_links (
 
 
 --
+-- Name: findings; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.findings (
+    id uuid NOT NULL,
+    program_id uuid NOT NULL,
+    source character varying(64) NOT NULL,
+    fingerprint character varying(64) NOT NULL,
+    title character varying(2000),
+    description text,
+    severity character varying(50),
+    url text,
+    hostname character varying(255),
+    port integer,
+    scheme character varying(10),
+    ip_id uuid,
+    observed_at timestamp without time zone,
+    notes text,
+    details jsonb DEFAULT '{}'::jsonb NOT NULL,
+    created_at timestamp without time zone NOT NULL,
+    updated_at timestamp without time zone NOT NULL
+);
+
+
+--
 -- Name: internal_service_tokens; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -899,38 +924,6 @@ CREATE TABLE public.job_status (
     results jsonb,
     created_at timestamp without time zone NOT NULL,
     updated_at timestamp without time zone NOT NULL
-);
-
-
---
--- Name: nuclei_findings; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.nuclei_findings (
-    id uuid NOT NULL,
-    url text,
-    template_id character varying(255) NOT NULL,
-    template_url text,
-    name character varying(500) NOT NULL,
-    severity character varying(20) NOT NULL,
-    finding_type character varying(50) NOT NULL,
-    tags character varying(100)[],
-    description text,
-    matched_at text,
-    matcher_name character varying(255),
-    ip_id uuid,
-    hostname character varying(255),
-    port integer,
-    scheme character varying(10),
-    protocol character varying(10),
-    matched_line text,
-    extracted_results text[],
-    info_data jsonb,
-    program_id uuid NOT NULL,
-    notes text,
-    created_at timestamp without time zone NOT NULL,
-    updated_at timestamp without time zone NOT NULL,
-    template_path text
 );
 
 
@@ -1258,25 +1251,25 @@ COMMENT ON COLUMN public.typosquat_domains.last_closure_at IS 'UTC time of the m
 CREATE VIEW public.security_summary AS
  SELECT p.name AS program_name,
     p.id AS program_id,
-    count(DISTINCT nf.id) AS nuclei_findings_count,
+    count(DISTINCT f.id) AS nuclei_findings_count,
     count(DISTINCT
         CASE
-            WHEN ((nf.severity)::text = 'critical'::text) THEN nf.id
+            WHEN ((f.severity)::text = 'critical'::text) THEN f.id
             ELSE NULL::uuid
         END) AS critical_findings,
     count(DISTINCT
         CASE
-            WHEN ((nf.severity)::text = 'high'::text) THEN nf.id
+            WHEN ((f.severity)::text = 'high'::text) THEN f.id
             ELSE NULL::uuid
         END) AS high_findings,
     count(DISTINCT
         CASE
-            WHEN ((nf.severity)::text = 'medium'::text) THEN nf.id
+            WHEN ((f.severity)::text = 'medium'::text) THEN f.id
             ELSE NULL::uuid
         END) AS medium_findings,
     count(DISTINCT
         CASE
-            WHEN ((nf.severity)::text = 'low'::text) THEN nf.id
+            WHEN ((f.severity)::text = 'low'::text) THEN f.id
             ELSE NULL::uuid
         END) AS low_findings,
     count(DISTINCT td.id) AS typosquat_domains_count,
@@ -1286,7 +1279,7 @@ CREATE VIEW public.security_summary AS
             ELSE NULL::uuid
         END) AS active_typosquats
    FROM ((public.programs p
-     LEFT JOIN public.nuclei_findings nf ON ((p.id = nf.program_id)))
+     LEFT JOIN public.findings f ON (((p.id = f.program_id) AND ((f.source)::text = 'nuclei'::text))))
      LEFT JOIN public.typosquat_domains td ON ((p.id = td.program_id)))
   GROUP BY p.id, p.name
   ORDER BY p.name;
@@ -1724,35 +1717,6 @@ CREATE TABLE public.workflows (
 
 
 --
--- Name: wpscan_findings; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.wpscan_findings (
-    id uuid NOT NULL,
-    url text NOT NULL,
-    program_id uuid NOT NULL,
-    item_name character varying(255) NOT NULL,
-    item_type character varying(50) NOT NULL,
-    vulnerability_type character varying(100),
-    severity character varying(20),
-    title text,
-    description text,
-    fixed_in character varying(100),
-    "references" text[],
-    cve_ids text[],
-    enumeration_data jsonb,
-    hostname character varying(255),
-    port integer,
-    scheme character varying(10),
-    notes text,
-    status character varying(50),
-    assigned_to character varying(255),
-    created_at timestamp without time zone NOT NULL,
-    updated_at timestamp without time zone NOT NULL
-);
-
-
---
 -- Name: action_logs action_logs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1865,6 +1829,14 @@ ALTER TABLE ONLY public.extracted_links
 
 
 --
+-- Name: findings findings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.findings
+    ADD CONSTRAINT findings_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: internal_service_tokens internal_service_tokens_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1918,22 +1890,6 @@ ALTER TABLE ONLY public.job_status
 
 ALTER TABLE ONLY public.job_status
     ADD CONSTRAINT job_status_pkey PRIMARY KEY (id);
-
-
---
--- Name: nuclei_findings nuclei_findings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.nuclei_findings
-    ADD CONSTRAINT nuclei_findings_pkey PRIMARY KEY (id);
-
-
---
--- Name: nuclei_findings nuclei_findings_url_template_id_matcher_name_program_id_mat_key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.nuclei_findings
-    ADD CONSTRAINT nuclei_findings_url_template_id_matcher_name_program_id_mat_key UNIQUE (url, template_id, matcher_name, program_id, matched_at);
 
 
 --
@@ -2193,6 +2149,14 @@ ALTER TABLE ONLY public.typosquat_urls
 
 
 --
+-- Name: findings uq_findings_prog_source_fingerprint; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.findings
+    ADD CONSTRAINT uq_findings_prog_source_fingerprint UNIQUE (program_id, source, fingerprint);
+
+
+--
 -- Name: typosquat_apex_domains uq_typosquat_apex_program_domain; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2318,22 +2282,6 @@ ALTER TABLE ONLY public.workflow_logs
 
 ALTER TABLE ONLY public.workflows
     ADD CONSTRAINT workflows_pkey PRIMARY KEY (id);
-
-
---
--- Name: wpscan_findings wpscan_findings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.wpscan_findings
-    ADD CONSTRAINT wpscan_findings_pkey PRIMARY KEY (id);
-
-
---
--- Name: wpscan_findings wpscan_findings_unique; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.wpscan_findings
-    ADD CONSTRAINT wpscan_findings_unique UNIQUE (url, item_name, program_id);
 
 
 --
@@ -2764,6 +2712,13 @@ CREATE UNIQUE INDEX ips_ip_address_program_id_unique ON public.ips USING btree (
 
 
 --
+-- Name: ix_apex_domains_prog_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_apex_domains_prog_created ON public.apex_domains USING btree (program_id, created_at DESC);
+
+
+--
 -- Name: ix_apex_domains_program_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2792,10 +2747,24 @@ CREATE INDEX ix_api_tokens_user_id ON public.api_tokens USING btree (user_id);
 
 
 --
+-- Name: ix_broken_links_prog_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_broken_links_prog_created ON public.broken_links USING btree (program_id, created_at DESC);
+
+
+--
 -- Name: ix_certificates_fingerprint_hash; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX ix_certificates_fingerprint_hash ON public.certificates USING btree (fingerprint_hash);
+
+
+--
+-- Name: ix_certificates_prog_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_certificates_prog_created ON public.certificates USING btree (program_id, created_at DESC);
 
 
 --
@@ -2859,6 +2828,55 @@ CREATE INDEX ix_droopescan_findings_status ON public.droopescan_findings USING b
 --
 
 CREATE INDEX ix_droopescan_findings_url ON public.droopescan_findings USING btree (url);
+
+
+--
+-- Name: ix_findings_details_gin; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_findings_details_gin ON public.findings USING gin (details);
+
+
+--
+-- Name: ix_findings_prog_source_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_findings_prog_source_created ON public.findings USING btree (program_id, source, created_at);
+
+
+--
+-- Name: ix_findings_prog_source_hostname; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_findings_prog_source_hostname ON public.findings USING btree (program_id, source, hostname);
+
+
+--
+-- Name: ix_findings_prog_source_observed_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_findings_prog_source_observed_at ON public.findings USING btree (program_id, source, observed_at);
+
+
+--
+-- Name: ix_findings_prog_source_severity; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_findings_prog_source_severity ON public.findings USING btree (program_id, source, severity);
+
+
+--
+-- Name: ix_findings_prog_source_updated; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_findings_prog_source_updated ON public.findings USING btree (program_id, source, updated_at);
+
+
+--
+-- Name: ix_ips_prog_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_ips_prog_created ON public.ips USING btree (program_id, created_at DESC);
 
 
 --
@@ -2943,62 +2961,6 @@ CREATE INDEX ix_job_status_updated_at ON public.job_status USING btree (updated_
 --
 
 CREATE INDEX ix_job_status_user_id ON public.job_status USING btree (user_id);
-
-
---
--- Name: ix_nuclei_findings_hostname; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX ix_nuclei_findings_hostname ON public.nuclei_findings USING btree (hostname);
-
-
---
--- Name: ix_nuclei_findings_ip_id; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX ix_nuclei_findings_ip_id ON public.nuclei_findings USING btree (ip_id);
-
-
---
--- Name: ix_nuclei_findings_matched_at; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX ix_nuclei_findings_matched_at ON public.nuclei_findings USING btree (matched_at);
-
-
---
--- Name: ix_nuclei_findings_program_id; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX ix_nuclei_findings_program_id ON public.nuclei_findings USING btree (program_id);
-
-
---
--- Name: ix_nuclei_findings_severity; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX ix_nuclei_findings_severity ON public.nuclei_findings USING btree (severity);
-
-
---
--- Name: ix_nuclei_findings_template_id; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX ix_nuclei_findings_template_id ON public.nuclei_findings USING btree (template_id);
-
-
---
--- Name: ix_nuclei_findings_template_path; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX ix_nuclei_findings_template_path ON public.nuclei_findings USING btree (template_path);
-
-
---
--- Name: ix_nuclei_findings_url; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX ix_nuclei_findings_url ON public.nuclei_findings USING btree (url);
 
 
 --
@@ -3170,6 +3132,13 @@ CREATE INDEX ix_services_ip_id ON public.services USING btree (ip_id);
 
 
 --
+-- Name: ix_services_prog_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_services_prog_created ON public.services USING btree (program_id, created_at DESC);
+
+
+--
 -- Name: ix_services_program_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3181,6 +3150,13 @@ CREATE INDEX ix_services_program_id ON public.services USING btree (program_id);
 --
 
 CREATE INDEX ix_subdomains_apex_domain_id ON public.subdomains USING btree (apex_domain_id);
+
+
+--
+-- Name: ix_subdomains_prog_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_subdomains_prog_created ON public.subdomains USING btree (program_id, created_at DESC);
 
 
 --
@@ -3272,6 +3248,13 @@ CREATE INDEX ix_typosquat_domains_is_wildcard ON public.typosquat_domains USING 
 --
 
 CREATE INDEX ix_typosquat_domains_last_closure_at ON public.typosquat_domains USING btree (last_closure_at);
+
+
+--
+-- Name: ix_typosquat_domains_prog_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_typosquat_domains_prog_created ON public.typosquat_domains USING btree (program_id, created_at DESC);
 
 
 --
@@ -3436,6 +3419,13 @@ CREATE INDEX ix_urls_hostname ON public.urls USING btree (hostname);
 
 
 --
+-- Name: ix_urls_prog_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_urls_prog_created ON public.urls USING btree (program_id, created_at DESC);
+
+
+--
 -- Name: ix_urls_program_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3499,6 +3489,13 @@ CREATE INDEX ix_workflow_logs_completed_at ON public.workflow_logs USING btree (
 
 
 --
+-- Name: ix_workflow_logs_prog_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_workflow_logs_prog_created ON public.workflow_logs USING btree (program_id, created_at DESC);
+
+
+--
 -- Name: ix_workflow_logs_program_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3524,62 +3521,6 @@ CREATE INDEX ix_workflow_logs_status ON public.workflow_logs USING btree (status
 --
 
 CREATE INDEX ix_workflows_program_id ON public.workflows USING btree (program_id);
-
-
---
--- Name: ix_wpscan_findings_created_at; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX ix_wpscan_findings_created_at ON public.wpscan_findings USING btree (created_at);
-
-
---
--- Name: ix_wpscan_findings_hostname; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX ix_wpscan_findings_hostname ON public.wpscan_findings USING btree (hostname);
-
-
---
--- Name: ix_wpscan_findings_item_name; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX ix_wpscan_findings_item_name ON public.wpscan_findings USING btree (item_name);
-
-
---
--- Name: ix_wpscan_findings_item_type; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX ix_wpscan_findings_item_type ON public.wpscan_findings USING btree (item_type);
-
-
---
--- Name: ix_wpscan_findings_program_id; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX ix_wpscan_findings_program_id ON public.wpscan_findings USING btree (program_id);
-
-
---
--- Name: ix_wpscan_findings_severity; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX ix_wpscan_findings_severity ON public.wpscan_findings USING btree (severity);
-
-
---
--- Name: ix_wpscan_findings_status; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX ix_wpscan_findings_status ON public.wpscan_findings USING btree (status);
-
-
---
--- Name: ix_wpscan_findings_url; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX ix_wpscan_findings_url ON public.wpscan_findings USING btree (url);
 
 
 --
@@ -3726,6 +3667,22 @@ ALTER TABLE ONLY public.extracted_links
 
 
 --
+-- Name: findings findings_ip_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.findings
+    ADD CONSTRAINT findings_ip_id_fkey FOREIGN KEY (ip_id) REFERENCES public.ips(id) ON DELETE SET NULL;
+
+
+--
+-- Name: findings findings_program_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.findings
+    ADD CONSTRAINT findings_program_id_fkey FOREIGN KEY (program_id) REFERENCES public.programs(id) ON DELETE CASCADE;
+
+
+--
 -- Name: ips ips_program_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3739,22 +3696,6 @@ ALTER TABLE ONLY public.ips
 
 ALTER TABLE ONLY public.job_status
     ADD CONSTRAINT job_status_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id);
-
-
---
--- Name: nuclei_findings nuclei_findings_ip_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.nuclei_findings
-    ADD CONSTRAINT nuclei_findings_ip_id_fkey FOREIGN KEY (ip_id) REFERENCES public.ips(id);
-
-
---
--- Name: nuclei_findings nuclei_findings_program_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.nuclei_findings
-    ADD CONSTRAINT nuclei_findings_program_id_fkey FOREIGN KEY (program_id) REFERENCES public.programs(id);
 
 
 --
@@ -4038,16 +3979,8 @@ ALTER TABLE ONLY public.workflow_logs
 
 
 --
--- Name: wpscan_findings wpscan_findings_program_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.wpscan_findings
-    ADD CONSTRAINT wpscan_findings_program_id_fkey FOREIGN KEY (program_id) REFERENCES public.programs(id);
-
-
---
 -- PostgreSQL database dump complete
 --
 
-\unrestrict Ei7URu6RndHzDbbtAh1tq6LEUt25x54jgyvPh33LWngezWNWpBB3lby88K5eNFn
+\unrestrict NjG2UkelmScUwuIFBiaFLogXItVyYCyZJ9PaD2G579Ut2Z3kRgYBDAN1BtDS0x2
 
