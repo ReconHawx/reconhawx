@@ -137,7 +137,7 @@ def run_katana(target: str, depth: int = 5, timeout: int = 0):
     ]
     if timeout > 0:
         command.append("-ct")
-        command.append(str((timeout/100) * 80))
+        command.append(str(int((timeout/100) * 80)))
     command.append("-u")
     command.append(target)
     logger.info(f"Running katana command: {command}")
