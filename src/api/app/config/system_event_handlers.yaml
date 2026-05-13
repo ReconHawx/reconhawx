@@ -290,12 +290,16 @@ handlers:
 
   - id: system_wordpress_url_wpscan
     event_type: [assets.url.created]
-    description: Trigger wpscan workflow for new WordPress URLs
+    description: Trigger wpscan workflow for new WordPress root URLs
     conditions:
       - type: field_value
         field: technologies
         operator: contains
         expected_value: "wordpress"
+      - type: field_value
+        field: path
+        operator: equals
+        expected_value: "/"
     actions:
       - type: workflow_trigger
         api_url: "{api_base_url}"
