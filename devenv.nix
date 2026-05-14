@@ -41,6 +41,13 @@
     nuclei
     wpscan
   ];
+
+  # Python venv installs httpx (library) with an `httpx` entry point; prefer
+  # ProjectDiscovery httpx from nixpkgs on PATH.
+  enterShell = ''
+    export PATH="${pkgs.httpx}/bin:$PATH"
+  '';
+
   env = {};
   processes = {};
   services = {};
