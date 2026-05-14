@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.35.0](https://github.com/ReconHawx/reconhawx/compare/v0.34.0...v0.35.0) (2026-05-14)
+
+
+### Features
+
+* **crawl_website:** emit structured httpx probes and align runner parsing ([7383572](https://github.com/ReconHawx/reconhawx/commit/7383572ea5eebd4197079c3a2ed8b53ce35c3ac2))
+
 ## [0.34.0](https://github.com/ReconHawx/reconhawx/compare/v0.33.0...v0.34.0) (2026-05-12)
 
 
