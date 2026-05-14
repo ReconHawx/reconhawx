@@ -51,7 +51,7 @@ Timeouts, chunk sizes, wordlists, and similar knobs are controlled by **recon ta
 | **wpscan** | WordPress security scan (WPScan) for core, plugins, and themes. | url | wpscan finding |
 | **test_http** | Probes HTTP/HTTPS with httpx: separates full URLs from bare hostnames, fingerprints TLS, detects technologies, and collects live services, hosts, IPs, URLs, and certificate material from responses. | subdomain, url | service, subdomain, ip, url, certificate |
 | **whois_domain_check** | WHOIS lookup for registrable domains; attaches structured WHOIS to apex domain records. | subdomain | apex_domain |
-| **crawl_website** | Web crawl from seed URLs to discover more URLs on the same sites. | url | url |
+| **crawl_website** | Web crawl from seed URLs (Katana discovers links internally); runner ingests **httpx** probe JSON plus extracted external links—Katana URL lists are not emitted in the worker output. | url | url |
 | **screenshot_website** | Captures rendered page screenshots for URLs. | url | screenshot |
 | **fuzz_website** | Directory/file discovery with ffuf using a wordlist. | url | url |
 | **detect_broken_links** | Checks pages for broken or risky outbound links (including social links and hijackable unregistered domains). | url | broken_link finding |

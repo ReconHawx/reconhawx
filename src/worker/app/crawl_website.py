@@ -401,26 +401,19 @@ def main():
 
                 logger.info(f"Crawling target: {normalized_url}")
 
-                # Initialize results for this URL (using normalized URL as key)
+                # Per-seed envelope: raw httpx stdout + extracted_links map (no Katana artifact).
                 results["urls"][normalized_url] = {
-                    "katana_output": None,
-                    "katana_error": None,
                     "httpx_output": None,
                     "httpx_error": None,
-                    "links": []
+                    "links": {},
                 }
 
-                # Run katana to crawl the target
+                # Run katana to crawl the target (feeds httpx only; not serialized to runner).
                 katana_process = run_katana(normalized_url, depth, timeout)
                 if not katana_process.stdout and katana_process.stderr:
                     logger.error(f"Katana error for {normalized_url}: {katana_process.stderr}")
-                    results["urls"][normalized_url]["katana_error"] = katana_process.stderr
                 elif katana_process.stdout:
                     logger.info(f"Katana found URLs to process for {normalized_url}")
-
-                    # Store katana output as-is
-                    katana_output = katana_process.stdout
-                    results["urls"][normalized_url]["katana_output"] = katana_output
 
                     # Run httpx against the discovered URLs
                     logger.info(f"Running httpx against discovered URLs for {normalized_url}...")
@@ -434,8 +427,17 @@ def main():
 
                         # Store httpx output as-is
                         httpx_output = httpx_process.stdout
-                        results["urls"][normalized_url]["httpx_output"] = httpx_output
-
+                        httpx_output_obj = []
+                        for line in httpx_output.split("\n"):
+                            if line.strip():
+                                try:
+                                    httpx_output_obj.append(json.loads(line))
+                                except json.JSONDecodeError:
+                                    continue
+                                except Exception as e:
+                                    logger.error(f"Error parsing httpx output: {str(e)}")
+                                    continue
+                        results["urls"][normalized_url]["httpx_output"] = httpx_output_obj
                         # After httpx has run, parse the links from the responses
                         logger.info(f"Parsing links for {normalized_url}...")
                         extracted_links = parse_links(normalized_url)

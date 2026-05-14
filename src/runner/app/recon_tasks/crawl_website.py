@@ -1,6 +1,6 @@
 import json
 import logging
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Iterator, Union
 import base64
 from .base import Task, AssetType
 from models.assets import Url
@@ -134,7 +134,66 @@ class CrawlWebsite(Task):
             json_objects.append(json_str)
         
         return json_objects
-    
+
+    def _parse_httpx_json_line(self, line: str) -> List[Dict[str, Any]]:
+        """Parse one NDJSON line; on failure split glue-concatenated httpx objects (timestamp prefix)."""
+        out: List[Dict[str, Any]] = []
+        try:
+            data = json.loads(line)
+            if isinstance(data, dict):
+                out.append(data)
+            elif isinstance(data, list):
+                for entry in data:
+                    if isinstance(entry, dict):
+                        out.append(entry)
+            return out
+        except json.JSONDecodeError:
+            pass
+        for frag in self._split_concatenated_json(line):
+            try:
+                data = json.loads(frag)
+                if isinstance(data, dict):
+                    out.append(data)
+                elif isinstance(data, list):
+                    for entry in data:
+                        if isinstance(entry, dict):
+                            out.append(entry)
+            except json.JSONDecodeError:
+                logger.warning(f"Could not parse httpx JSON fragment: {frag[:120]}...")
+        return out
+
+    def _iter_httpx_records(
+        self, httpx_output: Union[str, List[Any], None]
+    ) -> Iterator[Dict[str, Any]]:
+        """Yield httpx probe dicts from worker JSON array, NDJSON stdout, or glued blobs."""
+        if httpx_output is None:
+            return
+        if isinstance(httpx_output, list):
+            if not httpx_output:
+                return
+            for item in httpx_output:
+                if isinstance(item, dict):
+                    yield item
+            return
+        if not isinstance(httpx_output, str):
+            logger.warning(
+                "Unexpected httpx_output type %s for crawl_website; expected list or str",
+                type(httpx_output).__name__,
+            )
+            return
+        if not httpx_output.strip():
+            return
+        text = httpx_output.strip()
+        if "\n" in text:
+            for line in text.split("\n"):
+                line = line.strip()
+                if not line:
+                    continue
+                yield from self._parse_httpx_json_line(line)
+        else:
+            # Single blob: one object, glue-concatenated objects, or rare list
+            yield from self._parse_httpx_json_line(text)
+
     def _filter_duplicate_urls(self, url_list: List[Url]) -> List[Url]:
         """
         Filter out duplicate URLs from the list based on their URL string
@@ -151,6 +210,45 @@ class CrawlWebsite(Task):
         
         logger.info(f"Filtered {len(url_list) - len(unique_urls)} duplicate URLs")
         return unique_urls
+
+    @staticmethod
+    def _build_links_by_comparison_key(links_dict: Dict[str, Any]) -> Dict[str, List[Any]]:
+        """First storage key per normalize_url_for_comparison wins (stable under httpx vs worker key drift)."""
+        by_cmp: Dict[str, List[Any]] = {}
+        for key, page_links in links_dict.items():
+            ck = normalize_url_for_comparison(key)
+            if ck and ck not in by_cmp:
+                by_cmp[ck] = page_links
+        return by_cmp
+
+    @staticmethod
+    def _extracted_links_for_page(
+        links_dict: Dict[str, Any],
+        links_by_comparison: Dict[str, List[Any]],
+        normalized_storage_url: str,
+    ) -> List[Any]:
+        if normalized_storage_url in links_dict:
+            return links_dict[normalized_storage_url]
+        ck = normalize_url_for_comparison(normalized_storage_url)
+        return links_by_comparison.get(ck, [])
+
+    @staticmethod
+    def _components_from_normalized_url(normalized_url: str) -> Optional[Dict[str, Any]]:
+        if not normalized_url:
+            return None
+        parsed = urlparse(normalized_url)
+        if not parsed.scheme or not parsed.hostname:
+            return None
+        port = parsed.port
+        if port is None:
+            port = 443 if parsed.scheme == "https" else 80
+        path = parsed.path or "/"
+        return {
+            "hostname": parsed.hostname,
+            "port": port,
+            "scheme": parsed.scheme,
+            "path": path,
+        }
 
     def parse_output(self, output, params: Optional[Dict[Any, Any]] = None) -> Dict[AssetType, List[Any]]:
         """Parse the output from the worker script into URL assets"""
@@ -176,65 +274,48 @@ class CrawlWebsite(Task):
                 logger.info(f"Processing URL data for {base_url}")
                 
                 # Get the links dictionary for this base URL
-                links_dict = url_info.get("links", {})
+                links_raw = url_info.get("links", {})
+                links_dict = links_raw if isinstance(links_raw, dict) else {}
                 logger.info(f"Found links for {len(links_dict)} URLs")
                 
                 # Log the actual links found for debugging
                 for page_url, page_links in links_dict.items():
                     logger.info(f"Page {page_url} has {len(page_links)} external links: {page_links[:5]}...")  # Show first 5 links
-                
-                # Process httpx output first
-                httpx_output = url_info.get("httpx_output", "")
+
+                links_by_comparison = self._build_links_by_comparison_key(links_dict)
+
+                # Process httpx output only (Katana-only URLs are intentionally not ingested).
+                httpx_output = url_info.get("httpx_output") or ""
                 if httpx_output:
-                    logger.info(f"Processing httpx output for {base_url} (length: {len(httpx_output)})")
-                    # Process httpx JSON output line by line
-                    for line in httpx_output.strip().split('\n'):
+                    if isinstance(httpx_output, list):
+                        logger.info(
+                            f"Processing httpx output for {base_url} ({len(httpx_output)} records)"
+                        )
+                    else:
+                        logger.info(
+                            f"Processing httpx output for {base_url} (length: {len(httpx_output)})"
+                        )
+                    for item in self._iter_httpx_records(httpx_output):
+                        if not isinstance(item, dict):
+                            continue
+                        if item.get("failed", True):
+                            continue
+                        status_raw = item.get("status_code", 0)
                         try:
-                            # Parse each line as a separate JSON object
-                            item = json.loads(line)
-                            if not item.get("failed", True):
-                                # Get the specific links for this URL from the links dictionary
-                                current_url = normalize_url_for_storage(item.get("url", ""))
-                                # Only get links if this specific URL has an entry in the links dictionary
-                                current_links = links_dict.get(current_url, [])
-                                self._process_entry(item, urls, current_links)
-                        except json.JSONDecodeError:
-                            logger.warning(f"Error parsing httpx line as JSON: {line[:100]}...")
-                
-                # Process katana output for any URLs not found by httpx
-                katana_output = url_info.get("katana_output", "")
-                if katana_output:
-                    logger.info(f"Processing katana output for {base_url} (length: {len(katana_output)})")
-                    # Split katana output into individual URLs
-                    discovered_urls = [url.strip() for url in katana_output.split('\n') if url.strip()]
-                    logger.info(f"Found {len(discovered_urls)} URLs from katana for {base_url}")
-                    
-                    # Create URL objects for each discovered URL that wasn't already processed by httpx
-                    for discovered_url in discovered_urls:
-                        try:
-                            parsed = urlparse(discovered_url)
-                            if parsed.scheme and parsed.netloc:  # Valid URL
-                                normalized_url = normalize_url_for_storage(discovered_url)
-                                # Only process if this URL wasn't already handled by httpx
-                                if not any(normalize_url_for_comparison(url.url) == normalize_url_for_comparison(normalized_url) for url in urls):
-                                    # Only get links if this specific URL has an entry in the links dictionary
-                                    url_links = links_dict.get(normalized_url, [])
-                                    url_obj = Url(
-                                        url=normalized_url,
-                                        hostname=parsed.netloc.split(':')[0].lower(),
-                                        port=int(parsed.port) if parsed.port else (443 if parsed.scheme == 'https' else 80),
-                                        scheme=parsed.scheme.lower(),
-                                        path=parsed.path or '/',
-                                        method="GET",
-                                        http_status_code=0,
-                                        lines=0,
-                                        words=0,
-                                        content_length=0,
-                                        extracted_links=url_links
-                                    )
-                                    urls.append(url_obj)
-                        except Exception as e:
-                            logger.warning(f"Failed to parse URL {discovered_url}: {e}")
+                            status_int = int(status_raw)
+                        except (TypeError, ValueError):
+                            status_int = 0
+                        if status_int == 404:
+                            logger.debug(
+                                "Skipping httpx probe with status 404: %s",
+                                item.get("url", "")[:200],
+                            )
+                            continue
+                        current_url = normalize_url_for_storage(item.get("url", ""))
+                        current_links = self._extracted_links_for_page(
+                            links_dict, links_by_comparison, current_url
+                        )
+                        self._process_entry(item, urls, current_links)
             
             # Deduplicate URLs
             urls = self._filter_duplicate_urls(urls)
@@ -254,30 +335,48 @@ class CrawlWebsite(Task):
         return {AssetType.URL: urls}
     
     def _process_entry(self, item: Dict, urls: List, links: List = []):
-        """Process a single entry and update the collections"""        
-        # Ensure URL is lowercase
+        """Process a single entry and update the collections"""
         url = item.get("url", "").lower()
-        item.get("host", "").lower()
-        scheme = item.get("scheme", "").lower()
-        
-        # Normalize the URL for consistent storage
         normalized_url = normalize_url_for_storage(url)
         if not normalized_url:
             logger.warning(f"Failed to normalize URL: {url}")
             return
-        
+
+        comps = self._components_from_normalized_url(normalized_url)
+        if not comps:
+            logger.warning(f"Failed to parse normalized URL: {normalized_url}")
+            return
+
+        raw_final = item.get("final_url") or ""
+        normalized_final = (
+            normalize_url_for_storage(str(raw_final).lower()) if raw_final else ""
+        )
+        resolved_final_url = normalized_final
+        if raw_final and not resolved_final_url:
+            parsed_final = parse_url(str(raw_final))
+            if parsed_final:
+                resolved_final_url = normalize_url_for_storage(
+                    parsed_final.get("url", "").lower()
+                )
+
+        status_raw = item.get("status_code", 0)
+        try:
+            primary_status = int(status_raw)
+        except (TypeError, ValueError):
+            primary_status = 0
+
         urlObj = Url(
             url=normalized_url,
-            hostname=urlparse(url).netloc.split(":")[0],
+            hostname=comps["hostname"],
             ips=item.get("a", []),
-            port=int(item.get("port", 0)),
-            scheme=scheme,
+            port=comps["port"],
+            scheme=comps["scheme"],
             technologies=item.get("tech", []),
-            path=item.get("path", ""),
+            path=comps["path"],
             method=item.get("method", ""),
-            http_status_code=item.get("status_code", 0),
+            http_status_code=primary_status,
             chain_status_codes=item.get("chain_status_codes", []),
-            final_url=item.get("final_url", ""),
+            final_url=resolved_final_url or "",
             response_time=int(item.get("time", "0ms").replace("ms", "").split(".")[0]),
             lines=item.get("lines", 0),
             title=item.get("title", ""),
@@ -288,63 +387,63 @@ class CrawlWebsite(Task):
             favicon_url=item.get("favicon_url", ""),
             content_type=item.get("content_type", ""),
             content_length=item.get("content_length", 0),
-            extracted_links=links  # Use the passed links directly
+            extracted_links=links,
         )
         urls.append(urlObj)
-        # If there is a final url, add it to the urls list
+
         redirect_chain = []
         for redirect in item.get("chain", []):
             request_url = redirect.get("request-url")
-            if request_url:
-                parsed_redirect = parse_url(request_url)
-                if parsed_redirect:
-                    redirect_chain.append({
-                        "index": len(redirect_chain),
-                        "method": redirect.get("request", "GET / HTTP/1.1").split(" ")[0],
-                        "url": parsed_redirect.get('url'),
-                        "http_status_code": redirect.get("status_code"),
-                        "location": redirect.get("location", None)
-                    })
-                    
-                    # Use centralized DNS resolution with error handling
-                    hostname = parsed_redirect.get('hostname')
-                    ips = self._resolve_dns_safely(hostname) if hostname else []
-                    
-                    redirect_url = Url(
-                        url=parsed_redirect.get('url', ''),
-                        hostname=parsed_redirect.get('hostname', ''),
-                        port=parsed_redirect.get('port', 0),
-                        http_status_code=redirect.get("status_code", 0),
-                        scheme=parsed_redirect.get('scheme', ''),
-                        path=parsed_redirect.get('path', ''),
-                        ips=ips,
-                        extracted_links=[]  # Redirect URLs don't have their own links
-                    )
-                    urls.append(redirect_url)
-        if len(redirect_chain) > 0:
+            if not request_url:
+                continue
+            norm_redir = normalize_url_for_storage(str(request_url).lower())
+            if not norm_redir:
+                continue
+            rcomps = self._components_from_normalized_url(norm_redir)
+            if not rcomps:
+                continue
+            redirect_chain.append(
+                {
+                    "index": len(redirect_chain),
+                    "method": redirect.get("request", "GET / HTTP/1.1").split(" ")[0],
+                    "url": norm_redir,
+                    "http_status_code": redirect.get("status_code"),
+                    "location": redirect.get("location", None),
+                }
+            )
+            hostname = rcomps["hostname"]
+            ips = self._resolve_dns_safely(hostname) if hostname else []
+            redirect_url = Url(
+                url=norm_redir,
+                hostname=hostname,
+                port=rcomps["port"],
+                http_status_code=redirect.get("status_code", 0),
+                scheme=rcomps["scheme"],
+                path=rcomps["path"],
+                ips=ips,
+                extracted_links=[],
+            )
+            urls.append(redirect_url)
+        if redirect_chain:
             urlObj.redirect_chain = redirect_chain
-        if item.get("final_url"):
-            final_url_str = item.get("final_url")
-            if final_url_str:
-                parsed_final_url = parse_url(final_url_str)
-                if parsed_final_url:
-                    logger.info(f"Parsed final url: {parsed_final_url}")
-                    
-                    # Use centralized DNS resolution with error handling
-                    hostname = parsed_final_url.get('hostname')
-                    ips = self._resolve_dns_safely(hostname) if hostname else []
-                    
-                    final_url = Url(
-                        url=parsed_final_url.get('url', ''),
-                        hostname=parsed_final_url.get('hostname', ''),
-                        port=parsed_final_url.get('port', 0),
-                        scheme=parsed_final_url.get('scheme', ''),
-                        path=parsed_final_url.get('path', ''),
-                        ips=ips,
-                        extracted_links=[]  # Final URL doesn't have its own links
-                    )
-                    urls.append(final_url)
-        
+
+        if raw_final and resolved_final_url:
+            fcomps = self._components_from_normalized_url(resolved_final_url)
+            if fcomps:
+                logger.debug("Parsed final url: %s", resolved_final_url)
+                hostname = fcomps["hostname"]
+                ips = self._resolve_dns_safely(hostname) if hostname else []
+                final_asset = Url(
+                    url=resolved_final_url,
+                    hostname=hostname,
+                    port=fcomps["port"],
+                    scheme=fcomps["scheme"],
+                    path=fcomps["path"],
+                    ips=ips,
+                    extracted_links=[],
+                )
+                urls.append(final_asset)
+
         logger.debug(f"Finished processing entry. Total urls: {len(urls)}")
     
     def _is_ip_address(self, host: str) -> bool:

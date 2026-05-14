@@ -93,7 +93,7 @@ export const TASK_TYPES = {
 | `typosquat_detection` | Security | domains | findings | DNSTwist analysis |
 | `detect_broken_links` | Security | urls | findings | Social media link check |
 | `screenshot_website` | Discovery | urls | screenshots | Website screenshots |
-| `crawl_website` | Discovery | urls | urls | Katana crawling |
+| `crawl_website` | Discovery | urls | urls | Katana (internal); runner ingests httpx JSON + extracted links |
 | `fuzz_website` | Discovery | urls | urls | Path fuzzing |
 | `shell_command` | Utility | strings | strings | Custom commands (omitted from System Settings; configure via workflow) |
 
