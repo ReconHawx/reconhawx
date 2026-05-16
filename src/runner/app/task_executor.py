@@ -603,6 +603,11 @@ class TaskExecutor:
             # Unified execution path: all tasks use generate_commands
             proxy_enabled = task_def.use_proxy and hasattr(task_instance, 'supports_proxy') and task_instance.supports_proxy()
             if proxy_enabled:
+                if task_def.name == "crawl_website":
+                    logger.info(
+                        "crawl_website with use_proxy: using single-job full crawl on worker "
+                        "(phased Katana + sharded httpx fan-out is disabled when proxying)"
+                    )
                 logger.info(f"Using WorkerJobManager with proxy for task {task_def.name}")
                 processed_assets = await self._execute_task_with_job_manager(
                     task_def, task_instance, program_name, input_data, step_num, step_name, progressive_assets_sent_count
@@ -3689,6 +3694,7 @@ class TaskExecutor:
                 "task_def": task_def,
                 "task_queue_client": self.task_queue_client,
                 "job_manager": self.job_manager,
+                "waf_reputation": self.waf_reputation,
             }
 
             # 1. Generate commands (all tasks implement this)
@@ -3781,18 +3787,21 @@ class TaskExecutor:
                 )
 
                 per_job_extra: Optional[List[Dict[str, Any]]] = None
-                if waf_detection.is_waf_detection_enabled():
-                    per_job_extra = []
-                    for spec in specs:
+                per_spec_extra: List[Dict[str, Any]] = []
+                for spec in specs:
+                    pe: Dict[str, Any] = {}
+                    if waf_detection.is_waf_detection_enabled():
                         wt = spec.waf_targets or []
-                        per_job_extra.append(
-                            {
-                                "excluded_nodes": self.waf_reputation.union_excluded_sorted(
-                                    [str(x) for x in wt]
-                                ),
-                                "waf_targets": [str(x) for x in wt],
-                            }
+                        pe["excluded_nodes"] = self.waf_reputation.union_excluded_sorted(
+                            [str(x) for x in wt]
                         )
+                        pe["waf_targets"] = [str(x) for x in wt]
+                    rn = getattr(spec, "required_nodes", None)
+                    if rn:
+                        pe["required_nodes"] = list(rn)
+                    per_spec_extra.append(pe)
+                if any(per_spec_extra):
+                    per_job_extra = per_spec_extra
 
                 batch_result = await self.job_manager.spawn_batch(
                     task_name=task_name,

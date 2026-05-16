@@ -1,6 +1,7 @@
 import sys
 import json
 import logging
+from typing import List
 import subprocess
 import os
 import argparse
@@ -144,16 +145,15 @@ def run_katana(target: str, depth: int = 5, timeout: int = 0):
     return subprocess.run(command, capture_output=True, text=True)
 
 def run_httpx(urls: str):
-    # Split the input by newlines to get individual URLs
-    url_list = urls.strip().split("\n")
+    # Split the input by newlines to get individual URLs (newline-separated text)
+    url_list = [x.strip() for x in urls.strip().split("\n") if x.strip()]
     
     # Create a temporary file to store URLs
     tmp_filename = None
     try:
         with tempfile.NamedTemporaryFile(mode='w', delete=False) as tmp:
             for url in url_list:
-                if url.strip():
-                    tmp.write(f"{url.strip()}\n")
+                tmp.write(f"{url}\n")
             tmp_filename = tmp.name
         
         # Create a temporary directory to store the output in /tmp/httpx_output
@@ -362,97 +362,171 @@ def cleanup_old_temp_directories():
         logger.error(f"Error during periodic cleanup: {str(e)}")
 
 
+def _discovered_urls_from_katana_stdout(stdout: str) -> List[str]:
+    seen: set[str] = set()
+    out: List[str] = []
+    for line in (stdout or "").splitlines():
+        u = line.strip()
+        if u and u not in seen:
+            seen.add(u)
+            out.append(u)
+    return out
+
+
+def run_full_crawl_for_target(
+    normalized_url: str, depth: int, timeout: int, results: dict
+) -> None:
+    """Katana + httpx + link extraction for one seed (legacy full mode)."""
+    results["urls"][normalized_url] = {
+        "httpx_output": None,
+        "httpx_error": None,
+        "links": {},
+    }
+    katana_process = run_katana(normalized_url, depth, timeout)
+    if not katana_process.stdout and katana_process.stderr:
+        logger.error(f"Katana error for {normalized_url}: {katana_process.stderr}")
+    elif katana_process.stdout:
+        logger.info(f"Katana found URLs to process for {normalized_url}")
+        logger.info(f"Running httpx against discovered URLs for {normalized_url}...")
+        httpx_process = run_httpx(katana_process.stdout)
+        if httpx_process:
+            logger.info(f"Httpx process completed for {normalized_url}")
+            if httpx_process.stderr:
+                logger.warning(f"Httpx warnings for {normalized_url}: {httpx_process.stderr}")
+                results["urls"][normalized_url]["httpx_error"] = httpx_process.stderr
+            httpx_output = httpx_process.stdout
+            httpx_output_obj = []
+            for line in httpx_output.split("\n"):
+                if line.strip():
+                    try:
+                        httpx_output_obj.append(json.loads(line))
+                    except json.JSONDecodeError:
+                        continue
+                    except Exception as e:
+                        logger.error(f"Error parsing httpx output: {str(e)}")
+                        continue
+            results["urls"][normalized_url]["httpx_output"] = httpx_output_obj
+            logger.info(f"Parsing links for {normalized_url}...")
+            results["urls"][normalized_url]["links"] = parse_links(normalized_url)
+            logger.info(
+                "Extracted links for %s: %s pages with external links",
+                normalized_url,
+                len(results["urls"][normalized_url]["links"]),
+            )
+        else:
+            logger.error(f"Failed to run httpx for {normalized_url}")
+
+
 def main():
-        # Parse command-line arguments
-        parser = argparse.ArgumentParser()
-        parser.add_argument('--depth', type=int, default=5, help='Crawling depth for katana')
-        parser.add_argument('--timeout', type=int, required=False, default=0, help='Timeout for the script')
-        args, unknown = parser.parse_known_args()
-        depth = args.depth
-        timeout = args.timeout
-        logger.info(f"Depth: {depth}, Timeout: {timeout}")
-        # Read and split input URLs
-        input_urls = [url.strip() for url in sys.stdin.readlines() if url.strip()]
-        logger.info(f"Received {len(input_urls)} targets")
-        if not input_urls:
-            logger.error("No targets provided via stdin.")
-            sys.exit(1)
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--mode",
+        choices=("full", "discover", "probe"),
+        default="full",
+        help="full: katana+httpx per seed; discover: katana only; probe: httpx+links for stdin URLs",
+    )
+    parser.add_argument("--seed", type=str, default=None, help="Normalized seed URL (required for probe mode)")
+    parser.add_argument("--depth", type=int, default=5, help="Crawling depth for katana")
+    parser.add_argument("--timeout", type=int, required=False, default=0, help="Timeout for the script")
+    args, unknown = parser.parse_known_args()
+    depth = args.depth
+    timeout = args.timeout
+    mode = args.mode
+    logger.info("Mode: %s, depth: %s, timeout: %s", mode, depth, timeout)
 
-        # Clean up old temporary directories first
-        cleanup_old_temp_directories()
+    input_urls = [url.strip() for url in sys.stdin.readlines() if url.strip()]
+    logger.info("Received %s stdin lines", len(input_urls))
 
-        try:
-            # Initialize results structure
-            results = {
-                "urls": {}  # Will store results per URL
+    cleanup_old_temp_directories()
+
+    try:
+        results: dict = {"urls": {}}
+
+        if mode == "probe":
+            if not args.seed:
+                logger.error("probe mode requires --seed")
+                sys.exit(1)
+            is_valid, normalized_seed = is_valid_url(args.seed)
+            if not is_valid:
+                logger.error("Invalid --seed URL: %s", args.seed)
+                sys.exit(1)
+            if not input_urls:
+                logger.error("probe mode requires at least one URL on stdin")
+                sys.exit(1)
+            probe_text = "\n".join(input_urls)
+            results["urls"][normalized_seed] = {
+                "httpx_output": None,
+                "httpx_error": None,
+                "links": {},
             }
-
-            # Process each URL
+            httpx_process = run_httpx(probe_text)
+            if httpx_process:
+                if httpx_process.stderr:
+                    logger.warning("Httpx stderr: %s", httpx_process.stderr)
+                    results["urls"][normalized_seed]["httpx_error"] = httpx_process.stderr
+                httpx_output_obj = []
+                for line in (httpx_process.stdout or "").split("\n"):
+                    if line.strip():
+                        try:
+                            httpx_output_obj.append(json.loads(line))
+                        except json.JSONDecodeError:
+                            continue
+                        except Exception as e:
+                            logger.error("Error parsing httpx output: %s", e)
+                            continue
+                results["urls"][normalized_seed]["httpx_output"] = httpx_output_obj
+                results["urls"][normalized_seed]["links"] = parse_links(normalized_seed)
+            else:
+                logger.error("Failed to run httpx in probe mode")
+        elif mode == "discover":
+            if not input_urls:
+                logger.error("No targets provided via stdin.")
+                sys.exit(1)
             for target in input_urls:
-                # Validate URL
                 is_valid, normalized_url = is_valid_url(target)
                 if not is_valid:
-                    logger.error(f"Invalid target URL: {target}")
+                    logger.error("Invalid target URL: %s", target)
                     results["urls"][target] = {
                         "error": "Invalid URL format",
-                        "normalized_url": None
+                        "normalized_url": None,
+                        "discovered": [],
                     }
                     continue
-
-                logger.info(f"Crawling target: {normalized_url}")
-
-                # Per-seed envelope: raw httpx stdout + extracted_links map (no Katana artifact).
-                results["urls"][normalized_url] = {
-                    "httpx_output": None,
-                    "httpx_error": None,
-                    "links": {},
-                }
-
-                # Run katana to crawl the target (feeds httpx only; not serialized to runner).
+                results["urls"][normalized_url] = {"discovered": [], "katana_stderr": None}
                 katana_process = run_katana(normalized_url, depth, timeout)
+                if katana_process.stderr:
+                    results["urls"][normalized_url]["katana_stderr"] = katana_process.stderr
                 if not katana_process.stdout and katana_process.stderr:
-                    logger.error(f"Katana error for {normalized_url}: {katana_process.stderr}")
-                elif katana_process.stdout:
-                    logger.info(f"Katana found URLs to process for {normalized_url}")
+                    logger.error("Katana error for %s: %s", normalized_url, katana_process.stderr)
+                else:
+                    discovered = _discovered_urls_from_katana_stdout(katana_process.stdout or "")
+                    if normalized_url not in discovered:
+                        discovered.insert(0, normalized_url)
+                    results["urls"][normalized_url]["discovered"] = discovered
+                    logger.info("Discover: %s URLs for %s", len(discovered), normalized_url)
+        else:
+            # full
+            if not input_urls:
+                logger.error("No targets provided via stdin.")
+                sys.exit(1)
+            for target in input_urls:
+                is_valid, normalized_url = is_valid_url(target)
+                if not is_valid:
+                    logger.error("Invalid target URL: %s", target)
+                    results["urls"][target] = {
+                        "error": "Invalid URL format",
+                        "normalized_url": None,
+                    }
+                    continue
+                logger.info("Crawling target: %s", normalized_url)
+                run_full_crawl_for_target(normalized_url, depth, timeout, results)
 
-                    # Run httpx against the discovered URLs
-                    logger.info(f"Running httpx against discovered URLs for {normalized_url}...")
-                    httpx_process = run_httpx(katana_process.stdout)
+    finally:
+        delete_temp_output()
 
-                    if httpx_process:
-                        logger.info(f"Httpx process completed for {normalized_url}")
-                        if httpx_process.stderr:
-                            logger.warning(f"Httpx warnings for {normalized_url}: {httpx_process.stderr}")
-                            results["urls"][normalized_url]["httpx_error"] = httpx_process.stderr
+    logger.info("All tasks completed, outputting results")
+    print(json.dumps(results))
 
-                        # Store httpx output as-is
-                        httpx_output = httpx_process.stdout
-                        httpx_output_obj = []
-                        for line in httpx_output.split("\n"):
-                            if line.strip():
-                                try:
-                                    httpx_output_obj.append(json.loads(line))
-                                except json.JSONDecodeError:
-                                    continue
-                                except Exception as e:
-                                    logger.error(f"Error parsing httpx output: {str(e)}")
-                                    continue
-                        results["urls"][normalized_url]["httpx_output"] = httpx_output_obj
-                        # After httpx has run, parse the links from the responses
-                        logger.info(f"Parsing links for {normalized_url}...")
-                        extracted_links = parse_links(normalized_url)
-
-                        results["urls"][normalized_url]["links"] = extracted_links
-                        logger.info(f"Extracted links for {normalized_url}: {len(extracted_links)} pages with external links")
-                    else:
-                        logger.error(f"Failed to run httpx for {normalized_url}")
-
-        finally:
-            # Final cleanup of temporary output
-            delete_temp_output()
-
-        logger.info("All tasks completed, outputting results")
-        print(json.dumps(results))
 
 if __name__ == "__main__":
     main()

@@ -66,6 +66,8 @@ def test_command_spec_defaults() -> None:
     spec = CommandSpec(task_name="t", command="echo x")
     assert spec.params is None
     assert spec.batch_group is None
+    assert spec.waf_targets is None
+    assert spec.required_nodes is None
 
 
 def test_normalize_output_for_parsing_string_passthrough(task: _DummyTask) -> None:
