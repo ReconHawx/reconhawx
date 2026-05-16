@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.36.0](https://github.com/ReconHawx/reconhawx/compare/v0.35.0...v0.36.0) (2026-05-16)
+
+
+### Features
+
+* **crawl_website:** fan out httpx across nodes after Katana discover ([db419c8](https://github.com/ReconHawx/reconhawx/commit/db419c8e962946d5081bc9a7f1acb073dffa61ab))
+
 ## [0.35.0](https://github.com/ReconHawx/reconhawx/compare/v0.34.0...v0.35.0) (2026-05-14)
 
 
