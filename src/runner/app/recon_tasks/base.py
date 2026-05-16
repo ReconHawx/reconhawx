@@ -79,6 +79,7 @@ class CommandSpec:
     params: Optional[Dict[str, Any]] = None
     batch_group: Optional[int] = None  # For interleaved spawning (e.g. resolve_ip_cidr)
     waf_targets: Optional[List[str]] = None  # Raw chunk inputs for node block union (HTTP heavy tasks)
+    required_nodes: Optional[List[str]] = None  # Pin job to node(s); spread httpx after WAF exclusions
 
 
 class TaskParameterManager:

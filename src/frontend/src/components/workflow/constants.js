@@ -242,8 +242,10 @@ export const TASK_TYPES = {
     category: 'Discovery',
     icon: '🕷️',
     params: {
-      timeout: { type: 'number', default: 1800, description: 'Optional timeout override in seconds (uses system default if not specified)' },
-      depth: { type: 'number', default: 5, description: 'Crawling depth for katana' }
+      timeout: { type: 'number', default: 1800, description: 'Optional timeout override in seconds (Katana discover jobs and httpx phase; uses system default if not specified)' },
+      depth: { type: 'number', default: 5, description: 'Crawling depth for katana' },
+      httpx_urls_per_job: { type: 'number', default: 100, description: 'Max discovered URLs per httpx worker job (fan-out across nodes)' },
+      katana_timeout: { type: 'number', default: 900, description: 'Per-job timeout in seconds for Katana discover phase (falls back to timeout when omitted)' }
     }
   },
   fuzz_website: {

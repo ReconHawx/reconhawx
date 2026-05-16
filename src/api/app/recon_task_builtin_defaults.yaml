@@ -137,6 +137,8 @@ crawl_website:
   timeout: 1800
   chunk_size: 1
   depth: 5
+  httpx_urls_per_job: 25
+  katana_timeout: 900
   input_types: [url]
   output_types: [url]
 fuzz_website:

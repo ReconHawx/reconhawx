@@ -1,8 +1,9 @@
 import json
 import logging
+import shlex
 from typing import Dict, List, Any, Optional, Iterator, Union
 import base64
-from .base import Task, AssetType
+from .base import Task, AssetType, CommandSpec
 from models.assets import Url
 from utils import (
     parse_url, 
@@ -46,7 +47,7 @@ class CrawlWebsite(Task):
                 
                 # Join URLs with here document for proper newlines
                 urls_text = '\n'.join(urls_to_process)
-                command = f"cat << 'EOF' | python3 crawl_website.py --depth {depth}"
+                command = f"cat << 'EOF' | python3 crawl_website.py --mode full --depth {depth}"
                 if params.get("timeout", None) is not None:
                     command += f" --timeout {params.get('timeout')}"
                 command += f"\n{urls_text}\nEOF"
@@ -55,7 +56,209 @@ class CrawlWebsite(Task):
         except Exception as e:
             logger.error(f"Error generating command: {e}")
             return ""
-    
+
+    @staticmethod
+    def _job_output_text(output: Any) -> str:
+        """Extract worker stdout string from NATS job payload."""
+        if output is None:
+            return ""
+        if isinstance(output, dict):
+            o = output.get("output")
+            if isinstance(o, str):
+                return o
+            if o is not None:
+                try:
+                    return json.dumps(o)
+                except (TypeError, ValueError):
+                    return str(o)
+            return ""
+        if isinstance(output, str):
+            return output
+        return str(output)
+
+    def _discover_command_line(self, seed: str, params: Dict[str, Any]) -> str:
+        depth = int(params.get("depth", 5))
+        parts = [
+            "cat << 'EOF' | python3 crawl_website.py --mode discover",
+            f"--depth {depth}",
+        ]
+        tdisc = params.get("katana_timeout")
+        if tdisc is None:
+            tdisc = params.get("timeout")
+        if tdisc is not None:
+            parts.append(f"--timeout {int(tdisc)}")
+        return " ".join(parts) + f"\n{seed}\nEOF"
+
+    def _probe_command_line(self, seed: str, url_lines: List[str], params: Dict[str, Any]) -> str:
+        depth = int(params.get("depth", 5))
+        parts = [
+            "cat << 'EOF' | python3 crawl_website.py --mode probe",
+            f"--depth {depth}",
+            f"--seed {shlex.quote(seed)}",
+        ]
+        if params.get("timeout") is not None:
+            parts.append(f"--timeout {int(params['timeout'])}")
+        header = " ".join(parts)
+        body = "\n".join(url_lines)
+        return f"{header}\n{body}\nEOF"
+
+    def _merge_discovered_urls(
+        self,
+        batch_jobs_outputs: Any,
+        seeds: List[str],
+    ) -> Dict[str, List[str]]:
+        """Merge Katana discover JSON from each job; ensure seed URL is probed."""
+        by_seed: Dict[str, List[str]] = {s: [] for s in seeds}
+        seed_by_cmp = {normalize_url_for_comparison(s): s for s in seeds if s}
+
+        for _tid, payload in (batch_jobs_outputs or {}).items():
+            text = self._job_output_text(payload)
+            if not text.strip():
+                continue
+            try:
+                data = json.loads(text)
+            except json.JSONDecodeError:
+                logger.warning("Katana discover output was not valid JSON")
+                continue
+            for key, info in (data.get("urls") or {}).items():
+                if not isinstance(info, dict):
+                    continue
+                disc = info.get("discovered") or []
+                if not isinstance(disc, list):
+                    continue
+                sk = seed_by_cmp.get(normalize_url_for_comparison(str(key)))
+                if sk is None and key in by_seed:
+                    sk = str(key)
+                if sk is None:
+                    continue
+                merged_list = by_seed.setdefault(sk, [])
+                seen_local = set(merged_list)
+                for u in disc:
+                    if isinstance(u, str) and u.strip() and u.strip() not in seen_local:
+                        seen_local.add(u.strip())
+                        merged_list.append(u.strip())
+
+        for seed in seeds:
+            lst = by_seed.setdefault(seed, [])
+            if seed not in lst:
+                lst.insert(0, seed)
+        return by_seed
+
+    def _shard_list(self, items: List[str], shard_size: int) -> List[List[str]]:
+        if shard_size < 1:
+            shard_size = 1
+        return [items[i : i + shard_size] for i in range(0, len(items), shard_size)]
+
+    async def generate_commands(
+        self,
+        input_data: List[Any],
+        params: Dict[str, Any],
+        context: Dict[str, Any],
+    ) -> List[CommandSpec]:
+        """
+        Katana discover jobs (await), merge URLs, then return httpx probe CommandSpecs
+        sharded across worker nodes (required_nodes round-robin among WAF-allowed nodes).
+        """
+        from services import waf_detection
+
+        if not input_data:
+            return []
+
+        p = params or {}
+        jm = context.get("job_manager")
+        if not jm:
+            logger.error("crawl_website generate_commands: no job_manager in context")
+            return []
+
+        seeds = get_valid_urls(
+            input_data if isinstance(input_data, list) else [input_data]
+        )
+        if not seeds:
+            return []
+
+        self.job_manager = jm
+        waf_rep = context.get("waf_reputation")
+
+        katana_cmds = [self._discover_command_line(s, p) for s in seeds]
+        kat_per_job: List[Dict[str, Any]] = []
+        for s in seeds:
+            pe: Dict[str, Any] = {}
+            if waf_detection.is_waf_detection_enabled() and waf_rep is not None:
+                pe["excluded_nodes"] = waf_rep.union_excluded_sorted([str(s)])
+                pe["waf_targets"] = [str(s)]
+            kat_per_job.append(pe)
+
+        kat_job_timeout = int(
+            p.get("katana_timeout") or p.get("timeout") or 900
+        )
+        batch_result = await jm.spawn_batch(
+            task_name=self.name,
+            commands=katana_cmds,
+            batch_size=20,
+            timeout=kat_job_timeout,
+            process_incrementally=False,
+            result_processor=None,
+            step_name=context.get("step_name", "crawl-discover"),
+            per_job_extra=kat_per_job if any(kat_per_job) else None,
+        )
+
+        def _katana_wait_timeout() -> float:
+            return float(kat_job_timeout) * max(1, len(katana_cmds))
+
+        await jm.wait_for_batch(
+            batch_result,
+            timeout=_katana_wait_timeout(),
+        )
+
+        outputs = jm.get_job_outputs(batch_result)
+        merged = self._merge_discovered_urls(outputs, seeds)
+        jm.cleanup_batch(batch_result)
+
+        try:
+            jm._ensure_k8s_service()
+        except Exception:
+            pass
+        k8s = getattr(jm, "k8s_service", None)
+        worker_nodes: List[str] = k8s.list_worker_nodes() if k8s else []
+
+        httpx_urls_per_job = int(p.get("httpx_urls_per_job", 100))
+        specs: List[CommandSpec] = []
+        job_idx = 0
+
+        for seed in seeds:
+            urls = merged.get(seed) or [seed]
+            for chunk in self._shard_list(urls, httpx_urls_per_job):
+                cmd = self._probe_command_line(seed, chunk, p)
+                wt = [str(seed)]
+                req_nodes: Optional[List[str]] = None
+                if worker_nodes:
+                    ex_set: set[str] = set()
+                    if waf_detection.is_waf_detection_enabled() and waf_rep is not None:
+                        ex_set = set(waf_rep.union_excluded_sorted([str(seed)]))
+                    allowed = [n for n in worker_nodes if n not in ex_set]
+                    if not allowed:
+                        allowed = list(worker_nodes)
+                    pick = allowed[job_idx % len(allowed)]
+                    req_nodes = [pick]
+                job_idx += 1
+
+                specs.append(
+                    CommandSpec(
+                        task_name=self.name,
+                        command=cmd,
+                        params=p,
+                        waf_targets=wt,
+                        required_nodes=req_nodes,
+                    )
+                )
+
+        logger.info(
+            "crawl_website: discover %s seed(s) -> %s httpx shard job(s)",
+            len(seeds),
+            len(specs),
+        )
+        return specs
+
     def _resolve_dns_safely(self, hostname: str, timeout: int = 5) -> List[str]:
         """
         Safely resolve DNS for a hostname with proper error handling and timeout.

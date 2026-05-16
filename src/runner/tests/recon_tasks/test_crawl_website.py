@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import base64
 import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -24,8 +24,9 @@ def test_get_timestamp_hash_is_reversible(task: CrawlWebsite) -> None:
     assert "https://example.com" in decoded
 
 
-def test_get_command_uses_depth_and_timeout(task: CrawlWebsite) -> None:
+def test_get_command_uses_full_mode_depth_and_timeout(task: CrawlWebsite) -> None:
     cmd = task.get_command(["https://example.com"], params={"depth": 3, "timeout": 60})
+    assert "--mode full" in cmd
     assert "--depth 3" in cmd
     assert "--timeout 60" in cmd
     assert "https://example.com:443" in cmd
@@ -33,6 +34,7 @@ def test_get_command_uses_depth_and_timeout(task: CrawlWebsite) -> None:
 
 def test_get_command_default_depth_without_timeout(task: CrawlWebsite) -> None:
     cmd = task.get_command(["https://example.com"], params={})
+    assert "--mode full" in cmd
     assert "--depth 5" in cmd
     assert "--timeout" not in cmd
 
@@ -133,3 +135,47 @@ def test_parse_output_empty_returns_empty(task: CrawlWebsite) -> None:
 
 def test_parse_output_invalid_json_returns_empty(task: CrawlWebsite) -> None:
     assert task.parse_output("not json {{{") == {AssetType.URL: []}
+
+
+@pytest.mark.asyncio
+async def test_generate_commands_phased_discover_then_probe_shards(task: CrawlWebsite) -> None:
+    seed = "https://example.com"
+    discover_txt = json.dumps(
+        {
+            "urls": {
+                "https://example.com:443": {
+                    "discovered": [
+                        "https://example.com:443/",
+                        "https://example.com:443/a",
+                        "https://example.com:443/b",
+                    ]
+                }
+            }
+        }
+    )
+    fake_batch = MagicMock()
+    jm = MagicMock()
+    jm.spawn_batch = AsyncMock(return_value=fake_batch)
+    jm.wait_for_batch = AsyncMock()
+    jm.get_job_outputs = MagicMock(return_value={"t1": {"output": discover_txt}})
+    jm.cleanup_batch = MagicMock()
+    jm._ensure_k8s_service = MagicMock()
+    jm.k8s_service = MagicMock()
+    jm.k8s_service.list_worker_nodes.return_value = ["n1", "n2"]
+
+    specs = await task.generate_commands(
+        [seed],
+        {"httpx_urls_per_job": 1, "depth": 2, "katana_timeout": 60},
+        {"job_manager": jm, "waf_reputation": None, "step_name": "step"},
+    )
+    assert len(specs) == 4
+    assert all("python3 crawl_website.py --mode probe" in s.command for s in specs)
+    assert jm.spawn_batch.call_count == 1
+    discover_call = jm.spawn_batch.call_args_list[0]
+    assert discover_call[1]["commands"][0].startswith(
+        "cat << 'EOF' | python3 crawl_website.py --mode discover"
+    )
+    assert specs[0].required_nodes == ["n1"]
+    assert specs[1].required_nodes == ["n2"]
+    assert specs[2].required_nodes == ["n1"]
+    assert specs[3].required_nodes == ["n2"]
