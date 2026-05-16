@@ -135,7 +135,8 @@ function URLDetail() {
                 scheme,
                 host,
                 urlPort,
-                response.url
+                response.url,
+                response.program_name
               );
               
               setRelatedUrls(related);

@@ -18,6 +18,14 @@
   background-color: var(--bs-subtle-hover-bg);
 }
 
+.sitemap-folder-row {
+  align-items: center;
+}
+
+.sitemap-page-asset-link:hover .fa-file-alt {
+  color: var(--bs-link-hover-color) !important;
+}
+
 .tree-leaf {
   padding: 0.2rem;
   border-radius: 0.25rem;

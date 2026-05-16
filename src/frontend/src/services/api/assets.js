@@ -255,25 +255,47 @@ export const urlAPI = {
   },
 
   // Get related URLs for sitemap (same scheme/host/port but different paths)
-  getRelatedUrls: async (scheme, host, port, currentUrl) => {
+  getRelatedUrls: async (scheme, host, port, currentUrl, programName) => {
+    const raw = typeof scheme === 'string' ? scheme.toLowerCase() : '';
+    const protocol = raw === 'http' || raw === 'https' ? raw : 'https';
 
-    
-    const response = await api.post('/assets/url/search', {
-      port: port,
+    let portNum;
+    if (port !== undefined && port !== null && port !== '') {
+      const n = typeof port === 'number' ? port : parseInt(String(port), 10);
+      if (!Number.isNaN(n)) portNum = n;
+    }
+
+    const pageSize = 10000;
+    const baseBody = {
       hostname: host,
       sort_by: 'url',
-      scheme: scheme,
+      protocol,
       sort_dir: 'asc',
-      page: 1,
-      page_size: 25
-    });
-    
-    if (response.data.status === 'success' && response.data.items) {
-      // Filter out the current URL and return others
-      return response.data.items.filter(url => url.url !== currentUrl);
+      page_size: pageSize,
+    };
+    if (portNum !== undefined) baseBody.port = portNum;
+    if (programName) baseBody.program = programName;
+
+    const allItems = [];
+    let page = 1;
+    let hasNext = true;
+    const maxPages = 500;
+
+    while (hasNext && page <= maxPages) {
+      const response = await api.post('/assets/url/search', { ...baseBody, page });
+      if (response.data.status !== 'success' || !Array.isArray(response.data.items)) {
+        break;
+      }
+      allItems.push(...response.data.items);
+      const pag = response.data.pagination;
+      hasNext = Boolean(pag && pag.has_next);
+      if (response.data.items.length === 0) {
+        break;
+      }
+      page += 1;
     }
-    
-    return [];
+
+    return allItems.filter((u) => u.url !== currentUrl);
   },
 
   // Get distinct values for a field
