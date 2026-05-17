@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.37.0](https://github.com/ReconHawx/reconhawx/compare/v0.36.1...v0.37.0) (2026-05-17)
+
+
+### Features
+
+* **api:** show per-asset workflow task history on asset detail pages ([9e80a81](https://github.com/ReconHawx/reconhawx/commit/9e80a81acd057977c2df8c60a971813381e967a5))
+
+
+### Bug Fixes
+
+* **api:** show accurate task progress while workflows run ([e6ab1d2](https://github.com/ReconHawx/reconhawx/commit/e6ab1d2a2ba73450963c25e437010f12eb21bf01))
+
 ## [0.36.1](https://github.com/ReconHawx/reconhawx/compare/v0.36.0...v0.36.1) (2026-05-17)
 
 
