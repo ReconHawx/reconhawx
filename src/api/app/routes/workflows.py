@@ -335,6 +335,86 @@ class WorkflowStatusListResponse(BaseModel):
     total_items: int
 
 
+# Per-task terminal statuses from runner task_execution_logs.status (plus common aliases).
+_TASK_TERMINAL_STATUSES = frozenset(
+    {"success", "failed", "error", "skipped", "cancelled", "timeout"}
+)
+
+
+def _compute_workflow_progress(execution: Dict[str, Any]) -> Dict[str, Any]:
+    """Compute task-level progress from workflow log / runner payload.
+
+    ``total`` is the sum of ``len(step.tasks)`` across ``workflow_definition.steps``.
+    ``completed`` counts ``task_execution_logs`` rows that finished (see logic below).
+
+    Falls back for legacy rows missing definition/logs (steps-only heuristic).
+    """
+    result_raw = execution.get("result") or execution.get("status") or "unknown"
+    result = (
+        result_raw.lower()
+        if isinstance(result_raw, str)
+        else str(result_raw).lower()
+    )
+
+    total_tasks = 0
+    wf_def = execution.get("workflow_definition")
+    if isinstance(wf_def, dict):
+        steps = wf_def.get("steps")
+        if isinstance(steps, list):
+            for step in steps:
+                if isinstance(step, dict):
+                    tasks = step.get("tasks") or []
+                    if isinstance(tasks, list):
+                        total_tasks += len(tasks)
+
+    if total_tasks <= 0:
+        tt = execution.get("total_tasks")
+        if isinstance(tt, int) and tt > 0:
+            total_tasks = tt
+        elif isinstance(tt, str) and tt.isdigit() and int(tt) > 0:
+            total_tasks = int(tt)
+
+    if total_tasks <= 0:
+        ts = execution.get("total_steps")
+        if isinstance(ts, int) and ts > 0:
+            total_tasks = ts
+        elif isinstance(ts, str) and ts.isdigit() and int(ts) > 0:
+            total_tasks = int(ts)
+
+    if total_tasks <= 0:
+        ws = execution.get("workflow_steps") or []
+        if isinstance(ws, list) and len(ws) > 0:
+            total_tasks = len(ws)
+
+    if total_tasks <= 0:
+        total_tasks = 1
+
+    completed_tasks = 0
+    logs = execution.get("task_execution_logs") or []
+    if isinstance(logs, list):
+        for entry in logs:
+            if not isinstance(entry, dict):
+                continue
+            status_val = entry.get("status")
+            st = status_val.lower() if isinstance(status_val, str) else ""
+            has_completed_at = bool(entry.get("completed_at"))
+            terminal_status = st in _TASK_TERMINAL_STATUSES
+            if has_completed_at or terminal_status:
+                completed_tasks += 1
+
+    if result in ("success", "completed"):
+        completed_tasks = total_tasks
+
+    completed_tasks = min(completed_tasks, total_tasks)
+
+    pct = (completed_tasks / total_tasks * 100) if total_tasks > 0 else 0.0
+    return {
+        "completed": completed_tasks,
+        "total": total_tasks,
+        "percentage": pct,
+    }
+
+
 def transform_workflow_executions_for_status_list(
     executions: List[Dict[str, Any]],
 ) -> List[Dict[str, Any]]:
@@ -359,33 +439,7 @@ def transform_workflow_executions_for_status_list(
             "workflow_steps": execution.get("workflow_steps", []),
         }
 
-        completed_steps = 0
-        total_steps = execution.get("total_steps", 0)
-
-        if "workflow_steps" in execution and execution["workflow_steps"]:
-            for step in execution["workflow_steps"]:
-                if isinstance(step, dict):
-                    for _step_name, step_data in step.items():
-                        if step_data and isinstance(step_data, dict) and step_data:
-                            completed_steps += 1
-                            break
-
-        if total_steps == 0:
-            if "workflow_steps" in execution and execution["workflow_steps"]:
-                total_steps = len(execution["workflow_steps"])
-            else:
-                if execution.get("result") == "running":
-                    total_steps = 1
-                elif execution.get("result") in ["success", "failed", "completed"]:
-                    total_steps = 1
-                    if execution.get("result") == "success":
-                        completed_steps = 1
-
-        execution_data["progress"] = {
-            "completed": completed_steps,
-            "total": total_steps,
-            "percentage": (completed_steps / total_steps * 100) if total_steps > 0 else 0,
-        }
+        execution_data["progress"] = _compute_workflow_progress(execution)
 
         transformed_executions.append(execution_data)
     return transformed_executions
@@ -660,23 +714,8 @@ async def get_workflow_execution_status(
             output_parts.append(f"\nError:\n{workflow_log['error']}")
         
         "\n".join(output_parts)
-        
-        # Calculate progress
-        completed_steps = 0
-        total_steps = len(workflow_steps) if workflow_steps else 1
-        
-        for step in workflow_steps:
-            if isinstance(step, dict):
-                for step_name, step_data in step.items():
-                    if step_data and isinstance(step_data, dict) and step_data:
-                        completed_steps += 1
-                        break
-        
-        progress = {
-            "completed": completed_steps,
-            "total": total_steps,
-            "percentage": (completed_steps / total_steps * 100) if total_steps > 0 else 0
-        }
+
+        progress = _compute_workflow_progress(workflow_log)
         
         # Handle datetime conversion
         started_at = workflow_log.get("created_at")
