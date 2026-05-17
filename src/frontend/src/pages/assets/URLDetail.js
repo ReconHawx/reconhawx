@@ -3,6 +3,7 @@ import { useParams, useNavigate, useLocation, Link } from 'react-router-dom';
 import { Container, Row, Col, Card, Badge, Button, Spinner, Alert, Table, Collapse, Modal, Image } from 'react-bootstrap';
 import { urlAPI, screenshotAPI, serviceAPI, certificateAPI, domainAPI, API_BASE_URL } from '../../services/api';
 import NotesSection from '../../components/NotesSection';
+import TaskHistorySection from '../../components/TaskHistorySection';
 import SitemapTree from '../../components/SitemapTree';
 import { formatDate } from '../../utils/dateUtils';
 import { usePageTitle, formatPageTitle, truncateTitle } from '../../hooks/usePageTitle';
@@ -880,6 +881,8 @@ function URLDetail() {
           />
         </Col>
       </Row>
+
+      <TaskHistorySection assetType="url" assetId={url?.id || url?._id} />
 
       {/* Full URL JSON */}
       <Row>

@@ -19,6 +19,7 @@ export { API_BASE_URL, api } from './client';
 // Re-export all asset APIs
 export {
     assetAPI,
+    taskHistoryAPI,
     domainAPI,
     apexDomainAPI,
     ipAPI,

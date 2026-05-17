@@ -12,7 +12,7 @@ Project hub: repository root `AGENTS.md`. Use `api-core` for app/auth context an
 
 **Program scoping:** runner and internal clients send **`program_id`** (UUID) for asset/finding ingestion. Repositories resolve the `Program` row by id (`utils/program_resolve.resolve_program_from_payload`); do not use `program_name` as the identifier on ingest paths.
 
-# API Database Patterns
+**Task history:** `task_target_events` stores links from `workflow_logs.task_execution_logs` (resolved input strings → in-scope asset rows) for `GET /assets/{asset_type}/{asset_id}/task-history`. Rows are written in `WorkflowRepository.create_workflow_log` via `repository/task_history_repo.py` (failures are logged, never blocking log ingestion). Backfill: `python scripts/backfill_task_target_events.py`.
 
 ## Database Architecture
 

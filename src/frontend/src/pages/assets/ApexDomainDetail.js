@@ -3,6 +3,7 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { Container, Row, Col, Card, Badge, Button, Spinner, Alert, Table, Collapse, Modal } from 'react-bootstrap';
 import { domainAPI, apexDomainAPI } from '../../services/api';
 import NotesSection from '../../components/NotesSection';
+import TaskHistorySection from '../../components/TaskHistorySection';
 import { formatDate } from '../../utils/dateUtils';
 import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
 
@@ -473,6 +474,8 @@ function ApexDomainDetail() {
           />
         </Col>
       </Row>
+
+      <TaskHistorySection assetType="apex_domain" assetId={apexDomain?.id || apexDomain?._id} />
 
       {/* Full Apex Domain JSON */}
       <Row>
