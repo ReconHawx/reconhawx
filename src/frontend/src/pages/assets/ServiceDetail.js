@@ -3,6 +3,7 @@ import { useParams, useNavigate, useLocation, Link } from 'react-router-dom';
 import { Container, Row, Col, Card, Badge, Button, Spinner, Alert, Table, Collapse, Modal } from 'react-bootstrap';
 import { serviceAPI } from '../../services/api';
 import NotesSection from '../../components/NotesSection';
+import TaskHistorySection from '../../components/TaskHistorySection';
 import { formatDate } from '../../utils/dateUtils';
 import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
 
@@ -399,6 +400,8 @@ function ServiceDetail() {
           />
         </Col>
       </Row>
+
+      <TaskHistorySection assetType="service" assetId={service?.id || service?._id} />
 
       {/* Full Service JSON */}
       <Row>

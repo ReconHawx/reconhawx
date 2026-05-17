@@ -3,6 +3,7 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { Container, Row, Col, Card, Badge, Button, Spinner, Alert, Table, Collapse, Modal } from 'react-bootstrap';
 import { ipAPI, domainAPI } from '../../services/api';
 import NotesSection from '../../components/NotesSection';
+import TaskHistorySection from '../../components/TaskHistorySection';
 import { formatDate } from '../../utils/dateUtils';
 import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
 
@@ -401,6 +402,8 @@ function IPDetail() {
           />
         </Col>
       </Row>
+
+      <TaskHistorySection assetType="ip" assetId={ip?.id || ip?._id} />
 
       {/* Full IP JSON */}
       <Row>

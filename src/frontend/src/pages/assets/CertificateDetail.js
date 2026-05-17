@@ -3,6 +3,7 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { Container, Row, Col, Card, Badge, Button, Spinner, Alert, Table, Collapse, Modal } from 'react-bootstrap';
 import { certificateAPI } from '../../services/api';
 import NotesSection from '../../components/NotesSection';
+import TaskHistorySection from '../../components/TaskHistorySection';
 import { formatDate, isExpired, isExpiringSoon } from '../../utils/dateUtils';
 import { usePageTitle, formatPageTitle, truncateTitle } from '../../hooks/usePageTitle';
 
@@ -373,6 +374,8 @@ function CertificateDetail() {
           />
         </Col>
       </Row>
+
+      <TaskHistorySection assetType="certificate" assetId={certificate?.id || certificate?._id} />
 
       {/* Full Certificate JSON */}
       <Row>

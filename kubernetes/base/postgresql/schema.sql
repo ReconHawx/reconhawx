@@ -1700,6 +1700,28 @@ COMMENT ON COLUMN public.workflow_logs.completed_at IS 'Timestamp when the workf
 
 
 --
+-- Name: task_target_events; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.task_target_events (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    workflow_log_id uuid NOT NULL,
+    program_id uuid NOT NULL,
+    step_name text NOT NULL,
+    task_name text NOT NULL,
+    task_type text,
+    asset_type text NOT NULL,
+    asset_id uuid NOT NULL,
+    started_at timestamp without time zone NOT NULL,
+    completed_at timestamp without time zone,
+    status text,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    CONSTRAINT task_target_events_asset_type_check CHECK ((asset_type = ANY (ARRAY['subdomain'::text, 'apex_domain'::text, 'ip'::text, 'url'::text, 'service'::text, 'certificate'::text]))),
+    CONSTRAINT uq_task_target_event UNIQUE (workflow_log_id, step_name, task_name, asset_type, asset_id)
+);
+
+
+--
 -- Name: workflows; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2050,6 +2072,14 @@ ALTER TABLE ONLY public.subdomains
 
 ALTER TABLE ONLY public.system_settings
     ADD CONSTRAINT system_settings_pkey PRIMARY KEY (key);
+
+
+--
+-- Name: task_target_events task_target_events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.task_target_events
+    ADD CONSTRAINT task_target_events_pkey PRIMARY KEY (id);
 
 
 --
@@ -3167,6 +3197,27 @@ CREATE INDEX ix_subdomains_program_id ON public.subdomains USING btree (program_
 
 
 --
+-- Name: ix_task_target_events_asset_started; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_task_target_events_asset_started ON public.task_target_events USING btree (asset_type, asset_id, started_at DESC);
+
+
+--
+-- Name: ix_task_target_events_program_started; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_task_target_events_program_started ON public.task_target_events USING btree (program_id, started_at DESC);
+
+
+--
+-- Name: ix_task_target_events_workflow_log; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_task_target_events_workflow_log ON public.task_target_events USING btree (workflow_log_id);
+
+
+--
 -- Name: ix_typosquat_apex_domains_apex_domain; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3784,6 +3835,22 @@ ALTER TABLE ONLY public.subdomains
 
 ALTER TABLE ONLY public.subdomains
     ADD CONSTRAINT subdomains_program_id_fkey FOREIGN KEY (program_id) REFERENCES public.programs(id);
+
+
+--
+-- Name: task_target_events task_target_events_program_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.task_target_events
+    ADD CONSTRAINT task_target_events_program_id_fkey FOREIGN KEY (program_id) REFERENCES public.programs(id);
+
+
+--
+-- Name: task_target_events task_target_events_workflow_log_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.task_target_events
+    ADD CONSTRAINT task_target_events_workflow_log_id_fkey FOREIGN KEY (workflow_log_id) REFERENCES public.workflow_logs(id) ON DELETE CASCADE;
 
 
 --

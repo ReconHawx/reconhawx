@@ -44,6 +44,11 @@ class WorkflowRepository:
     @staticmethod
     async def create_workflow_log(log_object: Dict[str, Any]) -> str:
         """Create a new workflow log entry for each execution"""
+        incoming_task_logs: Optional[List[Dict[str, Any]]] = None
+        if "task_execution_logs" in log_object:
+            _raw = log_object["task_execution_logs"]
+            incoming_task_logs = _raw if isinstance(_raw, list) else []
+
         try:
             async with get_db_session() as db:
                 # First, get the execution_id to check if log exists
@@ -93,7 +98,9 @@ class WorkflowRepository:
                                 setattr(existing_log, key, value)
 
                     db.commit()
-                    return str(existing_log.id)
+                    workflow_pk = existing_log.id
+                    program_pk = existing_log.program_id
+                    result_id = str(existing_log.id)
                 else:
                     # Create new workflow log entry for this execution
                     logger.debug("Creating workflow log - letting database handle timestamps")
@@ -103,7 +110,30 @@ class WorkflowRepository:
                     db.refresh(workflow_log)
                     logger.debug(f"After commit/refresh: created_at={workflow_log.created_at}, updated_at={workflow_log.updated_at}")
                     logger.debug(f"Created new workflow log entry for execution {mapped_log_object['execution_id']}")
-                    return str(workflow_log.id)
+                    workflow_pk = workflow_log.id
+                    program_pk = workflow_log.program_id
+                    result_id = str(workflow_log.id)
+
+            if incoming_task_logs:
+                try:
+                    from repository.task_history_repo import (
+                        resolve_and_insert_task_targets_standalone,
+                    )
+
+                    resolve_and_insert_task_targets_standalone(
+                        workflow_pk,
+                        program_pk,
+                        incoming_task_logs,
+                    )
+                except Exception as te:
+                    logger.warning(
+                        "task_target_events ingest failed for workflow_log %s: %s",
+                        workflow_pk,
+                        te,
+                        exc_info=True,
+                    )
+
+            return result_id
                     
         except SQLAlchemyError as e:
             logger.error(f"Database error creating/updating workflow: {str(e)}")

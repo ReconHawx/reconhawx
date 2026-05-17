@@ -842,6 +842,49 @@ class WorkflowLog(Base):
             'updated_at': self.updated_at.isoformat() + 'Z' if self.updated_at else None
         }
 
+
+class TaskTargetEvent(Base):
+    """Per-task run linked to a resolved in-scope asset (from task_execution_logs input_data)."""
+
+    __tablename__ = "task_target_events"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workflow_log_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("workflow_logs.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    program_id = Column(UUID(as_uuid=True), ForeignKey("programs.id"), nullable=False, index=True)
+    step_name = Column(Text, nullable=False)
+    task_name = Column(Text, nullable=False)
+    task_type = Column(Text, nullable=True)
+    asset_type = Column(Text, nullable=False)
+    asset_id = Column(UUID(as_uuid=True), nullable=False)
+    started_at = Column(DateTime, nullable=False)
+    completed_at = Column(DateTime, nullable=True)
+    status = Column(Text, nullable=True)
+    created_at = Column(
+        DateTime,
+        default=utcnow,
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    __table_args__ = (
+        Index("ix_task_target_events_asset_started", "asset_type", "asset_id", "started_at"),
+        Index("ix_task_target_events_program_started", "program_id", "started_at"),
+        Index("ix_task_target_events_workflow_log", "workflow_log_id"),
+        UniqueConstraint(
+            "workflow_log_id",
+            "step_name",
+            "task_name",
+            "asset_type",
+            "asset_id",
+            name="uq_task_target_event",
+        ),
+    )
+
 # === SECURITY MODELS ===
 
 class NucleiTemplate(Base):

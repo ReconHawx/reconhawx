@@ -1,5 +1,14 @@
 import { api } from './client';
 
+export const taskHistoryAPI = {
+  getForAsset: async (assetType, assetId, { page = 1, pageSize = 25 } = {}) => {
+    const response = await api.get(`/assets/${assetType}/${assetId}/task-history`, {
+      params: { page, page_size: pageSize },
+    });
+    return response.data;
+  },
+};
+
 export const assetAPI = {
   delete: async (assetType, assetId) => {
     const response = await api.delete(`/assets/${assetType}/${assetId}`);
