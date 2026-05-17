@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.36.1](https://github.com/ReconHawx/reconhawx/compare/v0.36.0...v0.36.1) (2026-05-17)
+
+
+### Bug Fixes
+
+* **frontend:** show complete URL sitemap on URL detail pages ([e71015d](https://github.com/ReconHawx/reconhawx/commit/e71015d95a384c8bad14f10ee8ecef2860e83e8d))
+
 ## [0.36.0](https://github.com/ReconHawx/reconhawx/compare/v0.35.0...v0.36.0) (2026-05-16)
 
 
