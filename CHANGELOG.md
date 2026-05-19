@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.38.0](https://github.com/ReconHawx/reconhawx/compare/v0.37.0...v0.38.0) (2026-05-19)
+
+
+### Features
+
+* **workflows:** add execution list filters, sort, and DB-backed statuses ([4292385](https://github.com/ReconHawx/reconhawx/commit/42923851f682efd9e366aa0080d3387b8bcaa15a))
+
+
+### Bug Fixes
+
+* **frontend:** clear invalid global program filter after programs load ([5afcf06](https://github.com/ReconHawx/reconhawx/commit/5afcf0691e2a533dbcf7b9f41345801aa6a49f18))
+
 ## [0.37.0](https://github.com/ReconHawx/reconhawx/compare/v0.36.1...v0.37.0) (2026-05-17)
 
 
