@@ -1,7 +1,7 @@
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from fastapi import APIRouter, HTTPException, Query, Request, Depends, status
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Union
 from pydantic import BaseModel, Field
 from datetime import datetime
 from models.base import utcnow
@@ -22,7 +22,12 @@ from models.workflow import (
     WorkflowLogsListResponse
 )
 from models.user_postgres import UserResponse
-from auth.dependencies import get_current_user_from_middleware, filter_by_user_programs, check_program_permission
+from auth.dependencies import (
+    get_current_user_from_middleware,
+    filter_by_user_programs,
+    check_program_permission,
+    get_user_accessible_programs,
+)
 from services.kubernetes import KubernetesService
 from utils import create_status_url
 
@@ -335,6 +340,85 @@ class WorkflowStatusListResponse(BaseModel):
     total_items: int
 
 
+class WorkflowExecutionDistinctStatusesRequest(BaseModel):
+    """Optional body for POST /workflows/executions/distinct/status (mirrors asset ``DistinctRequest`` shape)."""
+
+    filter: Optional[Dict[str, Any]] = None
+    program: Optional[Union[str, List[str]]] = None
+
+
+def _execution_distinct_program_base_filter(
+    query: Optional[WorkflowExecutionDistinctStatusesRequest],
+    current_user: UserResponse,
+) -> Optional[Dict[str, Any]]:
+    """Return base filter containing only ``program_name`` / ``{'$in': ...}``.
+
+    Empty dict → no explicit program clause before ``filter_by_user_programs`` (admin/global scope).
+
+    ``None`` → scoped user cannot see any overlap with the requested programs (distinct is empty).
+
+    Restricted callers without explicit request intersect to all permitted programs.
+
+    Ignores unknown keys under ``filter`` aside from optional ``program_name`` (parity with scoped asset distinct routes).
+    """
+    incoming_filter: Dict[str, Any] = {}
+    if query and isinstance(query.filter, dict):
+        incoming_filter = dict(query.filter)
+
+    requested_programs: Optional[List[str]] = None
+    if query is not None and query.program is not None:
+        if isinstance(query.program, str) and query.program.strip():
+            requested_programs = [query.program.strip()]
+        elif isinstance(query.program, list):
+            requested_programs = [
+                p for p in query.program if isinstance(p, str) and p.strip()
+            ]
+    if requested_programs is None:
+        pn = incoming_filter.get("program_name")
+        if isinstance(pn, str) and pn.strip():
+            requested_programs = [pn.strip()]
+        elif isinstance(pn, list):
+            requested_programs = [
+                p for p in pn if isinstance(p, str) and p.strip()
+            ]
+
+    accessible = get_user_accessible_programs(current_user)
+
+    if current_user.is_superuser or "admin" in current_user.roles:
+        if not requested_programs:
+            return {}
+        unique = list(dict.fromkeys(requested_programs))
+        if len(unique) == 1:
+            return {"program_name": unique[0]}
+        return {"program_name": {"$in": unique}}
+
+    allowed = accessible or []
+    if not allowed:
+        return None
+
+    if requested_programs:
+        intersected = [p for p in requested_programs if p in allowed]
+        if not intersected:
+            return None
+        unique = list(dict.fromkeys(intersected))
+    else:
+        unique = list(dict.fromkeys(allowed))
+
+    if len(unique) == 1:
+        return {"program_name": unique[0]}
+    return {"program_name": {"$in": unique}}
+
+
+# Frontend sort_field keys -> WorkflowLog columns for GET /workflows/executions
+_WORKFLOW_EXECUTION_LIST_SORT_COLUMNS: Dict[str, str] = {
+    "workflow_name": "workflow_name",
+    "program_name": "program_name",
+    "status": "status",
+    "started_at": "started_at",
+    "completed_at": "completed_at",
+}
+
+
 # Per-task terminal statuses from runner task_execution_logs.status (plus common aliases).
 _TASK_TERMINAL_STATUSES = frozenset(
     {"success", "failed", "error", "skipped", "cancelled", "timeout"}
@@ -420,17 +504,24 @@ def transform_workflow_executions_for_status_list(
 ) -> List[Dict[str, Any]]:
     """Shared shape for workflow execution list rows (full or lite log dicts)."""
     transformed_executions: List[Dict[str, Any]] = []
+    terminal_results = frozenset(
+        ["success", "completed", "failed", "cancelled_waf", "partial_waf"]
+    )
     for execution in executions:
+        result_raw = execution.get("result") or execution.get("status") or "unknown"
+        res_norm = result_raw.lower() if isinstance(result_raw, str) else str(result_raw).lower()
+        if res_norm in terminal_results:
+            completed_at_row = execution.get("completed_at") or execution.get("updated_at")
+        else:
+            completed_at_row = None
+
         execution_data = {
             "id": execution.get("execution_id", execution.get("workflow_id", execution.get("_id", ""))),
             "workflow_name": execution.get("workflow_name", execution.get("workflow_id", "Unknown")),
             "program_name": execution.get("program_name", "Unknown"),
-            "status": execution.get("result", "unknown").lower(),
-            "started_at": execution.get("created_at"),
-            "completed_at": execution.get("updated_at")
-            if execution.get("result")
-            in ["success", "completed", "failed", "cancelled_waf", "partial_waf"]
-            else None,
+            "status": res_norm,
+            "started_at": execution.get("started_at") or execution.get("created_at"),
+            "completed_at": completed_at_row,
             "progress": {
                 "completed": 0,
                 "total": 0,
@@ -572,6 +663,13 @@ async def get_workflow_executions(
     page: int = Query(1, ge=1, description="Page number"),
     limit: int = Query(25, ge=1, le=100, description="Items per page"),
     program_name: Optional[str] = Query(None, description="Filter by program name"),
+    workflow_name: Optional[str] = Query(
+        None, description="Filter by workflow name (case-insensitive substring)"
+    ),
+    status: Optional[str] = Query(None, description="Filter by execution status"),
+    execution_id: Optional[str] = Query(
+        None, description="Filter by execution id (case-insensitive substring)"
+    ),
     sort_field: Optional[str] = Query(None, description="Field to sort by"),
     sort_order: Optional[str] = Query("desc", description="Sort order (asc or desc)"),
     lite: bool = Query(
@@ -586,7 +684,34 @@ async def get_workflow_executions(
         filter_query = {}
         if program_name:
             filter_query['program_name'] = program_name
-        
+        if workflow_name and str(workflow_name).strip():
+            filter_query["workflow_name"] = {
+                "$regex": str(workflow_name).strip(),
+                "$options": "i",
+            }
+        if execution_id and str(execution_id).strip():
+            filter_query["execution_id"] = {
+                "$regex": str(execution_id).strip(),
+                "$options": "i",
+            }
+        if status and str(status).strip():
+            filter_query["status"] = str(status).strip().lower()
+
+        sort_key = (sort_field or "").strip() if sort_field else ""
+        if sort_key and sort_key not in _WORKFLOW_EXECUTION_LIST_SORT_COLUMNS:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid sort_field "
+                + f"{sort_key!r}; allowed "
+                + ", ".join(sorted(_WORKFLOW_EXECUTION_LIST_SORT_COLUMNS.keys())),
+            )
+
+        sort_order_int = -1 if (sort_order or "desc").lower() == "desc" else 1
+        if sort_key:
+            sort_param = {_WORKFLOW_EXECUTION_LIST_SORT_COLUMNS[sort_key]: sort_order_int}
+        else:
+            sort_param = {"created_at": -1}
+
         # Apply user program permissions to the query filter
         filtered_query = filter_by_user_programs(filter_query, current_user)
         logger.info(f"Filtered query: {filtered_query}")
@@ -599,26 +724,7 @@ async def get_workflow_executions(
         # Calculate pagination
         total_pages = (total_count + limit - 1) // limit if limit > 0 else 1
         skip = (page - 1) * limit
-        
-        
-        # Build sort parameter
-        sort_order_int = -1 if sort_order == "desc" else 1
-        if sort_field:
-            # Map frontend field names to database field names
-            field_mapping = {
-                "workflow_name": "workflow_name",
-                "program_name": "program_name", 
-                "status": "result",
-                "started_at": "created_at",
-                "completed_at": "updated_at",
-                "progress": "created_at"  # Default to created_at for progress sorting
-            }
-            db_field = field_mapping.get(sort_field, "created_at")
-            sort_param = {db_field: sort_order_int}
-        else:
-            # Default sort by creation date, recent first
-            sort_param = {"created_at": -1}
-        
+
         # Execute query
         executions = await workflow_repository.execute_query(
             sanitized_query,
@@ -646,6 +752,29 @@ async def get_workflow_executions(
     except Exception as e:
         logger.error(f"Error fetching workflow status list: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error fetching workflow status: {str(e)}")
+
+
+@router.post("/executions/distinct/status", response_model=List[str])
+async def get_distinct_workflow_execution_status_values(
+    query: Optional[WorkflowExecutionDistinctStatusesRequest] = None,
+    current_user: UserResponse = Depends(get_current_user_from_middleware),
+):
+    """Distinct stored ``workflow_logs.status`` strings (normalized to lower-case), scoped like the executions list."""
+    try:
+        base_pf = _execution_distinct_program_base_filter(query, current_user)
+        if base_pf is None:
+            return []
+        scoped = filter_by_user_programs(base_pf, current_user)
+        sanitized = await workflow_repository.sanitize_query(scoped)
+        query_arg = sanitized if sanitized else None
+        values = await workflow_repository.get_distinct_workflow_execution_statuses(query_arg)
+        return values
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error("Error fetching distinct workflow execution statuses: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.get("/executions/{workflow_id}", response_model=WorkflowStatusResponse)
 async def get_workflow_execution_status(

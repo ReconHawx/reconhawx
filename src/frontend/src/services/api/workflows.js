@@ -197,10 +197,17 @@ export const workflowAPI = {
   },
 
   // Get workflow execution status list (paginated)
-  getWorkflowStatus: async (page = 1, limit = 25, programName = null, sortField = null, sortOrder = 'desc') => {
+  getWorkflowStatus: async (
+    page = 1,
+    limit = 25,
+    programName = null,
+    sortField = null,
+    sortOrder = 'desc',
+    filters = {},
+  ) => {
     const params = new URLSearchParams({
       page: page.toString(),
-      limit: limit.toString()
+      limit: limit.toString(),
     });
     if (programName) {
       params.append('program_name', programName);
@@ -209,7 +216,25 @@ export const workflowAPI = {
       params.append('sort_field', sortField);
       params.append('sort_order', sortOrder);
     }
+    const wf = filters.workflowName ?? filters.workflow_name;
+    if (wf != null && String(wf).trim()) {
+      params.append('workflow_name', String(wf).trim());
+    }
+    if (filters.status != null && String(filters.status).trim()) {
+      params.append('status', String(filters.status).trim());
+    }
+    const ex =
+      filters.executionId ?? filters.execution_id;
+    if (ex != null && String(ex).trim()) {
+      params.append('execution_id', String(ex).trim());
+    }
     const response = await api.get(`/workflows/executions?${params}`);
+    return response.data;
+  },
+
+  /** Distinct `workflow_logs.status` values scoped like the executions list (`program`, optional). */
+  getDistinctWorkflowExecutionStatuses: async (body = {}) => {
+    const response = await api.post('/workflows/executions/distinct/status', body || {});
     return response.data;
   },
 

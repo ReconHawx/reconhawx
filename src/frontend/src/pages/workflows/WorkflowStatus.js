@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { Container, Row, Col, Card, Table, Badge, Button, Spinner, Alert, Pagination, ButtonGroup, Modal, Tabs, Tab, Form } from 'react-bootstrap';
+import { Container, Row, Col, Card, Table, Badge, Button, Spinner, Alert, Pagination, ButtonGroup, Modal, Tabs, Tab, Form, OverlayTrigger, Popover } from 'react-bootstrap';
 import { Link, useSearchParams } from 'react-router-dom';
 import { workflowAPI } from '../../services/api';
 import { formatDate, calculateDuration } from '../../utils/dateUtils';
 import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
 import { useAuth } from '../../contexts/AuthContext';
+import { useProgramFilter } from '../../contexts/ProgramFilterContext';
 import { JobManagementInner } from '../admin/JobManagement';
 
 const TAB_WORKFLOWS = 'workflows';
@@ -43,25 +44,114 @@ export function WorkflowMonitoringPanel({ embedded = false }) {
   const [showBulkStopModal, setShowBulkStopModal] = useState(false);
   const selectAllCheckboxRef = useRef(null);
 
-  const loadExecutions = useCallback(async (showLoading = true) => {
-    try {
-      if (showLoading) setLoading(true);
-      const response = await workflowAPI.getWorkflowStatus(currentPage, pageSize, null, sortField, sortOrder);
+  const { selectedProgram } = useProgramFilter();
+  const [totalItems, setTotalItems] = useState(0);
+  const [workflowNameFilter, setWorkflowNameFilter] = useState('');
+  const [executionIdFilter, setExecutionIdFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const programScopeForList = useMemo(() => {
+    if (!selectedProgram || !String(selectedProgram).trim()) return null;
+    return String(selectedProgram).trim();
+  }, [selectedProgram]);
 
-      setExecutions(response.executions || []);
-      setTotalPages(response.total_pages || 1);
-      setError(null);
-    } catch (err) {
-      setError('Failed to load workflow executions: ' + err.message);
-      setExecutions([]);
-    } finally {
-      if (showLoading) setLoading(false);
+  /** Populated via POST `/workflows/executions/distinct/status` (DB-backed). */
+  const [distinctStatuses, setDistinctStatuses] = useState([]);
+  const [distinctStatusesLoading, setDistinctStatusesLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        setDistinctStatusesLoading(true);
+        const body = {};
+        if (programScopeForList) body.program = programScopeForList;
+        const raw = await workflowAPI.getDistinctWorkflowExecutionStatuses(body);
+        if (!cancelled) setDistinctStatuses(Array.isArray(raw) ? raw : []);
+      } catch (e) {
+        console.error('Failed to load workflow status filter values:', e);
+        if (!cancelled) setDistinctStatuses([]);
+      } finally {
+        if (!cancelled) setDistinctStatusesLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [programScopeForList]);
+
+  /** Clear filter once options are loaded if value is not returned for this scope. */
+  useEffect(() => {
+    if (distinctStatusesLoading || !statusFilter) return;
+    if (!distinctStatuses.includes(statusFilter)) {
+      setStatusFilter('');
+      setCurrentPage(1);
     }
-  }, [currentPage, pageSize, sortField, sortOrder]);
+  }, [distinctStatusesLoading, distinctStatuses, statusFilter]);
+
+  const filters = useMemo(
+    () => ({
+      workflowName: workflowNameFilter,
+      executionId: executionIdFilter,
+      status: statusFilter,
+    }),
+    [workflowNameFilter, executionIdFilter, statusFilter],
+  );
+
+  const loadExecutions = useCallback(
+    async (showLoading = true) => {
+      try {
+        if (showLoading) setLoading(true);
+        const response = await workflowAPI.getWorkflowStatus(
+          currentPage,
+          pageSize,
+          programScopeForList,
+          sortField,
+          sortOrder,
+          filters,
+        );
+
+        setExecutions(response.executions || []);
+        setTotalPages(response.total_pages || 1);
+        setTotalItems(response.total_items ?? 0);
+        setError(null);
+      } catch (err) {
+        setError(
+          `Failed to load workflow executions: ${
+            err.response?.data?.detail || err.message
+          }`,
+        );
+        setExecutions([]);
+        setTotalItems(0);
+      } finally {
+        if (showLoading) setLoading(false);
+      }
+    },
+    [
+      currentPage,
+      pageSize,
+      sortField,
+      sortOrder,
+      programScopeForList,
+      filters,
+    ],
+  );
 
   useEffect(() => {
     setSelectedIds(new Set());
-  }, [currentPage, sortField, sortOrder, pageSize]);
+  }, [
+    currentPage,
+    sortField,
+    sortOrder,
+    pageSize,
+    workflowNameFilter,
+    executionIdFilter,
+    statusFilter,
+    selectedProgram,
+  ]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [selectedProgram]);
 
   useEffect(() => {
     loadExecutions();
@@ -274,15 +364,11 @@ export function WorkflowMonitoringPanel({ embedded = false }) {
   };
 
   const handleSort = (field) => {
-    if (sortField === field) {
-      // Toggle sort order if clicking the same field
-      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
-    } else {
-      // Set new field and default to desc order
-      setSortField(field);
-      setSortOrder('desc');
-    }
-    setCurrentPage(1); // Reset to first page when sorting
+    const newOrder =
+      sortField === field && sortOrder === 'asc' ? 'desc' : 'asc';
+    setSortField(field);
+    setSortOrder(newOrder);
+    setCurrentPage(1);
   };
 
   const getSortIcon = (field) => {
@@ -292,44 +378,125 @@ export function WorkflowMonitoringPanel({ embedded = false }) {
     return sortOrder === 'asc' ? <span>↑</span> : <span>↓</span>;
   };
 
+  const clearFilters = () => {
+    setWorkflowNameFilter('');
+    setExecutionIdFilter('');
+    setStatusFilter('');
+    setCurrentPage(1);
+  };
+
+  const ColumnFilterPopover = ({
+    id,
+    isActive,
+    ariaLabel,
+    placement = 'bottom',
+    children,
+  }) => {
+    const buttonVariant = isActive ? 'primary' : 'outline-secondary';
+
+    const overlay = (
+      <Popover id={id} style={{ minWidth: 280, maxWidth: 360 }} onClick={(e) => e.stopPropagation()}>
+        <Popover.Body onClick={(e) => e.stopPropagation()}>{children}</Popover.Body>
+      </Popover>
+    );
+
+    return (
+      <OverlayTrigger trigger="click" rootClose placement={placement} overlay={overlay}>
+        <Button
+          size="sm"
+          variant={buttonVariant}
+          aria-label={ariaLabel}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 16 16"
+            fill="currentColor"
+            xmlns="http://www.w3.org/2000/svg"
+            aria-hidden="true"
+            style={{ marginRight: 4 }}
+          >
+            <path d="M1.5 1.5a.5.5 0 0 0 0 1h13a.5.5 0 0 0 .4-.8L10 9.2V13a.5.5 0 0 1-.276.447l-2 1A.5.5 0 0 1 7 14V9.2L1.1 1.7a.5.5 0 0 0-.4-.2z" />
+          </svg>
+        </Button>
+      </OverlayTrigger>
+    );
+  };
+
+  const InlineTextFilter = ({
+    label,
+    placeholder,
+    initialValue,
+    onApply,
+    onClear,
+  }) => {
+    const [localValue, setLocalValue] = useState(initialValue || '');
+    useEffect(() => {
+      setLocalValue(initialValue || '');
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [initialValue]);
+
+    const applyNow = () => {
+      onApply(localValue);
+    };
+
+    return (
+      <div>
+        <Form.Group>
+          <Form.Label className="mb-1">{label}</Form.Label>
+          <Form.Control
+            type="text"
+            placeholder={placeholder}
+            value={localValue}
+            onChange={(e) => setLocalValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') applyNow();
+            }}
+          />
+        </Form.Group>
+        <div className="d-flex justify-content-end gap-2 mt-3">
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => {
+              setLocalValue('');
+              onClear?.();
+            }}
+          >
+            Clear
+          </Button>
+          <Button size="sm" variant="primary" onClick={applyNow}>
+            Apply
+          </Button>
+        </div>
+      </div>
+    );
+  };
+
+  const pagerLabel = useMemo(() => {
+    if (totalItems === 0) {
+      return { from: 0, to: 0 };
+    }
+    const from = (currentPage - 1) * pageSize + 1;
+    const to = Math.min(currentPage * pageSize, totalItems);
+    return { from, to };
+  }, [totalItems, currentPage, pageSize]);
+
   const Outer = embedded ? 'div' : Container;
   const outerProps = embedded ? {} : { fluid: true };
   const outerClassName = embedded ? '' : 'p-4';
-
-  if (loading && executions.length === 0) {
-    return (
-      <Outer {...outerProps} className={`${outerClassName} text-center`.trim()}>
-        <div className={embedded ? 'py-4' : ''}>
-          <Spinner animation="border" role="status">
-            <span className="visually-hidden">Loading...</span>
-          </Spinner>
-          <p className="mt-2">Loading workflow executions...</p>
-        </div>
-      </Outer>
-    );
-  }
 
   return (
     <Outer {...outerProps} className={outerClassName}>
       <Row className="mb-4">
         <Col>
-          <div className="d-flex justify-content-between align-items-center">
-            <div>
-              {!embedded && <h1>📊 Workflow Status</h1>}
-              <p className={`text-muted ${embedded ? 'mb-0' : ''}`}>Monitor workflow execution status and progress</p>
-            </div>
-            <div>
-              <Button
-                variant={autoRefresh ? 'success' : 'outline-secondary'}
-                onClick={() => setAutoRefresh(!autoRefresh)}
-                className="me-2"
-              >
-                {autoRefresh ? '🔄 Auto-refresh ON' : '⏸️ Auto-refresh OFF'}
-              </Button>
-              <Button variant="outline-primary" onClick={() => loadExecutions()}>
-                🔄 Refresh
-              </Button>
-            </div>
+          <div>
+            {!embedded && <h1>📊 Workflow Status</h1>}
+            <p className={`text-muted ${embedded ? 'mb-0' : ''}`}>
+              Monitor workflow execution status and progress. Use the global program filter in the header to
+              narrow by program.
+            </p>
           </div>
         </Col>
       </Row>
@@ -344,34 +511,44 @@ export function WorkflowMonitoringPanel({ embedded = false }) {
         <Col>
           <Card>
             <Card.Header className="d-flex flex-wrap justify-content-between align-items-center gap-2">
-              <div className="flex-grow-1">
+              <div className="d-flex align-items-center flex-wrap gap-2 flex-grow-1">
                 <h5 className="mb-0">Recent Workflow Executions</h5>
-                <small className="text-muted">
-                  Sorted by: {sortField.replace('_', ' ')} ({sortOrder === 'asc' ? 'ascending' : 'descending'})
-                </small>
+                <Badge bg="secondary">Total: {totalItems}</Badge>
+                <Button
+                  variant="link"
+                  size="sm"
+                  className="p-0"
+                  onClick={clearFilters}
+                  aria-label="Reset all filters"
+                >
+                  Reset filters
+                </Button>
+                <span className="text-muted small d-none d-xl-inline">
+                  Sorted by {sortField.replace(/_/g, ' ')} ({sortOrder === 'asc' ? 'asc' : 'desc'})
+                </span>
               </div>
-              <div className="d-flex align-items-center gap-2">
+              <div className="d-flex align-items-center gap-2 flex-wrap">
                 {selectedIds.size > 0 && (
                   <Button variant="outline-danger" size="sm" onClick={handleOpenBulkStop}>
                     ⏹️ Stop selected ({selectedIds.size})
                   </Button>
                 )}
-                {loading && (
-                  <Spinner animation="border" size="sm" />
-                )}
+                <Button
+                  variant={autoRefresh ? 'success' : 'outline-secondary'}
+                  size="sm"
+                  onClick={() => setAutoRefresh(!autoRefresh)}
+                  className="me-1"
+                >
+                  {autoRefresh ? '🔄 Auto-refresh ON' : '⏸️ OFF'}
+                </Button>
+                <Button variant="outline-primary" size="sm" onClick={() => loadExecutions()}>
+                  🔄 Refresh
+                </Button>
+                {loading && <Spinner animation="border" size="sm" />}
               </div>
             </Card.Header>
             <Card.Body className="p-0">
-              {executions.length === 0 ? (
-                <div className="text-center p-4">
-                  <p className="text-muted mb-3">No workflow executions found.</p>
-                  <Button as={Link} to="/workflows/run" variant="outline-primary">
-                    Run a workflow
-                  </Button>
-                </div>
-              ) : (
-                <>
-                  <Table responsive hover className="mb-0">
+              <Table responsive hover className="mb-0">
                     <thead>
                       <tr>
                         <th style={{ width: '42px' }}>
@@ -388,42 +565,119 @@ export function WorkflowMonitoringPanel({ embedded = false }) {
                             aria-label="Select all stoppable workflows on this page"
                           />
                         </th>
-                        <th 
-                          style={sortableHeaderStyle}
-                          onClick={() => handleSort('workflow_name')}
-                        >
-                          Workflow {getSortIcon('workflow_name')}
+                        <th style={sortableHeaderStyle} onClick={() => handleSort('workflow_name')}>
+                          <div className="d-flex align-items-center gap-2">
+                            <span>Workflow {getSortIcon('workflow_name')}</span>
+                            <ColumnFilterPopover
+                              id="workflow-exec-filter"
+                              ariaLabel="Filter by workflow name or execution ID"
+                              isActive={Boolean(workflowNameFilter || executionIdFilter)}
+                            >
+                              <div>
+                                <InlineTextFilter
+                                  label="Workflow name contains"
+                                  placeholder="Substring…"
+                                  initialValue={workflowNameFilter}
+                                  onApply={(val) => {
+                                    setWorkflowNameFilter(val);
+                                    setCurrentPage(1);
+                                  }}
+                                  onClear={() => setWorkflowNameFilter('')}
+                                />
+                                <div className="mt-3">
+                                  <InlineTextFilter
+                                    label="Execution ID contains"
+                                    placeholder="Substring…"
+                                    initialValue={executionIdFilter}
+                                    onApply={(val) => {
+                                      setExecutionIdFilter(val);
+                                      setCurrentPage(1);
+                                    }}
+                                    onClear={() => setExecutionIdFilter('')}
+                                  />
+                                </div>
+                              </div>
+                            </ColumnFilterPopover>
+                          </div>
                         </th>
-                        <th 
-                          style={sortableHeaderStyle}
-                          onClick={() => handleSort('program_name')}
-                        >
+                        <th style={sortableHeaderStyle} onClick={() => handleSort('program_name')}>
                           Program {getSortIcon('program_name')}
                         </th>
-                        <th 
-                          style={sortableHeaderStyle}
-                          onClick={() => handleSort('status')}
-                        >
-                          Status {getSortIcon('status')}
+                        <th style={sortableHeaderStyle} onClick={() => handleSort('status')}>
+                          <div className="d-flex align-items-center gap-2">
+                            <span>Status {getSortIcon('status')}</span>
+                            <ColumnFilterPopover
+                              id="workflow-status-filter"
+                              ariaLabel="Filter by status"
+                              isActive={Boolean(statusFilter)}
+                            >
+                              <div>
+                                <Form.Group className="mb-2">
+                                  <Form.Label className="mb-1">Status</Form.Label>
+                                  <Form.Select
+                                    size="sm"
+                                    disabled={distinctStatusesLoading}
+                                    value={statusFilter}
+                                    onChange={(e) => {
+                                      setStatusFilter(e.target.value);
+                                      setCurrentPage(1);
+                                    }}
+                                  >
+                                    <option value="">
+                                      {distinctStatusesLoading ? 'Loading statuses…' : 'All statuses'}
+                                    </option>
+                                    {distinctStatuses.map((s) => (
+                                      <option key={s} value={s}>
+                                        {formatWorkflowStatusLabel(s)}
+                                      </option>
+                                    ))}
+                                  </Form.Select>
+                                </Form.Group>
+                                <div className="d-flex justify-content-end">
+                                  <Button
+                                    size="sm"
+                                    variant="secondary"
+                                    onClick={() => {
+                                      setStatusFilter('');
+                                      setCurrentPage(1);
+                                    }}
+                                  >
+                                    Clear
+                                  </Button>
+                                </div>
+                              </div>
+                            </ColumnFilterPopover>
+                          </div>
                         </th>
-                        <th 
-                          style={sortableHeaderStyle}
-                          onClick={() => handleSort('started_at')}
-                        >
+                        <th style={sortableHeaderStyle} onClick={() => handleSort('started_at')}>
                           Started {getSortIcon('started_at')}
                         </th>
                         <th>Duration</th>
-                        <th 
-                          style={sortableHeaderStyle}
-                          onClick={() => handleSort('progress')}
-                        >
-                          Progress {getSortIcon('progress')}
-                        </th>
+                        <th>Progress</th>
                         <th>Actions</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {executions.map((execution) => (
+                      {loading && executions.length === 0 ? (
+                        <tr>
+                          <td colSpan={8} className="text-center py-5">
+                            <Spinner animation="border" role="status">
+                              <span className="visually-hidden">Loading...</span>
+                            </Spinner>
+                            <p className="mt-2 mb-0 text-muted small">Loading workflow executions...</p>
+                          </td>
+                        </tr>
+                      ) : executions.length === 0 ? (
+                        <tr>
+                          <td colSpan={8} className="text-center py-5">
+                            <p className="text-muted mb-3">No workflow executions match the current filters.</p>
+                            <Button as={Link} to="/workflows/run" variant="outline-primary">
+                              Run a workflow
+                            </Button>
+                          </td>
+                        </tr>
+                      ) : (
+                        executions.map((execution) => (
                         <tr key={execution.id}>
                           <td>
                             <Form.Check
@@ -502,12 +756,17 @@ export function WorkflowMonitoringPanel({ embedded = false }) {
                             </ButtonGroup>
                           </td>
                         </tr>
-                      ))}
+                        ))
+                      )}
                     </tbody>
                   </Table>
 
                   {/* Pagination + page size */}
-                  <div className="d-flex justify-content-center align-items-center gap-3 p-3 flex-wrap">
+                  <div className="text-center text-muted small p-3 pb-2 mb-0">
+                    Showing {pagerLabel.from} to {pagerLabel.to} of {totalItems} executions (Page{' '}
+                    {currentPage} of {Math.max(totalPages, 1)})
+                  </div>
+                  <div className="d-flex justify-content-center align-items-center gap-3 p-3 pt-0 flex-wrap">
                     <Form.Select
                       size="sm"
                       value={pageSize}
@@ -560,8 +819,6 @@ export function WorkflowMonitoringPanel({ embedded = false }) {
                       </Pagination>
                     )}
                   </div>
-                </>
-              )}
             </Card.Body>
           </Card>
         </Col>

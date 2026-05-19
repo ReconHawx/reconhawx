@@ -2,7 +2,7 @@ from typing import List, Dict, Any, Optional
 import logging
 from datetime import datetime
 from models.base import utcnow
-from sqlalchemy import and_, or_, not_, desc, asc
+from sqlalchemy import and_, or_, not_, desc, asc, func
 from sqlalchemy.orm import joinedload, defer
 from sqlalchemy.exc import SQLAlchemyError
 from models.postgres import WorkflowLog
@@ -346,7 +346,9 @@ class WorkflowRepository:
                 if any("program_name" in str(cond) for cond in filter_conditions):
                     from models.postgres import Program
 
-                    db_query = db_query.join(Program)
+                    db_query = db_query.join(
+                        Program, WorkflowLog.program_id == Program.id
+                    )
                 count = db_query.filter(*filter_conditions).count()
 
             logger.info("Count result: %s documents", count)
@@ -379,7 +381,9 @@ class WorkflowRepository:
                 if any("program_name" in str(cond) for cond in filter_conditions):
                     from models.postgres import Program
 
-                    db_query = db_query.join(Program)
+                    db_query = db_query.join(
+                        Program, WorkflowLog.program_id == Program.id
+                    )
                 db_query = db_query.filter(*filter_conditions)
             return int(db_query.count())
         except SQLAlchemyError as e:
@@ -546,6 +550,8 @@ class WorkflowRepository:
     ) -> List[Dict[str, Any]]:
         db = SessionLocal()
         try:
+            from models.postgres import Program
+
             logger.info("Executing query: %s lite=%s", query, lite)
             if lite:
                 db_query = db.query(WorkflowLog).options(
@@ -555,29 +561,42 @@ class WorkflowRepository:
             else:
                 db_query = db.query(WorkflowLog)
 
+            joined_program = False
+
             if query:
                 filter_conditions = WorkflowRepository._convert_query_to_filter(query)
                 if any("program_name" in str(cond) for cond in filter_conditions):
-                    from models.postgres import Program
-
-                    db_query = db_query.join(Program)
+                    db_query = db_query.join(
+                        Program, WorkflowLog.program_id == Program.id
+                    )
+                    joined_program = True
                 db_query = db_query.filter(*filter_conditions)
 
             if sort:
                 for field_name, direction in sort.items():
                     if field_name == "program_name":
-                        from models.postgres import Program
-
-                        if direction == 1:
-                            db_query = db_query.join(Program).order_by(asc(Program.name))
-                        else:
-                            db_query = db_query.join(Program).order_by(desc(Program.name))
+                        if not joined_program:
+                            db_query = db_query.join(
+                                Program, WorkflowLog.program_id == Program.id
+                            )
+                            joined_program = True
+                        db_query = db_query.order_by(
+                            asc(Program.name).nulls_last()
+                            if direction == 1
+                            else desc(Program.name).nulls_last()
+                        )
                     elif hasattr(WorkflowLog, field_name):
                         field = getattr(WorkflowLog, field_name)
-                        if direction == 1:
-                            db_query = db_query.order_by(asc(field))
+                        if field_name == "started_at":
+                            if direction == 1:
+                                db_query = db_query.order_by(asc(field).nulls_last())
+                            else:
+                                db_query = db_query.order_by(desc(field).nulls_last())
                         else:
-                            db_query = db_query.order_by(desc(field))
+                            if direction == 1:
+                                db_query = db_query.order_by(asc(field))
+                            else:
+                                db_query = db_query.order_by(desc(field))
 
             if skip:
                 db_query = db_query.offset(skip)
@@ -617,4 +636,46 @@ class WorkflowRepository:
             skip,
             sort,
             lite=lite,
+        )
+
+    @staticmethod
+    def _get_distinct_workflow_execution_statuses_sync(
+        query: Optional[Dict[str, Any]] = None,
+    ) -> List[str]:
+        """Distinct ``workflow_logs.status`` values (lower-cased), same scoping filters as execute_query."""
+        db = SessionLocal()
+        try:
+            from models.postgres import Program
+
+            db_query = db.query(WorkflowLog)
+            if query:
+                filter_conditions = WorkflowRepository._convert_query_to_filter(query)
+                if any("program_name" in str(cond) for cond in filter_conditions):
+                    db_query = db_query.join(
+                        Program, WorkflowLog.program_id == Program.id
+                    )
+                db_query = db_query.filter(*filter_conditions)
+
+            lc = func.lower(WorkflowLog.status)
+            rows = db_query.with_entities(lc).distinct().order_by(lc).all()
+            return sorted(
+                {str(row[0]).lower() for row in rows if row[0] is not None},
+            )
+        except SQLAlchemyError as e:
+            logger.error("Database error in distinct workflow execution statuses: %s", e)
+            raise
+        except Exception as e:
+            logger.error("Error in distinct workflow execution statuses: %s", e)
+            raise
+        finally:
+            db.close()
+
+    @staticmethod
+    async def get_distinct_workflow_execution_statuses(
+        query: Optional[Dict[str, Any]] = None,
+    ) -> List[str]:
+        """Return distinct statuses visible under the given sanitized filter (or all rows when query is falsy)."""
+        return await run_in_threadpool(
+            WorkflowRepository._get_distinct_workflow_execution_statuses_sync,
+            query,
         )
