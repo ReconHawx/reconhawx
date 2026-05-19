@@ -16,6 +16,8 @@ export const ProgramFilterProvider = ({ children }) => {
   const [selectedProgram, setSelectedProgram] = useState('');
   const [programs, setPrograms] = useState([]);
   const [loading, setLoading] = useState(false);
+  /** True after loadPrograms()'s finally (success or failure), so validation does not wipe state during initial fetch */
+  const [programsLoadAttemptFinished, setProgramsLoadAttemptFinished] = useState(false);
   const { user } = useAuth();
 
   // Load programs only when user is authenticated
@@ -26,6 +28,7 @@ export const ProgramFilterProvider = ({ children }) => {
       // Clear programs when user is not authenticated
       setPrograms([]);
       setSelectedProgram('');
+      setProgramsLoadAttemptFinished(false);
     }
   }, [user]);
 
@@ -37,6 +40,21 @@ export const ProgramFilterProvider = ({ children }) => {
     }
   }, []);
 
+  // Drop persisted filter if no longer in the authenticated program list (renamed/deleted program or stale localStorage).
+  useEffect(() => {
+    if (!user?.username || loading || !programsLoadAttemptFinished) return;
+    const names = [];
+    for (const p of programs || []) {
+      if (typeof p === 'string' && p.trim()) names.push(p.trim());
+      else if (p?.name != null && String(p.name).trim()) names.push(String(p.name).trim());
+    }
+    if (names.length === 0) return;
+    const chosen = typeof selectedProgram === 'string' ? selectedProgram.trim() : '';
+    if (chosen && !names.includes(chosen)) {
+      setSelectedProgram('');
+    }
+  }, [user, loading, programsLoadAttemptFinished, programs, selectedProgram]);
+
   // Save to localStorage when program changes
   useEffect(() => {
     if (selectedProgram) {
@@ -47,6 +65,7 @@ export const ProgramFilterProvider = ({ children }) => {
   }, [selectedProgram]);
 
   const loadPrograms = async () => {
+    setProgramsLoadAttemptFinished(false);
     try {
       setLoading(true);
       
@@ -74,6 +93,7 @@ export const ProgramFilterProvider = ({ children }) => {
       setPrograms([]);
     } finally {
       setLoading(false);
+      setProgramsLoadAttemptFinished(true);
     }
   };
 
