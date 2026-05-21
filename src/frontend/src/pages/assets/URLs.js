@@ -1020,10 +1020,6 @@ function URLs() {
                 <div className="p-4">
                   <p className="text-danger">{error}</p>
                 </div>
-              ) : urls.length === 0 ? (
-                <div className="p-4 text-center">
-                  <p className="text-muted">No URLs found matching the current filters.</p>
-                </div>
               ) : (
                 <Table hover responsive>
                   <thead>
@@ -1181,7 +1177,13 @@ function URLs() {
                     </tr>
                   </thead>
                   <tbody>
-                    {urls.map((url) => (
+                    {urls.length === 0 ? (
+                      <tr>
+                        <td colSpan={8} className="text-center p-4">
+                          <p className="text-muted mb-0">No URLs found matching the current filters.</p>
+                        </td>
+                      </tr>
+                    ) : urls.map((url) => (
                       <tr key={url.id}>
                         <td onClick={(e) => e.stopPropagation()}>
                           <Form.Check

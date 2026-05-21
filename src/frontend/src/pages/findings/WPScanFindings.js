@@ -520,11 +520,6 @@ const WPScanFindings = () => {
               </div>
             </div>
             <div className="card-body p-0">
-              {findings.length === 0 ? (
-                <div className="text-center p-4">
-                  <p className="text-muted mb-0">No WPScan findings found</p>
-                </div>
-              ) : (
                 <div className="table-responsive">
                   <table className="table table-hover mb-0">
                     <thead className="table-light">
@@ -684,7 +679,13 @@ const WPScanFindings = () => {
                       </tr>
                     </thead>
                     <tbody>
-                      {findings.map((finding) => (
+                      {findings.length === 0 ? (
+                        <tr>
+                          <td colSpan={10} className="text-center p-4">
+                            <p className="text-muted mb-0">No WPScan findings found</p>
+                          </td>
+                        </tr>
+                      ) : findings.map((finding) => (
                         <tr key={finding.id}>
                           <td onClick={(e) => e.stopPropagation()}>
                             <Form.Check
@@ -750,7 +751,6 @@ const WPScanFindings = () => {
                     </tbody>
                   </table>
                 </div>
-              )}
             </div>
           </div>
         </div>

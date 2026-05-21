@@ -934,10 +934,6 @@ function IPs() {
                 <div className="p-4">
                   <p className="text-danger">{error}</p>
                 </div>
-              ) : ips.length === 0 ? (
-                <div className="p-4 text-center">
-                  <p className="text-muted">No IP addresses found matching the current filters.</p>
-                </div>
               ) : (
                 <Table hover responsive>
                   <thead>
@@ -1036,7 +1032,13 @@ function IPs() {
                     </tr>
                   </thead>
                   <tbody>
-                    {ips.map((ip) => (
+                    {ips.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="text-center p-4">
+                          <p className="text-muted mb-0">No IP addresses found matching the current filters.</p>
+                        </td>
+                      </tr>
+                    ) : ips.map((ip) => (
                       <tr key={ip.id}>
                         <td onClick={(e) => e.stopPropagation()}>
                           <Form.Check

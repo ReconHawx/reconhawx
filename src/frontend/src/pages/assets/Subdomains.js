@@ -1036,10 +1036,6 @@ function Subdomains() {
             <div className="text-center p-4 text-danger">
               {error}
             </div>
-          ) : domains.length === 0 ? (
-            <div className="text-center p-4 text-muted">
-              No domains found. This might be because the Data API is not running or no data exists.
-            </div>
           ) : (
             <Table responsive hover>
               <thead>
@@ -1200,7 +1196,13 @@ function Subdomains() {
                 </tr>
               </thead>
               <tbody>
-                                    {domains.map((domain, index) => (
+                {domains.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="text-center p-4">
+                      <p className="text-muted mb-0">No domains found. This might be because the Data API is not running or no data exists.</p>
+                    </td>
+                  </tr>
+                ) : domains.map((domain, index) => (
                       <tr key={domain.id || index}>
                         <td onClick={(e) => e.stopPropagation()}>
                           <Form.Check

@@ -923,10 +923,6 @@ function ApexDomains() {
                 <Alert variant="danger" className="m-3">
                   {error}
                 </Alert>
-              ) : filteredApexDomains.length === 0 ? (
-                <div className="text-center p-4">
-                  <p className="text-muted">No apex domains found.</p>
-                </div>
               ) : (
                 <Table responsive hover className="mb-0">
                   <thead>
@@ -961,7 +957,13 @@ function ApexDomains() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredApexDomains.map((domain, index) => (
+                    {filteredApexDomains.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="text-center p-4">
+                          <p className="text-muted mb-0">No apex domains found.</p>
+                        </td>
+                      </tr>
+                    ) : filteredApexDomains.map((domain, index) => (
                       <tr 
                         key={`${domain.name}-${index}`}
                         style={{ cursor: 'pointer' }}

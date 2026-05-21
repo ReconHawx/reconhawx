@@ -963,10 +963,6 @@ function Services() {
                 <div className="p-4">
                   <p className="text-danger">{error}</p>
                 </div>
-              ) : services.length === 0 ? (
-                <div className="p-4 text-center">
-                  <p className="text-muted">No services found matching the current filters.</p>
-                </div>
               ) : (
                 <Table hover responsive>
                   <thead>
@@ -1098,7 +1094,13 @@ function Services() {
                     </tr>
                   </thead>
                   <tbody>
-                    {services.map((service) => (
+                    {services.length === 0 ? (
+                      <tr>
+                        <td colSpan={8} className="text-center p-4">
+                          <p className="text-muted mb-0">No services found matching the current filters.</p>
+                        </td>
+                      </tr>
+                    ) : services.map((service) => (
                       <tr key={service.id}>
                         <td onClick={(e) => e.stopPropagation()}>
                           <Form.Check
