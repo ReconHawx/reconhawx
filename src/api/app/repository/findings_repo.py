@@ -708,6 +708,7 @@ class FindingsRepository(ProgramAccessMixin):
         template_contains: Optional[str] = None,
         template_exact: Optional[str] = None,
         hostname_contains: Optional[str] = None,
+        url_contains: Optional[str] = None,
         extracted_results_exact: Optional[str] = None,
         extracted_results_contains: Optional[str] = None,
         programs: Optional[List[str]] = None,
@@ -766,6 +767,8 @@ class FindingsRepository(ProgramAccessMixin):
                         q = q.filter(dt(Finding.details, "template_id") == template_exact)
                     if hostname_contains:
                         q = q.filter(Finding.hostname.ilike(f"%{hostname_contains}%"))
+                    if url_contains:
+                        q = q.filter(Finding.url.ilike(f"%{url_contains}%"))
                     if extracted_results_exact:
                         q = q.filter(
                             Finding.details.contains({"extracted_results": [extracted_results_exact]})

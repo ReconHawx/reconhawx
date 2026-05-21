@@ -176,6 +176,7 @@ class NucleiSearchRequest(BaseModel):
     template_contains: Optional[str] = Field(None, description="Substring match on template_id")
     template_exact: Optional[str] = Field(None, description="Exact match on template_id")
     hostname_contains: Optional[str] = Field(None, description="Substring match on hostname")
+    url_contains: Optional[str] = Field(None, description="Substring match on URL")
     extracted_results_exact: Optional[str] = Field(None, description="Exact match on any value in extracted_results array")
     extracted_results_contains: Optional[str] = Field(None, description="Substring match on any value in extracted_results array")
     program: Optional[Union[List[str], str]] = Field(None, description="Restrict to program(s) within user's access scope")
@@ -245,6 +246,7 @@ async def search_nuclei_typed(request: NucleiSearchRequest, current_user: UserRe
             template_contains=request.template_contains,
             template_exact=request.template_exact,
             hostname_contains=request.hostname_contains,
+            url_contains=request.url_contains,
             extracted_results_exact=request.extracted_results_exact,
             extracted_results_contains=request.extracted_results_contains,
             programs=programs,

@@ -30,6 +30,8 @@ const NucleiFindings = () => {
   const [tagsInclude, setTagsInclude] = useState([]);
   const [tagsExclude, setTagsExclude] = useState([]);
   const [tagsOptions, setTagsOptions] = useState([]);
+  const [hostnameContains, setHostnameContains] = useState('');
+  const [urlContains, setUrlContains] = useState('');
   const { selectedProgram } = useProgramFilter();
   const [sortField, setSortField] = useState('created_at');
   const [sortDirection, setSortDirection] = useState('desc');
@@ -57,13 +59,15 @@ const NucleiFindings = () => {
     if (extractedResultsExact) params.set('extracted_results_exact', extractedResultsExact);
     if (tagsInclude.length > 0) params.set('tags_include', tagsInclude.join(','));
     if (tagsExclude.length > 0) params.set('tags_exclude', tagsExclude.join(','));
+    if (hostnameContains) params.set('hostname_contains', hostnameContains);
+    if (urlContains) params.set('url_contains', urlContains);
     if (selectedProgram) params.set('program', selectedProgram);
     if (sortField) params.set('sort_by', sortField);
     if (sortDirection) params.set('sort_dir', sortDirection);
     if (currentPage && currentPage !== 1) params.set('page', String(currentPage));
     if (pageSize && pageSize !== 25) params.set('page_size', String(pageSize));
     return params;
-  }, [searchTerm, nameExact, severityFilter, templateFilter, templateExact, extractedResultsContains, extractedResultsExact, tagsInclude, tagsExclude, selectedProgram, sortField, sortDirection, currentPage, pageSize]);
+  }, [searchTerm, nameExact, severityFilter, templateFilter, templateExact, extractedResultsContains, extractedResultsExact, tagsInclude, tagsExclude, hostnameContains, urlContains, selectedProgram, sortField, sortDirection, currentPage, pageSize]);
 
   // Parse query params into state - only run when location.search changes
   useEffect(() => {
@@ -96,6 +100,12 @@ const NucleiFindings = () => {
 
     const urlTagsExclude = urlParams.get('tags_exclude') || '';
     setTagsExclude(urlTagsExclude ? urlTagsExclude.split(',') : []);
+
+    const urlHostnameContains = urlParams.get('hostname_contains') || '';
+    setHostnameContains(urlHostnameContains);
+
+    const urlUrlContains = urlParams.get('url_contains') || '';
+    setUrlContains(urlUrlContains);
 
     // Program filter is read-only here; global context controls value
 
@@ -230,6 +240,8 @@ const NucleiFindings = () => {
         extracted_results_exact: extractedResultsExact || undefined,
         tags_include: tagsInclude.length > 0 ? tagsInclude : undefined,
         tags_exclude: tagsExclude.length > 0 ? tagsExclude : undefined,
+        hostname_contains: hostnameContains || undefined,
+        url_contains: urlContains || undefined,
         program: selectedProgram || undefined,
         sort_by: sortField,
         sort_dir: sortDirection,
@@ -248,7 +260,7 @@ const NucleiFindings = () => {
     } finally {
       setLoading(false);
     }
-  }, [searchTerm, nameExact, severityFilter, templateFilter, templateExact, extractedResultsContains, extractedResultsExact, tagsInclude, tagsExclude, selectedProgram, sortField, sortDirection, pageSize]);
+  }, [searchTerm, nameExact, severityFilter, templateFilter, templateExact, extractedResultsContains, extractedResultsExact, tagsInclude, tagsExclude, hostnameContains, urlContains, selectedProgram, sortField, sortDirection, pageSize]);
 
   useEffect(() => {
     loadFindings(currentPage);
@@ -324,6 +336,8 @@ const NucleiFindings = () => {
     setExtractedResultsExact('');
     setTagsInclude([]);
     setTagsExclude([]);
+    setHostnameContains('');
+    setUrlContains('');
     setCurrentPage(1); // Reset to first page when clearing filters
   };
 
@@ -404,6 +418,10 @@ const NucleiFindings = () => {
         template_exact: templateExact || undefined,
         extracted_results_contains: extractedResultsContains || undefined,
         extracted_results_exact: extractedResultsExact || undefined,
+        tags_include: tagsInclude.length > 0 ? tagsInclude : undefined,
+        tags_exclude: tagsExclude.length > 0 ? tagsExclude : undefined,
+        hostname_contains: hostnameContains || undefined,
+        url_contains: urlContains || undefined,
         program: selectedProgram || undefined,
         sort_by: sortField,
         sort_dir: sortDirection,
@@ -653,11 +671,56 @@ const NucleiFindings = () => {
                             </ColumnFilterPopover>
                           </div>
                         </th>
-                        <th 
-                          style={{ cursor: 'pointer' }}
-                          onClick={() => handleSort('tags')}
-                        >
-                          Tags {getSortIcon('tags')}
+                        <th style={{ cursor: 'pointer' }} onClick={() => handleSort('tags')}>
+                          <div className="d-flex align-items-center gap-2">
+                            <span>Tags {getSortIcon('tags')}</span>
+                            <ColumnFilterPopover id="filter-tags" ariaLabel="Filter by tags" isActive={tagsInclude.length > 0 || tagsExclude.length > 0}>
+                              <div>
+                                <Form.Label className="fw-bold small">Tags include</Form.Label>
+                                <div className="border rounded p-2 mb-2" style={{ maxHeight: 150, overflowY: 'auto' }}>
+                                  <Row>
+                                    {tagsOptions.length === 0 ? (
+                                      <Col><span className="text-muted">No tags available</span></Col>
+                                    ) : (
+                                      tagsOptions.map((tag) => (
+                                        <Col key={tag} xs={6} className="mb-1">
+                                          <Form.Check
+                                            type="checkbox"
+                                            label={tag}
+                                            checked={tagsInclude.includes(tag)}
+                                            onChange={() => handleTagsIncludeChange(tag)}
+                                          />
+                                        </Col>
+                                      ))
+                                    )}
+                                  </Row>
+                                </div>
+                                <Form.Label className="fw-bold small">Tags exclude</Form.Label>
+                                <div className="border rounded p-2" style={{ maxHeight: 150, overflowY: 'auto' }}>
+                                  <Row>
+                                    {tagsOptions.length === 0 ? (
+                                      <Col><span className="text-muted">No tags available</span></Col>
+                                    ) : (
+                                      tagsOptions.map((tag) => (
+                                        <Col key={tag} xs={6} className="mb-1">
+                                          <Form.Check
+                                            type="checkbox"
+                                            label={tag}
+                                            checked={tagsExclude.includes(tag)}
+                                            onChange={() => handleTagsExcludeChange(tag)}
+                                          />
+                                        </Col>
+                                      ))
+                                    )}
+                                  </Row>
+                                </div>
+                                <div className="d-flex justify-content-end gap-2 mt-2">
+                                  <Button size="sm" variant="secondary" onClick={() => { setTagsInclude([]); setTagsExclude([]); }}>Clear</Button>
+                                  <Button size="sm" variant="primary" onClick={() => {}}>Apply</Button>
+                                </div>
+                              </div>
+                            </ColumnFilterPopover>
+                          </div>
                         </th>
                         <th style={{ cursor: 'pointer' }} onClick={() => handleSort('template_id')}>
                           <div className="d-flex align-items-center gap-2">
@@ -724,59 +787,30 @@ const NucleiFindings = () => {
                         <th style={{ cursor: 'pointer' }} onClick={() => handleSort('hostname')}>
                           <div className="d-flex align-items-center gap-2">
                             <span>Hostname {getSortIcon('hostname')}</span>
-                            <ColumnFilterPopover id="filter-tags" ariaLabel="Filter by tags" isActive={tagsInclude.length>0 || tagsExclude.length>0}>
-                              <div>
-                                <Form.Label className="fw-bold small">Tags include</Form.Label>
-                                <div className="border rounded p-2 mb-2" style={{ maxHeight: 150, overflowY: 'auto' }}>
-                                  <Row>
-                                    {tagsOptions.length === 0 ? (
-                                      <Col><span className="text-muted">No tags available</span></Col>
-                                    ) : (
-                                      tagsOptions.map((tag) => (
-                                        <Col key={tag} xs={6} className="mb-1">
-                                          <Form.Check
-                                            type="checkbox"
-                                            label={tag}
-                                            checked={tagsInclude.includes(tag)}
-                                            onChange={() => handleTagsIncludeChange(tag)}
-                                          />
-                                        </Col>
-                                      ))
-                                    )}
-                                  </Row>
-                                </div>
-                                <Form.Label className="fw-bold small">Tags exclude</Form.Label>
-                                <div className="border rounded p-2" style={{ maxHeight: 150, overflowY: 'auto' }}>
-                                  <Row>
-                                    {tagsOptions.length === 0 ? (
-                                      <Col><span className="text-muted">No tags available</span></Col>
-                                    ) : (
-                                      tagsOptions.map((tag) => (
-                                        <Col key={tag} xs={6} className="mb-1">
-                                          <Form.Check
-                                            type="checkbox"
-                                            label={tag}
-                                            checked={tagsExclude.includes(tag)}
-                                            onChange={() => handleTagsExcludeChange(tag)}
-                                          />
-                                        </Col>
-                                      ))
-                                    )}
-                                  </Row>
-                                </div>
-                                <div className="d-flex justify-content-end gap-2 mt-2">
-                                  <Button size="sm" variant="secondary" onClick={() => { setTagsInclude([]); setTagsExclude([]); }}>Clear</Button>
-                                  <Button size="sm" variant="primary" onClick={() => {}}>Apply</Button>
-                                </div>
-                              </div>
+                            <ColumnFilterPopover id="filter-hostname" ariaLabel="Filter by hostname" isActive={!!hostnameContains}>
+                              <InlineTextFilter
+                                label="Hostname contains"
+                                placeholder="Hostname..."
+                                initialValue={hostnameContains}
+                                onApply={(val) => { setHostnameContains(val); setCurrentPage(1); }}
+                                onClear={() => { setHostnameContains(''); setCurrentPage(1); }}
+                              />
                             </ColumnFilterPopover>
                           </div>
                         </th>
-                        <th 
-                          style={{ cursor: 'pointer' }}
-                          onClick={() => handleSort('url')}
-                        >
-                          URL {getSortIcon('url')}
+                        <th style={{ cursor: 'pointer' }} onClick={() => handleSort('url')}>
+                          <div className="d-flex align-items-center gap-2">
+                            <span>URL {getSortIcon('url')}</span>
+                            <ColumnFilterPopover id="filter-url" ariaLabel="Filter by URL" isActive={!!urlContains}>
+                              <InlineTextFilter
+                                label="URL contains"
+                                placeholder="URL..."
+                                initialValue={urlContains}
+                                onApply={(val) => { setUrlContains(val); setCurrentPage(1); }}
+                                onClear={() => { setUrlContains(''); setCurrentPage(1); }}
+                              />
+                            </ColumnFilterPopover>
+                          </div>
                         </th>
                         <th 
                           style={{ cursor: 'pointer' }}

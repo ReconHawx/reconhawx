@@ -18,6 +18,25 @@ async def test_nuclei_search_superuser(mock_search, client: httpx.AsyncClient, m
 
 
 @pytest.mark.asyncio
+@patch("app.routes.nuclei_findings.NucleiFindingsRepository.search_nuclei_typed", new_callable=AsyncMock)
+async def test_nuclei_search_forwards_hostname_and_url_filters(
+    mock_search, client: httpx.AsyncClient, mock_user_superuser
+):
+    mock_search.return_value = {"total_count": 0, "items": [], "severity_distribution": {}}
+    payload = {
+        **_SEARCH,
+        "hostname_contains": "example.com",
+        "url_contains": "https://",
+    }
+    r = await client.post("/findings/nuclei/search", json=payload)
+    assert r.status_code == 200
+    mock_search.assert_awaited_once()
+    kwargs = mock_search.call_args.kwargs
+    assert kwargs["hostname_contains"] == "example.com"
+    assert kwargs["url_contains"] == "https://"
+
+
+@pytest.mark.asyncio
 async def test_nuclei_search_no_program_access(client: httpx.AsyncClient, mock_user_no_programs):
     r = await client.post("/findings/nuclei/search", json=_SEARCH)
     assert r.status_code == 200
