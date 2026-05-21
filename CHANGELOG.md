@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.39.0](https://github.com/ReconHawx/reconhawx/compare/v0.38.0...v0.39.0) (2026-05-21)
+
+
+### Features
+
+* **findings:** link scanner findings to related assets ([64a7bf0](https://github.com/ReconHawx/reconhawx/commit/64a7bf0445b4f2d767de2b2ab5e8af36099f6a17))
+
 ## [0.38.0](https://github.com/ReconHawx/reconhawx/compare/v0.37.0...v0.38.0) (2026-05-19)
 
 
