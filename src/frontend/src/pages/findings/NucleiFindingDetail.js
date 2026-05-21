@@ -522,7 +522,11 @@ const NucleiFindingDetail = () => {
                         <p className="mb-1 small">{finding.hostname}</p>
                       </div>
                       <Link
-                        to={`/assets/domains?exact_match=${encodeURIComponent(finding.hostname)}`}
+                        to={
+                          finding.domain_id
+                            ? `/assets/subdomains/details?id=${encodeURIComponent(finding.domain_id)}`
+                            : `/assets/domains?exact_match=${encodeURIComponent(finding.hostname)}`
+                        }
                         className="btn btn-sm btn-outline-primary"
                       >
                         View
@@ -539,7 +543,11 @@ const NucleiFindingDetail = () => {
                         <p className="mb-1 small">{finding.url}</p>
                       </div>
                       <Link
-                        to={`/assets/urls?exact_match=${encodeURIComponent(finding.url)}`}
+                        to={
+                          finding.url_id
+                            ? `/assets/urls/details?id=${encodeURIComponent(finding.url_id)}`
+                            : `/assets/urls?exact_match=${encodeURIComponent(finding.url)}`
+                        }
                         className="btn btn-sm btn-outline-primary"
                       >
                         View
@@ -556,7 +564,11 @@ const NucleiFindingDetail = () => {
                         <p className="mb-1 small">{finding.ip}</p>
                       </div>
                       <Link
-                        to={`/assets/ips?exact_match=${encodeURIComponent(finding.ip)}`}
+                        to={
+                          finding.ip_id
+                            ? `/assets/ips/details?id=${encodeURIComponent(finding.ip_id)}`
+                            : `/assets/ips?exact_match=${encodeURIComponent(finding.ip)}`
+                        }
                         className="btn btn-sm btn-outline-primary"
                       >
                         View
@@ -573,7 +585,11 @@ const NucleiFindingDetail = () => {
                         <p className="mb-1 small">{finding.ip}:{finding.port}</p>
                       </div>
                       <Link
-                        to={`/assets/services?exact_match=${finding.ip}:${finding.port}`}
+                        to={
+                          finding.service_id
+                            ? `/assets/services/details?id=${encodeURIComponent(finding.service_id)}`
+                            : `/assets/services?exact_match=${encodeURIComponent(`${finding.ip}:${finding.port}`)}`
+                        }
                         className="btn btn-sm btn-outline-primary"
                       >
                         View

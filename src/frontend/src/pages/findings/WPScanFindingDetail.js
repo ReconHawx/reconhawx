@@ -465,23 +465,6 @@ const WPScanFindingDetail = () => {
             </div>
             <div className="card-body">
               <div className="list-group list-group-flush">
-                {finding.hostname && (
-                  <div className="list-group-item px-0">
-                    <div className="d-flex justify-content-between align-items-center">
-                      <div>
-                        <h6 className="mb-1">Domain</h6>
-                        <p className="mb-1 small">{finding.hostname}</p>
-                      </div>
-                      <Link
-                        to={`/assets/domains?exact_match=${encodeURIComponent(finding.hostname)}`}
-                        className="btn btn-sm btn-outline-primary"
-                      >
-                        View
-                      </Link>
-                    </div>
-                  </div>
-                )}
-
                 {finding.url && (
                   <div className="list-group-item px-0">
                     <div className="d-flex justify-content-between align-items-center">
@@ -490,24 +473,11 @@ const WPScanFindingDetail = () => {
                         <p className="mb-1 small">{finding.url}</p>
                       </div>
                       <Link
-                        to={`/assets/urls?exact_match=${encodeURIComponent(finding.url)}`}
-                        className="btn btn-sm btn-outline-primary"
-                      >
-                        View
-                      </Link>
-                    </div>
-                  </div>
-                )}
-
-                {finding.hostname && finding.port && (
-                  <div className="list-group-item px-0">
-                    <div className="d-flex justify-content-between align-items-center">
-                      <div>
-                        <h6 className="mb-1">Service</h6>
-                        <p className="mb-1 small">{finding.hostname}:{finding.port}</p>
-                      </div>
-                      <Link
-                        to={`/assets/services?exact_match=${finding.hostname}:${finding.port}`}
+                        to={
+                          finding.url_id
+                            ? `/assets/urls/details?id=${encodeURIComponent(finding.url_id)}`
+                            : `/assets/urls?exact_match=${encodeURIComponent(finding.url)}`
+                        }
                         className="btn btn-sm btn-outline-primary"
                       >
                         View

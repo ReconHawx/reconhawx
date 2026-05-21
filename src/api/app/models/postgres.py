@@ -690,6 +690,9 @@ class Finding(Base):
     port = Column(Integer, nullable=True)
     scheme = Column(String(10), nullable=True)
     ip_id = Column(UUID(as_uuid=True), ForeignKey("ips.id"), nullable=True, index=True)
+    subdomain_id = Column(UUID(as_uuid=True), ForeignKey("subdomains.id"), nullable=True, index=True)
+    url_id = Column(UUID(as_uuid=True), ForeignKey("urls.id"), nullable=True, index=True)
+    service_id = Column(UUID(as_uuid=True), ForeignKey("services.id"), nullable=True, index=True)
     observed_at = Column(DateTime, nullable=True, index=True)
     notes = Column(Text, nullable=True)
     details = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
@@ -698,6 +701,9 @@ class Finding(Base):
 
     program = relationship("Program", back_populates="findings")
     ip = relationship("IP", back_populates="findings")
+    subdomain = relationship("Subdomain")
+    url_asset = relationship("URL", foreign_keys=[url_id])
+    service = relationship("Service")
 
     __table_args__ = (
         UniqueConstraint("program_id", "source", "fingerprint", name="uq_findings_prog_source_fingerprint"),

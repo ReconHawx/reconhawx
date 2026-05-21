@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from fastapi import Request
 from urllib.parse import urlparse, urlsplit, urlunsplit
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 import logging
 
-from .domain_utils import is_valid_domain
+from .domain_utils import is_valid_domain, normalize_hostname
 
 logger = logging.getLogger(__name__)
 
@@ -186,6 +186,49 @@ def get_root_url(url: str) -> str:
         return f"{parsed.scheme}://{parsed.hostname}:{port}/"
     except Exception:
         return ""
+
+
+def canonical_url_components(canonical_url: str) -> Dict[str, Any]:
+    """Parse a canonical storage URL into denormalized URL asset fields."""
+    parsed = urlparse(canonical_url)
+    if not parsed.scheme or not parsed.hostname:
+        return {}
+    port = parsed.port
+    if port is None:
+        port = 443 if parsed.scheme == "https" else 80
+    path = parsed.path if parsed.path else "/"
+    return {
+        "hostname": normalize_hostname(parsed.hostname) or parsed.hostname.lower(),
+        "port": port,
+        "scheme": parsed.scheme,
+        "path": path,
+    }
+
+
+def normalize_url_asset_payload(url_data: Dict[str, Any]) -> Optional[str]:
+    """
+    Normalize URL asset ingest payloads to ``scheme://hostname:port/path``.
+
+    Mutates ``url_data`` in place (``url``, ``final_url``, hostname, port, scheme, path).
+    Returns the canonical ``url`` string, or ``None`` when the URL is invalid.
+    """
+    raw = url_data.get("url")
+    if raw is None or not str(raw).strip():
+        return None
+    canonical = normalize_url_for_storage(str(raw).strip())
+    if not canonical:
+        return None
+    url_data["url"] = canonical
+    components = canonical_url_components(canonical)
+    if components:
+        url_data.update(components)
+
+    final_raw = url_data.get("final_url")
+    if final_raw is not None and str(final_raw).strip():
+        final_canonical = normalize_url_for_storage(str(final_raw).strip())
+        if final_canonical:
+            url_data["final_url"] = final_canonical
+    return canonical
 
 
 def normalize_url_for_storage(url: str) -> str:

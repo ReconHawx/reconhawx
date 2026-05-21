@@ -24,15 +24,25 @@ from utils.finding_fingerprint import (
     fingerprint_nuclei,
     fingerprint_wpscan,
 )
+from utils.finding_asset_resolve import resolve_finding_asset_ids_with_url_ensure
 from utils.program_resolve import resolve_program_from_payload
 from utils.query_filters import ProgramAccessMixin, QueryFilterUtils
-from utils.url_utils import lower_url_host
+from utils.url_utils import lower_url_host, normalize_url_for_storage
 
 logger = logging.getLogger(__name__)
 
 SOURCE_NUCLEI = "nuclei"
 SOURCE_WPSCAN = "wpscan"
 SOURCE_BROKEN_LINK = "broken_link"
+
+
+def _normalize_finding_url(url: Optional[str]) -> Optional[str]:
+    """Canonical ``scheme://hostname:port/path`` for finding URL fields."""
+    if url is None or not str(url).strip():
+        return url
+    s = str(url).strip()
+    canonical = normalize_url_for_storage(s)
+    return canonical if canonical else s
 
 
 def _parse_observed_at(matched_at: Any) -> Optional[datetime]:
@@ -86,6 +96,41 @@ def _nuclei_payload_to_details(finding_data: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _finding_asset_ids_dict(f: Finding) -> Dict[str, Optional[str]]:
+    return {
+        "domain_id": str(f.subdomain_id) if f.subdomain_id else None,
+        "url_id": str(f.url_id) if f.url_id else None,
+        "ip_id": str(f.ip_id) if f.ip_id else None,
+        "service_id": str(f.service_id) if f.service_id else None,
+    }
+
+
+def _apply_resolved_assets_to_finding(
+    finding: Finding,
+    resolved,
+    *,
+    apply_subdomain: bool = True,
+    apply_url: bool = True,
+    apply_ip: bool = True,
+    apply_service: bool = True,
+) -> bool:
+    """Set resolved asset FKs on a Finding row; return True if any column changed."""
+    updated = False
+    if apply_subdomain and finding.subdomain_id != resolved.subdomain_id:
+        finding.subdomain_id = resolved.subdomain_id
+        updated = True
+    if apply_url and finding.url_id != resolved.url_id:
+        finding.url_id = resolved.url_id
+        updated = True
+    if apply_ip and finding.ip_id != resolved.ip_id:
+        finding.ip_id = resolved.ip_id
+        updated = True
+    if apply_service and finding.service_id != resolved.service_id:
+        finding.service_id = resolved.service_id
+        updated = True
+    return updated
+
+
 def _nuclei_dict_from_finding(f: Finding) -> Dict[str, Any]:
     d: Dict[str, Any] = dict(f.details or {})
     info = d.get("info")
@@ -118,6 +163,7 @@ def _nuclei_dict_from_finding(f: Finding) -> Dict[str, Any]:
         "assigned_to": None,
         "created_at": f.created_at.isoformat() if f.created_at else None,
         "updated_at": f.updated_at.isoformat() if f.updated_at else None,
+        **_finding_asset_ids_dict(f),
     }
 
 
@@ -160,6 +206,10 @@ def _wpscan_dict_from_finding(f: Finding) -> Dict[str, Any]:
         "assigned_to": None,
         "created_at": f.created_at.isoformat() if f.created_at else None,
         "updated_at": f.updated_at.isoformat() if f.updated_at else None,
+        "domain_id": None,
+        "ip_id": str(f.ip_id) if f.ip_id else None,
+        "service_id": None,
+        "url_id": str(f.url_id) if f.url_id else None,
     }
 
 
@@ -222,7 +272,7 @@ class FindingsRepository(ProgramAccessMixin):
                 program = resolve_program_from_payload(db, finding_data)
 
                 if finding_data.get("url"):
-                    finding_data["url"] = lower_url_host(str(finding_data["url"])) or finding_data["url"]
+                    finding_data["url"] = _normalize_finding_url(finding_data.get("url"))
                 if finding_data.get("hostname"):
                     finding_data["hostname"] = normalize_hostname(str(finding_data["hostname"]))
                 if finding_data.get("template_url") and isinstance(finding_data["template_url"], str):
@@ -231,10 +281,6 @@ class FindingsRepository(ProgramAccessMixin):
                         finding_data["template_url"] = lower_url_host(tu) or tu
                 if finding_data.get("scheme") and isinstance(finding_data["scheme"], str):
                     finding_data["scheme"] = finding_data["scheme"].lower()
-
-                ip = None
-                if finding_data.get("ip"):
-                    ip = db.query(IP).filter(IP.ip_address == finding_data.get("ip")).first()
 
                 fp = fingerprint_nuclei(
                     url=finding_data.get("url"),
@@ -256,6 +302,37 @@ class FindingsRepository(ProgramAccessMixin):
                 )
                 details = _nuclei_payload_to_details(finding_data)
                 observed = _parse_observed_at(finding_data.get("matched_at")) or utcnow()
+
+                ip_for_resolve = finding_data.get("ip")
+                if ip_for_resolve is None and existing and existing.ip_id:
+                    existing_ip = existing.ip or db.query(IP).filter(IP.id == existing.ip_id).first()
+                    if existing_ip and existing_ip.ip_address is not None:
+                        ip_for_resolve = str(existing_ip.ip_address)
+
+                finding_url = (
+                    finding_data.get("url")
+                    if "url" in finding_data
+                    else (existing.url if existing else None)
+                )
+                finding_scheme = (
+                    finding_data.get("scheme")
+                    if "scheme" in finding_data
+                    else (existing.scheme if existing else None)
+                )
+                resolved = await resolve_finding_asset_ids_with_url_ensure(
+                    db,
+                    program.id,
+                    finding_data.get("program_name") or program.name,
+                    hostname=finding_data.get("hostname")
+                    if "hostname" in finding_data
+                    else (existing.hostname if existing else None),
+                    url=finding_url,
+                    ip=ip_for_resolve,
+                    port=finding_data.get("port")
+                    if "port" in finding_data
+                    else (existing.port if existing else None),
+                    scheme=finding_scheme,
+                )
 
                 if existing:
                     updated = False
@@ -304,8 +381,7 @@ class FindingsRepository(ProgramAccessMixin):
                     if "notes" in finding_data and finding_data.get("notes") != existing.notes:
                         existing.notes = finding_data.get("notes")
                         updated = True
-                    if ip and existing.ip_id != ip.id:
-                        existing.ip_id = ip.id
+                    if _apply_resolved_assets_to_finding(existing, resolved):
                         updated = True
                     for k, v in details.items():
                         skip_keys = ("extracted_results", "info", "matched_line")
@@ -335,7 +411,10 @@ class FindingsRepository(ProgramAccessMixin):
                     hostname=finding_data.get("hostname"),
                     port=finding_data.get("port"),
                     scheme=finding_data.get("scheme"),
-                    ip_id=ip.id if ip else None,
+                    subdomain_id=resolved.subdomain_id,
+                    url_id=resolved.url_id,
+                    ip_id=resolved.ip_id,
+                    service_id=resolved.service_id,
                     observed_at=observed,
                     notes=finding_data.get("notes"),
                     details=details,
@@ -517,6 +596,7 @@ class FindingsRepository(ProgramAccessMixin):
                         "program_name": f.program.name if f.program else None,
                         "matched_at": (f.details or {}).get("matched_at"),
                         "created_at": f.created_at.isoformat() if f.created_at else None,
+                        **_finding_asset_ids_dict(f),
                     }
                     for f in findings
                 ]
@@ -880,7 +960,7 @@ class FindingsRepository(ProgramAccessMixin):
             try:
                 program = resolve_program_from_payload(db, finding_data)
                 if finding_data.get("url"):
-                    finding_data["url"] = lower_url_host(str(finding_data["url"])) or finding_data["url"]
+                    finding_data["url"] = _normalize_finding_url(finding_data.get("url"))
                 if finding_data.get("hostname"):
                     finding_data["hostname"] = normalize_hostname(str(finding_data["hostname"]))
                 if finding_data.get("scheme") and isinstance(finding_data["scheme"], str):
@@ -903,6 +983,33 @@ class FindingsRepository(ProgramAccessMixin):
                     .first()
                 )
                 details = _wpscan_payload_to_details(finding_data)
+
+                finding_url = (
+                    finding_data.get("url")
+                    if "url" in finding_data
+                    else (existing.url if existing else None)
+                )
+                finding_scheme = (
+                    finding_data.get("scheme")
+                    if "scheme" in finding_data
+                    else (existing.scheme if existing else None)
+                )
+                resolved = await resolve_finding_asset_ids_with_url_ensure(
+                    db,
+                    program.id,
+                    finding_data.get("program_name") or program.name,
+                    url=finding_url,
+                    hostname=finding_data.get("hostname")
+                    if "hostname" in finding_data
+                    else (existing.hostname if existing else None),
+                    port=finding_data.get("port")
+                    if "port" in finding_data
+                    else (existing.port if existing else None),
+                    scheme=finding_scheme,
+                    resolve_subdomain=False,
+                    resolve_ip=False,
+                    resolve_service=False,
+                )
 
                 if existing:
                     updated = False
@@ -935,6 +1042,14 @@ class FindingsRepository(ProgramAccessMixin):
                         if val is not None and getattr(existing, col) != val:
                             setattr(existing, col, val)
                             updated = True
+                    if _apply_resolved_assets_to_finding(
+                        existing,
+                        resolved,
+                        apply_subdomain=False,
+                        apply_ip=False,
+                        apply_service=False,
+                    ):
+                        updated = True
                     if updated:
                         existing.updated_at = utcnow()
                     db.commit()
@@ -952,7 +1067,7 @@ class FindingsRepository(ProgramAccessMixin):
                     hostname=finding_data.get("hostname"),
                     port=finding_data.get("port"),
                     scheme=finding_data.get("scheme"),
-                    ip_id=None,
+                    url_id=resolved.url_id,
                     observed_at=utcnow(),
                     notes=finding_data.get("notes"),
                     details=details,
@@ -1411,7 +1526,7 @@ class FindingsRepository(ProgramAccessMixin):
                 if finding_data.get("domain"):
                     finding_data["domain"] = normalize_hostname(str(finding_data["domain"]))
                 if finding_data.get("url"):
-                    finding_data["url"] = lower_url_host(str(finding_data["url"])) or finding_data["url"]
+                    finding_data["url"] = _normalize_finding_url(finding_data.get("url"))
                 url = finding_data.get("url")
                 fp = fingerprint_broken_link(program_id=program.id, url=url)
                 existing = (

@@ -33,6 +33,12 @@ def test_finding_has_expected_common_columns():
         assert required in names
 
 
+def test_finding_has_asset_fk_columns():
+    names = {col.name for col in inspect(Finding).c}
+    for col_name in ("ip_id", "subdomain_id", "url_id", "service_id"):
+        assert col_name in names
+
+
 def test_finding_has_no_removed_scanner_level_columns():
     names = {col.name for col in inspect(Finding).c}
     for removed in ("status", "tags", "external_ids", "references"):

@@ -14,7 +14,7 @@ from db import get_db_session
 from utils.query_filters import ProgramAccessMixin
 from utils import get_root_url
 from utils.domain_utils import normalize_hostname
-from utils.url_utils import lower_url_host
+from utils.url_utils import lower_url_host, normalize_url_asset_payload, normalize_url_for_storage
 from repository.program_repo import ProgramRepository
 from services.event_publisher import publisher
 
@@ -506,6 +506,8 @@ class UrlAssetsRepository(ProgramAccessMixin):
         """When relations are missing, inherit from the root URL (scheme://host:port/) if it exists.
         Root URL is typically populated by test_http; path URLs from fuzz/crawl/nuclei may lack relations."""
         root_url = get_root_url(url)
+        if root_url:
+            root_url = normalize_url_for_storage(root_url) or root_url
         if not root_url or root_url == url:
             return certificate_id, service_ids, subdomain_id
         if certificate_id and service_ids and subdomain_id:
@@ -552,13 +554,9 @@ class UrlAssetsRepository(ProgramAccessMixin):
         async with get_db_session() as db:
             try:
                 logger.debug(f"create_or_update_url called with URL data: {url_data}")
-                # Hostname / URL host stored lowercase; preserve path/query casing
-                if url_data.get('url'):
-                    url_data['url'] = lower_url_host(str(url_data['url'])) or url_data['url']
-                if url_data.get('hostname'):
-                    url_data['hostname'] = normalize_hostname(str(url_data['hostname']))
-                if url_data.get('final_url'):
-                    url_data['final_url'] = lower_url_host(str(url_data['final_url']))
+                if not normalize_url_asset_payload(url_data):
+                    logger.debug("Invalid or missing URL in payload, skipping")
+                    return None, "skipped", []
                 # Find program by name
                 program = db.query(Program).filter(Program.name == url_data.get('program_name')).first()
                 if not program:

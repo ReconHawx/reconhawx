@@ -17,7 +17,7 @@ from models.postgres import Program, URL
 from repository.bulk_sql.config import sql_chunk_size
 from repository.bulk_sql.scope import domain_in_scope
 from utils.domain_utils import normalize_hostname
-from utils.url_utils import lower_url_host
+from utils.url_utils import normalize_url_asset_payload
 
 logger = logging.getLogger(__name__)
 
@@ -86,12 +86,17 @@ def upsert_urls_chunk(program_id: str, items: List[Dict[str, Any]]) -> Dict[str,
                     }
                 )
                 continue
-            u_norm = lower_url_host(str(u_raw)) or ""
-            item["url"] = u_norm
-            if item.get("hostname"):
-                item["hostname"] = normalize_hostname(str(item["hostname"])) or item["hostname"]
-            if item.get("final_url"):
-                item["final_url"] = lower_url_host(str(item["final_url"]))
+            u_norm = normalize_url_asset_payload(item)
+            if not u_norm:
+                failed_count += 1
+                skipped_assets.append(
+                    {
+                        "url": str(u_raw),
+                        "program_name": program_name_disp,
+                        "error": "invalid_url",
+                    }
+                )
+                continue
             if u_norm in dedup:
                 failed_count += 1
                 skipped_assets.append(
@@ -110,7 +115,7 @@ def upsert_urls_chunk(program_id: str, items: List[Dict[str, Any]]) -> Dict[str,
 
         for url_s in order:
             item = dedup[url_s]
-            host = _hostname(item)
+            host = item.get("hostname") or _hostname(item)
             if not host or not domain_in_scope(
                 host,
                 list(domain_regex),
@@ -152,7 +157,7 @@ def upsert_urls_chunk(program_id: str, items: List[Dict[str, Any]]) -> Dict[str,
                 row = {
                     "id": existing.id,
                     "url": url_s,
-                    "hostname": host,
+                    "hostname": item.get("hostname") or host,
                     "port": item.get("port", existing.port),
                     "path": item.get("path", existing.path),
                     "scheme": item.get("scheme", existing.scheme),
@@ -199,7 +204,7 @@ def upsert_urls_chunk(program_id: str, items: List[Dict[str, Any]]) -> Dict[str,
                     {
                         "id": uuid.uuid4(),
                         "url": url_s,
-                        "hostname": host,
+                        "hostname": item.get("hostname") or host,
                         "port": item.get("port"),
                         "path": item.get("path"),
                         "scheme": item.get("scheme"),

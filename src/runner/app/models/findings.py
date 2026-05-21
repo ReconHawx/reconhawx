@@ -27,6 +27,10 @@ class NucleiFinding(BaseModel):
     extracted_results: Optional[List[str]] = []
     info: Optional[dict] = {}
     notes: Optional[str] = None
+    domain_id: Optional[str] = None
+    url_id: Optional[str] = None
+    ip_id: Optional[str] = None
+    service_id: Optional[str] = None
     created_at: Optional[SerializedDatetime] = Field(default_factory=utcnow)
     updated_at: Optional[SerializedDatetime] = Field(default_factory=utcnow)
 
@@ -256,6 +260,7 @@ class WPScanFinding(BaseModel):
     notes: Optional[str] = None
     status: Optional[str] = None
     assigned_to: Optional[str] = None
+    url_id: Optional[str] = None
     created_at: Optional[SerializedDatetime] = Field(default_factory=utcnow)
     updated_at: Optional[SerializedDatetime] = Field(default_factory=utcnow)
 

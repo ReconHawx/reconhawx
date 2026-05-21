@@ -27,10 +27,10 @@ def test_urls_require_full_orm_extracted_links():
     assert urls_require_full_orm([{"url": "x", "extracted_links": ["http://ext"]}]) is True
 
 
-def test_lower_url_host_merges_duplicate_batch_keys_case_only():
-    """Bulk URL dedupe keys use lower_url_host — same DNS host must collide."""
-    from utils.url_utils import lower_url_host
+def test_canonical_url_merges_duplicate_batch_keys_case_only():
+    """Bulk URL dedupe keys use normalize_url_asset_payload — same URL must collide."""
+    from utils.url_utils import normalize_url_asset_payload
 
-    u1 = lower_url_host("https://Aa.Com/p")
-    u2 = lower_url_host("HTTPS://aa.COM/p")
-    assert u1 == u2 == "https://aa.com/p"
+    d1 = {"url": "https://Aa.Com/p"}
+    d2 = {"url": "HTTPS://aa.COM/p"}
+    assert normalize_url_asset_payload(d1) == normalize_url_asset_payload(d2) == "https://aa.com:443/p"

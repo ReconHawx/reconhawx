@@ -809,6 +809,9 @@ CREATE TABLE public.findings (
     port integer,
     scheme character varying(10),
     ip_id uuid,
+    subdomain_id uuid,
+    url_id uuid,
+    service_id uuid,
     observed_at timestamp without time zone,
     notes text,
     details jsonb DEFAULT '{}'::jsonb NOT NULL,
@@ -2903,6 +2906,27 @@ CREATE INDEX ix_findings_prog_source_updated ON public.findings USING btree (pro
 
 
 --
+-- Name: ix_findings_subdomain_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_findings_subdomain_id ON public.findings USING btree (subdomain_id);
+
+
+--
+-- Name: ix_findings_url_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_findings_url_id ON public.findings USING btree (url_id);
+
+
+--
+-- Name: ix_findings_service_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_findings_service_id ON public.findings USING btree (service_id);
+
+
+--
 -- Name: ix_ips_prog_created; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3723,6 +3747,30 @@ ALTER TABLE ONLY public.extracted_links
 
 ALTER TABLE ONLY public.findings
     ADD CONSTRAINT findings_ip_id_fkey FOREIGN KEY (ip_id) REFERENCES public.ips(id) ON DELETE SET NULL;
+
+
+--
+-- Name: findings findings_subdomain_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.findings
+    ADD CONSTRAINT findings_subdomain_id_fkey FOREIGN KEY (subdomain_id) REFERENCES public.subdomains(id) ON DELETE SET NULL;
+
+
+--
+-- Name: findings findings_url_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.findings
+    ADD CONSTRAINT findings_url_id_fkey FOREIGN KEY (url_id) REFERENCES public.urls(id) ON DELETE SET NULL;
+
+
+--
+-- Name: findings findings_service_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.findings
+    ADD CONSTRAINT findings_service_id_fkey FOREIGN KEY (service_id) REFERENCES public.services(id) ON DELETE SET NULL;
 
 
 --

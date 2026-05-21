@@ -14,6 +14,8 @@ Project hub: repository root `AGENTS.md`. Use `api-core` for app/auth context an
 
 **Task history:** `task_target_events` stores links from `workflow_logs.task_execution_logs` (resolved input strings → in-scope asset rows) for `GET /assets/{asset_type}/{asset_id}/task-history`. Rows are written in `WorkflowRepository.create_workflow_log` via `repository/task_history_repo.py` (failures are logged, never blocking log ingestion). Backfill: `python scripts/backfill_task_target_events.py`.
 
+**URL assets:** Ingest must normalize `urls.url` to `scheme://hostname:port/path` using `normalize_url_asset_payload()` / `normalize_url_for_storage()` in `url_assets_repo.py` and `bulk_sql/urls.py` — not `lower_url_host` alone. Backfill: `scripts/backfill_canonical_urls.py`.
+
 ## Database Architecture
 
 The API uses **PostgreSQL** with **SQLAlchemy ORM** for database operations.

@@ -35,6 +35,8 @@ At dispatch time, [`src/runner/app/utils/input_validation.py`](src/runner/app/ut
 
 Large `POST /assets` batches use chunked PostgreSQL `INSERT … ON CONFLICT` via [`src/api/app/repository/bulk_sql/`](src/api/app/repository/bulk_sql/) by default instead of per-row ORM. Per-asset opt-out: set `ASSET_BULK_SQL_SUBDOMAINS`, `ASSET_BULK_SQL_IPS`, `ASSET_BULK_SQL_APEX_DOMAINS`, `ASSET_BULK_SQL_SERVICES`, `ASSET_BULK_SQL_CERTIFICATES`, or `ASSET_BULK_SQL_URLS` to `false` / `0` / `off` / `no`. Chunk size: `ASSET_BULK_SQL_CHUNK_SIZE` (default 1000, minimum 50). The URL fast path is not used when any row includes `technologies` or `extracted_links` (full ORM path for that request list).
 
+**URL asset storage format:** API ingest must persist `urls.url` as canonical `scheme://hostname:port/path` via [`normalize_url_for_storage`](src/api/app/utils/url_utils.py) through [`normalize_url_asset_payload`](src/api/app/utils/url_utils.py) in [`UrlAssetsRepository.create_or_update_url`](src/api/app/repository/url_assets_repo.py) and [`bulk_sql/urls.py`](src/api/app/repository/bulk_sql/urls.py). Do not use `lower_url_host` alone for `urls.url`. Backfill legacy rows: `python scripts/backfill_canonical_urls.py`.
+
 ## Shell and devenv
 
 Many dev tools live only on `PATH` after [devenv](https://devenv.sh/) loads (see [`devenv.nix`](devenv.nix): e.g. `kubectl`, `helm`, `docker`, `grype`, `node`/`npm`, Postgres client binaries, `k9s`, and others). **Agent and CI subshells often skip direnv**, so a bare command can fail with “not found” even though your interactive shell works.
