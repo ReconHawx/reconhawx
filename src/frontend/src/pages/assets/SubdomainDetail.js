@@ -6,11 +6,13 @@ import NotesSection from '../../components/NotesSection';
 import TaskHistorySection from '../../components/TaskHistorySection';
 import { formatDate } from '../../utils/dateUtils';
 import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
+import { useBackToList } from '../../hooks/useListNavigation';
 
 function SubdomainDetail() {
   const { domainName } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
+  const backToList = useBackToList(['/assets/domains', '/assets/subdomains']);
   const [domain, setDomain] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -102,7 +104,7 @@ function SubdomainDetail() {
       setDeleting(true);
       await domainAPI.delete(domain.id || domain._id);
       setShowDeleteModal(false);
-      navigate('/assets/domains');
+      backToList();
     } catch (err) {
       setError('Failed to delete domain: ' + err.message);
     } finally {
@@ -134,7 +136,7 @@ function SubdomainDetail() {
           <Alert.Heading>Error</Alert.Heading>
           {error}
         </Alert>
-        <Button variant="outline-primary" onClick={() => navigate('/assets/domains')}>
+        <Button variant="outline-primary" onClick={() => backToList()}>
           ← Back to Domains
         </Button>
       </Container>
@@ -148,7 +150,7 @@ function SubdomainDetail() {
           <Alert.Heading>Domain Not Found</Alert.Heading>
           The requested domain could not be found.
         </Alert>
-        <Button variant="outline-primary" onClick={() => navigate('/assets/domains')}>
+        <Button variant="outline-primary" onClick={() => backToList()}>
           ← Back to Domains
         </Button>
       </Container>
@@ -171,7 +173,7 @@ function SubdomainDetail() {
               >
                 🗑️ Delete Domain
               </Button>
-              <Button variant="outline-primary" onClick={() => navigate('/assets/domains')}>
+              <Button variant="outline-primary" onClick={() => backToList()}>
                 ← Back to Domains
               </Button>
             </div>

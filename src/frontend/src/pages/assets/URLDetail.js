@@ -7,11 +7,13 @@ import TaskHistorySection from '../../components/TaskHistorySection';
 import SitemapTree from '../../components/SitemapTree';
 import { formatDate } from '../../utils/dateUtils';
 import { usePageTitle, formatPageTitle, truncateTitle } from '../../hooks/usePageTitle';
+import { useBackToList } from '../../hooks/useListNavigation';
 
 function URLDetail() {
   const { encodedUrl } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
+  const backToList = useBackToList('/assets/urls');
   const [url, setUrl] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -195,7 +197,7 @@ function URLDetail() {
       setDeleting(true);
       await urlAPI.delete(url.id || url._id);
       setShowDeleteModal(false);
-      navigate('/assets/urls');
+      backToList();
     } catch (err) {
       setError('Failed to delete URL: ' + err.message);
     } finally {
@@ -280,7 +282,7 @@ function URLDetail() {
           <Alert.Heading>Error</Alert.Heading>
           {error}
         </Alert>
-        <Button variant="outline-primary" onClick={() => navigate('/assets/urls')}>
+        <Button variant="outline-primary" onClick={() => backToList()}>
           ← Back to URLs
         </Button>
       </Container>
@@ -294,7 +296,7 @@ function URLDetail() {
           <Alert.Heading>URL Not Found</Alert.Heading>
           The requested URL could not be found.
         </Alert>
-        <Button variant="outline-primary" onClick={() => navigate('/assets/urls')}>
+        <Button variant="outline-primary" onClick={() => backToList()}>
           ← Back to URLs
         </Button>
       </Container>
@@ -435,7 +437,7 @@ function URLDetail() {
               >
                 🗑️ Delete
               </Button>
-              <Button variant="outline-primary" onClick={() => navigate('/assets/urls')}>
+              <Button variant="outline-primary" onClick={() => backToList()}>
                 ← Back to URLs
               </Button>
             </div>

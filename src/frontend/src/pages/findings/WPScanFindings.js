@@ -5,6 +5,7 @@ import api from '../../services/api';
 import { useProgramFilter } from '../../contexts/ProgramFilterContext';
 import { formatDate } from '../../utils/dateUtils';
 import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
+import { withListReturn } from '../../hooks/useListNavigation';
 
 const WPScanFindings = () => {
   usePageTitle(formatPageTitle('WPScan Findings'));
@@ -697,6 +698,7 @@ const WPScanFindings = () => {
                           <td>
                             <Link 
                               to={`/findings/wpscan/details?id=${finding.id}`}
+                              state={withListReturn(location).state}
                               className="text-decoration-none"
                             >
                               <div className="fw-medium text-primary">{truncateText(finding.item_name, 40)}</div>

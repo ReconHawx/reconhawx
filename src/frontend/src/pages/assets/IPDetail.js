@@ -6,11 +6,13 @@ import NotesSection from '../../components/NotesSection';
 import TaskHistorySection from '../../components/TaskHistorySection';
 import { formatDate } from '../../utils/dateUtils';
 import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
+import { useBackToList } from '../../hooks/useListNavigation';
 
 function IPDetail() {
   const { ipAddress } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
+  const backToList = useBackToList('/assets/ips');
   const [ip, setIp] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -99,7 +101,7 @@ function IPDetail() {
       setDeleting(true);
       await ipAPI.delete(ip.id);
       setShowDeleteModal(false);
-      navigate('/assets/ips');
+      backToList();
     } catch (err) {
       setError('Failed to delete IP: ' + err.message);
     } finally {
@@ -146,7 +148,7 @@ function IPDetail() {
           <Alert.Heading>Error</Alert.Heading>
           {error}
         </Alert>
-        <Button variant="outline-primary" onClick={() => navigate('/assets/ips')}>
+        <Button variant="outline-primary" onClick={() => backToList()}>
           ← Back to IPs
         </Button>
       </Container>
@@ -160,7 +162,7 @@ function IPDetail() {
           <Alert.Heading>IP Not Found</Alert.Heading>
           The requested IP address could not be found.
         </Alert>
-        <Button variant="outline-primary" onClick={() => navigate('/assets/ips')}>
+        <Button variant="outline-primary" onClick={() => backToList()}>
           ← Back to IPs
         </Button>
       </Container>
@@ -183,7 +185,7 @@ function IPDetail() {
               >
                 🗑️ Delete
               </Button>
-              <Button variant="outline-primary" onClick={() => navigate('/assets/ips')}>
+              <Button variant="outline-primary" onClick={() => backToList()}>
                 ← Back to IPs
               </Button>
             </div>

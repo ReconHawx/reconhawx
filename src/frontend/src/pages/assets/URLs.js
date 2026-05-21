@@ -5,6 +5,7 @@ import { urlAPI, programAPI } from '../../services/api';
 import { useProgramFilter } from '../../contexts/ProgramFilterContext';
 import { formatDate } from '../../utils/dateUtils';
 import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
+import { withListReturn } from '../../hooks/useListNavigation';
 
 // Add Font Awesome CSS if not already loaded
 const loadFontAwesome = () => {
@@ -329,7 +330,10 @@ function URLs() {
   };
 
   const handleUrlClick = (url) => {
-    navigate(`/assets/urls/details?id=${encodeURIComponent(url.id || '')}`);
+    navigate(
+      `/assets/urls/details?id=${encodeURIComponent(url.id || '')}`,
+      withListReturn(location),
+    );
   };
 
   // Batch delete handlers

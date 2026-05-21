@@ -5,10 +5,12 @@ import { brokenLinksAPI } from '../../services/api';
 import NotesSection from '../../components/NotesSection';
 import { formatDate } from '../../utils/dateUtils';
 import { usePageTitle, formatPageTitle, truncateTitle } from '../../hooks/usePageTitle';
+import { useBackToList } from '../../hooks/useListNavigation';
 
 function BrokenLinkDetail() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const backToList = useBackToList('/findings/broken-links');
   const findingId = searchParams.get('id');
   
   const [finding, setFinding] = useState(null);
@@ -57,7 +59,7 @@ function BrokenLinkDetail() {
     setDeleting(true);
     try {
       await brokenLinksAPI.delete(findingId);
-      navigate('/findings/broken-links');
+      backToList();
     } catch (err) {
       setError(err.message || 'Failed to delete finding');
       setDeleting(false);
@@ -109,7 +111,7 @@ function BrokenLinkDetail() {
     return (
       <Container fluid className="mt-4">
         <Alert variant="danger">{error}</Alert>
-        <Button onClick={() => navigate('/findings/broken-links')}>Back to Broken Links</Button>
+        <Button onClick={() => backToList()}>Back to Broken Links</Button>
       </Container>
     );
   }
@@ -118,7 +120,7 @@ function BrokenLinkDetail() {
     return (
       <Container fluid className="mt-4">
         <Alert variant="warning">Broken link finding not found</Alert>
-        <Button onClick={() => navigate('/findings/broken-links')}>Back to Broken Links</Button>
+        <Button onClick={() => backToList()}>Back to Broken Links</Button>
       </Container>
     );
   }
@@ -132,7 +134,7 @@ function BrokenLinkDetail() {
               <h4>Broken Link Details</h4>
             </Col>
             <Col xs="auto">
-              <Button variant="outline-secondary" onClick={() => navigate('/findings/broken-links')}>
+              <Button variant="outline-secondary" onClick={() => backToList()}>
                 Back to List
               </Button>
               <Button

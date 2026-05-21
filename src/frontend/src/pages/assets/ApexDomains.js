@@ -5,6 +5,7 @@ import { apexDomainAPI, programAPI } from '../../services/api';
 import { useProgramFilter } from '../../contexts/ProgramFilterContext';
 import { formatDate } from '../../utils/dateUtils';
 import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
+import { withListReturn } from '../../hooks/useListNavigation';
 
 function ApexDomains() {
   usePageTitle(formatPageTitle('Apex Domains'));
@@ -738,7 +739,10 @@ function ApexDomains() {
   };
 
   const handleApexDomainClick = (apexDomain) => {
-    navigate(`/assets/apex-domain/details?id=${encodeURIComponent(apexDomain.id || '')}`);
+    navigate(
+      `/assets/apex-domain/details?id=${encodeURIComponent(apexDomain.id || '')}`,
+      withListReturn(location),
+    );
   };
 
   const formatDateLocal = (dateString) => {

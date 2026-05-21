@@ -6,11 +6,13 @@ import NotesSection from '../../components/NotesSection';
 import TaskHistorySection from '../../components/TaskHistorySection';
 import { formatDate, isExpired, isExpiringSoon } from '../../utils/dateUtils';
 import { usePageTitle, formatPageTitle, truncateTitle } from '../../hooks/usePageTitle';
+import { useBackToList } from '../../hooks/useListNavigation';
 
 function CertificateDetail() {
   const { encodedSubjectDN } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
+  const backToList = useBackToList('/assets/certificates');
   const [certificate, setCertificate] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -92,7 +94,7 @@ function CertificateDetail() {
       setDeleting(true);
       await certificateAPI.delete(certificate.id || certificate._id);
       setShowDeleteModal(false);
-      navigate('/assets/certificates');
+      backToList();
     } catch (err) {
       setError('Failed to delete certificate: ' + err.message);
     } finally {
@@ -139,7 +141,7 @@ function CertificateDetail() {
           <Alert.Heading>Error</Alert.Heading>
           {error}
         </Alert>
-        <Button variant="outline-primary" onClick={() => navigate('/assets/certificates')}>
+        <Button variant="outline-primary" onClick={() => backToList()}>
           ← Back to Certificates
         </Button>
       </Container>
@@ -153,7 +155,7 @@ function CertificateDetail() {
           <Alert.Heading>Certificate Not Found</Alert.Heading>
           The requested certificate could not be found.
         </Alert>
-        <Button variant="outline-primary" onClick={() => navigate('/assets/certificates')}>
+        <Button variant="outline-primary" onClick={() => backToList()}>
           ← Back to Certificates
         </Button>
       </Container>
@@ -176,7 +178,7 @@ function CertificateDetail() {
               >
                 🗑️ Delete
               </Button>
-              <Button variant="outline-primary" onClick={() => navigate('/assets/certificates')}>
+              <Button variant="outline-primary" onClick={() => backToList()}>
                 ← Back to Certificates
               </Button>
             </div>

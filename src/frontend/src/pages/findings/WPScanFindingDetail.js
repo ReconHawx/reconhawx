@@ -5,10 +5,13 @@ import api from '../../services/api';
 import NotesSection from '../../components/NotesSection';
 import { formatDate } from '../../utils/dateUtils';
 import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
+import { useBackToList, useListReturnPath } from '../../hooks/useListNavigation';
 
 const WPScanFindingDetail = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  const listPath = useListReturnPath('/findings/wpscan');
+  const backToList = useBackToList('/findings/wpscan');
   const [finding, setFinding] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -91,7 +94,7 @@ const WPScanFindingDetail = () => {
       
       await api.findings.wpscan.delete(idParam);
       setShowDeleteModal(false);
-      navigate('/findings/wpscan');
+      backToList();
     } catch (err) {
       console.error('Error deleting WPScan finding:', err);
       alert('Failed to delete WPScan finding: ' + (err.response?.data?.detail || err.message));
@@ -120,7 +123,7 @@ const WPScanFindingDetail = () => {
           <h5 className="alert-heading">Error</h5>
           <p className="mb-0">{error}</p>
           <hr />
-          <Link to="/findings/wpscan" className="btn btn-outline-danger">
+          <Link to={listPath} className="btn btn-outline-danger">
             Back to WPScan Findings
           </Link>
         </div>
@@ -135,7 +138,7 @@ const WPScanFindingDetail = () => {
           <h5 className="alert-heading">Not Found</h5>
           <p className="mb-0">The requested WPScan finding could not be found.</p>
           <hr />
-          <Link to="/findings/wpscan" className="btn btn-outline-warning">
+          <Link to={listPath} className="btn btn-outline-warning">
             Back to WPScan Findings
           </Link>
         </div>
@@ -150,7 +153,7 @@ const WPScanFindingDetail = () => {
           <nav aria-label="breadcrumb">
             <ol className="breadcrumb">
               <li className="breadcrumb-item">
-                <Link to="/findings/wpscan">WPScan Findings</Link>
+                <Link to={listPath}>WPScan Findings</Link>
               </li>
               <li className="breadcrumb-item active" aria-current="page">
                 {finding.title || finding.item_name}
@@ -173,7 +176,7 @@ const WPScanFindingDetail = () => {
               >
                 🗑️ Delete
               </Button>
-              <Button variant="outline-primary" onClick={() => navigate('/findings/wpscan')}>
+              <Button variant="outline-primary" onClick={() => backToList()}>
                 ← Back to WPScan Findings
               </Button>
             </div>

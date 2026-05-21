@@ -6,11 +6,14 @@ import NotesSection from '../../components/NotesSection';
 import { formatDate } from '../../utils/dateUtils';
 import ScreenshotsViewer from '../../components/ScreenshotsViewer';
 import { usePageTitle, formatPageTitle, truncateTitle } from '../../hooks/usePageTitle';
+import { useBackToList } from '../../hooks/useListNavigation';
 
 function TyposquatUrlDetails() {
   const { id } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
+  const backToUrlsList = useBackToList('/brand-protection/typosquat-urls');
+  const backToFindingsList = useBackToList('/brand-protection/typosquat');
   const [url, setUrl] = useState(null);
   const [urls, setUrls] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -120,7 +123,7 @@ function TyposquatUrlDetails() {
       setDeleting(true);
       await typosquatAPI.deleteUrl(url.id || url._id);
       setShowDeleteModal(false);
-      navigate('/brand-protection/typosquat');
+      backToUrlsList();
     } catch (err) {
       setError('Failed to delete typosquat URL: ' + err.message);
     } finally {
@@ -288,7 +291,7 @@ function TyposquatUrlDetails() {
           <Alert.Heading>Error</Alert.Heading>
           {error}
         </Alert>
-        <Button variant="outline-danger" onClick={() => navigate(-1)}>
+        <Button variant="outline-danger" onClick={backToUrlsList}>
           Go Back
         </Button>
       </Container>
@@ -302,7 +305,7 @@ function TyposquatUrlDetails() {
           <Alert.Heading>URL Not Found</Alert.Heading>
           The requested typosquat URL could not be found.
         </Alert>
-        <Button variant="outline-warning" onClick={() => navigate(-1)}>
+        <Button variant="outline-warning" onClick={backToUrlsList}>
           Go Back
         </Button>
       </Container>
@@ -323,7 +326,7 @@ function TyposquatUrlDetails() {
                 <p className="text-muted">URLs associated with: <strong>{domainParam}</strong></p>
               </div>
               <div>
-                <Button variant="outline-primary" onClick={() => navigate('/brand-protection/typosquat')}>
+                <Button variant="outline-primary" onClick={() => backToFindingsList()}>
                   ← Back to Typosquat Findings
                 </Button>
               </div>
@@ -448,7 +451,7 @@ function TyposquatUrlDetails() {
               >
                 🗑️ Delete
               </Button>
-              <Button variant="outline-primary" onClick={() => navigate('/brand-protection/typosquat')}>
+              <Button variant="outline-primary" onClick={backToUrlsList}>
                 ← Back to Typosquat URLs
               </Button>
             </div>

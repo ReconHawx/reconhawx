@@ -5,6 +5,7 @@ import { serviceAPI, programAPI } from '../../services/api';
 import { useProgramFilter } from '../../contexts/ProgramFilterContext';
 import { formatDate } from '../../utils/dateUtils';
 import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
+import { withListReturn } from '../../hooks/useListNavigation';
 
 function Services() {
   usePageTitle(formatPageTitle('Services'));
@@ -309,7 +310,10 @@ function Services() {
   };
 
   const handleServiceClick = (service) => {
-    navigate(`/assets/services/details?id=${encodeURIComponent(service.id || '')}`);
+    navigate(
+      `/assets/services/details?id=${encodeURIComponent(service.id || '')}`,
+      withListReturn(location),
+    );
   };
 
   // Batch delete handlers

@@ -6,11 +6,13 @@ import NotesSection from '../../components/NotesSection';
 import TaskHistorySection from '../../components/TaskHistorySection';
 import { formatDate } from '../../utils/dateUtils';
 import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
+import { useBackToList } from '../../hooks/useListNavigation';
 
 function ApexDomainDetail() {
   const { apexDomainName } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
+  const backToList = useBackToList('/assets/apex-domains');
   const [apexDomain, setApexDomain] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -95,7 +97,7 @@ function ApexDomainDetail() {
       // Delete apex domain (subdomains will be handled by the backend)
       await apexDomainAPI.delete(apexDomain.id || apexDomain._id);
       setShowDeleteModal(false);
-      navigate('/assets/apex-domains');
+      backToList();
     } catch (err) {
       setError('Failed to delete apex domain: ' + err.message);
     } finally {
@@ -127,7 +129,7 @@ function ApexDomainDetail() {
           <Alert.Heading>Error</Alert.Heading>
           {error}
         </Alert>
-        <Button variant="outline-primary" onClick={() => navigate('/assets/apex-domains')}>
+        <Button variant="outline-primary" onClick={() => backToList()}>
           ← Back to Apex Domains
         </Button>
       </Container>
@@ -141,7 +143,7 @@ function ApexDomainDetail() {
           <Alert.Heading>Apex Domain Not Found</Alert.Heading>
           The requested apex domain could not be found.
         </Alert>
-        <Button variant="outline-primary" onClick={() => navigate('/assets/apex-domains')}>
+        <Button variant="outline-primary" onClick={() => backToList()}>
           ← Back to Apex Domains
         </Button>
       </Container>
@@ -164,7 +166,7 @@ function ApexDomainDetail() {
               >
                 🗑️ Delete
               </Button>
-              <Button variant="outline-primary" onClick={() => navigate('/assets/apex-domains')}>
+              <Button variant="outline-primary" onClick={() => backToList()}>
                 ← Back to Apex Domains
               </Button>
             </div>

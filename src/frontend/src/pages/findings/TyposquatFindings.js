@@ -23,6 +23,7 @@ import api, { jobAPI, userManagementAPI, programAPI } from '../../services/api';
 import { formatDate } from '../../utils/dateUtils';
 import { initializeUserCache } from '../../utils/userUtils';
 import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
+import { withListReturn } from '../../hooks/useListNavigation';
 
 /** Keep in sync with API `AI_ANALYSIS_BATCH_MAX_FINDINGS` in typosquat_findings.py (temporary cap). */
 const AI_ANALYSIS_BATCH_MAX_FINDINGS = 10;
@@ -748,7 +749,10 @@ function TyposquatFindings() {
 
   // Handle finding click
   const handleFindingClick = (finding) => {
-    navigate(`/brand-protection/typosquat/details?id=${finding.id}`);
+    navigate(
+      `/brand-protection/typosquat/details?id=${finding.id}`,
+      withListReturn(location),
+    );
   };
 
   // Batch delete handlers

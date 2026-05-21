@@ -5,6 +5,7 @@ import api from '../../services/api';
 import { useProgramFilter } from '../../contexts/ProgramFilterContext';
 import { formatDate } from '../../utils/dateUtils';
 import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
+import { withListReturn } from '../../hooks/useListNavigation';
 
 const NucleiFindings = () => {
   usePageTitle(formatPageTitle('Nuclei Findings'));
@@ -840,6 +841,7 @@ const NucleiFindings = () => {
                           <td>
                             <Link 
                               to={`/findings/nuclei/details?id=${finding.id}`}
+                              state={withListReturn(location).state}
                               className="text-decoration-none"
                             >
                               <div className="fw-medium text-primary">{truncateText(finding.name, 40)}</div>

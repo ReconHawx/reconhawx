@@ -21,6 +21,7 @@ import { formatDate, formatLocalDate } from '../../utils/dateUtils';
 import { useAuth } from '../../contexts/AuthContext';
 import { formatAssignedTo, initializeUserCache, preloadUsers } from '../../utils/userUtils';
 import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
+import { useBackToList } from '../../hooks/useListNavigation';
 
 const WHOIS_FLAT_KEYS = [
   'whois_registrar',
@@ -77,6 +78,7 @@ function TyposquatFindingDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
+  const backToList = useBackToList('/brand-protection/typosquat');
   const { user, isAdmin, hasProgramPermission } = useAuth();
   
   // Initialize user cache with current user
@@ -806,7 +808,7 @@ function TyposquatFindingDetail() {
       await api.findings.typosquat.delete(findingId, deleteRelated);
       setShowDeleteModal(false);
       setDeleteRelated(false); // Reset the checkbox
-      navigate('/brand-protection/typosquat');
+      backToList();
     } catch (err) {
       console.error('Error deleting typosquat finding:', err);
       alert('Failed to delete typosquat finding: ' + (err.response?.data?.detail || err.message));
@@ -1235,7 +1237,7 @@ function TyposquatFindingDetail() {
         <Alert variant="danger">
           <Alert.Heading>Error Loading Finding</Alert.Heading>
           <p>{error}</p>
-          <Button variant="outline-danger" onClick={() => navigate(-1)}>
+          <Button variant="outline-danger" onClick={backToList}>
             Go Back
           </Button>
         </Alert>
@@ -1249,7 +1251,7 @@ function TyposquatFindingDetail() {
         <Alert variant="warning">
           <Alert.Heading>Finding Not Found</Alert.Heading>
           <p>The requested typosquat finding could not be found.</p>
-          <Button variant="outline-warning" onClick={() => navigate(-1)}>
+          <Button variant="outline-warning" onClick={backToList}>
             Go Back
           </Button>
         </Alert>
@@ -1311,7 +1313,7 @@ function TyposquatFindingDetail() {
           >
             <i className="bi bi-trash"></i> Delete
           </Button>
-          <Button variant="outline-primary" onClick={() => navigate('/brand-protection/typosquat')} className="me-3">
+          <Button variant="outline-primary" onClick={() => backToList()} className="me-3">
             ← Back to Typosquat Domains
           </Button>
         </div>

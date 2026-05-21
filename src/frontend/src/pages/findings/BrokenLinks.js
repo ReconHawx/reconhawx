@@ -1,14 +1,16 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { Container, Card, Table, Badge, Form, Row, Col, Button, Pagination, Alert, Spinner, Modal } from 'react-bootstrap';
 import { brokenLinksAPI } from '../../services/api';
 import { useProgramFilter } from '../../contexts/ProgramFilterContext';
 import { formatDate } from '../../utils/dateUtils';
 import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
+import { withListReturn } from '../../hooks/useListNavigation';
 
 function BrokenLinks() {
   usePageTitle(formatPageTitle('Broken Links'));
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const { selectedProgram } = useProgramFilter();
   
@@ -122,7 +124,10 @@ function BrokenLinks() {
   };
 
   const handleFindingClick = (finding) => {
-    navigate(`/findings/broken-links/details?id=${finding.id}`);
+    navigate(
+      `/findings/broken-links/details?id=${finding.id}`,
+      withListReturn(location),
+    );
   };
 
   const handleSelectAll = (checked) => {

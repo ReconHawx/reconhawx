@@ -5,6 +5,7 @@ import { ipAPI, programAPI } from '../../services/api';
 import { useProgramFilter } from '../../contexts/ProgramFilterContext';
 import { formatDate } from '../../utils/dateUtils';
 import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
+import { withListReturn } from '../../hooks/useListNavigation';
 
 function IPs() {
   usePageTitle(formatPageTitle('IPs'));
@@ -277,7 +278,10 @@ function IPs() {
   };
 
   const handleIpClick = (ip) => {
-    navigate(`/assets/ips/details?id=${encodeURIComponent(ip.id || '')}`);
+    navigate(
+      `/assets/ips/details?id=${encodeURIComponent(ip.id || '')}`,
+      withListReturn(location),
+    );
   };
 
   // Batch delete handlers

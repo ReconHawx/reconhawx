@@ -6,11 +6,13 @@ import NotesSection from '../../components/NotesSection';
 import TaskHistorySection from '../../components/TaskHistorySection';
 import { formatDate } from '../../utils/dateUtils';
 import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
+import { useBackToList } from '../../hooks/useListNavigation';
 
 function ServiceDetail() {
   const { ip, port } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
+  const backToList = useBackToList('/assets/services');
   const [service, setService] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -97,7 +99,7 @@ function ServiceDetail() {
       setDeleting(true);
       await serviceAPI.delete(service.id || service._id);
       setShowDeleteModal(false);
-      navigate('/assets/services');
+      backToList();
     } catch (err) {
       setError('Failed to delete service: ' + err.message);
     } finally {
@@ -129,7 +131,7 @@ function ServiceDetail() {
           <Alert.Heading>Error</Alert.Heading>
           {error}
         </Alert>
-        <Button variant="outline-primary" onClick={() => navigate('/assets/services')}>
+        <Button variant="outline-primary" onClick={() => backToList()}>
           ← Back to Services
         </Button>
       </Container>
@@ -143,7 +145,7 @@ function ServiceDetail() {
           <Alert.Heading>Service Not Found</Alert.Heading>
           The requested service could not be found.
         </Alert>
-        <Button variant="outline-primary" onClick={() => navigate('/assets/services')}>
+        <Button variant="outline-primary" onClick={() => backToList()}>
           ← Back to Services
         </Button>
       </Container>
@@ -166,7 +168,7 @@ function ServiceDetail() {
               >
                 🗑️ Delete
               </Button>
-              <Button variant="outline-primary" onClick={() => navigate('/assets/services')}>
+              <Button variant="outline-primary" onClick={() => backToList()}>
                 ← Back to Services
               </Button>
             </div>

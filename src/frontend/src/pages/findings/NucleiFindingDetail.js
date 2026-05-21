@@ -6,6 +6,7 @@ import api from '../../services/api';
 import NotesSection from '../../components/NotesSection';
 import { formatDate } from '../../utils/dateUtils';
 import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
+import { useBackToList, useListReturnPath } from '../../hooks/useListNavigation';
 
 // Import Ace editor modes and themes
 import 'ace-builds/src-noconflict/mode-yaml';
@@ -131,6 +132,8 @@ const NucleiFindingDetail = () => {
   const { findingId } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
+  const listPath = useListReturnPath('/findings/nuclei');
+  const backToList = useBackToList('/findings/nuclei');
   const [finding, setFinding] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -212,7 +215,7 @@ const NucleiFindingDetail = () => {
       
       await api.findings.nuclei.delete(deleteId);
       setShowDeleteModal(false);
-      navigate('/findings/nuclei');
+      backToList();
     } catch (err) {
       console.error('Error deleting nuclei finding:', err);
       alert('Failed to delete nuclei finding: ' + (err.response?.data?.detail || err.message));
@@ -241,7 +244,7 @@ const NucleiFindingDetail = () => {
           <h5 className="alert-heading">Error</h5>
           <p className="mb-0">{error}</p>
           <hr />
-          <Link to="/findings/nuclei" className="btn btn-outline-danger">
+          <Link to={listPath} className="btn btn-outline-danger">
             Back to Nuclei Findings
           </Link>
         </div>
@@ -256,7 +259,7 @@ const NucleiFindingDetail = () => {
           <h5 className="alert-heading">Not Found</h5>
           <p className="mb-0">The requested nuclei finding could not be found.</p>
           <hr />
-          <Link to="/findings/nuclei" className="btn btn-outline-warning">
+          <Link to={listPath} className="btn btn-outline-warning">
             Back to Nuclei Findings
           </Link>
         </div>
@@ -272,7 +275,7 @@ const NucleiFindingDetail = () => {
           <nav aria-label="breadcrumb">
             <ol className="breadcrumb">
               <li className="breadcrumb-item">
-                <Link to="/findings/nuclei">Nuclei Findings</Link>
+                <Link to={listPath}>Nuclei Findings</Link>
               </li>
               <li className="breadcrumb-item active" aria-current="page">
                 {finding.name || finding.template_id}
@@ -297,7 +300,7 @@ const NucleiFindingDetail = () => {
                 🗑️ Delete
               </Button>
 
-              <Button variant="outline-primary" onClick={() => navigate('/findings/nuclei')}>
+              <Button variant="outline-primary" onClick={() => backToList()}>
                 ← Back to Nuclei Findings
               </Button>
             </div>

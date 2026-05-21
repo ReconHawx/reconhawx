@@ -5,6 +5,7 @@ import { certificateAPI, programAPI } from '../../services/api';
 import { useProgramFilter } from '../../contexts/ProgramFilterContext';
 import { formatDate } from '../../utils/dateUtils';
 import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
+import { withListReturn } from '../../hooks/useListNavigation';
 
 function Certificates() {
   usePageTitle(formatPageTitle('Certificates'));
@@ -323,7 +324,10 @@ function Certificates() {
   };
 
   const handleCertificateClick = (certificate) => {
-    navigate(`/assets/certificates/details?id=${encodeURIComponent(certificate.id || '')}`);
+    navigate(
+      `/assets/certificates/details?id=${encodeURIComponent(certificate.id || '')}`,
+      withListReturn(location),
+    );
   };
 
   // Batch delete handlers

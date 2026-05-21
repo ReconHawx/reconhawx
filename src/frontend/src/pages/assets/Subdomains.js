@@ -5,6 +5,7 @@ import { domainAPI, programAPI } from '../../services/api';
 import { useProgramFilter } from '../../contexts/ProgramFilterContext';
 import { formatDate } from '../../utils/dateUtils';
 import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
+import { withListReturn } from '../../hooks/useListNavigation';
 
 function Subdomains() {
   usePageTitle(formatPageTitle('Subdomains'));
@@ -335,7 +336,10 @@ function Subdomains() {
 
   const handleDomainClick = (domain) => {
     const id = domain && domain.id;
-    navigate(`/assets/subdomains/details?id=${encodeURIComponent(id || '')}`);
+    navigate(
+      `/assets/subdomains/details?id=${encodeURIComponent(id || '')}`,
+      withListReturn(location),
+    );
   };
 
   // Batch delete handlers
