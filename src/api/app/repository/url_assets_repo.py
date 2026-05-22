@@ -21,6 +21,15 @@ from services.event_publisher import publisher
 logger = logging.getLogger(__name__)
 
 
+def _uuid_or_none(value: Optional[str]) -> Optional[UUID]:
+    if value is None or not str(value).strip():
+        return None
+    try:
+        return UUID(str(value).strip())
+    except ValueError:
+        return None
+
+
 async def _publish_external_link_created(
     *,
     extracted_link_id,
@@ -160,6 +169,9 @@ class UrlAssetsRepository(ProgramAccessMixin):
         technology: Optional[str] = None,
         port: Optional[int] = None,
         unusual_ports: Optional[bool] = None,
+        subdomain_id: Optional[str] = None,
+        certificate_id: Optional[str] = None,
+        service_id: Optional[str] = None,
         program: Optional[Union[str, List[str]]] = None,
         sort_by: str = "url",
         sort_dir: str = "asc",
@@ -212,6 +224,20 @@ class UrlAssetsRepository(ProgramAccessMixin):
                     base_query = base_query.filter(URL.port == port)
                 if unusual_ports is True:
                     base_query = base_query.filter(URL.port.notin_([80, 443]))
+
+                sub_uuid = _uuid_or_none(subdomain_id)
+                if sub_uuid is not None:
+                    base_query = base_query.filter(URL.subdomain_id == sub_uuid)
+
+                cert_uuid = _uuid_or_none(certificate_id)
+                if cert_uuid is not None:
+                    base_query = base_query.filter(URL.certificate_id == cert_uuid)
+
+                svc_uuid = _uuid_or_none(service_id)
+                if svc_uuid is not None:
+                    base_query = base_query.join(
+                        URLService, URLService.url_id == URL.id
+                    ).filter(URLService.service_id == svc_uuid)
 
                 sort_by_normalized = (sort_by or "url").lower()
                 sort_dir_normalized = (sort_dir or "asc").lower()
@@ -293,6 +319,14 @@ class UrlAssetsRepository(ProgramAccessMixin):
                     count_query = count_query.filter(URL.port == port)
                 if unusual_ports is True:
                     count_query = count_query.filter(URL.port.notin_([80, 443]))
+                if sub_uuid is not None:
+                    count_query = count_query.filter(URL.subdomain_id == sub_uuid)
+                if cert_uuid is not None:
+                    count_query = count_query.filter(URL.certificate_id == cert_uuid)
+                if svc_uuid is not None:
+                    count_query = count_query.join(
+                        URLService, URLService.url_id == URL.id
+                    ).filter(URLService.service_id == svc_uuid)
 
                 total_count = count_query.scalar() or 0
                 return {"items": items, "total_count": int(total_count)}

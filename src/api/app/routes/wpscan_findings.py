@@ -165,6 +165,12 @@ class WPScanSearchRequest(BaseModel):
     hostname_contains: Optional[str] = Field(None, description="Substring match on hostname")
     cve_ids_exact: Optional[str] = Field(None, description="Exact match on any value in cve_ids array")
     cve_ids_contains: Optional[str] = Field(None, description="Substring match on any value in cve_ids array")
+    url_id: Optional[str] = Field(None, description="Filter by linked URL asset ID")
+    subdomain_id: Optional[str] = Field(None, description="Filter by linked subdomain asset ID")
+    ip_id: Optional[str] = Field(None, description="Filter by linked IP asset ID")
+    service_id: Optional[str] = Field(None, description="Filter by linked service asset ID")
+    certificate_id: Optional[str] = Field(None, description="Filter by certificate via linked URL")
+    apex_domain: Optional[str] = Field(None, description="Filter by apex domain via linked subdomain")
     program: Optional[Union[List[str], str]] = Field(None, description="Restrict to program(s) within user's access scope")
     sort_by: Optional[str] = Field("created_at")
     sort_dir: Optional[str] = Field("desc")
@@ -232,6 +238,12 @@ async def search_wpscan_typed(request: WPScanSearchRequest, current_user: UserRe
             hostname_contains=request.hostname_contains,
             cve_ids_exact=request.cve_ids_exact,
             cve_ids_contains=request.cve_ids_contains,
+            url_id=request.url_id,
+            subdomain_id=request.subdomain_id,
+            ip_id=request.ip_id,
+            service_id=request.service_id,
+            certificate_id=request.certificate_id,
+            apex_domain=request.apex_domain,
             programs=programs,
             sort_by=request.sort_by or "created_at",
             sort_dir=request.sort_dir or "desc",

@@ -16,7 +16,7 @@ from sqlalchemy import and_, asc, cast, desc, func, or_, Text
 from db import get_db_session, SessionLocal
 from fastapi.concurrency import run_in_threadpool
 from models.base import utcnow
-from models.postgres import IP, Finding, Program
+from models.postgres import IP, Finding, Program, URL, Subdomain, ApexDomain
 from services.event_publisher import publisher
 from utils.domain_utils import normalize_hostname
 from utils.finding_fingerprint import (
@@ -34,6 +34,56 @@ logger = logging.getLogger(__name__)
 SOURCE_NUCLEI = "nuclei"
 SOURCE_WPSCAN = "wpscan"
 SOURCE_BROKEN_LINK = "broken_link"
+
+
+def _parse_uuid_filter(value: Optional[str]) -> Optional[uuid.UUID]:
+    if value is None or not str(value).strip():
+        return None
+    try:
+        return uuid.UUID(str(value).strip())
+    except ValueError:
+        return None
+
+
+def _apply_finding_asset_fk_filters(
+    q,
+    *,
+    url_id: Optional[str] = None,
+    subdomain_id: Optional[str] = None,
+    ip_id: Optional[str] = None,
+    service_id: Optional[str] = None,
+    certificate_id: Optional[str] = None,
+    apex_domain: Optional[str] = None,
+):
+    """Apply optional asset FK / relation filters to a findings query."""
+    url_uuid = _parse_uuid_filter(url_id)
+    if url_uuid is not None:
+        q = q.filter(Finding.url_id == url_uuid)
+
+    subdomain_uuid = _parse_uuid_filter(subdomain_id)
+    if subdomain_uuid is not None:
+        q = q.filter(Finding.subdomain_id == subdomain_uuid)
+
+    ip_uuid = _parse_uuid_filter(ip_id)
+    if ip_uuid is not None:
+        q = q.filter(Finding.ip_id == ip_uuid)
+
+    service_uuid = _parse_uuid_filter(service_id)
+    if service_uuid is not None:
+        q = q.filter(Finding.service_id == service_uuid)
+
+    cert_uuid = _parse_uuid_filter(certificate_id)
+    if cert_uuid is not None:
+        q = q.join(URL, Finding.url_id == URL.id).filter(URL.certificate_id == cert_uuid)
+
+    if apex_domain and str(apex_domain).strip():
+        q = (
+            q.join(Subdomain, Finding.subdomain_id == Subdomain.id)
+            .join(ApexDomain, Subdomain.apex_domain_id == ApexDomain.id)
+            .filter(ApexDomain.name == str(apex_domain).strip())
+        )
+
+    return q
 
 
 def _normalize_finding_url(url: Optional[str]) -> Optional[str]:
@@ -200,16 +250,14 @@ def _wpscan_dict_from_finding(f: Finding) -> Dict[str, Any]:
         "hostname": f.hostname,
         "port": f.port,
         "scheme": f.scheme,
+        "ip": str(f.ip.ip_address) if f.ip and f.ip.ip_address else None,
         "program_name": f.program.name if f.program else None,
         "notes": f.notes,
         "status": d.get("status"),
         "assigned_to": None,
         "created_at": f.created_at.isoformat() if f.created_at else None,
         "updated_at": f.updated_at.isoformat() if f.updated_at else None,
-        "domain_id": None,
-        "ip_id": str(f.ip_id) if f.ip_id else None,
-        "service_id": None,
-        "url_id": str(f.url_id) if f.url_id else None,
+        **_finding_asset_ids_dict(f),
     }
 
 
@@ -711,6 +759,12 @@ class FindingsRepository(ProgramAccessMixin):
         url_contains: Optional[str] = None,
         extracted_results_exact: Optional[str] = None,
         extracted_results_contains: Optional[str] = None,
+        url_id: Optional[str] = None,
+        subdomain_id: Optional[str] = None,
+        ip_id: Optional[str] = None,
+        service_id: Optional[str] = None,
+        certificate_id: Optional[str] = None,
+        apex_domain: Optional[str] = None,
         programs: Optional[List[str]] = None,
         sort_by: str = "created_at",
         sort_dir: str = "desc",
@@ -779,6 +833,15 @@ class FindingsRepository(ProgramAccessMixin):
                                 f"%{extracted_results_contains}%"
                             )
                         )
+                    q = _apply_finding_asset_fk_filters(
+                        q,
+                        url_id=url_id,
+                        subdomain_id=subdomain_id,
+                        ip_id=ip_id,
+                        service_id=service_id,
+                        certificate_id=certificate_id,
+                        apex_domain=apex_domain,
+                    )
                     return q
 
                 base_query = _apply_list_filters(base_query)
@@ -1259,6 +1322,12 @@ class FindingsRepository(ProgramAccessMixin):
         hostname_contains: Optional[str] = None,
         cve_ids_exact: Optional[str] = None,
         cve_ids_contains: Optional[str] = None,
+        url_id: Optional[str] = None,
+        subdomain_id: Optional[str] = None,
+        ip_id: Optional[str] = None,
+        service_id: Optional[str] = None,
+        certificate_id: Optional[str] = None,
+        apex_domain: Optional[str] = None,
         programs: Optional[List[str]] = None,
         sort_by: str = "created_at",
         sort_dir: str = "desc",
@@ -1320,6 +1389,15 @@ class FindingsRepository(ProgramAccessMixin):
                         q = q.filter(
                             cast(Finding.details["cve_ids"], Text).ilike(f"%{cve_ids_contains}%")
                         )
+                    q = _apply_finding_asset_fk_filters(
+                        q,
+                        url_id=url_id,
+                        subdomain_id=subdomain_id,
+                        ip_id=ip_id,
+                        service_id=service_id,
+                        certificate_id=certificate_id,
+                        apex_domain=apex_domain,
+                    )
                     return q
 
                 base_query = _apply_filters(base_query)

@@ -1,9 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { Container, Row, Col, Card, Badge, Button, Spinner, Alert, Table, Collapse, Modal } from 'react-bootstrap';
-import { ipAPI, domainAPI } from '../../services/api';
+import { ipAPI } from '../../services/api';
 import NotesSection from '../../components/NotesSection';
 import TaskHistorySection from '../../components/TaskHistorySection';
+import RelatedAssetsSection from '../../components/RelatedAssetsSection';
+import RelatedFindingsSection from '../../components/RelatedFindingsSection';
+import useRelatedContent from '../../hooks/useRelatedContent';
 import { formatDate } from '../../utils/dateUtils';
 import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
 import { useBackToList } from '../../hooks/useListNavigation';
@@ -21,11 +24,20 @@ function IPDetail() {
   });
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [relatedSubdomains, setRelatedSubdomains] = useState([]);
-  const [subdomainsLoading, setSubdomainsLoading] = useState(false);
-  const [subdomainsError, setSubdomainsError] = useState(null);
 
   usePageTitle(formatPageTitle(ip?.ip, 'IP'));
+
+  const {
+    assetGroups,
+    findings,
+    loading: relatedLoading,
+    findingsLoading,
+    error: relatedError,
+  } = useRelatedContent({
+    entityType: 'ip',
+    entity: ip,
+    enabled: !!ip,
+  });
 
   useEffect(() => {
     const fetchIp = async () => {
@@ -36,16 +48,10 @@ function IPDetail() {
         if (idParam) {
           const data = await ipAPI.getById(idParam);
           setIp(data);
-          // Fetch related subdomains for this IP
-          if (data && data.ip) {
-            await fetchRelatedSubdomains(data.ip);
-          }
         } else if (ipAddress) {
           const decodedIpAddress = decodeURIComponent(ipAddress);
           const response = await ipAPI.getByAddress(decodedIpAddress);
           setIp(response);
-          // Fetch related subdomains for this IP
-          await fetchRelatedSubdomains(decodedIpAddress);
         } else {
           setError('IP id is required');
           setIp(null);
@@ -111,21 +117,6 @@ function IPDetail() {
 
   const handleDeleteCancel = () => {
     setShowDeleteModal(false);
-  };
-
-  // Fetch related subdomains that resolve to this IP
-  const fetchRelatedSubdomains = async (ipAddress) => {
-    try {
-      setSubdomainsLoading(true);
-      setSubdomainsError(null);
-      const response = await domainAPI.getSubdomainsByIP(ipAddress, 1, 50); // Get up to 50 subdomains
-      setRelatedSubdomains(response.items || []);
-    } catch (err) {
-      setSubdomainsError('Failed to fetch related subdomains: ' + err.message);
-      setRelatedSubdomains([]);
-    } finally {
-      setSubdomainsLoading(false);
-    }
   };
 
   if (loading) {
@@ -300,96 +291,19 @@ function IPDetail() {
         </Col>
       </Row>
 
-      {/* Related Subdomains Section */}
       <Row>
         <Col>
-          <Card className="rh-elevated-card mb-4">
-            <Card.Header>
-              <h5 className="mb-0">🔗 Related Subdomains</h5>
-            </Card.Header>
-            <Card.Body>
-              {subdomainsLoading ? (
-                <div className="text-center py-3">
-                  <Spinner animation="border" size="sm" />
-                  <p className="mt-2 text-muted">Loading related subdomains...</p>
-                </div>
-              ) : subdomainsError ? (
-                <Alert variant="warning">
-                  <Alert.Heading>Error Loading Subdomains</Alert.Heading>
-                  {subdomainsError}
-                </Alert>
-              ) : relatedSubdomains.length === 0 ? (
-                <Alert variant="info">
-                  <Alert.Heading>No Related Subdomains</Alert.Heading>
-                  No subdomains were found that resolve to this IP address.
-                </Alert>
-              ) : (
-                <div>
-                  <p className="text-muted mb-3">
-                    Found {relatedSubdomains.length} subdomain{relatedSubdomains.length !== 1 ? 's' : ''} that resolve to this IP address:
-                  </p>
-                  <Table striped bordered hover responsive>
-                    <thead>
-                      <tr>
-                        <th>Domain Name</th>
-                        <th>Program</th>
-                        <th>Apex Domain</th>
-                        <th>Wildcard</th>
-                        <th>CNAME</th>
-                        <th>Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {relatedSubdomains.map((subdomain) => (
-                        <tr key={subdomain.id}>
-                          <td>
-                            <code>{subdomain.name}</code>
-                          </td>
-                          <td>
-                            {subdomain.program_name ? (
-                              <Badge bg="primary">{subdomain.program_name}</Badge>
-                            ) : (
-                              <span className="text-muted">-</span>
-                            )}
-                          </td>
-                          <td>
-                            {subdomain.apex_domain ? (
-                              <Badge bg="info">{subdomain.apex_domain}</Badge>
-                            ) : (
-                              <span className="text-muted">-</span>
-                            )}
-                          </td>
-                          <td>
-                            {subdomain.is_wildcard ? (
-                              <Badge bg="warning" text="dark">Yes</Badge>
-                            ) : (
-                              <Badge bg="secondary">No</Badge>
-                            )}
-                          </td>
-                          <td>
-                            {subdomain.cname_record ? (
-                              <code>{subdomain.cname_record}</code>
-                            ) : (
-                              <span className="text-muted">-</span>
-                            )}
-                          </td>
-                          <td>
-                            <Button
-                              variant="outline-primary"
-                              size="sm"
-                              onClick={() => navigate(`/assets/subdomains/details?id=${encodeURIComponent(subdomain.id)}`)}
-                            >
-                              View Details
-                            </Button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </Table>
-                </div>
-              )}
-            </Card.Body>
-          </Card>
+          <RelatedAssetsSection title="🔗 Related Assets" groups={assetGroups} />
+          <RelatedFindingsSection
+            nucleiItems={findings.nucleiItems}
+            wpscanItems={findings.wpscanItems}
+            nucleiTotal={findings.nucleiTotal}
+            wpscanTotal={findings.wpscanTotal}
+            nucleiViewAllPath={findings.nucleiViewAllPath}
+            wpscanViewAllPath={findings.wpscanViewAllPath}
+            loading={relatedLoading || findingsLoading}
+            error={relatedError}
+          />
         </Col>
       </Row>
 
