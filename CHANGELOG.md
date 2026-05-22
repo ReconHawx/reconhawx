@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.40.0](https://github.com/ReconHawx/reconhawx/compare/v0.39.0...v0.40.0) (2026-05-22)
+
+
+### Features
+
+* show related assets and findings on detail pages ([619bd2b](https://github.com/ReconHawx/reconhawx/commit/619bd2b0024a69fa4adb2a1d88674469487124df))
+
+
+### Bug Fixes
+
+* **findings:** correct Nuclei findings filters for tags, hostname, and URL ([5741402](https://github.com/ReconHawx/reconhawx/commit/5741402dd04369aa1a224d7caa2977035f786fb9))
+* **frontend:** keep column filters visible when lists have no matches ([0b39508](https://github.com/ReconHawx/reconhawx/commit/0b39508aa774e0b5aaab9611f37774f3a3a2297b))
+* **frontend:** preserve list filters when returning from detail pages ([5e4b053](https://github.com/ReconHawx/reconhawx/commit/5e4b053d35cbbe156ea6a5ce36c256476abe499b))
+
 ## [0.39.0](https://github.com/ReconHawx/reconhawx/compare/v0.38.0...v0.39.0) (2026-05-21)
 
 
