@@ -4,6 +4,9 @@ import { Container, Row, Col, Card, Badge, Button, Spinner, Alert, Table, Collap
 import { domainAPI } from '../../services/api';
 import NotesSection from '../../components/NotesSection';
 import TaskHistorySection from '../../components/TaskHistorySection';
+import RelatedAssetsSection from '../../components/RelatedAssetsSection';
+import RelatedFindingsSection from '../../components/RelatedFindingsSection';
+import useRelatedContent from '../../hooks/useRelatedContent';
 import { formatDate } from '../../utils/dateUtils';
 import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
 import { useBackToList } from '../../hooks/useListNavigation';
@@ -23,6 +26,18 @@ function SubdomainDetail() {
   const [deleting, setDeleting] = useState(false);
 
   usePageTitle(formatPageTitle(domain?.name, 'Subdomain'));
+
+  const {
+    assetGroups,
+    findings,
+    loading: relatedLoading,
+    findingsLoading,
+    error: relatedError,
+  } = useRelatedContent({
+    entityType: 'subdomain',
+    entity: domain,
+    enabled: !!domain,
+  });
 
   useEffect(() => {
     const fetchDomain = async () => {
@@ -334,6 +349,22 @@ function SubdomainDetail() {
               </Table>
             </Card.Body>
           </Card>
+        </Col>
+      </Row>
+
+      <Row>
+        <Col>
+          <RelatedAssetsSection title="🔗 Related Assets" groups={assetGroups} />
+          <RelatedFindingsSection
+            nucleiItems={findings.nucleiItems}
+            wpscanItems={findings.wpscanItems}
+            nucleiTotal={findings.nucleiTotal}
+            wpscanTotal={findings.wpscanTotal}
+            nucleiViewAllPath={findings.nucleiViewAllPath}
+            wpscanViewAllPath={findings.wpscanViewAllPath}
+            loading={relatedLoading || findingsLoading}
+            error={relatedError}
+          />
         </Col>
       </Row>
 

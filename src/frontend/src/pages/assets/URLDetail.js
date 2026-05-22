@@ -1,10 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, useLocation, Link } from 'react-router-dom';
 import { Container, Row, Col, Card, Badge, Button, Spinner, Alert, Table, Collapse, Modal, Image } from 'react-bootstrap';
-import { urlAPI, screenshotAPI, serviceAPI, certificateAPI, domainAPI, API_BASE_URL } from '../../services/api';
+import { urlAPI, screenshotAPI, API_BASE_URL } from '../../services/api';
 import NotesSection from '../../components/NotesSection';
 import TaskHistorySection from '../../components/TaskHistorySection';
 import SitemapTree from '../../components/SitemapTree';
+import RelatedAssetsSection from '../../components/RelatedAssetsSection';
+import RelatedFindingsSection from '../../components/RelatedFindingsSection';
+import useRelatedContent from '../../hooks/useRelatedContent';
 import { formatDate } from '../../utils/dateUtils';
 import { usePageTitle, formatPageTitle, truncateTitle } from '../../hooks/usePageTitle';
 import { useBackToList } from '../../hooks/useListNavigation';
@@ -28,39 +31,20 @@ function URLDetail() {
   });
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [relatedCertificate, setRelatedCertificate] = useState(null);
-  const [relatedServices, setRelatedServices] = useState([]);
-  const [relatedSubdomain, setRelatedSubdomain] = useState(null);
-  const [relatedAssetsLoading, setRelatedAssetsLoading] = useState(false);
 
   usePageTitle(formatPageTitle(url?.url ? truncateTitle(url.url) : null, 'URL'));
 
-  // Function to fetch related assets (certificate, services, subdomain)
-  const fetchRelatedAssets = async (urlData) => {
-    const serviceIds = urlData?.service_ids || (urlData?.service_id ? [urlData.service_id] : []);
-    if (!urlData?.certificate_id && serviceIds.length === 0 && !urlData?.subdomain_id) {
-      return;
-    }
-    setRelatedAssetsLoading(true);
-    try {
-      const certPromise = urlData.certificate_id ? certificateAPI.getById(urlData.certificate_id) : Promise.resolve(null);
-      const servicePromises = serviceIds.map(id => serviceAPI.getById(id));
-      const subPromise = urlData.subdomain_id ? domainAPI.getById(urlData.subdomain_id) : Promise.resolve(null);
-      const [certData, ...svcResults] = await Promise.allSettled([certPromise, ...servicePromises, subPromise]);
-      setRelatedCertificate(certData.status === 'fulfilled' && certData.value ? certData.value : null);
-      const services = svcResults
-        .slice(0, -1)
-        .filter(r => r.status === 'fulfilled' && r.value)
-        .map(r => r.value);
-      setRelatedServices(services);
-      const subData = svcResults[svcResults.length - 1];
-      setRelatedSubdomain(subData.status === 'fulfilled' && subData.value ? subData.value : null);
-    } catch (err) {
-      console.warn('Error fetching related assets:', err);
-    } finally {
-      setRelatedAssetsLoading(false);
-    }
-  };
+  const {
+    assetGroups,
+    findings,
+    loading: relatedLoading,
+    findingsLoading,
+    error: relatedError,
+  } = useRelatedContent({
+    entityType: 'url',
+    entity: url,
+    enabled: !!url,
+  });
 
   // Function to fetch screenshots for a URL
   const fetchScreenshots = async (targetUrl) => {
@@ -110,13 +94,7 @@ function URLDetail() {
           : await urlAPI.getByUrl(decodeURIComponent(encodedUrl || ''));
         setUrl(response);
         setError(null);
-        
-        // Fetch related assets (certificate, services, subdomain)
-        const hasServices = (response?.service_ids?.length > 0) || response?.service_id;
-        if (response && (response.certificate_id || hasServices || response.subdomain_id)) {
-          fetchRelatedAssets(response);
-        }
-        
+
         // Fetch screenshots for this URL
         if (response && response.url) {
           await fetchScreenshots(response.url);
@@ -593,110 +571,21 @@ function URLDetail() {
         </Col>
       </Row>
 
-      {/* Related Assets: Certificate, Services, Subdomain */}
-      {(url.certificate_id || (url.service_ids && url.service_ids.length > 0) || url.service_id || url.subdomain_id) && (
-        <Row>
-          <Col>
-            <Card className="rh-elevated-card mb-4">
-              <Card.Header>
-                <h5 className="mb-0">🔗 Related Assets</h5>
-              </Card.Header>
-              <Card.Body>
-                {relatedAssetsLoading ? (
-                  <div className="text-center py-3">
-                    <Spinner animation="border" size="sm" />
-                    <span className="ms-2">Loading related assets...</span>
-                  </div>
-                ) : (
-                  <Row className="flex-nowrap overflow-x-auto g-2">
-                    {url.certificate_id && (
-                      <Col className="flex-shrink-0" style={{ minWidth: '220px' }}>
-                        <Card className="h-100 border-0 bg-light">
-                          <Card.Body>
-                            <h6 className="text-uppercase small fw-semibold text-muted mb-2 pb-1 border-bottom">
-                              <i className="fas fa-certificate me-2"></i>Certificate
-                            </h6>
-                            <p className="mb-1 small">
-                              <Link to={`/assets/certificates/details?id=${encodeURIComponent(url.certificate_id)}`} className="text-decoration-none">
-                                {relatedCertificate ? (relatedCertificate.subject_cn || relatedCertificate.subject_dn || (relatedCertificate.subject_an?.[0]) || 'N/A') : 'N/A'}
-                              </Link>
-                            </p>
-                            {relatedCertificate?.valid_until && (
-                              <p className="mb-2 small text-muted">
-                                Valid until: {formatUrlDate(relatedCertificate.valid_until)}
-                              </p>
-                            )}
-                          </Card.Body>
-                        </Card>
-                      </Col>
-                    )}
-                    {((url.service_ids || (url.service_id ? [url.service_id] : [])).length > 0) && (
-                      <Col className="flex-shrink-0" style={{ minWidth: '220px' }}>
-                        <Card className="h-100 border-0 bg-light">
-                          <Card.Body>
-                            <h6 className="text-uppercase small fw-semibold text-muted mb-2 pb-1 border-bottom">
-                              <i className="fas fa-server me-2"></i>Services
-                            </h6>
-                            <div className="d-flex flex-column gap-1">
-                              {(url.service_ids || (url.service_id ? [url.service_id] : [])).map((serviceId) => {
-                                const svc = relatedServices.find(s => (s.id || s._id) === serviceId);
-                                return (
-                                  <Link key={serviceId} to={`/assets/services/details?id=${encodeURIComponent(serviceId)}`} className="text-decoration-none small">
-                                    {svc ? `${svc.ip}:${svc.port}` : 'N/A'}
-                                  </Link>
-                                );
-                              })}
-                            </div>
-                          </Card.Body>
-                        </Card>
-                      </Col>
-                    )}
-                    {(() => {
-                      const uniqueIps = relatedServices
-                        ? [...new Map(relatedServices.filter(s => s.ip_id).map(s => [s.ip_id, { ip_id: s.ip_id, ip: s.ip }])).values()]
-                        : [];
-                      return uniqueIps.length > 0 && (
-                        <Col className="flex-shrink-0" style={{ minWidth: '220px' }}>
-                          <Card className="h-100 border-0 bg-light">
-                            <Card.Body>
-                              <h6 className="text-uppercase small fw-semibold text-muted mb-2 pb-1 border-bottom">
-                                <i className="fas fa-network-wired me-2"></i>IPs
-                              </h6>
-                              <div className="d-flex flex-column gap-1">
-                                {uniqueIps.map(({ ip_id, ip }) => (
-                                  <Link key={ip_id} to={`/assets/ips/details?id=${encodeURIComponent(ip_id)}`} className="text-decoration-none small">
-                                    {ip}
-                                  </Link>
-                                ))}
-                              </div>
-                            </Card.Body>
-                          </Card>
-                        </Col>
-                      );
-                    })()}
-                    {url.subdomain_id && (
-                      <Col className="flex-shrink-0" style={{ minWidth: '220px' }}>
-                        <Card className="h-100 border-0 bg-light">
-                          <Card.Body>
-                            <h6 className="text-uppercase small fw-semibold text-muted mb-2 pb-1 border-bottom">
-                              <i className="fas fa-globe me-2"></i>Subdomain
-                            </h6>
-                            <p className="mb-0 small">
-                              <Link to={`/assets/subdomains/details?id=${encodeURIComponent(url.subdomain_id)}`} className="text-decoration-none">
-                                {relatedSubdomain ? relatedSubdomain.name : 'N/A'}
-                              </Link>
-                            </p>
-                          </Card.Body>
-                        </Card>
-                      </Col>
-                    )}
-                  </Row>
-                )}
-              </Card.Body>
-            </Card>
-          </Col>
-        </Row>
-      )}
+      <Row>
+        <Col>
+          <RelatedAssetsSection title="🔗 Related Assets" groups={assetGroups} />
+          <RelatedFindingsSection
+            nucleiItems={findings.nucleiItems}
+            wpscanItems={findings.wpscanItems}
+            nucleiTotal={findings.nucleiTotal}
+            wpscanTotal={findings.wpscanTotal}
+            nucleiViewAllPath={findings.nucleiViewAllPath}
+            wpscanViewAllPath={findings.wpscanViewAllPath}
+            loading={relatedLoading || findingsLoading}
+            error={relatedError}
+          />
+        </Col>
+      </Row>
 
       {url.technologies && url.technologies.length > 0 && (
         <Row>

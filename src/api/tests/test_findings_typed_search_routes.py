@@ -46,6 +46,44 @@ async def test_nuclei_search_no_program_access(client: httpx.AsyncClient, mock_u
 
 
 @pytest.mark.asyncio
+@patch("app.routes.nuclei_findings.NucleiFindingsRepository.search_nuclei_typed", new_callable=AsyncMock)
+async def test_nuclei_search_forwards_asset_fk_filters(
+    mock_search, client: httpx.AsyncClient, mock_user_superuser
+):
+    mock_search.return_value = {"total_count": 0, "items": [], "severity_distribution": {}}
+    url_id = "123e4567-e89b-12d3-a456-426614174000"
+    payload = {
+        **_SEARCH,
+        "url_id": url_id,
+        "subdomain_id": url_id,
+        "ip_id": url_id,
+        "service_id": url_id,
+        "certificate_id": url_id,
+        "apex_domain": "example.com",
+    }
+    r = await client.post("/findings/nuclei/search", json=payload)
+    assert r.status_code == 200
+    kwargs = mock_search.call_args.kwargs
+    assert kwargs["url_id"] == url_id
+    assert kwargs["apex_domain"] == "example.com"
+
+
+@pytest.mark.asyncio
+@patch("app.routes.wpscan_findings.WPScanFindingsRepository.search_wpscan_typed", new_callable=AsyncMock)
+async def test_wpscan_search_forwards_asset_fk_filters(
+    mock_search, client: httpx.AsyncClient, mock_user_superuser
+):
+    mock_search.return_value = {"total_count": 0, "items": [], "severity_distribution": {}}
+    url_id = "123e4567-e89b-12d3-a456-426614174001"
+    payload = {**_SEARCH, "url_id": url_id, "ip_id": url_id}
+    r = await client.post("/findings/wpscan/search", json=payload)
+    assert r.status_code == 200
+    kwargs = mock_search.call_args.kwargs
+    assert kwargs["url_id"] == url_id
+    assert kwargs["ip_id"] == url_id
+
+
+@pytest.mark.asyncio
 @patch("app.routes.wpscan_findings.WPScanFindingsRepository.search_wpscan_typed", new_callable=AsyncMock)
 async def test_wpscan_search(mock_search, client: httpx.AsyncClient, mock_user_superuser):
     mock_search.return_value = {"total_count": 0, "items": [], "severity_distribution": {}}

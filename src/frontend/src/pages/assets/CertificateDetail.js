@@ -4,6 +4,9 @@ import { Container, Row, Col, Card, Badge, Button, Spinner, Alert, Table, Collap
 import { certificateAPI } from '../../services/api';
 import NotesSection from '../../components/NotesSection';
 import TaskHistorySection from '../../components/TaskHistorySection';
+import RelatedAssetsSection from '../../components/RelatedAssetsSection';
+import RelatedFindingsSection from '../../components/RelatedFindingsSection';
+import useRelatedContent from '../../hooks/useRelatedContent';
 import { formatDate, isExpired, isExpiringSoon } from '../../utils/dateUtils';
 import { usePageTitle, formatPageTitle, truncateTitle } from '../../hooks/usePageTitle';
 import { useBackToList } from '../../hooks/useListNavigation';
@@ -28,6 +31,18 @@ function CertificateDetail() {
       'Certificate'
     )
   );
+
+  const {
+    assetGroups,
+    findings,
+    loading: relatedLoading,
+    findingsLoading,
+    error: relatedError,
+  } = useRelatedContent({
+    entityType: 'certificate',
+    entity: certificate,
+    enabled: !!certificate,
+  });
 
   useEffect(() => {
     const fetchCertificate = async () => {
@@ -364,6 +379,22 @@ function CertificateDetail() {
           </Col>
         </Row>
       )}
+
+      <Row>
+        <Col>
+          <RelatedAssetsSection title="🔗 Related Assets" groups={assetGroups} />
+          <RelatedFindingsSection
+            nucleiItems={findings.nucleiItems}
+            wpscanItems={findings.wpscanItems}
+            nucleiTotal={findings.nucleiTotal}
+            wpscanTotal={findings.wpscanTotal}
+            nucleiViewAllPath={findings.nucleiViewAllPath}
+            wpscanViewAllPath={findings.wpscanViewAllPath}
+            loading={relatedLoading || findingsLoading}
+            error={relatedError}
+          />
+        </Col>
+      </Row>
 
       <Row>
         <Col>

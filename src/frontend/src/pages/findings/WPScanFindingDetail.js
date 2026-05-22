@@ -3,6 +3,9 @@ import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { Button, Badge } from 'react-bootstrap';
 import api from '../../services/api';
 import NotesSection from '../../components/NotesSection';
+import RelatedAssetsSection from '../../components/RelatedAssetsSection';
+import RelatedFindingsSection from '../../components/RelatedFindingsSection';
+import useRelatedContent from '../../hooks/useRelatedContent';
 import { formatDate } from '../../utils/dateUtils';
 import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
 import { useBackToList, useListReturnPath } from '../../hooks/useListNavigation';
@@ -19,6 +22,19 @@ const WPScanFindingDetail = () => {
   const [deleting, setDeleting] = useState(false);
 
   usePageTitle(formatPageTitle(finding?.title || finding?.item_name, 'WPScan'));
+
+  const {
+    assetGroups,
+    findings,
+    loading: relatedLoading,
+    findingsLoading,
+    error: relatedError,
+  } = useRelatedContent({
+    entityType: 'wpscan_finding',
+    entity: finding,
+    excludeFindingId: finding?.id,
+    enabled: !!finding,
+  });
 
   const severityColors = {
     critical: 'danger',
@@ -462,34 +478,18 @@ const WPScanFindingDetail = () => {
             </div>
           </div>
 
-          <div className="card rh-elevated-card mt-4">
-            <div className="card-header">
-              <h5 className="card-title mb-0">Related Assets</h5>
-            </div>
-            <div className="card-body">
-              <div className="list-group list-group-flush">
-                {finding.url && (
-                  <div className="list-group-item px-0">
-                    <div className="d-flex justify-content-between align-items-center">
-                      <div>
-                        <h6 className="mb-1">URL</h6>
-                        <p className="mb-1 small">{finding.url}</p>
-                      </div>
-                      <Link
-                        to={
-                          finding.url_id
-                            ? `/assets/urls/details?id=${encodeURIComponent(finding.url_id)}`
-                            : `/assets/urls?exact_match=${encodeURIComponent(finding.url)}`
-                        }
-                        className="btn btn-sm btn-outline-primary"
-                      >
-                        View
-                      </Link>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
+          <div className="mt-4">
+            <RelatedAssetsSection title="Related Assets" groups={assetGroups} />
+            <RelatedFindingsSection
+              nucleiItems={findings.nucleiItems}
+              wpscanItems={findings.wpscanItems}
+              nucleiTotal={findings.nucleiTotal}
+              wpscanTotal={findings.wpscanTotal}
+              nucleiViewAllPath={findings.nucleiViewAllPath}
+              wpscanViewAllPath={findings.wpscanViewAllPath}
+              loading={relatedLoading || findingsLoading}
+              error={relatedError}
+            />
           </div>
 
           <div className="mt-4">

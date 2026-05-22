@@ -23,6 +23,9 @@ class URLsSearchRequest(BaseModel):
     technology: Optional[str] = Field(None, description="Exact match technology")
     port: Optional[int] = Field(None, description="Port filter")
     unusual_ports: Optional[bool] = Field(None, description="Show only unusual ports (not 80/443)")
+    subdomain_id: Optional[str] = Field(None, description="Filter by linked subdomain asset ID")
+    certificate_id: Optional[str] = Field(None, description="Filter by linked certificate asset ID")
+    service_id: Optional[str] = Field(None, description="Filter by linked service asset ID")
     program: Optional[Union[str, List[str]]] = Field(None, description="Restrict to program(s) within user's access scope")
     sort_by: Literal['url','http_status_code','program_name','updated_at','technologies','port'] = 'url'
     sort_dir: Literal['asc','desc'] = 'asc'
@@ -87,6 +90,9 @@ async def search_urls_typed(request: URLsSearchRequest, current_user: UserRespon
             technology=request.technology,
             port=request.port,
             unusual_ports=request.unusual_ports,
+            subdomain_id=request.subdomain_id,
+            certificate_id=request.certificate_id,
+            service_id=request.service_id,
             program=programs if programs is not None else None,
             sort_by=request.sort_by,
             sort_dir=request.sort_dir,

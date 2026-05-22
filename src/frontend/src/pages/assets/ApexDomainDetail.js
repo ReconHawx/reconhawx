@@ -4,6 +4,9 @@ import { Container, Row, Col, Card, Badge, Button, Spinner, Alert, Table, Collap
 import { domainAPI, apexDomainAPI } from '../../services/api';
 import NotesSection from '../../components/NotesSection';
 import TaskHistorySection from '../../components/TaskHistorySection';
+import RelatedAssetsSection from '../../components/RelatedAssetsSection';
+import RelatedFindingsSection from '../../components/RelatedFindingsSection';
+import useRelatedContent from '../../hooks/useRelatedContent';
 import { formatDate } from '../../utils/dateUtils';
 import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
 import { useBackToList } from '../../hooks/useListNavigation';
@@ -23,6 +26,18 @@ function ApexDomainDetail() {
   const [deleting, setDeleting] = useState(false);
 
   usePageTitle(formatPageTitle(apexDomain?.name, 'Apex Domain'));
+
+  const {
+    assetGroups,
+    findings,
+    loading: relatedLoading,
+    findingsLoading,
+    error: relatedError,
+  } = useRelatedContent({
+    entityType: 'apex_domain',
+    entity: apexDomain,
+    enabled: !!apexDomain,
+  });
 
   useEffect(() => {
     const fetchApexDomain = async () => {
@@ -443,25 +458,19 @@ function ApexDomainDetail() {
         </Row>
       )}
 
-      {/* Related Assets */}
       <Row>
         <Col>
-          <Card className="rh-elevated-card mb-4">
-            <Card.Header>
-              <h5 className="mb-0">🔗 Related Assets</h5>
-            </Card.Header>
-            <Card.Body>
-              <Button 
-                variant="outline-primary" 
-                onClick={() => navigate(`/assets/subdomains?apex_domain=${encodeURIComponent(apexDomain.name)}`)}
-              >
-                🔍 View Subdomains for {apexDomain.name}
-              </Button>
-              <p className="text-muted mt-2">
-                View all subdomains that belong to this apex domain.
-              </p>
-            </Card.Body>
-          </Card>
+          <RelatedAssetsSection title="🔗 Related Assets" groups={assetGroups} />
+          <RelatedFindingsSection
+            nucleiItems={findings.nucleiItems}
+            wpscanItems={findings.wpscanItems}
+            nucleiTotal={findings.nucleiTotal}
+            wpscanTotal={findings.wpscanTotal}
+            nucleiViewAllPath={findings.nucleiViewAllPath}
+            wpscanViewAllPath={findings.wpscanViewAllPath}
+            loading={relatedLoading || findingsLoading}
+            error={relatedError}
+          />
         </Col>
       </Row>
 

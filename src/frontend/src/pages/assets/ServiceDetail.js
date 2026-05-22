@@ -4,6 +4,9 @@ import { Container, Row, Col, Card, Badge, Button, Spinner, Alert, Table, Collap
 import { serviceAPI } from '../../services/api';
 import NotesSection from '../../components/NotesSection';
 import TaskHistorySection from '../../components/TaskHistorySection';
+import RelatedAssetsSection from '../../components/RelatedAssetsSection';
+import RelatedFindingsSection from '../../components/RelatedFindingsSection';
+import useRelatedContent from '../../hooks/useRelatedContent';
 import { formatDate } from '../../utils/dateUtils';
 import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
 import { useBackToList } from '../../hooks/useListNavigation';
@@ -28,6 +31,18 @@ function ServiceDetail() {
       'Service'
     )
   );
+
+  const {
+    assetGroups,
+    findings,
+    loading: relatedLoading,
+    findingsLoading,
+    error: relatedError,
+  } = useRelatedContent({
+    entityType: 'service',
+    entity: service,
+    enabled: !!service,
+  });
 
   useEffect(() => {
     const fetchService = async () => {
@@ -390,6 +405,22 @@ function ServiceDetail() {
           </Col>
         </Row>
       )}
+
+      <Row>
+        <Col>
+          <RelatedAssetsSection title="🔗 Related Assets" groups={assetGroups} />
+          <RelatedFindingsSection
+            nucleiItems={findings.nucleiItems}
+            wpscanItems={findings.wpscanItems}
+            nucleiTotal={findings.nucleiTotal}
+            wpscanTotal={findings.wpscanTotal}
+            nucleiViewAllPath={findings.nucleiViewAllPath}
+            wpscanViewAllPath={findings.wpscanViewAllPath}
+            loading={relatedLoading || findingsLoading}
+            error={relatedError}
+          />
+        </Col>
+      </Row>
 
       <Row>
         <Col>
