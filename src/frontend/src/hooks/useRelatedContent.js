@@ -6,15 +6,76 @@ import {
   certificateAPI,
 } from '../services/api/assets';
 import { nucleiAPI, wpscanAPI } from '../services/api/findings';
-import { subdomainColumns, urlColumns, serviceColumns } from '../components/RelatedAssetsSection';
 
 const PAGE_SIZE = 10;
+
+const LINK_LABEL_TO_GROUP = {
+  Domain: { key: 'subdomains', label: 'Subdomains' },
+  Subdomain: { key: 'subdomains', label: 'Subdomains' },
+  URL: { key: 'urls', label: 'URLs' },
+  'IP Address': { key: 'ips', label: 'IP Addresses' },
+  IP: { key: 'ips', label: 'IP Addresses' },
+  Service: { key: 'services', label: 'Services' },
+  Certificate: { key: 'certificates', label: 'Certificates' },
+  'Apex Domain': { key: 'apex_domains', label: 'Apex Domains' },
+};
 
 function paginated(data) {
   return {
     items: data?.items || [],
     total: data?.pagination?.total_items ?? data?.items?.length ?? 0,
   };
+}
+
+function assetDisplayText(groupKey, item) {
+  switch (groupKey) {
+    case 'subdomains':
+      return item.name;
+    case 'urls':
+      return item.url;
+    case 'services':
+      return `${item.ip}:${item.port}`;
+    case 'ips':
+      return item.ip || item.ip_address;
+    case 'certificates':
+      return item.subject_dn || item.subject_cn || 'Certificate';
+    case 'apex_domains':
+      return item.name || item.apex_domain;
+    default:
+      return String(item.name || item.url || item.id || '');
+  }
+}
+
+function itemsToEntries(items, groupKey, detailPath) {
+  return items.map((item) => ({
+    text: assetDisplayText(groupKey, item),
+    detailPath: detailPath(item),
+  }));
+}
+
+function appendEntryToGroup(groups, groupKey, label, entry) {
+  let group = groups.find((g) => g.key === groupKey);
+  if (!group) {
+    group = { key: groupKey, label, entries: [] };
+    groups.push(group);
+  }
+  const exists = group.entries.some(
+    (e) => e.text === entry.text && e.detailPath === entry.detailPath
+  );
+  if (!exists) {
+    group.entries.push(entry);
+  }
+}
+
+function appendLinkEntry(groups, link) {
+  const meta = LINK_LABEL_TO_GROUP[link.label] || {
+    key: link.label.toLowerCase().replace(/\s+/g, '_'),
+    label: link.label,
+  };
+  appendEntryToGroup(groups, meta.key, meta.label, {
+    text: link.value,
+    detailPath: link.detailPath,
+  });
 }
 
 function buildFindingAssetLinks(finding) {
@@ -56,6 +117,10 @@ function buildFindingAssetLinks(finding) {
     });
   }
   return links;
+}
+
+function appendFindingAssetGroups(groups, finding) {
+  buildFindingAssetLinks(finding).forEach((link) => appendLinkEntry(groups, link));
 }
 
 function findingFkFilters(finding) {
@@ -102,6 +167,73 @@ function buildFindingsViewAllPaths(filters) {
   };
 }
 
+async function resolveUrlCertificateId(entity) {
+  if (entity.certificate_id) return entity.certificate_id;
+  const scheme = (entity.scheme || '').toLowerCase();
+  const port = entity.port;
+  const host = entity.hostname || entity.host;
+  if (!host || (scheme !== 'https' && port !== 443)) return null;
+  try {
+    const res = await urlAPI.searchURLs({
+      hostname: host,
+      protocol: 'https',
+      only_root: true,
+      ...(port ? { port } : {}),
+      page: 1,
+      page_size: 1,
+    });
+    return paginated(res).items[0]?.certificate_id || null;
+  } catch {
+    return null;
+  }
+}
+
+function certificateHostnames(entity) {
+  const hostnames = new Set();
+  if (entity.subject_cn) {
+    hostnames.add(entity.subject_cn.replace(/^\*\./, ''));
+  }
+  (entity.subject_an || []).forEach((san) => {
+    const host = san.replace(/^\*\./, '');
+    if (host && !host.includes('*')) hostnames.add(host);
+  });
+  return [...hostnames].slice(0, 5);
+}
+
+async function fetchUrlsForCertificate(entity, certId) {
+  const [primaryRes] = await Promise.allSettled([
+    urlAPI.searchURLs({ certificate_id: certId, page: 1, page_size: PAGE_SIZE }),
+  ]);
+  let items = primaryRes.status === 'fulfilled' ? paginated(primaryRes.value).items : [];
+  let total = primaryRes.status === 'fulfilled' ? paginated(primaryRes.value).total : 0;
+
+  if (items.length === 0) {
+    const hostnames = certificateHostnames(entity);
+    const fallbackResults = await Promise.allSettled(
+      hostnames.map((hostname) =>
+        urlAPI.searchURLs({ hostname, page: 1, page_size: PAGE_SIZE })
+      )
+    );
+    const seen = new Set();
+    const merged = [];
+    fallbackResults.forEach((res) => {
+      if (res.status !== 'fulfilled') return;
+      paginated(res.value).items.forEach((item) => {
+        if (item.id && !seen.has(item.id)) {
+          seen.add(item.id);
+          merged.push(item);
+        }
+      });
+    });
+    if (merged.length > 0) {
+      items = merged.slice(0, PAGE_SIZE);
+      total = merged.length;
+    }
+  }
+
+  return { items, total };
+}
+
 export function useRelatedContent({ entityType, entity, excludeFindingId = null, enabled = true }) {
   const [assetGroups, setAssetGroups] = useState([]);
   const [findings, setFindings] = useState({
@@ -139,14 +271,7 @@ export function useRelatedContent({ entityType, entity, excludeFindingId = null,
       let findingFilters = {};
 
       if (entityType === 'nuclei_finding' || entityType === 'wpscan_finding') {
-        const links = buildFindingAssetLinks(entity);
-        if (links.length > 0) {
-          groups.push({
-            key: 'assets',
-            label: 'Linked Assets',
-            links,
-          });
-        }
+        appendFindingAssetGroups(groups, entity);
         findingFilters = findingFkFilters(entity);
       } else if (entityType === 'apex_domain') {
         const apexName = entity.name;
@@ -162,29 +287,33 @@ export function useRelatedContent({ entityType, entity, excludeFindingId = null,
         groups.push({
           key: 'subdomains',
           label: 'Subdomains',
-          items,
+          entries: itemsToEntries(
+            items,
+            'subdomains',
+            (item) => `/assets/subdomains/details?id=${encodeURIComponent(item.id)}`
+          ),
           totalCount: total,
-          columns: subdomainColumns(),
-          detailPath: (item) => `/assets/subdomains/details?id=${encodeURIComponent(item.id)}`,
           viewAllPath: `/assets/subdomains?apex_domain=${encodeURIComponent(apexName)}`,
         });
       } else if (entityType === 'certificate') {
-        findingFilters = { certificate_id: entity.id };
-        const urlRes = await urlAPI.searchURLs({
-          certificate_id: entity.id,
-          page: 1,
-          page_size: PAGE_SIZE,
-        });
-        const { items, total } = paginated(urlRes);
-        groups.push({
-          key: 'urls',
-          label: 'URLs',
-          items,
-          totalCount: total,
-          columns: urlColumns(),
-          detailPath: (item) => `/assets/urls/details?id=${encodeURIComponent(item.id)}`,
-          viewAllPath: `/assets/urls?certificate_id=${encodeURIComponent(entity.id)}`,
-        });
+        const certId = entity.id || entity._id;
+        findingFilters = certId ? { certificate_id: certId } : {};
+        if (certId) {
+          const { items, total } = await fetchUrlsForCertificate(entity, certId);
+          if (items.length > 0) {
+            groups.push({
+              key: 'urls',
+              label: 'URLs',
+              entries: itemsToEntries(
+                items,
+                'urls',
+                (item) => `/assets/urls/details?id=${encodeURIComponent(item.id)}`
+              ),
+              totalCount: total,
+              viewAllPath: `/assets/urls?certificate_id=${encodeURIComponent(certId)}`,
+            });
+          }
+        }
       } else if (entityType === 'ip') {
         findingFilters = { ip_id: entity.id };
         const ipAddr = entity.ip || entity.ip_address;
@@ -201,36 +330,38 @@ export function useRelatedContent({ entityType, entity, excludeFindingId = null,
         groups.push({
           key: 'subdomains',
           label: 'Subdomains',
-          items: subData.items,
+          entries: itemsToEntries(
+            subData.items,
+            'subdomains',
+            (item) => `/assets/subdomains/details?id=${encodeURIComponent(item.id)}`
+          ),
           totalCount: subData.total,
-          columns: subdomainColumns(),
-          detailPath: (item) => `/assets/subdomains/details?id=${encodeURIComponent(item.id)}`,
           viewAllPath: `/assets/subdomains?ip=${encodeURIComponent(ipAddr)}`,
         });
         groups.push({
           key: 'services',
           label: 'Services',
-          items: svcData.items,
+          entries: itemsToEntries(
+            svcData.items,
+            'services',
+            (item) => `/assets/services/details?id=${encodeURIComponent(item.id)}`
+          ),
           totalCount: svcData.total,
-          columns: serviceColumns(),
-          detailPath: (item) => `/assets/services/details?id=${encodeURIComponent(item.id)}`,
           viewAllPath: `/assets/services?exact_match_ip=${encodeURIComponent(ipAddr)}`,
         });
       } else if (entityType === 'service') {
         findingFilters = { service_id: entity.id };
-        const promises = [
+        const [urlRes] = await Promise.allSettled([
           urlAPI.searchURLs({ service_id: entity.id, page: 1, page_size: PAGE_SIZE }),
-        ];
-        const [urlRes] = await Promise.allSettled(promises);
+        ]);
         const urlData = urlRes.status === 'fulfilled' ? paginated(urlRes.value) : { items: [], total: 0 };
         if (entity.ip_id && entity.ip) {
           groups.push({
-            key: 'ip',
-            label: 'IP Address',
-            links: [
+            key: 'ips',
+            label: 'IP Addresses',
+            entries: [
               {
-                label: 'IP',
-                value: entity.ip,
+                text: entity.ip,
                 detailPath: `/assets/ips/details?id=${encodeURIComponent(entity.ip_id)}`,
               },
             ],
@@ -239,10 +370,12 @@ export function useRelatedContent({ entityType, entity, excludeFindingId = null,
         groups.push({
           key: 'urls',
           label: 'URLs',
-          items: urlData.items,
+          entries: itemsToEntries(
+            urlData.items,
+            'urls',
+            (item) => `/assets/urls/details?id=${encodeURIComponent(item.id)}`
+          ),
           totalCount: urlData.total,
-          columns: urlColumns(),
-          detailPath: (item) => `/assets/urls/details?id=${encodeURIComponent(item.id)}`,
           viewAllPath: `/assets/urls?service_id=${encodeURIComponent(entity.id)}`,
         });
       } else if (entityType === 'subdomain') {
@@ -259,21 +392,22 @@ export function useRelatedContent({ entityType, entity, excludeFindingId = null,
         groups.push({
           key: 'urls',
           label: 'URLs',
-          items: urlItems,
+          entries: itemsToEntries(
+            urlItems,
+            'urls',
+            (item) => `/assets/urls/details?id=${encodeURIComponent(item.id)}`
+          ),
           totalCount: urlTotal,
-          columns: urlColumns(),
-          detailPath: (item) => `/assets/urls/details?id=${encodeURIComponent(item.id)}`,
           viewAllPath: `/assets/urls?hostname=${encodeURIComponent(entity.name)}`,
         });
 
         if (entity.apex_domain) {
           groups.push({
-            key: 'apex',
-            label: 'Apex Domain',
-            links: [
+            key: 'apex_domains',
+            label: 'Apex Domains',
+            entries: [
               {
-                label: 'Apex Domain',
-                value: entity.apex_domain,
+                text: entity.apex_domain,
                 detailPath: entity.apex_domain_id
                   ? `/assets/apex-domains/details?id=${encodeURIComponent(entity.apex_domain_id)}`
                   : `/assets/apex-domains?exact_match=${encodeURIComponent(entity.apex_domain)}`,
@@ -304,19 +438,22 @@ export function useRelatedContent({ entityType, entity, excludeFindingId = null,
           groups.push({
             key: 'services',
             label: 'Services',
-            items: services,
+            entries: itemsToEntries(
+              services,
+              'services',
+              (item) => `/assets/services/details?id=${encodeURIComponent(item.id)}`
+            ),
             totalCount: services.length,
-            columns: serviceColumns(),
-            detailPath: (item) => `/assets/services/details?id=${encodeURIComponent(item.id)}`,
           });
         }
       } else if (entityType === 'url') {
         findingFilters = { url_id: entity.id };
         const serviceIds = entity.service_ids || (entity.service_id ? [entity.service_id] : []);
+        const certificateId = await resolveUrlCertificateId(entity);
         const fetchPromises = [];
-        if (entity.certificate_id) {
+        if (certificateId) {
           fetchPromises.push(
-            certificateAPI.getById(entity.certificate_id).then((cert) => ({ type: 'cert', cert }))
+            certificateAPI.getById(certificateId).then((cert) => ({ type: 'cert', cert }))
           );
         }
         serviceIds.forEach((id) => {
@@ -328,28 +465,35 @@ export function useRelatedContent({ entityType, entity, excludeFindingId = null,
           );
         }
         const results = await Promise.allSettled(fetchPromises);
-        const links = [];
         const fetchedServices = [];
+        let certLabel = 'Certificate';
         results.forEach((res) => {
           if (res.status !== 'fulfilled') return;
-          const { type, cert, svc, sub } = res.value;
+          const { type, cert } = res.value;
           if (type === 'cert' && cert) {
-            links.push({
-              label: 'Certificate',
-              value: cert.subject_cn || cert.subject_dn || 'Certificate',
-              detailPath: `/assets/certificates/details?id=${encodeURIComponent(entity.certificate_id)}`,
-            });
+            certLabel = cert.subject_dn || cert.subject_cn || 'Certificate';
           }
+        });
+        if (certificateId) {
+          appendLinkEntry(groups, {
+            label: 'Certificate',
+            value: certLabel,
+            detailPath: `/assets/certificates/details?id=${encodeURIComponent(certificateId)}`,
+          });
+        }
+        results.forEach((res) => {
+          if (res.status !== 'fulfilled') return;
+          const { type, svc, sub } = res.value;
           if (type === 'svc' && svc) {
             fetchedServices.push(svc);
-            links.push({
+            appendLinkEntry(groups, {
               label: 'Service',
               value: `${svc.ip}:${svc.port}`,
               detailPath: `/assets/services/details?id=${encodeURIComponent(svc.id)}`,
             });
           }
           if (type === 'sub' && sub) {
-            links.push({
+            appendLinkEntry(groups, {
               label: 'Subdomain',
               value: sub.name,
               detailPath: `/assets/subdomains/details?id=${encodeURIComponent(sub.id)}`,
@@ -360,20 +504,13 @@ export function useRelatedContent({ entityType, entity, excludeFindingId = null,
         fetchedServices.forEach((svc) => {
           if (svc.ip_id && svc.ip && !seenIps.has(svc.ip_id)) {
             seenIps.add(svc.ip_id);
-            links.push({
+            appendLinkEntry(groups, {
               label: 'IP Address',
               value: svc.ip,
               detailPath: `/assets/ips/details?id=${encodeURIComponent(svc.ip_id)}`,
             });
           }
         });
-        if (links.length > 0) {
-          groups.push({
-            key: 'linked',
-            label: 'Linked Assets',
-            links,
-          });
-        }
       }
 
       setAssetGroups(groups);

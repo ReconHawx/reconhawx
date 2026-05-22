@@ -1,64 +1,36 @@
 import React from 'react';
-import { Card, Table, Spinner, Alert, Badge, Button } from 'react-bootstrap';
+import { Card, Row, Col, Spinner, Alert } from 'react-bootstrap';
 import { Link } from 'react-router-dom';
-import { formatDate } from '../utils/dateUtils';
-import { getSeverityBadgeVariant } from '../utils/severityUtils';
 
-function FindingsTable({ items, type, viewAllPath }) {
+function FindingsColumn({ items, type, viewAllPath }) {
+  const isNuclei = type === 'nuclei';
+  const detailBase = isNuclei ? '/findings/nuclei/details' : '/findings/wpscan/details';
+  const label = isNuclei ? 'Nuclei' : 'WPScan';
+
   if (!items || items.length === 0) {
     return null;
   }
 
-  const isNuclei = type === 'nuclei';
-  const detailBase = isNuclei ? '/findings/nuclei/details' : '/findings/wpscan/details';
-  const listBase = isNuclei ? '/findings/nuclei' : '/findings/wpscan';
-
   return (
-    <div className="mb-3">
+    <Col xs={12} md={6} className="mb-3 mb-md-0">
       <div className="d-flex justify-content-between align-items-center mb-2">
-        <h6 className="mb-0">{isNuclei ? 'Nuclei' : 'WPScan'}</h6>
+        <h6 className="mb-0">{label}</h6>
         {viewAllPath && (
-          <Link to={viewAllPath || listBase} className="small">
+          <Link to={viewAllPath} className="small">
             View all
           </Link>
         )}
       </div>
-      <Table striped bordered hover responsive size="sm" className="mb-0">
-        <thead>
-          <tr>
-            <th>Severity</th>
-            <th>{isNuclei ? 'Finding' : 'Title'}</th>
-            <th>{isNuclei ? 'Template' : 'Item'}</th>
-            <th>Created</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {items.map((item) => (
-            <tr key={item.id}>
-              <td>
-                <Badge bg={getSeverityBadgeVariant(item.severity)}>{item.severity || 'unknown'}</Badge>
-              </td>
-              <td className="small">{item.name || item.title || '-'}</td>
-              <td className="small">
-                <code>{isNuclei ? item.template_id || '-' : item.item_name || '-'}</code>
-              </td>
-              <td className="small text-muted">{item.created_at ? formatDate(item.created_at) : '-'}</td>
-              <td>
-                <Button
-                  as={Link}
-                  to={`${detailBase}?id=${encodeURIComponent(item.id)}`}
-                  variant="outline-primary"
-                  size="sm"
-                >
-                  View
-                </Button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </Table>
-    </div>
+      <ul className="list-unstyled mb-0 small">
+        {items.map((item) => (
+          <li key={item.id} className="mb-1">
+            <Link to={`${detailBase}?id=${encodeURIComponent(item.id)}`}>
+              {item.name || item.title || '-'}
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </Col>
   );
 }
 
@@ -98,18 +70,18 @@ function RelatedFindingsSection({
             No related findings found.
           </Alert>
         ) : (
-          <>
-            <FindingsTable
+          <Row>
+            <FindingsColumn
               items={nucleiItems}
               type="nuclei"
               viewAllPath={nucleiTotal > nucleiItems.length ? nucleiViewAllPath : null}
             />
-            <FindingsTable
+            <FindingsColumn
               items={wpscanItems}
               type="wpscan"
               viewAllPath={wpscanTotal > wpscanItems.length ? wpscanViewAllPath : null}
             />
-          </>
+          </Row>
         )}
       </Card.Body>
     </Card>

@@ -1,17 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { Link, useNavigate, useLocation } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { Button, Badge } from 'react-bootstrap';
 import api from '../../services/api';
 import NotesSection from '../../components/NotesSection';
 import RelatedAssetsSection from '../../components/RelatedAssetsSection';
-import RelatedFindingsSection from '../../components/RelatedFindingsSection';
 import useRelatedContent from '../../hooks/useRelatedContent';
 import { formatDate } from '../../utils/dateUtils';
 import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
 import { useBackToList, useListReturnPath } from '../../hooks/useListNavigation';
 
 const WPScanFindingDetail = () => {
-  const navigate = useNavigate();
   const location = useLocation();
   const listPath = useListReturnPath('/findings/wpscan');
   const backToList = useBackToList('/findings/wpscan');
@@ -23,16 +21,9 @@ const WPScanFindingDetail = () => {
 
   usePageTitle(formatPageTitle(finding?.title || finding?.item_name, 'WPScan'));
 
-  const {
-    assetGroups,
-    findings,
-    loading: relatedLoading,
-    findingsLoading,
-    error: relatedError,
-  } = useRelatedContent({
+  const { assetGroups } = useRelatedContent({
     entityType: 'wpscan_finding',
     entity: finding,
-    excludeFindingId: finding?.id,
     enabled: !!finding,
   });
 
@@ -480,16 +471,6 @@ const WPScanFindingDetail = () => {
 
           <div className="mt-4">
             <RelatedAssetsSection title="Related Assets" groups={assetGroups} />
-            <RelatedFindingsSection
-              nucleiItems={findings.nucleiItems}
-              wpscanItems={findings.wpscanItems}
-              nucleiTotal={findings.nucleiTotal}
-              wpscanTotal={findings.wpscanTotal}
-              nucleiViewAllPath={findings.nucleiViewAllPath}
-              wpscanViewAllPath={findings.wpscanViewAllPath}
-              loading={relatedLoading || findingsLoading}
-              error={relatedError}
-            />
           </div>
 
           <div className="mt-4">
