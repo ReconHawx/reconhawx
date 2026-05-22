@@ -5,7 +5,6 @@ import AceEditor from 'react-ace';
 import api from '../../services/api';
 import NotesSection from '../../components/NotesSection';
 import RelatedAssetsSection from '../../components/RelatedAssetsSection';
-import RelatedFindingsSection from '../../components/RelatedFindingsSection';
 import useRelatedContent from '../../hooks/useRelatedContent';
 import { formatDate } from '../../utils/dateUtils';
 import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
@@ -146,16 +145,9 @@ const NucleiFindingDetail = () => {
 
   usePageTitle(formatPageTitle(finding?.name || finding?.template_id, 'Nuclei'));
 
-  const {
-    assetGroups,
-    findings,
-    loading: relatedLoading,
-    findingsLoading,
-    error: relatedError,
-  } = useRelatedContent({
+  const { assetGroups } = useRelatedContent({
     entityType: 'nuclei_finding',
     entity: finding,
-    excludeFindingId: finding?.id,
     enabled: !!finding,
   });
 
@@ -528,16 +520,6 @@ const NucleiFindingDetail = () => {
 
           <div className="mt-4">
             <RelatedAssetsSection title="Related Assets" groups={assetGroups} />
-            <RelatedFindingsSection
-              nucleiItems={findings.nucleiItems}
-              wpscanItems={findings.wpscanItems}
-              nucleiTotal={findings.nucleiTotal}
-              wpscanTotal={findings.wpscanTotal}
-              nucleiViewAllPath={findings.nucleiViewAllPath}
-              wpscanViewAllPath={findings.wpscanViewAllPath}
-              loading={relatedLoading || findingsLoading}
-              error={relatedError}
-            />
           </div>
 
           {/* Notes Section */}
