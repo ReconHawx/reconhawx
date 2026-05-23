@@ -1718,6 +1718,7 @@ CREATE TABLE public.task_target_events (
     started_at timestamp without time zone NOT NULL,
     completed_at timestamp without time zone,
     status text,
+    task_params jsonb DEFAULT '{}'::jsonb NOT NULL,
     created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     CONSTRAINT task_target_events_asset_type_check CHECK ((asset_type = ANY (ARRAY['subdomain'::text, 'apex_domain'::text, 'ip'::text, 'url'::text, 'service'::text, 'certificate'::text]))),
     CONSTRAINT uq_task_target_event UNIQUE (workflow_log_id, step_name, task_name, asset_type, asset_id)

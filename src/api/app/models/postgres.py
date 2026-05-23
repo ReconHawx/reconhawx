@@ -870,6 +870,7 @@ class TaskTargetEvent(Base):
     started_at = Column(DateTime, nullable=False)
     completed_at = Column(DateTime, nullable=True)
     status = Column(Text, nullable=True)
+    task_params = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"), default=dict)
     created_at = Column(
         DateTime,
         default=utcnow,

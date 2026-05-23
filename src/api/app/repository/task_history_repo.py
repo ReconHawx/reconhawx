@@ -183,6 +183,14 @@ def _task_log_input_payload(entry: Dict[str, Any]) -> Any:
     return entry.get("input_data")
 
 
+def _task_log_params(entry: Dict[str, Any]) -> Dict[str, Any]:
+    """Extract effective task params from a task_execution_logs entry."""
+    raw = entry.get("params")
+    if isinstance(raw, dict):
+        return raw
+    return {}
+
+
 def _should_materialize_task_log_entry(entry: Dict[str, Any]) -> bool:
     status = entry.get("status")
     if isinstance(status, str) and status.lower() == "skipped":
@@ -219,6 +227,7 @@ def resolve_and_insert_task_targets(
         task_type_s = str(task_type) if task_type is not None else None
         status = entry.get("status")
         status_s = str(status) if status is not None else None
+        task_params = _task_log_params(entry)
 
         started = _parse_ts(entry.get("started_at")) or utcnow()
         completed = _parse_ts(entry.get("completed_at"))
@@ -262,6 +271,7 @@ def resolve_and_insert_task_targets(
                                 "started_at": started,
                                 "completed_at": completed,
                                 "status": status_s,
+                                "task_params": task_params,
                             }
                         )
                 continue
@@ -291,6 +301,7 @@ def resolve_and_insert_task_targets(
                                 "started_at": started,
                                 "completed_at": completed,
                                 "status": status_s,
+                                "task_params": task_params,
                             }
                         )
                 continue
@@ -327,6 +338,7 @@ def resolve_and_insert_task_targets(
                             "started_at": started,
                             "completed_at": completed,
                             "status": status_s,
+                            "task_params": task_params,
                         }
                     )
 
@@ -354,6 +366,7 @@ def resolve_and_insert_task_targets(
                             "started_at": started,
                             "completed_at": completed,
                             "status": status_s,
+                            "task_params": task_params,
                         }
                     )
 
@@ -450,6 +463,7 @@ class TaskHistoryRepository:
                         if evt.completed_at
                         else None,
                         "status": evt.status,
+                        "task_params": evt.task_params if isinstance(evt.task_params, dict) else {},
                     }
                 )
             return items, int(total)
