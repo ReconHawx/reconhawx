@@ -1,8 +1,14 @@
 """Unit tests for task target resolution helpers (ingest path)."""
 
+import uuid
+from unittest.mock import MagicMock
+
 from repository.task_history_repo import (
+    _should_materialize_task_log_entry,
+    _task_log_input_payload,
     collect_input_strings,
     hostnames_referenced_by_url_strings,
+    resolve_and_insert_task_targets,
     url_match_variants,
 )
 
@@ -58,3 +64,60 @@ def test_hostnames_referenced_by_url_strings():
     )
     assert "a.example" in h
     assert "b.example" not in h
+
+
+def test_task_log_input_payload_prefers_executed_input_data():
+    entry = {
+        "input_data": ["legacy.example"],
+        "executed_input_data": ["ran.example"],
+    }
+    assert _task_log_input_payload(entry) == ["ran.example"]
+
+
+def test_task_log_input_payload_falls_back_to_input_data():
+    entry = {"input_data": ["legacy.example"]}
+    assert _task_log_input_payload(entry) == ["legacy.example"]
+
+
+def test_should_materialize_skipped_status():
+    assert not _should_materialize_task_log_entry(
+        {"status": "skipped", "input_data": ["a.example"]}
+    )
+
+
+def test_should_materialize_empty_executed_input():
+    assert not _should_materialize_task_log_entry(
+        {"status": "success", "executed_input_data": []}
+    )
+
+
+def test_should_materialize_legacy_success_with_input():
+    assert _should_materialize_task_log_entry(
+        {"status": "success", "input_data": ["a.example"]}
+    )
+
+
+def test_resolve_and_insert_skips_non_executed_entries():
+    db = MagicMock()
+    wf_id = uuid.uuid4()
+    prog_id = uuid.uuid4()
+    resolve_and_insert_task_targets(
+        db,
+        wf_id,
+        prog_id,
+        [
+            {
+                "step_name": "s1",
+                "task_name": "test_http",
+                "status": "skipped",
+                "input_data": ["skipped.example"],
+            },
+            {
+                "step_name": "s1",
+                "task_name": "test_http",
+                "status": "success",
+                "executed_input_data": [],
+            },
+        ],
+    )
+    db.execute.assert_not_called()

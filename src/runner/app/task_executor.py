@@ -330,6 +330,29 @@ class TaskExecutor:
         # Current step name, set by execute_task before input preparation so the
         # input validator can key its summary without threading through every helper.
         self._current_step_name: Optional[str] = None
+        # Per (step, task) targets that actually had work dispatched (for task_execution_logs).
+        self._task_executed_input_by_key: Dict[str, List[Any]] = {}
+
+    def _task_executed_input_key(self, step_name: str, task_name: str) -> str:
+        return f"{step_name}:{task_name}"
+
+    def _record_task_executed_input(
+        self,
+        step_name: str,
+        task_name: str,
+        targets: Optional[Union[List[Any], Any]],
+    ) -> None:
+        key = self._task_executed_input_key(step_name, task_name)
+        if targets is None:
+            self._task_executed_input_by_key[key] = []
+        elif isinstance(targets, list):
+            self._task_executed_input_by_key[key] = list(targets)
+        else:
+            self._task_executed_input_by_key[key] = [targets]
+
+    def get_task_executed_input(self, step_name: str, task_name: str) -> List[Any]:
+        key = self._task_executed_input_key(step_name, task_name)
+        return list(self._task_executed_input_by_key.get(key, []) or [])
 
     async def initialize(self):
         """Initialize the task executor"""
@@ -517,6 +540,7 @@ class TaskExecutor:
         # Track current step name so _finalize_input_data_async can record a
         # structured input-validation summary keyed by step.
         self._current_step_name = step_name
+        self._record_task_executed_input(step_name, task_def.name, [])
 
         task_results = []
 
@@ -563,6 +587,7 @@ class TaskExecutor:
 
         if input_data is None:
             logger.info(f"No input for {task_def.name}, skipping task")
+            self._record_task_executed_input(step_name, task_def.name, [])
             return {}
 
         # Ensure input_data is a list
@@ -594,6 +619,7 @@ class TaskExecutor:
                         "skipped_originals_truncated": _trunc,
                     },
                 )
+                self._record_task_executed_input(step_name, task_def.name, [])
                 return {}
 
         try:
@@ -3712,7 +3738,10 @@ class TaskExecutor:
                             {"program_name": program_name, "program_id": (self.program_id or "").strip()},
                         )
                     return synthetic
+                self._record_task_executed_input(step_name, task_def.name, [])
                 return {}
+
+            self._record_task_executed_input(step_name, task_def.name, input_data)
 
             # 2. Get synthetic assets (orchestrators like dns_bruteforce)
             synthetic_assets = None
@@ -4085,8 +4114,10 @@ class TaskExecutor:
             logger.debug(f"Commands: {commands}")
             if len(commands) == 0:
                 logger.info(f"No commands to spawn for task {task_def.name}")
+                self._record_task_executed_input(step_name, task_def.name, [])
                 return {}
-            elif proxy_enabled and proxy_targets_for_batching:
+            self._record_task_executed_input(step_name, task_def.name, input_data)
+            if proxy_enabled and proxy_targets_for_batching:
                 # Batch-wise proxy execution: create proxies per batch to limit active API Gateways
                 from services.fireprox import FireProxService
                 from task_components import PROXY_BATCH_SIZE, PROXY_RATE_LIMIT
