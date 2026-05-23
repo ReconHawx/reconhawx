@@ -476,8 +476,7 @@ async def _log_task_execution(
     task_def,
     task_start_time: datetime,
     task_end_time: datetime,
-    input_count: int,
-    input_data: Any,
+    executed_input_data: Any,
     output: Dict[Any, List[Any]],
     status: str,
     error: Optional[str] = None
@@ -500,8 +499,13 @@ async def _log_task_execution(
         # Calculate duration
         duration_seconds = (task_end_time - task_start_time).total_seconds()
         
-        # Serialize input data
-        serialized_input_data = _serialize_input_data(input_data)
+        serialized_executed = _serialize_input_data(executed_input_data)
+        if isinstance(executed_input_data, list):
+            input_count = len(executed_input_data)
+        elif executed_input_data is None:
+            input_count = 0
+        else:
+            input_count = 1
         
         # Create task execution log entry
         task_log_entry = {
@@ -510,7 +514,8 @@ async def _log_task_execution(
             "task_type": task_type,
             "params": params,
             "input_count": input_count,
-            "input_data": serialized_input_data,
+            "input_data": serialized_executed,
+            "executed_input_data": serialized_executed,
             "output_count": output_count,
             "output_asset_types": output_asset_types,
             "started_at": task_start_time.isoformat() + 'Z',
@@ -553,35 +558,18 @@ async def run_step(task_executor, program_id: str, program_name, workflow_id, st
     task_futures = []
     task_metadata = []  # Track task metadata for logging
     
-    # Set program context early so _prepare_input_data_async can use it for logging
+    # Set program context early so execute_task can resolve inputs and ingest assets
     task_executor.program_id = program_id
     task_executor.program_name = program_name
     
     for task_def in step.tasks:
-        # Get input data before execution for logging
-        input_data = None
-        input_count = 0
-        try:
-            task_instance = task_executor.task_registry.get_task(
-                getattr(task_def, 'task_type', None) or task_def.name
-            )()
-            input_data = await task_executor._prepare_input_data_async(task_instance, task_def)
-            input_count = len(input_data) if isinstance(input_data, list) else (1 if input_data else 0)
-        except Exception as e:
-            logger.warning(f"Failed to get input data for task {task_def.name}: {e}")
-            input_count = 0
-        
-        # Track task start time
         task_start_time = utcnow()
         task_metadata.append({
             'task_def': task_def,
             'start_time': task_start_time,
-            'input_count': input_count,
-            'input_data': input_data
         })
         
-        # Create wrapped task execution function (capture task_def in closure)
-        def create_task_wrapper(td, start_time, input_count, input_data):
+        def create_task_wrapper(td, start_time):
             async def execute_task_with_logging():
                 try:
                     output = await task_executor.execute_task(step_num, step.name, td, program_name)
@@ -590,7 +578,7 @@ async def run_step(task_executor, program_id: str, program_name, workflow_id, st
                     return {}, str(e), 'failed'
             return execute_task_with_logging
         
-        task_future = create_task_wrapper(task_def, task_start_time, input_count, input_data)()
+        task_future = create_task_wrapper(task_def, task_start_time)()
         task_futures.append(task_future)
     
     try:
@@ -605,9 +593,13 @@ async def run_step(task_executor, program_id: str, program_name, workflow_id, st
             task_meta = task_metadata[i]
             task_def = task_meta['task_def']
             task_start_time = task_meta['start_time']
-            input_count = task_meta['input_count']
-            input_data = task_meta.get('input_data')
+            executed_input = task_executor.get_task_executed_input(step.name, task_def.name)
             task_end_time = utcnow()
+
+            def _resolve_log_status(base_status: str) -> str:
+                if base_status == 'success' and not executed_input:
+                    return 'skipped'
+                return base_status
             
             if isinstance(result, Exception):
                 logger.error(f"Task {i+1} in step {step.name} failed with error: {result}")
@@ -622,8 +614,7 @@ async def run_step(task_executor, program_id: str, program_name, workflow_id, st
                         task_def,
                         task_start_time,
                         task_end_time,
-                        input_count,
-                        input_data,
+                        executed_input,
                         {},
                         'failed',
                         str(result)
@@ -633,11 +624,24 @@ async def run_step(task_executor, program_id: str, program_name, workflow_id, st
                 if error:
                     logger.error(f"Task {task_def.name} in step {step.name} failed: {error}")
                     failed_tasks.append(i + 1)
+                    if execution_id:
+                        await _log_task_execution(
+                            execution_id,
+                            program_id,
+                            program_name,
+                            step.name,
+                            task_def,
+                            task_start_time,
+                            task_end_time,
+                            executed_input,
+                            {},
+                            'failed',
+                            error,
+                        )
                 elif isinstance(output, str):
                     # If output is a string (task ID), treat it as a successful output with no assets
                     logger.debug(f"Task {task_def.name} in step {step.name} completed successfully with no assets")
                     successful_outputs.append({})
-                    # Log successful task execution with no outputs
                     if execution_id:
                         await _log_task_execution(
                             execution_id,
@@ -647,14 +651,12 @@ async def run_step(task_executor, program_id: str, program_name, workflow_id, st
                             task_def,
                             task_start_time,
                             task_end_time,
-                            input_count,
-                            input_data,
+                            executed_input,
                             {},
-                            'success'
+                            _resolve_log_status('success'),
                         )
                 else:
                     successful_outputs.append(output)
-                    # Log successful task execution with outputs
                     if execution_id:
                         await _log_task_execution(
                             execution_id,
@@ -664,10 +666,9 @@ async def run_step(task_executor, program_id: str, program_name, workflow_id, st
                             task_def,
                             task_start_time,
                             task_end_time,
-                            input_count,
-                            input_data,
+                            executed_input,
                             output,
-                            'success'
+                            _resolve_log_status('success'),
                         )
             else:
                 # Handle unexpected result format
@@ -682,10 +683,9 @@ async def run_step(task_executor, program_id: str, program_name, workflow_id, st
                         task_def,
                         task_start_time,
                         task_end_time,
-                        input_count,
-                        input_data,
+                        executed_input,
                         {},
-                        'success'
+                        _resolve_log_status('success'),
                     )
         # Log summary of task execution only if there are failures
         if failed_tasks:

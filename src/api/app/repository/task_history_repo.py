@@ -176,6 +176,27 @@ def resolve_and_insert_task_targets_standalone(
         db.close()
 
 
+def _task_log_input_payload(entry: Dict[str, Any]) -> Any:
+    """Prefer executed targets; fall back to legacy input_data for old workflow logs."""
+    if "executed_input_data" in entry:
+        return entry.get("executed_input_data")
+    return entry.get("input_data")
+
+
+def _should_materialize_task_log_entry(entry: Dict[str, Any]) -> bool:
+    status = entry.get("status")
+    if isinstance(status, str) and status.lower() == "skipped":
+        return False
+    payload = _task_log_input_payload(entry)
+    if payload is None:
+        return False
+    if isinstance(payload, list) and len(payload) == 0:
+        return False
+    if isinstance(payload, str) and not payload.strip():
+        return False
+    return True
+
+
 def resolve_and_insert_task_targets(
     db: Session,
     workflow_log_id: uuid_mod.UUID,
@@ -190,6 +211,8 @@ def resolve_and_insert_task_targets(
     for entry in new_task_entries:
         if not isinstance(entry, dict):
             continue
+        if not _should_materialize_task_log_entry(entry):
+            continue
         step_name = str(entry.get("step_name") or "")
         task_name = str(entry.get("task_name") or "")
         task_type = entry.get("task_type")
@@ -200,7 +223,7 @@ def resolve_and_insert_task_targets(
         started = _parse_ts(entry.get("started_at")) or utcnow()
         completed = _parse_ts(entry.get("completed_at"))
 
-        inputs = collect_input_strings(entry.get("input_data"))
+        inputs = collect_input_strings(_task_log_input_payload(entry))
         seen_pairs: Set[Tuple[str, uuid_mod.UUID]] = set()
         hosts_from_url_inputs = hostnames_referenced_by_url_strings(inputs)
 
