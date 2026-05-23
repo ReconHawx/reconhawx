@@ -34,6 +34,7 @@ async def test_task_history_ok(
                 "started_at": "2020-01-01T00:00:00Z",
                 "completed_at": None,
                 "status": "success",
+                "task_params": {"timeout": 30},
             }
         ],
         1,
@@ -45,6 +46,7 @@ async def test_task_history_ok(
     assert body["pagination"]["total_items"] == 1
     assert len(body["items"]) == 1
     assert body["items"][0]["execution_id"] == "exec-1"
+    assert body["items"][0]["task_params"] == {"timeout": 30}
 
 
 @pytest.mark.asyncio

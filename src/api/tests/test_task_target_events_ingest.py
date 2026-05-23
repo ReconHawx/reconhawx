@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 from repository.task_history_repo import (
     _should_materialize_task_log_entry,
     _task_log_input_payload,
+    _task_log_params,
     collect_input_strings,
     hostnames_referenced_by_url_strings,
     resolve_and_insert_task_targets,
@@ -95,6 +96,48 @@ def test_should_materialize_legacy_success_with_input():
     assert _should_materialize_task_log_entry(
         {"status": "success", "input_data": ["a.example"]}
     )
+
+
+def test_task_log_params_from_dict():
+    assert _task_log_params({"params": {"timeout": 30, "chunk_size": 10}}) == {
+        "timeout": 30,
+        "chunk_size": 10,
+    }
+
+
+def test_task_log_params_missing_or_invalid():
+    assert _task_log_params({}) == {}
+    assert _task_log_params({"params": None}) == {}
+    assert _task_log_params({"params": "bad"}) == {}
+
+
+def test_resolve_and_insert_includes_task_params():
+    db = MagicMock()
+    wf_id = uuid.uuid4()
+    prog_id = uuid.uuid4()
+    sub_id = uuid.uuid4()
+    db.query.return_value.filter.return_value.all.return_value = [(sub_id,)]
+
+    params = {"timeout": 60, "force": True}
+    resolve_and_insert_task_targets(
+        db,
+        wf_id,
+        prog_id,
+        [
+            {
+                "step_name": "s1",
+                "task_name": "test_http",
+                "status": "success",
+                "params": params,
+                "executed_input_data": ["host.example"],
+            },
+        ],
+    )
+    db.execute.assert_called_once()
+    stmt = db.execute.call_args[0][0]
+    compiled = stmt.compile()
+    params_list = compiled.params
+    assert any(v == params for v in params_list.values() if isinstance(v, dict))
 
 
 def test_resolve_and_insert_skips_non_executed_entries():

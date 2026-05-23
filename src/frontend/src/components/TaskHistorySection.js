@@ -13,8 +13,34 @@ const statusVariant = (status) => {
   return 'secondary';
 };
 
+function TaskParamsDetail({ taskParams }) {
+  if (!taskParams || typeof taskParams !== 'object' || Object.keys(taskParams).length === 0) {
+    return null;
+  }
+  return (
+    <div className="mb-0">
+      <h6 className="fw-bold text-secondary mb-2" style={{ fontSize: '0.875rem' }}>
+        Parameters
+      </h6>
+      <div className="ms-3">
+        {Object.entries(taskParams).map(([key, value]) => (
+          <div key={key} className="mb-1">
+            <Badge bg="light" text="dark" className="me-2">
+              {key}
+            </Badge>
+            <code className="small">
+              {typeof value === 'object' ? JSON.stringify(value, null, 2) : String(value)}
+            </code>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function TaskHistorySection({ assetType, assetId }) {
   const [expanded, setExpanded] = useState(false);
+  const [expandedRows, setExpandedRows] = useState({});
   const [items, setItems] = useState([]);
   const [pagination, setPagination] = useState(null);
   const [page, setPage] = useState(1);
@@ -65,6 +91,10 @@ function TaskHistorySection({ assetType, assetId }) {
     }
   };
 
+  const toggleRow = (rowKey) => {
+    setExpandedRows((prev) => ({ ...prev, [rowKey]: !prev[rowKey] }));
+  };
+
   if (!assetId) {
     return null;
   }
@@ -101,35 +131,55 @@ function TaskHistorySection({ assetType, assetId }) {
                       </tr>
                     </thead>
                     <tbody>
-                      {items.map((row, idx) => (
-                        <tr
-                          key={`${row.execution_id}-${row.task_name}-${row.started_at}-${idx}`}
-                          style={{ cursor: 'pointer' }}
-                        >
-                          <td>
-                            <Link
-                              to={`/workflows/status/${encodeURIComponent(row.execution_id)}`}
-                              className="text-decoration-none"
+                      {items.map((row, idx) => {
+                        const rowKey = `${row.execution_id}-${row.task_name}-${row.started_at}-${idx}`;
+                        const hasParams =
+                          row.task_params &&
+                          typeof row.task_params === 'object' &&
+                          Object.keys(row.task_params).length > 0;
+                        const isRowExpanded = Boolean(expandedRows[rowKey]);
+                        return (
+                          <React.Fragment key={rowKey}>
+                            <tr
+                              style={{ cursor: hasParams ? 'pointer' : undefined }}
+                              onClick={hasParams ? () => toggleRow(rowKey) : undefined}
                             >
-                              {row.task_name || row.task_type || '—'}
-                            </Link>
-                          </td>
-                          <td className="text-muted small">
-                            {row.started_at
-                              ? formatDistanceToNow(parseISO(row.started_at), {
-                                  addSuffix: true,
-                                })
-                              : '—'}
-                          </td>
-                          <td>
-                            {row.status ? (
-                              <Badge bg={statusVariant(row.status)}>{row.status}</Badge>
-                            ) : (
-                              <span className="text-muted">—</span>
+                              <td>
+                                <Link
+                                  to={`/workflows/status/${encodeURIComponent(row.execution_id)}`}
+                                  className="text-decoration-none"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  {row.task_name || row.task_type || '—'}
+                                </Link>
+                              </td>
+                              <td className="text-muted small">
+                                {row.started_at
+                                  ? formatDistanceToNow(parseISO(row.started_at), {
+                                      addSuffix: true,
+                                    })
+                                  : '—'}
+                              </td>
+                              <td>
+                                {row.status ? (
+                                  <Badge bg={statusVariant(row.status)}>{row.status}</Badge>
+                                ) : (
+                                  <span className="text-muted">—</span>
+                                )}
+                              </td>
+                            </tr>
+                            {isRowExpanded && hasParams && (
+                              <tr>
+                                <td colSpan="3" className="bg-light">
+                                  <div className="p-2">
+                                    <TaskParamsDetail taskParams={row.task_params} />
+                                  </div>
+                                </td>
+                              </tr>
                             )}
-                          </td>
-                        </tr>
-                      ))}
+                          </React.Fragment>
+                        );
+                      })}
                     </tbody>
                   </Table>
                   {pagination?.has_next && (
