@@ -193,7 +193,13 @@ class ResolveIPCIDR(Task):
                 pass
 
         all_ips = self._prepare_ip_chunks_from_cidrs(
-            cidrs_to_process, force_ip, program_name, ip_limit, max_cidr_size
+            cidrs_to_process,
+            force_ip,
+            program_name,
+            ip_limit,
+            max_cidr_size,
+            params=task_def.params if task_def and hasattr(task_def, "params") else params,
+            program_id=context.get("program_id", os.getenv("PROGRAM_ID", "")),
         )
         if not all_ips:
             return []
@@ -434,49 +440,91 @@ class ResolveIPCIDR(Task):
             AssetType.IP: ip_list
         }
     
-    def _filter_recently_executed_ips(self, ips: List[str], force: bool = False) -> List[str]:
+    def _filter_recently_executed_ips(
+        self,
+        ips: List[str],
+        force: bool = False,
+        params: Optional[Dict] = None,
+        program_id: Optional[str] = None,
+    ) -> List[str]:
         """Filter out IPs that were recently executed"""
         if force:
             logger.info("Force flag is true, skipping last execution check for IPs")
             return ips
-        
+
         from datetime import datetime, timedelta
-        
-        filtered_ips = []
+        from task_components import SyncDataApiClient, last_execution_source
+        from last_execution_threshold import try_last_execution_threshold_to_hours
+
         threshold_hours = self.get_last_execution_threshold()
-        
+        if params and params.get("last_execution_threshold") is not None:
+            resolved = try_last_execution_threshold_to_hours(params["last_execution_threshold"])
+            if resolved is not None and resolved > 0:
+                threshold_hours = resolved
+
+        if last_execution_source() == "api" and program_id:
+            api_url = os.getenv("API_URL", "http://dev-api:8000")
+            client = SyncDataApiClient(api_url)
+            recent = client.filter_recent_targets(
+                program_id=program_id,
+                task_type=self.name,
+                params=params or {},
+                threshold_hours=threshold_hours,
+                targets=ips,
+            )
+            recent_set = set(recent)
+            filtered_ips = [ip for ip in ips if ip not in recent_set]
+            logger.info(
+                "API filtered %d candidate IPs to %d eligible IPs",
+                len(ips),
+                len(filtered_ips),
+            )
+            return filtered_ips
+
+        filtered_ips = []
+
         for ip in ips:
-            # Generate timestamp hash for this individual IP
             timestamp_hash = self.get_timestamp_hash(ip)
             if not timestamp_hash:
-                # If no hash (shouldn't happen for IPs), include it
                 filtered_ips.append(ip)
                 continue
-            
+
             try:
                 last_execution = self.redis_client.get(timestamp_hash)
                 if last_execution:
-                    # Decode bytes to string before converting to float
-                    last_execution_str = last_execution.decode('utf-8') if isinstance(last_execution, bytes) else str(last_execution)
+                    last_execution_str = (
+                        last_execution.decode("utf-8")
+                        if isinstance(last_execution, bytes)
+                        else str(last_execution)
+                    )
                     last_execution_time = datetime.fromtimestamp(float(last_execution_str))
                     time_since_last = datetime.now() - last_execution_time
-                    
+
                     if time_since_last < timedelta(hours=threshold_hours):
-                        logger.debug(f"IP {ip} was executed {time_since_last.total_seconds()/3600:.1f} hours ago, skipping")
+                        logger.debug(
+                            f"IP {ip} was executed {time_since_last.total_seconds()/3600:.1f} hours ago, skipping"
+                        )
                         continue
-                
-                # IP is eligible for processing
+
                 filtered_ips.append(ip)
-                
+
             except Exception as e:
                 logger.debug(f"Error checking last execution for IP {ip}: {e}")
-                # If there's an error, include the IP to be safe
                 filtered_ips.append(ip)
-        
+
         logger.info(f"Filtered {len(ips)} candidate IPs to {len(filtered_ips)} eligible IPs")
         return filtered_ips
 
-    def _prepare_ip_chunks_from_cidrs(self, cidrs_to_process: List[str], force_ip: bool = False, program_name: str = "", ip_limit: int = 500, max_cidr_size: int = 65536) -> List[str]:
+    def _prepare_ip_chunks_from_cidrs(
+        self,
+        cidrs_to_process: List[str],
+        force_ip: bool = False,
+        program_name: str = "",
+        ip_limit: int = 500,
+        max_cidr_size: int = 65536,
+        params: Optional[Dict] = None,
+        program_id: Optional[str] = None,
+    ) -> List[str]:
         """Prepare IP chunks from CIDR blocks using the original expansion logic"""
 
         force = force_ip  # Use the configurable force_ip parameter
@@ -512,7 +560,7 @@ class ResolveIPCIDR(Task):
                 if total_hosts > large_cidr_threshold:
                     logger.info(f"Large CIDR detected: {cidr} ({total_hosts} IPs), using progressive processing")
                     processed_ips, remaining_limit = self._process_large_cidr_progressively(
-                        cidr, offset, remaining_limit, force, program_name, total_hosts
+                        cidr, offset, remaining_limit, force, program_name, total_hosts, params, program_id
                     )
                     all_ips.extend(processed_ips)
                     continue  # Skip normal processing for large CIDRs
@@ -530,7 +578,9 @@ class ResolveIPCIDR(Task):
                     continue
 
                 # Filter out recently executed IPs
-                filtered_ips = candidate_ips #self._filter_recently_executed_ips(candidate_ips, force)
+                filtered_ips = self._filter_recently_executed_ips(
+                    candidate_ips, force, params, program_id
+                )
 
                 # Take only what we need up to the remaining limit
                 ips_to_use = filtered_ips[:remaining_limit]
@@ -622,8 +672,17 @@ class ResolveIPCIDR(Task):
 
         return all_ips
 
-    def _process_large_cidr_progressively(self, cidr: str, offset: int, ip_limit: int,
-                                         force: bool, program_name: str, total_hosts: int) -> tuple:
+    def _process_large_cidr_progressively(
+        self,
+        cidr: str,
+        offset: int,
+        ip_limit: int,
+        force: bool,
+        program_name: str,
+        total_hosts: int,
+        params: Optional[Dict] = None,
+        program_id: Optional[str] = None,
+    ) -> tuple:
         """
         Process large CIDRs using progressive chunking to manage memory usage.
 
@@ -664,7 +723,9 @@ class ResolveIPCIDR(Task):
                 break
 
             # Filter out recently executed IPs
-            filtered_ips = candidate_ips #self._filter_recently_executed_ips(candidate_ips, force)
+            filtered_ips = self._filter_recently_executed_ips(
+                candidate_ips, force, params, program_id
+            )
             ips_to_use = filtered_ips[:remaining_limit]
 
             iteration_count += 1
@@ -708,6 +769,11 @@ class ResolveIPCIDR(Task):
     def update_ip_timestamps(self, processed_ips: List[str]):
         """Update last execution timestamps for individual IPs that were processed"""
         from datetime import datetime
+        from task_components import last_execution_source
+
+        if last_execution_source() == "api":
+            logger.debug("Skipping Redis IP timestamp updates (RUNNER_LAST_EXECUTION_SOURCE=api)")
+            return
 
         current_time = datetime.now().timestamp()
 

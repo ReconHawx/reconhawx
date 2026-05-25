@@ -892,6 +892,73 @@ class TaskTargetEvent(Base):
         ),
     )
 
+
+class TaskLastExecution(Base):
+    """Latest successful task run per program asset and params fingerprint (runner scheduling)."""
+
+    __tablename__ = "task_last_executions"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    program_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("programs.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    task_type = Column(Text, nullable=False)
+    asset_type = Column(Text, nullable=False)
+    asset_id = Column(UUID(as_uuid=True), nullable=True)
+    target_key = Column(Text, nullable=True)
+    params_fingerprint = Column(Text, nullable=False)
+    last_success_at = Column(DateTime, nullable=False)
+    updated_at = Column(
+        DateTime,
+        default=utcnow,
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    __table_args__ = (
+        Index(
+            "ix_task_last_executions_eligible",
+            "program_id",
+            "task_type",
+            "asset_type",
+            "params_fingerprint",
+            "last_success_at",
+        ),
+        Index("ix_task_last_executions_asset", "asset_type", "asset_id"),
+        Index(
+            "uq_task_last_execution_asset",
+            "program_id",
+            "task_type",
+            "asset_type",
+            "asset_id",
+            "params_fingerprint",
+            unique=True,
+            postgresql_where=text("asset_id IS NOT NULL"),
+        ),
+        Index(
+            "uq_task_last_execution_target",
+            "program_id",
+            "task_type",
+            "target_key",
+            "params_fingerprint",
+            unique=True,
+            postgresql_where=text("target_key IS NOT NULL"),
+        ),
+        Index(
+            "ix_task_last_executions_target",
+            "program_id",
+            "task_type",
+            "params_fingerprint",
+            "target_key",
+            "last_success_at",
+            postgresql_where=text("target_key IS NOT NULL"),
+        ),
+    )
+
+
 # === SECURITY MODELS ===
 
 class NucleiTemplate(Base):

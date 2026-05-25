@@ -25,6 +25,10 @@ from repository.certificate_assets_repo import CertificateAssetsRepository
 from repository.url_assets_repo import UrlAssetsRepository, publish_pending_external_link_events
 from repository.batch_repository import BatchRepository
 from repository.program_repo import ProgramRepository
+from repository.task_last_executions_repo import (
+    TaskLastExecutionsRepository,
+    build_promotion_entry,
+)
 from .event_publisher import publisher
 
 logger = logging.getLogger(__name__)
@@ -58,6 +62,36 @@ class AssetBatchResult:
     failed_assets: List[Dict[str, Any]] = field(default_factory=list)
     errors: List[str] = field(default_factory=list)
     implicit_apex_created_events: List[Dict[str, Any]] = field(default_factory=list)
+
+
+def _collect_promotion_entries(batch_result: AssetBatchResult) -> List[Dict[str, Any]]:
+    """Build promotion entries from created/updated/implicit apex ingest events."""
+    entries: List[Dict[str, Any]] = []
+    seen: set = set()
+    events = (
+        batch_result.created_assets
+        + batch_result.updated_assets
+        + batch_result.implicit_apex_created_events
+    )
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        entry = build_promotion_entry(
+            event,
+            fallback_asset_type=batch_result.asset_type,
+        )
+        if not entry:
+            continue
+        dedupe_key = (
+            entry["asset_type"],
+            entry["asset_id"],
+            tuple(entry["target_keys"]),
+        )
+        if dedupe_key in seen:
+            continue
+        seen.add(dedupe_key)
+        entries.append(entry)
+    return entries
 
 
 @dataclass
@@ -235,6 +269,21 @@ class UnifiedAssetProcessor:
                     batch_result = await self._process_asset_type(
                         asset_type, assets, program_id, program_name
                     )
+
+                    try:
+                        promotion_entries = _collect_promotion_entries(batch_result)
+                        if promotion_entries:
+                            await TaskLastExecutionsRepository.promote_target_keys_batch(
+                                program_id,
+                                promotion_entries,
+                            )
+                    except Exception as exc:
+                        logger.warning(
+                            "task_last_executions promotion after %s ingest failed: %s",
+                            asset_type,
+                            exc,
+                            exc_info=True,
+                        )
 
                     result.asset_results[asset_type] = batch_result
                     result.processed_assets += batch_result.total_count

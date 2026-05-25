@@ -25,6 +25,12 @@ logger.setLevel(logging.DEBUG)
 PROXY_BATCH_SIZE = int(os.getenv('PROXY_BATCH_SIZE', '5'))
 PROXY_RATE_LIMIT = float(os.getenv('PROXY_RATE_LIMIT', '5.0'))
 
+
+def last_execution_source() -> str:
+    """Return ``api`` or ``redis`` for last-execution threshold checks."""
+    return os.getenv("RUNNER_LAST_EXECUTION_SOURCE", "api").strip().lower()
+
+
 @dataclass
 class MemoryOptimizationConfig:
     """Configuration for memory optimization settings"""
@@ -1145,6 +1151,88 @@ class AsyncDataApiClient:
             logger.error(f"Error fetching {asset_type} assets for {program_name}: {e}")
             return {"items": [], "pagination": {}}
     
+    async def get_eligible_program_assets(
+        self,
+        asset_type: str,
+        program_id: str,
+        task_type: str,
+        params: Optional[Dict[str, Any]],
+        threshold_hours: int,
+        limit: int,
+        filter_type: Optional[str] = None,
+        page: int = 1,
+    ) -> Dict[str, Any]:
+        """Fetch assets eligible for a task (not run recently) via internal runner API."""
+        if not self.session:
+            logger.error("Session not initialized. Use async context manager.")
+            return {"items": [], "pagination": {}}
+        payload = {
+            "program_id": program_id,
+            "task_type": task_type,
+            "params": params or {},
+            "threshold_hours": threshold_hours,
+            "limit": limit,
+            "page": page,
+            "filter_type": filter_type,
+        }
+        try:
+            async with self.session.post(
+                f"{self.base_url}/internal/runner/assets/{asset_type}/eligible-for-task",
+                json=payload,
+            ) as response:
+                if response.status == 200:
+                    result = await response.json()
+                    if result.get("status") == "success":
+                        return {
+                            "items": result.get("items", []),
+                            "pagination": result.get("pagination", {}),
+                        }
+                body = await response.text()
+                logger.warning(
+                    "eligible-for-task failed status=%s body=%s",
+                    response.status,
+                    body[:500],
+                )
+        except Exception as e:
+            logger.error("Error calling eligible-for-task: %s", e)
+        return {"items": [], "pagination": {}}
+
+    async def filter_recent_targets(
+        self,
+        program_id: str,
+        task_type: str,
+        params: Optional[Dict[str, Any]],
+        threshold_hours: int,
+        targets: List[str],
+    ) -> List[str]:
+        """Return subset of targets that ran recently (internal runner API)."""
+        if not self.session or not targets:
+            return []
+        payload = {
+            "program_id": program_id,
+            "task_type": task_type,
+            "params": params or {},
+            "threshold_hours": threshold_hours,
+            "targets": targets,
+        }
+        try:
+            async with self.session.post(
+                f"{self.base_url}/internal/runner/task-executions/recent-targets",
+                json=payload,
+            ) as response:
+                if response.status == 200:
+                    result = await response.json()
+                    return list(result.get("recent_targets") or [])
+                body = await response.text()
+                logger.warning(
+                    "recent-targets failed status=%s body=%s",
+                    response.status,
+                    body[:500],
+                )
+        except Exception as e:
+            logger.error("Error calling recent-targets: %s", e)
+        return []
+
     async def get_program_metadata(self, program_name: str) -> Dict[str, Any]:
         """Get program metadata including CIDR blocks"""
         if not self.session:
@@ -1655,6 +1743,47 @@ class SyncDataApiClient:
         self.base_url = base_url
         self.DATA_API_CHUNK_SIZE = 500
         self.internal_api_key = os.getenv('INTERNAL_SERVICE_API_KEY', '')
+
+    def _internal_headers(self) -> Dict[str, str]:
+        headers = {'Content-Type': 'application/json'}
+        if self.internal_api_key:
+            headers['Authorization'] = f'Bearer {self.internal_api_key}'
+        return headers
+
+    def filter_recent_targets(
+        self,
+        program_id: str,
+        task_type: str,
+        params: Optional[Dict[str, Any]],
+        threshold_hours: int,
+        targets: List[str],
+    ) -> List[str]:
+        if not targets:
+            return []
+        payload = {
+            "program_id": program_id,
+            "task_type": task_type,
+            "params": params or {},
+            "threshold_hours": threshold_hours,
+            "targets": targets,
+        }
+        try:
+            response = requests.post(
+                f"{self.base_url}/internal/runner/task-executions/recent-targets",
+                json=payload,
+                headers=self._internal_headers(),
+                timeout=120,
+            )
+            if response.status_code == 200:
+                return list(response.json().get("recent_targets") or [])
+            logger.warning(
+                "recent-targets sync failed status=%s body=%s",
+                response.status_code,
+                response.text[:500],
+            )
+        except Exception as e:
+            logger.error("Error calling recent-targets (sync): %s", e)
+        return []
 
     def _deep_clean_for_json(self, obj):
         """Deep clean object to ensure JSON serialization"""
