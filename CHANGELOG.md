@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.41.0](https://github.com/ReconHawx/reconhawx/compare/v0.40.0...v0.41.0) (2026-05-25)
+
+
+### Features
+
+* **api:** show task parameters in asset task history ([9c05006](https://github.com/ReconHawx/reconhawx/commit/9c050060cd61284ebf2647fa50c117b7166de9df))
+* persist task last executions and filter runner targets via API ([d52bb88](https://github.com/ReconHawx/reconhawx/commit/d52bb888a3781319e348c47511ba307ccfb88526))
+
+
+### Bug Fixes
+
+* omit skipped workflow targets from asset task history ([60dd6df](https://github.com/ReconHawx/reconhawx/commit/60dd6df70bd8af55c3a07dc8547a45568de678a6))
+
 ## [0.40.0](https://github.com/ReconHawx/reconhawx/compare/v0.39.0...v0.40.0) (2026-05-22)
 
 
