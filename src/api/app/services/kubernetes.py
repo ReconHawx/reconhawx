@@ -365,6 +365,10 @@ class KubernetesService:
             {"name": "NATS_URL", "value": os.getenv('NATS_URL')},
             {"name": "API_URL", "value": os.getenv('API_URL')},
             {"name": "REDIS_URL", "value": os.getenv('REDIS_URL')},
+            {
+                "name": "RUNNER_LAST_EXECUTION_SOURCE",
+                "value": os.getenv("RUNNER_LAST_EXECUTION_SOURCE", "api"),
+            },
 
             # Internal API authentication (kubelet resolves from Secret; matches API bootstrap)
             {
@@ -985,6 +989,10 @@ class KubernetesService:
                 client.V1EnvVar(name="NATS_URL", value=os.getenv('NATS_URL')),
                 client.V1EnvVar(name="API_URL", value=os.getenv('API_URL')),
                 client.V1EnvVar(name="REDIS_URL", value=os.getenv('REDIS_URL')),
+                client.V1EnvVar(
+                    name="RUNNER_LAST_EXECUTION_SOURCE",
+                    value=os.getenv("RUNNER_LAST_EXECUTION_SOURCE", "api"),
+                ),
 
                 # Internal API authentication (kubelet resolves from Secret; matches API bootstrap)
                 client.V1EnvVar(

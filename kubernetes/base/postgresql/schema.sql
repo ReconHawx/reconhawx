@@ -1726,6 +1726,25 @@ CREATE TABLE public.task_target_events (
 
 
 --
+-- Name: task_last_executions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.task_last_executions (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    program_id uuid NOT NULL,
+    task_type text NOT NULL,
+    asset_type text NOT NULL,
+    asset_id uuid,
+    target_key text,
+    params_fingerprint text NOT NULL,
+    last_success_at timestamp without time zone NOT NULL,
+    updated_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    CONSTRAINT task_last_executions_asset_type_check CHECK ((asset_type = ANY (ARRAY['subdomain'::text, 'apex_domain'::text, 'ip'::text, 'url'::text, 'service'::text, 'certificate'::text, 'target'::text]))),
+    CONSTRAINT task_last_executions_target_or_asset_check CHECK ((((asset_id IS NOT NULL) AND (target_key IS NULL)) OR ((asset_id IS NULL) AND (target_key IS NOT NULL))))
+);
+
+
+--
 -- Name: workflows; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2084,6 +2103,14 @@ ALTER TABLE ONLY public.system_settings
 
 ALTER TABLE ONLY public.task_target_events
     ADD CONSTRAINT task_target_events_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: task_last_executions task_last_executions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.task_last_executions
+    ADD CONSTRAINT task_last_executions_pkey PRIMARY KEY (id);
 
 
 --
@@ -3243,6 +3270,41 @@ CREATE INDEX ix_task_target_events_workflow_log ON public.task_target_events USI
 
 
 --
+-- Name: ix_task_last_executions_asset; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_task_last_executions_asset ON public.task_last_executions USING btree (asset_type, asset_id);
+
+
+--
+-- Name: ix_task_last_executions_eligible; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_task_last_executions_eligible ON public.task_last_executions USING btree (program_id, task_type, asset_type, params_fingerprint, last_success_at DESC);
+
+
+--
+-- Name: ix_task_last_executions_target; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_task_last_executions_target ON public.task_last_executions USING btree (program_id, task_type, params_fingerprint, target_key, last_success_at DESC) WHERE (target_key IS NOT NULL);
+
+
+--
+-- Name: uq_task_last_execution_asset; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_task_last_execution_asset ON public.task_last_executions USING btree (program_id, task_type, asset_type, asset_id, params_fingerprint) WHERE (asset_id IS NOT NULL);
+
+
+--
+-- Name: uq_task_last_execution_target; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX uq_task_last_execution_target ON public.task_last_executions USING btree (program_id, task_type, target_key, params_fingerprint) WHERE (target_key IS NOT NULL);
+
+
+--
 -- Name: ix_typosquat_apex_domains_apex_domain; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3900,6 +3962,14 @@ ALTER TABLE ONLY public.task_target_events
 
 ALTER TABLE ONLY public.task_target_events
     ADD CONSTRAINT task_target_events_workflow_log_id_fkey FOREIGN KEY (workflow_log_id) REFERENCES public.workflow_logs(id) ON DELETE CASCADE;
+
+
+--
+-- Name: task_last_executions task_last_executions_program_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.task_last_executions
+    ADD CONSTRAINT task_last_executions_program_id_fkey FOREIGN KEY (program_id) REFERENCES public.programs(id) ON DELETE CASCADE;
 
 
 --

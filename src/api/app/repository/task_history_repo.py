@@ -205,6 +205,116 @@ def _should_materialize_task_log_entry(entry: Dict[str, Any]) -> bool:
     return True
 
 
+def normalize_target_key(raw: str) -> str:
+    """Canonical key for direct-input last-execution tracking (may lack ingested asset)."""
+    if not raw or not isinstance(raw, str):
+        return ""
+    candidate = raw.strip()
+    if not candidate:
+        return ""
+    if _looks_like_url(candidate):
+        norm = normalize_url_for_storage(candidate)
+        if norm:
+            return norm
+        lowered = lower_url_host(candidate)
+        return lowered or candidate
+    if _is_plausible_ip(candidate):
+        try:
+            return str(ipaddress.ip_address(candidate))
+        except ValueError:
+            return candidate
+    return candidate.lower().rstrip(".")
+
+
+def resolve_target_strings_to_asset_pairs(
+    db: Session,
+    program_id: uuid_mod.UUID,
+    inputs: Sequence[str],
+) -> List[Tuple[str, uuid_mod.UUID]]:
+    """Resolve target strings to in-scope (asset_type, asset_id) pairs."""
+    seen_pairs: Set[Tuple[str, uuid_mod.UUID]] = set()
+    out: List[Tuple[str, uuid_mod.UUID]] = []
+    hosts_from_url_inputs = hostnames_referenced_by_url_strings(list(inputs))
+
+    for raw in inputs:
+        if not raw or not isinstance(raw, str):
+            continue
+        candidate = raw.strip()
+        if not candidate:
+            continue
+
+        if _looks_like_url(candidate):
+            variants = url_match_variants(candidate)
+            if not variants:
+                continue
+            q = (
+                db.query(URL.id)
+                .filter(
+                    URL.program_id == program_id,
+                    URL.url.in_(list(variants)),
+                )
+                .all()
+            )
+            for (url_id,) in q:
+                key = ("url", url_id)
+                if key not in seen_pairs:
+                    seen_pairs.add(key)
+                    out.append(key)
+            continue
+
+        if _is_plausible_ip(candidate):
+            q = (
+                db.query(IP.id)
+                .filter(
+                    IP.program_id == program_id,
+                    func.host(IP.ip_address) == candidate.strip(),
+                )
+                .all()
+            )
+            for (ip_id,) in q:
+                key = ("ip", ip_id)
+                if key not in seen_pairs:
+                    seen_pairs.add(key)
+                    out.append(key)
+            continue
+
+        host = candidate.lower().rstrip(".")
+        if not host:
+            continue
+        if host in hosts_from_url_inputs:
+            continue
+
+        subs = (
+            db.query(Subdomain.id)
+            .filter(
+                Subdomain.program_id == program_id,
+                Subdomain.name == host,
+            )
+            .all()
+        )
+        for (sid,) in subs:
+            key = ("subdomain", sid)
+            if key not in seen_pairs:
+                seen_pairs.add(key)
+                out.append(key)
+
+        apex_rows = (
+            db.query(ApexDomain.id)
+            .filter(
+                ApexDomain.program_id == program_id,
+                ApexDomain.name == host,
+            )
+            .all()
+        )
+        for (aid,) in apex_rows:
+            key = ("apex_domain", aid)
+            if key not in seen_pairs:
+                seen_pairs.add(key)
+                out.append(key)
+
+    return out
+
+
 def resolve_and_insert_task_targets(
     db: Session,
     workflow_log_id: uuid_mod.UUID,
@@ -370,16 +480,65 @@ def resolve_and_insert_task_targets(
                         }
                     )
 
-    if not rows:
+    target_upsert_rows: List[Dict[str, Any]] = []
+    for entry in new_task_entries:
+        if not isinstance(entry, dict):
+            continue
+        status = entry.get("status")
+        if not isinstance(status, str) or status.lower() != "success":
+            continue
+        task_type = entry.get("task_type")
+        if not task_type:
+            continue
+        completed = _parse_ts(entry.get("completed_at"))
+        if not isinstance(completed, datetime):
+            continue
+        task_params = _task_log_params(entry)
+        inputs = collect_input_strings(_task_log_input_payload(entry))
+        seen_keys: Set[str] = set()
+        for raw in inputs:
+            if not raw or not isinstance(raw, str):
+                continue
+            candidate = raw.strip()
+            if not candidate:
+                continue
+            if resolve_target_strings_to_asset_pairs(db, program_id, [candidate]):
+                continue
+            key = normalize_target_key(raw)
+            if not key or key in seen_keys:
+                continue
+            seen_keys.add(key)
+            target_upsert_rows.append(
+                {
+                    "program_id": program_id,
+                    "task_type": str(task_type),
+                    "target_key": key,
+                    "task_params": task_params,
+                    "completed_at": completed,
+                }
+            )
+
+    if rows:
+        batch_size = 500
+        for i in range(0, len(rows), batch_size):
+            chunk = rows[i : i + batch_size]
+            stmt = insert(TaskTargetEvent).values(chunk).on_conflict_do_nothing(
+                constraint="uq_task_target_event"
+            )
+            db.execute(stmt)
+
+    if not rows and not target_upsert_rows:
         return
 
-    batch_size = 500
-    for i in range(0, len(rows), batch_size):
-        chunk = rows[i : i + batch_size]
-        stmt = insert(TaskTargetEvent).values(chunk).on_conflict_do_nothing(
-            constraint="uq_task_target_event"
-        )
-        db.execute(stmt)
+    try:
+        from repository.task_last_executions_repo import TaskLastExecutionsRepository
+
+        if rows:
+            TaskLastExecutionsRepository.upsert_successes_from_rows_sync(db, rows)
+        if target_upsert_rows:
+            TaskLastExecutionsRepository.upsert_target_successes_sync(db, target_upsert_rows)
+    except Exception as exc:
+        logger.warning("task_last_executions upsert failed: %s", exc, exc_info=True)
 
 
 class TaskHistoryRepository:

@@ -1,7 +1,7 @@
 """Unit tests for task target resolution helpers (ingest path)."""
 
 import uuid
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from repository.task_history_repo import (
     _should_materialize_task_log_entry,
@@ -9,6 +9,7 @@ from repository.task_history_repo import (
     _task_log_params,
     collect_input_strings,
     hostnames_referenced_by_url_strings,
+    normalize_target_key,
     resolve_and_insert_task_targets,
     url_match_variants,
 )
@@ -111,7 +112,24 @@ def test_task_log_params_missing_or_invalid():
     assert _task_log_params({"params": "bad"}) == {}
 
 
-def test_resolve_and_insert_includes_task_params():
+def test_normalize_target_key_hostname():
+    assert normalize_target_key("Host.Example.") == "host.example"
+
+
+def test_normalize_target_key_ip():
+    assert normalize_target_key("8.8.8.8") == "8.8.8.8"
+
+
+def test_normalize_target_key_url():
+    key = normalize_target_key("https://WWW.Example.COM/path")
+    assert "example.com" in key.lower()
+
+
+@patch("repository.task_last_executions_repo.TaskLastExecutionsRepository.upsert_target_successes_sync")
+@patch("repository.task_last_executions_repo.TaskLastExecutionsRepository.upsert_successes_from_rows_sync")
+def test_resolve_and_insert_includes_task_params(
+    mock_asset_upsert, mock_target_upsert
+):
     db = MagicMock()
     wf_id = uuid.uuid4()
     prog_id = uuid.uuid4()
@@ -127,6 +145,7 @@ def test_resolve_and_insert_includes_task_params():
             {
                 "step_name": "s1",
                 "task_name": "test_http",
+                "task_type": "test_http",
                 "status": "success",
                 "params": params,
                 "executed_input_data": ["host.example"],
@@ -138,6 +157,7 @@ def test_resolve_and_insert_includes_task_params():
     compiled = stmt.compile()
     params_list = compiled.params
     assert any(v == params for v in params_list.values() if isinstance(v, dict))
+    mock_target_upsert.assert_not_called()
 
 
 def test_resolve_and_insert_skips_non_executed_entries():
@@ -164,3 +184,39 @@ def test_resolve_and_insert_skips_non_executed_entries():
         ],
     )
     db.execute.assert_not_called()
+
+
+@patch("repository.task_last_executions_repo.TaskLastExecutionsRepository.upsert_target_successes_sync")
+@patch("repository.task_last_executions_repo.TaskLastExecutionsRepository.upsert_successes_from_rows_sync")
+def test_resolve_and_insert_upserts_target_key_without_asset(
+    mock_asset_upsert, mock_target_upsert
+):
+    from datetime import datetime, timezone
+
+    db = MagicMock()
+    wf_id = uuid.uuid4()
+    prog_id = uuid.uuid4()
+    db.query.return_value.filter.return_value.all.return_value = []
+
+    completed = datetime(2024, 1, 2, 3, 4, 5, tzinfo=timezone.utc)
+    resolve_and_insert_task_targets(
+        db,
+        wf_id,
+        prog_id,
+        [
+            {
+                "step_name": "s1",
+                "task_name": "test_http",
+                "task_type": "test_http",
+                "status": "success",
+                "completed_at": completed.isoformat(),
+                "executed_input_data": ["not-ingested.example"],
+            },
+        ],
+    )
+    db.execute.assert_not_called()
+    mock_asset_upsert.assert_not_called()
+    mock_target_upsert.assert_called_once()
+    rows = mock_target_upsert.call_args[0][1]
+    assert len(rows) == 1
+    assert rows[0]["target_key"] == "not-ingested.example"

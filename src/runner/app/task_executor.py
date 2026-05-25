@@ -292,6 +292,7 @@ class TaskExecutor:
         self.completed_task_ids = set()
         self.docker_registry = os.getenv('DOCKER_REGISTRY')
         self.input_limits = {}  # Track input limits by input name
+        self._inputs_from_eligible_api = False
         # Initialize Redis connection
         self.redis_client = redis.from_url(REDIS_URL)
         self.workflow_context = None  # Will be set when executing workflow
@@ -520,6 +521,29 @@ class TaskExecutor:
             if t is not None and t > 0:
                 return t
         return task.get_last_execution_threshold()
+
+    def _use_api_last_execution(self, task_def: TaskDefinition) -> bool:
+        from task_components import last_execution_source
+
+        return (
+            last_execution_source() == "api"
+            and not task_def.force
+            and bool((self.program_id or "").strip())
+        )
+
+    @staticmethod
+    def _targets_from_eligible_items(asset_type: str, items: List[dict]) -> List[str]:
+        if asset_type == "apex-domain":
+            return [item["name"] for item in items if item.get("name")]
+        if asset_type == "subdomain":
+            return [item["name"] for item in items if item.get("name")]
+        if asset_type == "ip":
+            return [item["ip_address"] for item in items if item.get("ip_address")]
+        if asset_type == "url":
+            return [item["url"] for item in items if item.get("url")]
+        if asset_type in ("service", "certificate"):
+            return [item["id"] for item in items if item.get("id")]
+        return []
 
     async def execute_task(self, step_num: int, step_name: str, task_def: TaskDefinition, program_name: str) -> Dict[AssetType, List[Any]]:
         """Execute a task via the task queue and return its output assets - now decomposed for better maintainability"""
@@ -1443,6 +1467,7 @@ class TaskExecutor:
         """Async version of input data preparation with optimized API calls"""
         from task_components import MemoryOptimizationConfig
         memory_config = MemoryOptimizationConfig.from_environment()
+        self._inputs_from_eligible_api = False
         input_data = []
         # Handle new input_mapping format first
         if task_def.input_mapping:
@@ -1475,7 +1500,9 @@ class TaskExecutor:
 
             # Resolve program asset inputs asynchronously
             if program_asset_inputs:
-                async_data = await self._resolve_program_asset_inputs_async(program_asset_inputs, memory_config)
+                async_data = await self._resolve_program_asset_inputs_async(
+                    program_asset_inputs, memory_config, task, task_def
+                )
                 resolved_inputs.extend(async_data)
 
             # Resolve program finding inputs asynchronously
@@ -1935,10 +1962,17 @@ class TaskExecutor:
         
         return await self._finalize_input_data_async(input_data, task, task_def)
     
-    async def _resolve_program_asset_inputs_async(self, input_names: List[str], memory_config) -> List[str]:
+    async def _resolve_program_asset_inputs_async(
+        self,
+        input_names: List[str],
+        memory_config,
+        task: Task,
+        task_def: TaskDefinition,
+    ) -> List[str]:
         """Resolve program asset inputs asynchronously"""
         from task_components import AsyncDataApiClient
         all_input_data = []
+        use_api_eligible = self._use_api_last_execution(task_def)
         
         async with AsyncDataApiClient(API_URL, self.redis_client) as async_client:
             for input_name in input_names:
@@ -1953,9 +1987,49 @@ class TaskExecutor:
                     
                 logger.info(f"Resolving program asset input: {input_name}")
                 try:
-                    # Get asset type from input definition
                     asset_type = input_def.asset_type
-                    filter_type = None  # Could be extracted from value_type if needed
+                    filter_type = getattr(input_def, 'filter_type', None)
+
+                    if hasattr(input_def, 'limit') and input_def.limit:
+                        self.input_limits[input_name] = input_def.limit
+                        logger.info(
+                            f"Input limit {input_def.limit} stored for input '{input_name}'"
+                        )
+                    else:
+                        self.input_limits.pop(input_name, None)
+
+                    if use_api_eligible and asset_type != "cidr":
+                        threshold = self._resolved_last_execution_threshold_hours(task, task_def)
+                        limit = input_def.limit if getattr(input_def, 'limit', None) else 10000
+                        logger.info(
+                            "Using eligible-for-task API for %s assets (threshold=%sh, limit=%s)",
+                            asset_type,
+                            threshold,
+                            limit,
+                        )
+                        result = await async_client.get_eligible_program_assets(
+                            asset_type=asset_type,
+                            program_id=(self.program_id or "").strip(),
+                            task_type=task.name,
+                            params=task_def.params or {},
+                            threshold_hours=threshold,
+                            limit=limit,
+                            filter_type=filter_type,
+                        )
+                        items = result.get("items", [])
+                        if input_def.filter and items:
+                            try:
+                                logger.info(f"Applying input filter: {input_def.filter}")
+                                asset_filter = AssetFilter(input_def.filter)
+                                items = asset_filter.filter_assets(items)
+                                logger.info(f"After filtering: {len(items)} assets remaining")
+                            except Exception as e:
+                                logger.error(f"Error applying input filter '{input_def.filter}': {str(e)}")
+                        all_input_data.extend(
+                            self._targets_from_eligible_items(asset_type, items)
+                        )
+                        self._inputs_from_eligible_api = True
+                        continue
 
                     logger.info(f"Fetching {asset_type} assets for program {self.program_name}")
                     
@@ -2490,28 +2564,29 @@ class TaskExecutor:
                     logger.info(f"Applied input limit {input_limit} with force flag, reduced to {len(filtered_input_data)} targets")
             else:
                 logger.info(f"Force flag is false, checking last execution for {len(input_data)} targets")
-                
-                if should_use_progressive:
-                    # For progressive batching, use the input_limit as the target batch size
-                    # Default to 100 if no input_limit is defined
-                    target_limit = input_limit if input_limit else 100
 
-                    logger.info(f"Large dataset detected ({len(input_data)} assets), implementing progressive batching with target limit {target_limit}")
+                if should_use_progressive:
+                    target_limit = input_limit if input_limit else 100
+                    logger.info(
+                        "Large dataset detected (%d assets), progressive batching with target limit %d",
+                        len(input_data),
+                        target_limit,
+                    )
                     filtered_input_data = await self._process_assets_progressively(
                         input_data, task, task_def, target_limit
                     )
                 else:
-                    # Standard processing for small datasets
-                    logger.info(f"Small dataset ({len(input_data)} assets), using standard processing")
-                    filtered_input_data = await self._filter_assets_by_execution_time(
+                    logger.info("Small dataset (%d assets), using standard processing", len(input_data))
+                    filtered_input_data = await self._filter_targets_by_last_execution_async(
                         input_data, task, task_def
                     )
-
-                    # Apply input limit after filtering for standard processing
                     if input_limit and filtered_input_data and len(filtered_input_data) > input_limit:
                         filtered_input_data = filtered_input_data[:input_limit]
-                        logger.info(f"Applied input limit {input_limit} after filtering, reduced to {len(filtered_input_data)} targets")
-                
+                        logger.info(
+                            f"Applied input limit {input_limit} after filtering, "
+                            f"reduced to {len(filtered_input_data)} targets"
+                        )
+
                 if filtered_input_data is None:
                     return None
             
@@ -2548,8 +2623,9 @@ class TaskExecutor:
 
             logger.info(f"Processing batch {batch_num}/{total_batches}: assets {current_batch_start + 1}-{current_batch_end} of {total_assets}")
 
-            # Filter current batch by execution time
-            filtered_batch = await self._filter_assets_by_execution_time(current_batch, task, task_def)
+            filtered_batch = await self._filter_targets_by_last_execution_async(
+                current_batch, task, task_def
+            )
 
             if filtered_batch is None:
                 # All assets in this batch were tested within threshold
@@ -2582,11 +2658,52 @@ class TaskExecutor:
             logger.info(f"Progressive processing complete: All {total_assets} assets were tested within threshold")
             return None
 
+    async def _filter_targets_by_last_execution_async(
+        self, input_data: List, task: Task, task_def: TaskDefinition
+    ) -> Optional[List[str]]:
+        """Filter targets by last execution via API (default) or Redis (legacy)."""
+        from task_components import AsyncDataApiClient, last_execution_source
+
+        if last_execution_source() != "api":
+            return await self._filter_assets_by_execution_time(input_data, task, task_def)
+
+        program_id = (self.program_id or "").strip()
+        if not program_id:
+            logger.warning(
+                "RUNNER_LAST_EXECUTION_SOURCE=api but PROGRAM_ID is missing; "
+                "skipping last-execution filter"
+            )
+            return list(input_data)
+
+        if getattr(self, "_inputs_from_eligible_api", False):
+            return list(input_data)
+
+        threshold = self._resolved_last_execution_threshold_hours(task, task_def)
+        async with AsyncDataApiClient(API_URL, self.redis_client) as async_client:
+            recent = await async_client.filter_recent_targets(
+                program_id=program_id,
+                task_type=task.name,
+                params=task_def.params or {},
+                threshold_hours=threshold,
+                targets=list(input_data),
+            )
+        recent_set = set(recent)
+        filtered = [t for t in input_data if t not in recent_set]
+        logger.info(
+            "API recent-targets filter: %d -> %d targets",
+            len(input_data),
+            len(filtered),
+        )
+        return filtered if filtered else None
+
     async def _filter_assets_by_execution_time(self, input_data: List, task: Task, task_def: TaskDefinition) -> Optional[List[str]]:
-        """Filter assets based on last execution time (standard implementation)"""
-        from task_components import MemoryOptimizationConfig
+        """Filter assets based on last execution time (Redis legacy path)."""
+        from task_components import MemoryOptimizationConfig, last_execution_source
         from datetime import datetime, timedelta
-        
+
+        if last_execution_source() == "api":
+            return await self._filter_targets_by_last_execution_async(input_data, task, task_def)
+
         filtered_input_data = []
         
         # Batch Redis operations for performance
@@ -3370,6 +3487,11 @@ class TaskExecutor:
     
     async def _update_timestamps_for_successful_tasks(self, task_results: List, task_instance: Task, task_def: TaskDefinition, input_data: List[str]):
         """Update last execution timestamps for successful task executions only"""
+        from task_components import last_execution_source
+
+        if last_execution_source() == "api":
+            logger.debug("Skipping Redis timestamp updates (RUNNER_LAST_EXECUTION_SOURCE=api)")
+            return
         try:            
             # Count successful tasks
             successful_count = sum(1 for result in task_results if hasattr(result, 'success') and result.success)
@@ -3414,6 +3536,11 @@ class TaskExecutor:
         When some jobs fail, updates timestamps only for targets whose job succeeded
         (job order matches input_data order).
         """
+        from task_components import last_execution_source
+
+        if last_execution_source() == "api":
+            logger.debug("Skipping Redis timestamp updates (RUNNER_LAST_EXECUTION_SOURCE=api)")
+            return
         try:
             if batch_result.completed_jobs == 0:
                 logger.info("No completed jobs, skipping timestamp updates")
