@@ -17,6 +17,18 @@ from utils.enhanced_whois_checker import DomainStatus, EnhancedWhoisChecker
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
+_HTTPX_DOMAIN_PORT_SPEC = (
+    "http:80-99,https:80-99,"
+    "http:443-449,https:443-449,"
+    "http:11443,https:11443,"
+    "http:8443-8449,https:8443-8449,"
+    "http:9000-9003,https:9000-9003,"
+    "http:8080-8089,https:8080-8089,"
+    "http:8801-8810,https:8801-8810,"
+    "http:3000,https:3000,"
+    "http:5000,https:5000"
+)
+
 # Logging: same as cluster (LOG_FORMAT / LOG_LEVEL). Legacy TYPO_WORKER_LOG if set.
 _typo = os.getenv("TYPO_WORKER_LOG")
 if _typo:
@@ -382,7 +394,8 @@ class BuiltInDomainAnalyzer:
                 "-random-agent "
                 "-favicon "
                 "-hash sha256 "
-                "-p 80-99,443-449,11443,8443-8449,9000-9003,8080-8089,8801-8810,3000,5000"
+                "-fs 'The plain HTTP request was sent to HTTPS port' "
+                f"-p {_HTTPX_DOMAIN_PORT_SPEC}"
             )
             # Use shell=True to allow the full command string with pipes
             result = subprocess.run(command, capture_output=True, text=True, timeout=300, shell=True)
