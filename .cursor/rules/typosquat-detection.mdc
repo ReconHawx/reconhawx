@@ -14,6 +14,7 @@ This is a **multi-phase orchestrator task** that produces `FindingType.TYPOSQUAT
 - **Protected Domain Similarity**: Calculates similarity between typosquat and protected domains
 - **Risk Score Calculation**: Computes detailed risk analysis with category scores
 - **Parked Domain Detection**: Identifies parking pages via runner-side analysis
+- **Typosquat URL events**: New rows from `POST /findings/typosquat-url` publish NATS `events.findings.typosquat_url.created` (`findings.typosquat_url.created` in the event-handler); updates and filtered skips do not publish
 
 **WHOIS persistence (API database):** Runner/worker payloads still send flat `whois_*` fields on typosquat findings. The API stores registration/WHOIS on **`typosquat_apex_domains`** (one row per `(program_id, registrable apex_domain)`), linked via `typosquat_domains.apex_typosquat_domain_id`. Listing and detail responses **merge** apex WHOIS onto each finding so JSON shape stays the same for clients.
 

@@ -30,6 +30,10 @@ class TestParseEventType:
         result = parse_event_type("events.findings.typosquat.created")
         assert result == "findings.typosquat.created"
 
+    def test_findings_typosquat_url_created(self):
+        result = parse_event_type("events.findings.typosquat_url.created")
+        assert result == "findings.typosquat_url.created"
+
     def test_findings_nuclei_with_severity_from_payload(self):
         payload = {"severity": "critical"}
         result = parse_event_type("events.findings.nuclei.created", payload)
@@ -132,6 +136,17 @@ class TestNormalizeEventData:
         result = normalize_event_data("events.findings.typosquat.created", payload)
         assert result["typo_domain"] == "gogle.com"
         assert result["domain_registered"] is True
+
+    def test_findings_typosquat_url_promotes_url(self):
+        payload = {
+            "program_name": "p1",
+            "url": "https://gogle.com/login",
+            "typo_domain": "gogle.com",
+        }
+        result = normalize_event_data("events.findings.typosquat_url.created", payload)
+        assert result["event_type"] == "findings.typosquat_url.created"
+        assert result["url"] == "https://gogle.com/login"
+        assert result["typo_domain"] == "gogle.com"
 
 
 class TestShouldSkipEvent:

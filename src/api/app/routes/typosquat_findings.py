@@ -11,6 +11,7 @@ from repository.program_repo import ProgramRepository
 from repository.apexdomain_assets_repo import ApexDomainAssetsRepository
 from repository.action_log_repo import ActionLogRepository
 from services.unified_findings_processor import unified_findings_processor
+from services.event_publisher import publisher
 from services.typosquat_filtering_service import TyposquatFilteringService
 import logging
 from pydantic import Field
@@ -3192,8 +3193,10 @@ async def create_typosquat_url(
         url_data = request.model_dump()
         
         # Use create_or_update function from repository
-        url_id, was_created, typosquat_domain_id = await TyposquatFindingsRepository.create_or_update_typosquat_url(url_data)
-        
+        url_id, was_created, typosquat_domain_id, event_data = (
+            await TyposquatFindingsRepository.create_or_update_typosquat_url(url_data)
+        )
+
         # Domain was filtered out -- return 200 so callers don't retry
         if url_id is None and was_created is False and typosquat_domain_id is None:
             logger.info(f"Typosquat URL skipped (domain filtered): {request.url}")
@@ -3219,7 +3222,18 @@ async def create_typosquat_url(
                     logger.warning(f"Failed to recalculate risk score for domain {typosquat_domain_id}: {risk_result.get('message')}")
             except Exception as risk_error:
                 logger.error(f"Error recalculating risk score for domain {typosquat_domain_id}: {risk_error}")
-            
+
+        if was_created and event_data:
+            try:
+                await publisher.publish_immediate(
+                    "events.findings.typosquat_url.created",
+                    event_data,
+                )
+            except Exception as publish_error:
+                logger.error(
+                    f"Failed to publish typosquat URL created event for {url_id}: {publish_error}"
+                )
+
         logger.info(f"Successfully created/updated typosquat URL with ID: {url_id}")
         return {
             "status": "success",

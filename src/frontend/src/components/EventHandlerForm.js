@@ -45,6 +45,7 @@ const EVENT_TYPES = [
   'findings.nuclei.typosquat',
   'findings.typosquat.created',
   'findings.typosquat_domain.created',
+  'findings.typosquat_url.created',
   'findings.wpscan.created',
   'test.workflow.trigger'
 ];

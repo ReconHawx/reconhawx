@@ -4718,9 +4718,41 @@ class TyposquatFindingsRepository(ProgramAccessMixin):
     # ===== TYPOSQUAT URL AND SCREENSHOT METHODS =====
 
     @staticmethod
-    async def create_or_update_typosquat_url(url_data: Dict[str, Any]) -> tuple[Optional[str], bool, Optional[str]]:
+    def _typosquat_url_created_event_data(
+        url: TyposquatURL,
+        *,
+        normalized_url: str,
+        program: Program,
+        typosquat_domain: Optional[TyposquatDomain],
+    ) -> Dict[str, Any]:
+        """Rich NATS payload for a newly created typosquat URL."""
+        return {
+            "event": "finding.created",
+            "finding_type": "typosquat_url",
+            "record_id": str(url.id),
+            "name": normalized_url,
+            "url": normalized_url,
+            "hostname": url.hostname,
+            "path": url.path,
+            "scheme": url.scheme,
+            "http_status_code": url.http_status_code,
+            "title": url.title,
+            "typosquat_domain": typosquat_domain.typo_domain if typosquat_domain else None,
+            "typosquat_domain_id": str(url.typosquat_domain_id) if url.typosquat_domain_id else None,
+            "program_name": program.name,
+            "program_id": str(program.id),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+
+    @staticmethod
+    async def create_or_update_typosquat_url(
+        url_data: Dict[str, Any],
+    ) -> tuple[Optional[str], bool, Optional[str], Optional[Dict[str, Any]]]:
         """Create a new typosquat URL or update if exists with merged data.
-        Returns (url_id, was_created, typosquat_domain_id) where was_created is True only for newly created assets."""
+
+        Returns (url_id, was_created, typosquat_domain_id, event_data) where was_created is True
+        only for newly created assets and event_data is set only on create.
+        """
         async with get_db_session() as db:
             try:
                
@@ -4752,7 +4784,7 @@ class TyposquatFindingsRepository(ProgramAccessMixin):
                         )
                         if not passes_filter:
                             logger.info(f"Typosquat URL rejected: domain '{typo_domain_name}' filtered out ({filter_reason}), skipping URL {url_data.get('url')}")
-                            return None, False, None
+                            return None, False, None, None
 
                         logger.info(f"Auto-creating typosquat domain '{typo_domain_name}' for URL {url_data.get('url')}")
 
@@ -4799,7 +4831,7 @@ class TyposquatFindingsRepository(ProgramAccessMixin):
                             )
                             if not passes_filter:
                                 logger.info(f"Typosquat URL rejected: domain '{hostname}' filtered out ({filter_reason}), skipping URL {url_data.get('url')}")
-                                return None, False, None
+                                return None, False, None, None
 
                             logger.info(f"Auto-creating typosquat domain '{hostname}' for URL {url_data.get('url')}")
 
@@ -5055,7 +5087,12 @@ class TyposquatFindingsRepository(ProgramAccessMixin):
                         logger.info(f"Typosquat URL {url_data.get('url')} already exists with same data, skipping")
                     
                     db.commit()
-                    return str(existing.id), False, str(existing.typosquat_domain_id) if existing.typosquat_domain_id else None  # Existing asset, not newly created
+                    return (
+                        str(existing.id),
+                        False,
+                        str(existing.typosquat_domain_id) if existing.typosquat_domain_id else None,
+                        None,
+                    )
                 else:
                     # Create new typosquat URL
                     url = TyposquatURL(
@@ -5089,9 +5126,20 @@ class TyposquatFindingsRepository(ProgramAccessMixin):
                     db.add(url)
                     db.commit()
                     db.refresh(url)
-                    
-                    return str(url.id), True, str(url.typosquat_domain_id) if url.typosquat_domain_id else None  # Newly created asset
-                
+
+                    event_data = TyposquatFindingsRepository._typosquat_url_created_event_data(
+                        url,
+                        normalized_url=normalized_url,
+                        program=program,
+                        typosquat_domain=typosquat_domain,
+                    )
+                    return (
+                        str(url.id),
+                        True,
+                        str(url.typosquat_domain_id) if url.typosquat_domain_id else None,
+                        event_data,
+                    )
+
             except Exception as e:
                 db.rollback()
                 logger.error(f"Error creating/updating typosquat URL: {str(e)}")

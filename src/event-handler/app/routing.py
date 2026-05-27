@@ -207,6 +207,8 @@ def normalize_event_data(subject: str, payload: Dict[str, Any]) -> Dict[str, Any
                 normalized['domain_registered'] = payload['domain_registered']
             if 'whois_registrar' in payload:
                 normalized['whois_registrar'] = payload['whois_registrar']
+            if 'url' in payload:
+                normalized['url'] = payload['url']
     
     return normalized
 
