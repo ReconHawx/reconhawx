@@ -723,7 +723,7 @@ class TaskExecutor:
                         flag_value = getattr(task_instance, 'has_spawned_screenshot_jobs', False) if has_flag else False
                         
                         if has_flag and flag_value:
-                            logger.info("Task has spawned screenshot jobs - skipping screenshot processing here to prevent duplication")
+                            logger.info("Task has spawned screenshot jobs - deferring screenshot upload until spawned jobs complete")
                             # Only send URLs, not screenshots
                             success = self._send_typosquat_urls_and_screenshots_after_domains(
                                 step_name, program_name, self.execution_id, typosquat_urls, []
@@ -775,6 +775,11 @@ class TaskExecutor:
                                     # Add new asset type
                                     processed_assets[asset_type] = spawned_assets
                                     logger.info(f"✅ Added {len(spawned_assets)} new {asset_type.value} assets")
+
+                            if not task_def.internal:
+                                await self._send_spawned_typosquat_findings(
+                                    spawned_outputs, step_name, program_name, ingest_pid
+                                )
                         else:
                             logger.info("📊 No spawned outputs to merge")
                             
@@ -3093,6 +3098,65 @@ class TaskExecutor:
             return task_class()
         return None
     
+    async def _send_spawned_typosquat_findings(
+        self,
+        spawned_outputs: Dict[Any, List[Any]],
+        step_name: str,
+        program_name: str,
+        ingest_pid: str,
+    ) -> bool:
+        """Send typosquat findings from spawned jobs after outputs are merged."""
+        if not spawned_outputs or not self.execution_id:
+            return True
+
+        success = True
+        typosquat_urls = list(spawned_outputs.get(FindingType.TYPOSQUAT_URL, []) or [])
+        typosquat_screenshots = list(spawned_outputs.get(FindingType.TYPOSQUAT_SCREENSHOT, []) or [])
+
+        if typosquat_urls:
+            logger.info(
+                f"Sending {len(typosquat_urls)} spawned typosquat URL findings for step {step_name}"
+            )
+            if self.async_data_api_client:
+                response = await self.async_data_api_client.post_typosquat_url_findings(
+                    typosquat_urls, ingest_pid
+                )
+                if response.get("status") == "error":
+                    logger.warning("Failed to send spawned typosquat URL findings")
+                    success = False
+            else:
+                serialized_urls = typosquat_urls
+                if serialized_urls and hasattr(serialized_urls[0], "model_dump"):
+                    serialized_urls = [u.model_dump(mode="json") for u in serialized_urls]
+                elif serialized_urls and hasattr(serialized_urls[0], "dict"):
+                    serialized_urls = [self._serialize_asset(u) for u in serialized_urls]
+                success = self._send_typosquat_urls_and_screenshots_after_domains(
+                    step_name, program_name, self.execution_id, serialized_urls, []
+                ) and success
+
+        if typosquat_screenshots:
+            logger.info(
+                f"Sending {len(typosquat_screenshots)} spawned typosquat screenshot findings for step {step_name}"
+            )
+            if self.async_data_api_client:
+                response = await self.async_data_api_client.post_typosquat_screenshot_findings(
+                    typosquat_screenshots, ingest_pid
+                )
+                if response.get("status") == "error":
+                    logger.warning("Failed to send spawned typosquat screenshot findings")
+                    success = False
+            else:
+                serialized_screenshots = typosquat_screenshots
+                if serialized_screenshots and hasattr(serialized_screenshots[0], "model_dump"):
+                    serialized_screenshots = [s.model_dump(mode="json") for s in serialized_screenshots]
+                elif serialized_screenshots and hasattr(serialized_screenshots[0], "dict"):
+                    serialized_screenshots = [self._serialize_asset(s) for s in serialized_screenshots]
+                success = self._send_typosquat_urls_and_screenshots_after_domains(
+                    step_name, program_name, self.execution_id, [], serialized_screenshots
+                ) and success
+
+        return success
+
     def _send_typosquat_urls_and_screenshots_after_domains(self, step_name: str, program_name: str, execution_id: str, typosquat_urls: List[Dict[str, Any]], typosquat_screenshots: List[Dict[str, Any]] = None) -> bool:
         """Send typosquat URLs and screenshots to the API after typosquat domains have been sent"""
         try:
@@ -3163,32 +3227,36 @@ class TaskExecutor:
                 screenshot_success_count = 0
                 for screenshot_data in typosquat_screenshots:
                     try:
-                        # Check if we have base64-encoded image data or file path
-                        if "screenshot_data" in screenshot_data and screenshot_data["screenshot_data"]:
-                            # New format: base64-encoded image data
+                        image_data = None
+                        filename = "screenshot.png"
+                        content_type = "image/png"
+
+                        # Flat format from TyposquatScreenshot / screenshot_website transform
+                        if screenshot_data.get("image_data"):
+                            image_data = base64.b64decode(screenshot_data["image_data"])
+                            filename = screenshot_data.get("filename") or filename
+                        # Nested format (legacy)
+                        elif "screenshot_data" in screenshot_data and screenshot_data["screenshot_data"]:
                             image_data = base64.b64decode(screenshot_data["screenshot_data"]["image_data"])
-                            filename = screenshot_data["screenshot_data"]["filename"]
-                            content_type = "image/png"
-                            
-                            logger.debug(f"Processing base64 screenshot for {screenshot_data.get('url', 'unknown')} ({len(image_data)} bytes)")
-                            
+                            filename = screenshot_data["screenshot_data"].get("filename") or filename
                         elif "screenshot_path" in screenshot_data and screenshot_data["screenshot_path"]:
-                            # Legacy format: file path (fallback)
                             screenshot_path = screenshot_data["screenshot_path"]
                             if not os.path.exists(screenshot_path):
                                 logger.warning(f"Screenshot file not found: {screenshot_path}")
                                 continue
-                            
                             with open(screenshot_path, 'rb') as f:
                                 image_data = f.read()
                             filename = os.path.basename(screenshot_path)
-                            content_type = "image/png"
-                            
-                            logger.debug(f"Processing file screenshot for {screenshot_data.get('url', 'unknown')} ({len(image_data)} bytes)")
-                        else:
+
+                        if not image_data:
                             logger.warning(f"No screenshot data found for {screenshot_data.get('url', 'unknown')}")
                             continue
-                        
+
+                        logger.debug(
+                            f"Processing typosquat screenshot for {screenshot_data.get('url', 'unknown')} "
+                            f"({len(image_data)} bytes)"
+                        )
+
                         # Prepare form data and send to /findings/typosquat-screenshot
                         pid = (self.program_id or "").strip()
                         response = requests.post(
@@ -3198,8 +3266,16 @@ class TaskExecutor:
                                 'url': screenshot_data.get('url', ''),
                                 'program_id': screenshot_data.get('program_id', pid),
                                 'workflow_id': screenshot_data.get('workflow_id', ''),
-                                'step_name': screenshot_data.get('step_name', step_name)
-                            }
+                                'step_name': screenshot_data.get('step_name', step_name),
+                                **(
+                                    {'extracted_text': screenshot_data['extracted_text']}
+                                    if screenshot_data.get('extracted_text')
+                                    else {}
+                                ),
+                            },
+                            headers={
+                                'Authorization': f'Bearer {self.data_api_client.internal_api_key}'
+                            } if getattr(self.data_api_client, 'internal_api_key', None) else {},
                         )
                         
                         if response.status_code == 200:

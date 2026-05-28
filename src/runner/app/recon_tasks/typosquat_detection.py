@@ -19,7 +19,6 @@ from .typosquat_components import (
     VariationCacheManager,
     TyposquatAnalyzer,
     SubdomainWorkflowOrchestrator,
-    ScreenshotProcessor,
     ApiClient
 )
 
@@ -57,7 +56,6 @@ class TyposquatDetection(Task):
         )
 
         # Initialize other components
-        self.screenshot_processor = ScreenshotProcessor()
         self.workflow_orchestrator = SubdomainWorkflowOrchestrator()
         self.typosquat_analyzer = TyposquatAnalyzer()
         self.api_client = None
@@ -891,25 +889,30 @@ class TyposquatDetection(Task):
             return {}
 
         logger.info(f"🔄 Processing outputs from {len(self.spawned_task_outputs)} spawned tasks")
-        
-        # Use workflow orchestrator and screenshot processor for output handling
-        all_findings = []
-        
+
+        all_url_findings = []
+        all_screenshot_findings = []
+
         for task_id, output in self.spawned_task_outputs.items():
             if not output:
                 logger.warning(f"⚠️ Empty output from task {task_id}")
                 continue
-                
+
             try:
                 # Check if we have context for this job to determine its type
                 if hasattr(self, 'spawned_job_contexts') and task_id in self.spawned_job_contexts:
                     context = self.spawned_job_contexts[task_id]
-                    
+
                     # Handle screenshot jobs
                     if context.get('is_typosquat_screenshots', False):
                         logger.info(f"Processing screenshot output from task {task_id}")
-                        asyncio.create_task(self.screenshot_processor.process_and_upload_screenshots(output, context))
-                    
+                        screenshot_findings = self._parse_screenshot_output_to_findings(output, context)
+                        if screenshot_findings:
+                            all_screenshot_findings.extend(screenshot_findings)
+                            logger.info(
+                                f"✅ Created {len(screenshot_findings)} TyposquatScreenshot findings from spawned job"
+                            )
+
                     # Handle fuzzing jobs (Phase 4)
                     elif context.get('is_typosquat_fuzzing', False):
                         logger.info(f"🔍 Phase 4: Processing fuzz_website output from task {task_id}")
@@ -918,24 +921,19 @@ class TyposquatDetection(Task):
                         typosquat_url_findings = self._parse_fuzzing_output_to_findings(output, context)
 
                         if typosquat_url_findings:
-                            all_findings.extend(typosquat_url_findings)
+                            all_url_findings.extend(typosquat_url_findings)
                             logger.info(f"✅ Phase 4: Created {len(typosquat_url_findings)} TyposquatURL findings from fuzzing")
-                
+
             except Exception as e:
                 logger.error(f"❌ Error processing output from task {task_id}: {e}")
-        
-        # Return any findings we collected
-        # Separate TyposquatURL findings from TyposquatDomain findings
-        typosquat_domains = [f for f in all_findings if hasattr(f, 'typo_domain') and not hasattr(f, 'path')]
-        typosquat_urls = [f for f in all_findings if hasattr(f, 'path')]
 
         result = {}
-        if typosquat_domains:
-            result[FindingType.TYPOSQUAT_DOMAIN] = typosquat_domains
-            logger.info(f"Returning {len(typosquat_domains)} TyposquatDomain findings")
-        if typosquat_urls:
-            result[FindingType.TYPOSQUAT_URL] = typosquat_urls
-            logger.info(f"Returning {len(typosquat_urls)} TyposquatURL findings")
+        if all_url_findings:
+            result[FindingType.TYPOSQUAT_URL] = all_url_findings
+            logger.info(f"Returning {len(all_url_findings)} TyposquatURL findings from spawned jobs")
+        if all_screenshot_findings:
+            result[FindingType.TYPOSQUAT_SCREENSHOT] = all_screenshot_findings
+            logger.info(f"Returning {len(all_screenshot_findings)} TyposquatScreenshot findings from spawned jobs")
 
         return result if result else {}
     
@@ -950,10 +948,11 @@ class TyposquatDetection(Task):
 
             # Route to the appropriate component
             if task_name == "screenshot_website":
-                # Process screenshot data and upload to API
                 task_id = context.get('task_id', 'unknown') if context else 'unknown'
                 logger.info(f"Processing screenshot output for task {task_id}")
-                asyncio.create_task(self.screenshot_processor.process_and_upload_screenshots(actual_output, context))
+                findings = self._parse_screenshot_output_to_findings(actual_output, context or {})
+                if findings:
+                    return {FindingType.TYPOSQUAT_SCREENSHOT: findings}
                 return {}
             else:
                 logger.error(f"Unknown task type for parsing: {task_name}")
@@ -1014,6 +1013,43 @@ class TyposquatDetection(Task):
 
         except Exception as e:
             logger.error(f"Error parsing fuzzing output to findings: {e}")
+            logger.exception("Full traceback:")
+            return []
+
+    def _parse_screenshot_output_to_findings(self, output: Any, context: Dict[str, Any]) -> List[Any]:
+        """
+        Parse screenshot output and transform screenshot assets to TyposquatScreenshot findings.
+
+        Mirrors _parse_fuzzing_output_to_findings using the shared screenshot_website dual-purpose task.
+        """
+        try:
+            from .screenshot_website import ScreenshotWebsite
+
+            screenshot_task = ScreenshotWebsite()
+            parsed_assets = screenshot_task.parse_output(output)
+
+            if not parsed_assets or AssetType.SCREENSHOT not in parsed_assets:
+                logger.info("No screenshot assets found in spawned screenshot output")
+                return []
+
+            transformation_context = {
+                'program_name': context.get('program_name', os.getenv('PROGRAM_NAME', '')),
+                'workflow_id': context.get('workflow_id', os.getenv('WORKFLOW_ID', 'unknown')),
+                'step_name': context.get('step_name', 'typosquat_detection'),
+            }
+
+            findings_dict = screenshot_task.transform_to_findings(parsed_assets, transformation_context)
+
+            if FindingType.TYPOSQUAT_SCREENSHOT in findings_dict:
+                findings = findings_dict[FindingType.TYPOSQUAT_SCREENSHOT]
+                logger.info(f"Transformed {len(findings)} screenshot assets to TyposquatScreenshot findings")
+                return findings
+
+            logger.warning("No TyposquatScreenshot findings produced from transformation")
+            return []
+
+        except Exception as e:
+            logger.error(f"Error parsing screenshot output to findings: {e}")
             logger.exception("Full traceback:")
             return []
 

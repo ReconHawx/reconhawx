@@ -1,11 +1,12 @@
 import logging
+import os
 from typing import Dict, List, Any, Optional
 import base64
 import tarfile
 import tempfile
-import os
 import re
-from .base import Task, AssetType
+from .base import Task, AssetType, FindingType
+from models.findings import TyposquatScreenshot
 from utils import (
     get_valid_urls,
     normalize_url_for_storage,
@@ -176,4 +177,59 @@ class ScreenshotWebsite(Task):
             return {AssetType.SCREENSHOT: []}
         
         return {AssetType.SCREENSHOT: screenshots}
-    
+
+    def transform_to_findings(
+        self, assets: Dict[AssetType, List[Any]], context: Dict[str, Any]
+    ) -> Dict[Any, List[Any]]:
+        """
+        Transform screenshot assets to TyposquatScreenshot findings for typosquat workflows.
+
+        Same dual-purpose pattern as fuzz_website: parse_output produces assets; this method
+        produces findings when output_mode is typosquat_findings.
+        """
+        screenshots = assets.get(AssetType.SCREENSHOT, [])
+        if not screenshots:
+            logger.info("No screenshots to transform to findings")
+            return {}
+
+        program_name = context.get("program_name") or os.getenv("PROGRAM_NAME", "")
+        workflow_id = context.get("workflow_id") or os.getenv("WORKFLOW_ID", "unknown")
+        step_name = context.get("step_name") or "screenshot_website"
+
+        logger.info(
+            f"Transforming {len(screenshots)} screenshot assets to TyposquatScreenshot findings"
+        )
+
+        findings = []
+        for shot in screenshots:
+            try:
+                if isinstance(shot, dict):
+                    url = shot.get("url", "")
+                    image_data = shot.get("image_data", "")
+                    filename = shot.get("filename")
+                    extracted_text = shot.get("extracted_text")
+                else:
+                    url = getattr(shot, "url", "")
+                    image_data = getattr(shot, "image_data", "")
+                    filename = getattr(shot, "filename", None)
+                    extracted_text = getattr(shot, "extracted_text", None)
+
+                if not url or not image_data:
+                    logger.warning("Skipping screenshot finding with missing url or image_data")
+                    continue
+
+                finding = TyposquatScreenshot(
+                    url=url,
+                    image_data=image_data,
+                    filename=filename,
+                    extracted_text=extracted_text,
+                    workflow_id=workflow_id,
+                    step_name=step_name,
+                    program_name=program_name,
+                )
+                findings.append(finding)
+            except Exception as e:
+                logger.error(f"Error transforming screenshot asset to finding: {e}")
+
+        logger.info(f"Successfully transformed {len(findings)} screenshots to typosquat findings")
+        return {FindingType.TYPOSQUAT_SCREENSHOT: findings}

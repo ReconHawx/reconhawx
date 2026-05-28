@@ -624,6 +624,62 @@ function TaskParameterSelector({
     );
   }
 
+  // Special handling for screenshot_website output mode
+  if (taskType === 'screenshot_website') {
+    return (
+      <Card>
+        <Card.Header>
+          <h6 className="mb-0">📸 Website Screenshot Parameters</h6>
+        </Card.Header>
+        <Card.Body>
+          <Form.Group className="mb-3">
+            <Form.Label>
+              <strong>Output Mode</strong>
+            </Form.Label>
+            <Form.Select
+              value={outputMode || ''}
+              onChange={(e) => {
+                const newValue = e.target.value || '';
+                if (onOutputModeChange) {
+                  onOutputModeChange(newValue);
+                }
+              }}
+            >
+              <option value="">Assets (Default) - Produce screenshot assets</option>
+              <option value="typosquat_findings">Typosquat Findings - Produce typosquat screenshot findings</option>
+            </Form.Select>
+            <Form.Text className="text-muted">
+              Choose whether this task should produce screenshot assets (normal mode) or typosquat screenshot findings (for typosquat detection workflows).
+            </Form.Text>
+          </Form.Group>
+
+          {Object.entries(taskConfig.params).map(([paramName, paramConfig]) => {
+            if (paramName === 'timeout') {
+              return (
+                <Form.Group key={paramName} className="mb-3">
+                  <Form.Label>{paramName.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</Form.Label>
+                  {renderParameterInput(paramName, paramConfig)}
+                  <Form.Text className="text-muted">
+                    Optional: Overrides system default timeout. Leave empty to use system default.
+                  </Form.Text>
+                </Form.Group>
+              );
+            }
+            return (
+              <Form.Group key={paramName} className="mb-3">
+                <Form.Label>{paramName.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</Form.Label>
+                {renderParameterInput(paramName, paramConfig)}
+                <Form.Text className="text-muted">
+                  {paramConfig.description}
+                </Form.Text>
+              </Form.Group>
+            );
+          })}
+        </Card.Body>
+      </Card>
+    );
+  }
+
   // Default parameter rendering for other tasks
   const hasParams = Object.keys(taskConfig.params).length > 0;
   if (!hasParams) {

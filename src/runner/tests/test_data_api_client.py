@@ -74,3 +74,51 @@ def test_deep_clean_for_json_primitives(client: DataAPIClient) -> None:
 )
 def test_calculate_timeout_for_assets_scales(client: DataAPIClient, count: int, expected_min: int) -> None:
     assert client._calculate_timeout_for_assets(count) == expected_min
+
+
+@pytest.mark.asyncio
+async def test_post_typosquat_screenshot_findings_uses_multipart_session_without_json_content_type(
+    client: DataAPIClient, monkeypatch
+) -> None:
+    """Multipart uploads must not inherit Content-Type: application/json from the main session."""
+    import base64
+    from unittest.mock import AsyncMock, MagicMock
+
+    captured_sessions: list[dict] = []
+
+    class FakeClientSession:
+        def __init__(self, *, headers=None, **kwargs):
+            captured_sessions.append(headers or {})
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        def post(self, url, **kwargs):
+            response = MagicMock()
+            response.status = 200
+            response.__aenter__ = AsyncMock(return_value=response)
+            response.__aexit__ = AsyncMock(return_value=False)
+            response.json = AsyncMock(return_value={"file_id": "abc"})
+            response.text = AsyncMock(return_value="")
+            return response
+
+    monkeypatch.setattr("data_api_client.aiohttp.ClientSession", FakeClientSession)
+    client.session = MagicMock()
+
+    findings = [
+        {
+            "url": "https://example.com/",
+            "image_data": base64.b64encode(b"\x89PNG").decode(),
+            "filename": "shot.png",
+        }
+    ]
+
+    result = await client.post_typosquat_screenshot_findings(findings, "prog-uuid")
+
+    assert result["status"] == "success"
+    assert len(captured_sessions) == 1
+    assert captured_sessions[0] == {"Authorization": "Bearer k"}
+    assert "Content-Type" not in captured_sessions[0]

@@ -733,10 +733,6 @@ class DataAPIClient:
         failed_count = 0
         errors: List[str] = []
 
-        headers = {}
-        if self.api_key:
-            headers["Authorization"] = f"Bearer {self.api_key}"
-
         for idx, finding in enumerate(typosquat_findings):
             try:
                 if hasattr(finding, "model_dump"):
@@ -784,22 +780,28 @@ class DataAPIClient:
                 if finding_dict.get("source"):
                     data.add_field("source", str(finding_dict["source"]))
 
-                async with self.session.post(
-                    f"{self.base_url}/findings/typosquat-screenshot",
-                    data=data,
-                    headers=headers,
-                    timeout=aiohttp.ClientTimeout(total=120),
-                ) as response:
-                    if response.status == 200:
-                        success_count += 1
-                        logger.debug(f"Typosquat screenshot finding {idx+1}/{finding_count} posted successfully")
-                    else:
-                        error_text = await response.text()
-                        failed_count += 1
-                        errors.append(f"Finding {idx+1}: {response.status} - {error_text}")
-                        logger.error(
-                            f"API error posting typosquat screenshot finding {idx+1}/{finding_count}: {response.status} - {error_text}"
-                        )
+                # Use a separate session for multipart uploads — the main session sets
+                # Content-Type: application/json which prevents FastAPI from parsing form fields.
+                upload_headers = {}
+                if self.api_key:
+                    upload_headers["Authorization"] = f"Bearer {self.api_key}"
+
+                async with aiohttp.ClientSession(headers=upload_headers) as upload_session:
+                    async with upload_session.post(
+                        f"{self.base_url}/findings/typosquat-screenshot",
+                        data=data,
+                        timeout=aiohttp.ClientTimeout(total=120),
+                    ) as response:
+                        if response.status == 200:
+                            success_count += 1
+                            logger.debug(f"Typosquat screenshot finding {idx+1}/{finding_count} posted successfully")
+                        else:
+                            error_text = await response.text()
+                            failed_count += 1
+                            errors.append(f"Finding {idx+1}: {response.status} - {error_text}")
+                            logger.error(
+                                f"API error posting typosquat screenshot finding {idx+1}/{finding_count}: {response.status} - {error_text}"
+                            )
             except Exception as e:
                 failed_count += 1
                 errors.append(f"Finding {idx+1}: {str(e)}")

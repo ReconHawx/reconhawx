@@ -65,3 +65,44 @@ def test_build_worker_command_with_stdin_chunks_and_flags(task) -> None:
         assert "--workers 3" in cmd
         assert "--active" in cmd
         assert "--geoip" not in cmd
+
+
+def test_process_spawned_task_outputs_returns_screenshot_findings(task, monkeypatch) -> None:
+    import io
+    import tarfile
+    from unittest.mock import patch
+
+    from recon_tasks.base import FindingType
+
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+        content = b"\x89PNG\r\n\x1a\nFAKE"
+        info = tarfile.TarInfo(name="https---example.com---.png")
+        info.size = len(content)
+        tar.addfile(info, io.BytesIO(content))
+    archive_b64 = base64.b64encode(buf.getvalue()).decode()
+
+    task.spawned_task_outputs = {"job-1": archive_b64}
+    task.spawned_job_contexts = {
+        "job-1": {
+            "is_typosquat_screenshots": True,
+            "program_name": "prog",
+            "workflow_id": "wf-1",
+            "step_name": "typosquat_detection",
+        }
+    }
+
+    with patch(
+        "recon_tasks.screenshot_website.extract_text_from_gowitness_jsonl",
+        return_value=None,
+    ), patch(
+        "recon_tasks.screenshot_website.extract_text_from_image_ocr",
+        return_value="",
+    ):
+        result = task.process_spawned_task_outputs()
+
+    screenshots = result[FindingType.TYPOSQUAT_SCREENSHOT]
+    assert len(screenshots) == 1
+    assert screenshots[0].url
+    assert screenshots[0].image_data
+    assert screenshots[0].program_name == "prog"

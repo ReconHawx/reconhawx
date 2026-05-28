@@ -240,6 +240,26 @@ class TyposquatURL(BaseModel):
         }
     )
 
+class TyposquatScreenshot(BaseModel):
+    """Finding model for typosquat page screenshots."""
+    url: str
+    image_data: str
+    filename: Optional[str] = None
+    extracted_text: Optional[str] = None
+    workflow_id: Optional[str] = None
+    step_name: Optional[str] = None
+    program_name: Optional[str] = None
+
+    def to_dict(self):
+        data = self.model_dump(by_alias=True, exclude_none=True)
+        return data
+
+    model_config = ConfigDict(
+        populate_by_name=True,
+        arbitrary_types_allowed=True,
+    )
+
+
 class WPScanFinding(BaseModel):
     id: Optional[str] = None
     url: str

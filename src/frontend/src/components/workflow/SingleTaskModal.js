@@ -266,8 +266,8 @@ function SingleTaskModal({ show, onHide, onSuccess }) {
       }
     };
 
-    // Add output_mode at task level for fuzz_website and dns_bruteforce
-    if ((selectedTask === 'fuzz_website' || selectedTask === 'dns_bruteforce') && outputMode) {
+    // Add output_mode at task level for fuzz_website, dns_bruteforce, and screenshot_website
+    if ((selectedTask === 'fuzz_website' || selectedTask === 'dns_bruteforce' || selectedTask === 'screenshot_website') && outputMode) {
       taskDefinition.output_mode = outputMode;
     }
 

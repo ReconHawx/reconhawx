@@ -233,9 +233,9 @@ function VisualWorkflowBuilder({
           : 0,
     };
 
-    // Add output_mode at task level (not in params) if it's a fuzz_website or dns_bruteforce task
+    // Add output_mode at task level (not in params) if it's a fuzz_website, dns_bruteforce, or screenshot_website task
     // Save even if empty string (which represents default "Assets" mode)
-    if (selectedNode.data.taskType === 'fuzz_website' || selectedNode.data.taskType === 'dns_bruteforce') {
+    if (selectedNode.data.taskType === 'fuzz_website' || selectedNode.data.taskType === 'dns_bruteforce' || selectedNode.data.taskType === 'screenshot_website') {
       dataToUpdate.output_mode = outputMode || '';
     }
 

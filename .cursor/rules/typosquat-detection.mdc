@@ -41,7 +41,7 @@ This is a **multi-phase orchestrator task** that produces `FindingType.TYPOSQUAT
 │  │  • ApiClient: API communication for deduplication and config                    │ │
 │  │  • TyposquatAnalyzer: Worker output parsing to findings                         │ │
 │  │  • SubdomainWorkflowOrchestrator: Multi-phase workflow management               │ │
-│  │  • ScreenshotProcessor: Screenshot upload handling                              │ │
+│  │  • Screenshot capture via spawned screenshot_website jobs (dual-purpose task) │ │
 │  └────────────────────────────────────────────────────────────────────────────────┘ │
 └─────────────────────────────────────────────────────────────────────────────────────┘
                                         │
@@ -103,6 +103,31 @@ This is a **multi-phase orchestrator task** that produces `FindingType.TYPOSQUAT
                  │  3. Transform URL assets to TyposquatURL findings            │
                  │  4. Output: TyposquatURL findings                            │
                  └──────────────────────────────────────────────────────────────┘
+                                        │
+                                        │ after HTTP probes find live URLs
+                                        ▼
+                 ┌──────────────────────────────────────────────────────────────┐
+                 │              SCREENSHOTS (spawned screenshot_website)          │
+                 │                                                              │
+                 │  1. Spawn screenshot_website worker jobs for typosquat URLs  │
+                 │  2. parse_output → screenshot assets                         │
+                 │  3. transform_to_findings → TyposquatScreenshot findings     │
+                 │  4. task_executor sends via /findings/typosquat-screenshot   │
+                 └──────────────────────────────────────────────────────────────┘
+```
+
+**Standalone screenshot step:** Any workflow can run `screenshot_website` with `output_mode: typosquat_findings` (same dual-purpose pattern as `fuzz_website`) to produce typosquat screenshot findings without going through `typosquat_detection`.
+
+```mermaid
+flowchart LR
+  subgraph before [Previous flow]
+    SW_old[spawned screenshot_website] --> SP[ScreenshotProcessor direct upload]
+  end
+  subgraph now [Current flow]
+    SW[screenshot_website worker] --> Parse[parse_output]
+    Parse --> Transform[transform_to_findings]
+    Transform --> API["POST /findings/typosquat-screenshot"]
+  end
 ```
 
 ## Runner Task: typosquat_detection.py
@@ -886,11 +911,14 @@ echo '[{"domain":"example.com","_is_subdomain_discovery":true}]' | \
 
 ## Spawned Job Integration
 
-The task can spawn additional jobs during execution:
+The task can spawn additional jobs during execution. Screenshot and fuzz spawned jobs both use the **dual-purpose task pattern** (`parse_output` → `transform_to_findings`); the task executor sends findings after spawned jobs complete.
 
 ```python
-# Spawn screenshot jobs
+# Spawn screenshot jobs (typosquat_detection defers screenshot upload until jobs finish)
 task_id = await self.spawn_screenshot_job(urls_for_screenshots, program_name)
+
+# On completion, process_spawned_task_outputs() calls:
+# ScreenshotWebsite.parse_output → transform_to_findings → FindingType.TYPOSQUAT_SCREENSHOT
 
 # Spawn fuzzing jobs
 task_id = await self.spawn_worker_job(
@@ -899,6 +927,17 @@ task_id = await self.spawn_worker_job(
     program_name=program_name,
     timeout=1200
 )
+# Fuzz output: FuzzWebsite.parse_output → transform_to_findings → FindingType.TYPOSQUAT_URL
+```
+
+**Standalone typosquat screenshot workflow step:**
+
+```yaml
+- name: screenshot_typosquat_urls
+  task_type: screenshot_website
+  output_mode: typosquat_findings
+  inputs:
+    urls: "{{ previous_step.outputs.urls }}"
 ```
 
 **Output Handler Registration:**
