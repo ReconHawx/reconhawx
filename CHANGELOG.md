@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.42.0](https://github.com/ReconHawx/reconhawx/compare/v0.41.0...v0.42.0) (2026-05-29)
+
+
+### Features
+
+* **api:** publish events when typosquat URLs are created ([d60bdcb](https://github.com/ReconHawx/reconhawx/commit/d60bdcb37e6621403c30bf11220b579a1524c226))
+* **runner:** add typosquat screenshot output mode for screenshot_website ([6c86ed5](https://github.com/ReconHawx/reconhawx/commit/6c86ed5c15daa264853a584bbb40a680356e2d76))
+* **runner:** duplicate typosquat variations across extra TLDs ([f75a86f](https://github.com/ReconHawx/reconhawx/commit/f75a86f9384718de1c918f6f44c10e47ee149c47))
+* **typosquat:** allow manual domain analysis to bypass program filters ([feb0cef](https://github.com/ReconHawx/reconhawx/commit/feb0cefc38b155ad0417ffe3d21b8f56c354647d))
+
+
+### Bug Fixes
+
+* **runner:** added missing module (dnstwist) ([9a83df9](https://github.com/ReconHawx/reconhawx/commit/9a83df91abb47f462d37b1f7d8400d373100ac68))
+* **worker:** probe typosquat domains over HTTP and HTTPS on common ports ([09c9098](https://github.com/ReconHawx/reconhawx/commit/09c90982d87fb7d1533b618c04090f02194a0a3e))
+
 ## [0.41.0](https://github.com/ReconHawx/reconhawx/compare/v0.40.0...v0.41.0) (2026-05-25)
 
 
