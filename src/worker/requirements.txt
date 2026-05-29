@@ -7,5 +7,5 @@ python_whois==0.9.5
 redis==7.4.0
 Requests==2.33.0
 tldextract==5.3.1
-urllib3==2.6.3
+urllib3>=2.7.0
 whoisit==4.0.3
