@@ -1,4 +1,4 @@
-aiohttp==3.13.3
+aiohttp>=3.13.4
 beautifulsoup4==4.14.3
 nats_py==2.14.0
 playwright==1.58.0
