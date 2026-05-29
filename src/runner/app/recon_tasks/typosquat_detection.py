@@ -404,7 +404,10 @@ class TyposquatDetection(Task):
         self.current_tested_variations = list(all_variations)
 
         include_subdomains = params.get("include_subdomains", False) if params else False
-        if not include_subdomains:
+        ignore_filtering = bool(params.get("ignore_typosquat_filtering")) if params else False
+        if ignore_filtering:
+            logger.info("ignore_typosquat_filtering=true: bypassing pre-flight filter check")
+        elif not include_subdomains:
             try:
                 api_client = self._ensure_api_client()
                 unique_domains = list({v.get("domain") for v in all_variations if v.get("domain")})

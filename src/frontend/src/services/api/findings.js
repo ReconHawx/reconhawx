@@ -437,7 +437,7 @@ export const typosquatAPI = {
   },
 
   // Create background job for batch typosquat domain analysis
-  createBatchTyposquatJob: async (domains, programName = null, originalDomain = null) => {
+  createBatchTyposquatJob: async (domains, programName = null, originalDomain = null, { ignoreTyposquatFiltering = false } = {}) => {
     const requestData = {
       "workflow_name": "Batch_Typosquat_Analysis",
       "program_name": programName || "default",
@@ -452,6 +452,7 @@ export const typosquatAPI = {
               "params": {
                 "include_subdomains": false,
                 "analyze_input_as_variations": true,
+                ...(ignoreTyposquatFiltering ? { ignore_typosquat_filtering: true } : {}),
               },
               "task_type": "typosquat_detection",
               "input_mapping": {

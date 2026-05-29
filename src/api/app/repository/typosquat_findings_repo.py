@@ -483,10 +483,16 @@ class TyposquatFindingsRepository(ProgramAccessMixin):
             logger.error(f"Failed to process all queued domains: {str(e)}")
 
     @staticmethod
-    async def create_or_update_typosquat_finding(typosquat_data: Dict[str, Any]) -> tuple[str, str, Optional[Dict[str, Any]]]:
+    async def create_or_update_typosquat_finding(
+        typosquat_data: Dict[str, Any],
+        ignore_typosquat_filtering: bool = False,
+    ) -> tuple[str, str, Optional[Dict[str, Any]]]:
         """Create or update a typosquat domain. Returns (record_id, action, event_data) where event_data contains rich payload data."""
         async with get_db_session() as db:
             try:
+                if typosquat_data.pop("ignore_typosquat_filtering", False):
+                    ignore_typosquat_filtering = True
+
                 program = resolve_program_from_payload(db, typosquat_data)
 
                 if typosquat_data.get('typo_domain'):
@@ -700,7 +706,7 @@ class TyposquatFindingsRepository(ProgramAccessMixin):
                         typo_domain_name, protected_domains, protected_prefixes, filtering_settings,
                         asset_apex_domains=asset_apex_domains,
                     )
-                    if not passes_filter:
+                    if not passes_filter and not ignore_typosquat_filtering:
                         logger.info(
                             f"Typosquat domain {typo_domain_name} FILTERED OUT: {filter_reason}"
                         )
@@ -716,6 +722,10 @@ class TyposquatFindingsRepository(ProgramAccessMixin):
                         if rf_data:
                             filter_event_data["recordedfuture_data"] = rf_data
                         return None, "filtered", filter_event_data
+                    if not passes_filter and ignore_typosquat_filtering:
+                        logger.info(
+                            f"Typosquat domain {typo_domain_name} bypassed filter ({filter_reason}) due to ignore_typosquat_filtering"
+                        )
 
                     apex_domain_name = extract_apex_domain(typo_domain_name)
                     apex_row = TyposquatFindingsRepository.find_or_create_typosquat_apex_in_session(
@@ -4755,7 +4765,8 @@ class TyposquatFindingsRepository(ProgramAccessMixin):
         """
         async with get_db_session() as db:
             try:
-               
+                ignore_typosquat_filtering = bool(url_data.pop("ignore_typosquat_filtering", False))
+
                 # TyposquatURL is already imported at the top
                 normalized_url = normalize_url_for_storage(url_data.get('url'))
                 program = resolve_program_from_payload(db, url_data)
@@ -4782,9 +4793,13 @@ class TyposquatFindingsRepository(ProgramAccessMixin):
                             typo_domain_name, protected_domains, protected_prefixes, filtering_settings,
                             asset_apex_domains=asset_apex_domains,
                         )
-                        if not passes_filter:
+                        if not passes_filter and not ignore_typosquat_filtering:
                             logger.info(f"Typosquat URL rejected: domain '{typo_domain_name}' filtered out ({filter_reason}), skipping URL {url_data.get('url')}")
                             return None, False, None, None
+                        if not passes_filter and ignore_typosquat_filtering:
+                            logger.info(
+                                f"Typosquat URL auto-create bypassed filter for '{typo_domain_name}' ({filter_reason})"
+                            )
 
                         logger.info(f"Auto-creating typosquat domain '{typo_domain_name}' for URL {url_data.get('url')}")
 
@@ -4829,9 +4844,13 @@ class TyposquatFindingsRepository(ProgramAccessMixin):
                                 hostname, protected_domains, protected_prefixes, filtering_settings,
                                 asset_apex_domains=asset_apex_domains,
                             )
-                            if not passes_filter:
+                            if not passes_filter and not ignore_typosquat_filtering:
                                 logger.info(f"Typosquat URL rejected: domain '{hostname}' filtered out ({filter_reason}), skipping URL {url_data.get('url')}")
                                 return None, False, None, None
+                            if not passes_filter and ignore_typosquat_filtering:
+                                logger.info(
+                                    f"Typosquat URL auto-create bypassed filter for '{hostname}' ({filter_reason})"
+                                )
 
                             logger.info(f"Auto-creating typosquat domain '{hostname}' for URL {url_data.get('url')}")
 
@@ -5158,6 +5177,7 @@ class TyposquatFindingsRepository(ProgramAccessMixin):
         extracted_text: Optional[str] = None,
         source_created_at: Optional[str] = None,
         source: Optional[str] = None,
+        ignore_typosquat_filtering: bool = False,
     ) -> str:
         """Store typosquat screenshot (``program_id`` is required)."""
         async with get_db_session() as db:
@@ -5210,9 +5230,13 @@ class TyposquatFindingsRepository(ProgramAccessMixin):
                                     hostname, protected_domains, protected_prefixes, filtering_settings,
                                     asset_apex_domains=asset_apex_domains,
                                 )
-                                if not passes_filter:
+                                if not passes_filter and not ignore_typosquat_filtering:
                                     raise ValueError(
                                         f"Screenshot rejected: domain '{hostname}' filtered out ({filter_reason})"
+                                    )
+                                if not passes_filter and ignore_typosquat_filtering:
+                                    logger.info(
+                                        f"Screenshot auto-create bypassed filter for '{hostname}' ({filter_reason})"
                                     )
 
                         url_record = TyposquatURL(

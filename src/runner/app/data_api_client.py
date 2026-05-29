@@ -475,13 +475,19 @@ class DataAPIClient:
             logger.exception(f"Unexpected error posting nuclei findings to dedicated API: {e}")
             raise
 
-    async def post_typosquat_domain_findings(self, typosquat_findings: List[Any], program_id: str) -> Dict[str, Any]:
+    async def post_typosquat_domain_findings(
+        self,
+        typosquat_findings: List[Any],
+        program_id: str,
+        ignore_typosquat_filtering: bool = False,
+    ) -> Dict[str, Any]:
         """
         Post typosquat domain findings to /findings/typosquat endpoint.
 
         Args:
             typosquat_findings: List of typosquat domain findings to post
             program_id: UUID of the program for the findings
+            ignore_typosquat_filtering: When True, API skips program typosquat insert filters
 
         Returns:
             API response with job status or error information
@@ -508,8 +514,10 @@ class DataAPIClient:
 
             payload = {
                 "program_id": program_id,
-                "findings": {"typosquat_domain": serializable_findings}
+                "findings": {"typosquat_domain": serializable_findings},
             }
+            if ignore_typosquat_filtering:
+                payload["ignore_typosquat_filtering"] = True
 
             finding_count = len(serializable_findings)
             dynamic_timeout = min(max(30, finding_count * 2), 300)
@@ -607,7 +615,12 @@ class DataAPIClient:
             logger.exception(f"Unexpected error posting broken link findings: {e}")
             return False
 
-    async def post_typosquat_url_findings(self, typosquat_findings: List[Any], program_id: str) -> Dict[str, Any]:
+    async def post_typosquat_url_findings(
+        self,
+        typosquat_findings: List[Any],
+        program_id: str,
+        ignore_typosquat_filtering: bool = False,
+    ) -> Dict[str, Any]:
         """
         Post typosquat URL findings to /findings/typosquat-url endpoint.
         This endpoint accepts one finding at a time, so we send each individually.
@@ -615,6 +628,7 @@ class DataAPIClient:
         Args:
             typosquat_findings: List of typosquat URL findings to post
             program_id: UUID of the program for the findings
+            ignore_typosquat_filtering: When True, API skips program typosquat insert filters
 
         Returns:
             API response with job status or error information (aggregated from all individual posts)
@@ -659,6 +673,8 @@ class DataAPIClient:
                             continue
 
                     finding_dict['program_id'] = program_id
+                    if ignore_typosquat_filtering:
+                        finding_dict['ignore_typosquat_filtering'] = True
 
                     # Post individual finding
                     async with self.session.post(

@@ -67,6 +67,55 @@ def test_build_worker_command_with_stdin_chunks_and_flags(task) -> None:
         assert "--geoip" not in cmd
 
 
+def test_get_command_skips_preflight_when_ignore_filtering(task, monkeypatch) -> None:
+    calls: list[tuple] = []
+
+    class FakeApiClient:
+        def check_domain_filtering(self, domains, program_name):
+            calls.append((domains, program_name))
+            return {"filtered": domains, "allowed": []}
+
+    task.api_client = FakeApiClient()
+    monkeypatch.setattr(task, "_ensure_api_client", lambda: task.api_client)
+    monkeypatch.setattr(
+        task,
+        "_build_worker_command_with_stdin",
+        lambda variations, active_checks, geoip_checks, max_workers: ["echo worker"],
+    )
+
+    result = task.get_command(
+        ["filtered.example.com"],
+        {
+            "analyze_input_as_variations": True,
+            "include_subdomains": False,
+            "ignore_typosquat_filtering": True,
+        },
+    )
+
+    assert result == ["echo worker"]
+    assert calls == []
+
+
+def test_get_command_runs_preflight_without_ignore_filtering(task, monkeypatch) -> None:
+    class FakeApiClient:
+        def check_domain_filtering(self, domains, program_name):
+            return {"filtered": ["filtered.example.com"], "allowed": []}
+
+    task.api_client = FakeApiClient()
+    monkeypatch.setattr(task, "_ensure_api_client", lambda: task.api_client)
+
+    result = task.get_command(
+        ["filtered.example.com"],
+        {
+            "analyze_input_as_variations": True,
+            "include_subdomains": False,
+            "ignore_typosquat_filtering": False,
+        },
+    )
+
+    assert result == []
+
+
 def test_process_spawned_task_outputs_returns_screenshot_findings(task, monkeypatch) -> None:
     import io
     import tarfile

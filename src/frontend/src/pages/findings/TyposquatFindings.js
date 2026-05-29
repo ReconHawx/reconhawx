@@ -216,6 +216,7 @@ function TyposquatFindings() {
   const [batchDomains, setBatchDomains] = useState('');
   const [batchProgramName, setBatchProgramName] = useState('');
   const [batchOriginalDomain, setBatchOriginalDomain] = useState('');
+  const [batchIgnoreTyposquatFiltering, setBatchIgnoreTyposquatFiltering] = useState(false);
   const [uploadedFile, setUploadedFile] = useState(null);
 
   // Batch AI analysis (selected rows → K8s job)
@@ -1152,7 +1153,8 @@ function TyposquatFindings() {
       const response = await api.findings.typosquat.createBatchTyposquatJob(
         domainsToAnalyze, 
         batchProgramName || selectedProgram,
-        batchOriginalDomain || null
+        batchOriginalDomain || null,
+        { ignoreTyposquatFiltering: batchIgnoreTyposquatFiltering }
       );
       
       if (response.status === 'started') {
@@ -1175,6 +1177,7 @@ function TyposquatFindings() {
         setBatchDomains('');
         setBatchProgramName('');
         setBatchOriginalDomain('');
+        setBatchIgnoreTyposquatFiltering(false);
         setUploadedFile(null); // Clear uploaded file
       } else {
         setTyposquatBatchMessage({
@@ -3242,6 +3245,18 @@ function TyposquatFindings() {
                 value={batchOriginalDomain}
                 onChange={(e) => setBatchOriginalDomain(e.target.value)}
               />
+            </Form.Group>
+            <Form.Group className="mb-3">
+              <Form.Check
+                type="checkbox"
+                id="batch-ignore-typosquat-filtering"
+                label="Ignore typosquat filtering"
+                checked={batchIgnoreTyposquatFiltering}
+                onChange={(e) => setBatchIgnoreTyposquatFiltering(e.target.checked)}
+              />
+              <Form.Text className="text-muted">
+                Analyze and store domains even when they would be dropped by this program&apos;s typosquat filter rules.
+              </Form.Text>
             </Form.Group>
             <Button 
               variant="primary" 

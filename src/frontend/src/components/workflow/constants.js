@@ -223,6 +223,12 @@ export const TASK_TYPES = {
       geoip_checks: { type: 'boolean', default: true, description: 'Enable GeoIP lookups' },
       exclude_tested: { type: 'boolean', default: true, description: 'Exclude already tested domains' },
       include_subdomains: { type: 'boolean', default: false, description: 'Include subdomain discovery' },
+      ignore_typosquat_filtering: {
+        type: 'boolean',
+        default: false,
+        description:
+          'Skip program typosquat filter checks (pre-flight and API insert). Use for manual domain analysis when filters would otherwise drop the domain.',
+      },
       recalculate_risk: { type: 'boolean', default: false, description: 'Recalculate risk scores' },
       enable_fuzzing: { type: 'boolean', default: false, description: 'Enable post-detection URL fuzzing (wfuzz) when workflows support it' },
       fuzzer_wordlist: { type: 'string', default: '/workspace/files/webcontent_test.txt', description: 'Wordlist path/ID for optional fuzzing stage' }

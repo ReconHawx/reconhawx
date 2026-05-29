@@ -2005,7 +2005,8 @@ class SyncDataApiClient:
             return False, {}
     
     def send_typosquat_findings(self, step_name: str, program_id: str, workflow_id: str,
-                               typosquat_findings: List[Any], asset_processor: AssetProcessor) -> tuple[bool, Dict[str, Any]]:
+                               typosquat_findings: List[Any], asset_processor: AssetProcessor,
+                               ignore_typosquat_filtering: bool = False) -> tuple[bool, Dict[str, Any]]:
         """Send typosquat findings to dedicated typosquat findings endpoint (synchronous version)"""
         try:
             if not typosquat_findings:
@@ -2044,6 +2045,8 @@ class SyncDataApiClient:
                     "step_name": step_name,
                     "findings": {"typosquat_domain": chunk},
                 }
+                if ignore_typosquat_filtering:
+                    chunk_payload["ignore_typosquat_filtering"] = True
 
                 # Validate JSON serialization before sending
                 try:

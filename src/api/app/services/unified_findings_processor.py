@@ -70,6 +70,7 @@ class UnifiedFindingsProcessingResult:
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     completed_at: Optional[datetime] = None
     error: Optional[str] = None
+    processing_options: Dict[str, Any] = field(default_factory=dict)
 
 
 class UnifiedFindingsProcessor:
@@ -95,7 +96,8 @@ class UnifiedFindingsProcessor:
         self,
         finding_data: Dict[str, List],
         program_id: str,
-        workflow_context: Optional[Dict[str, Any]] = None
+        workflow_context: Optional[Dict[str, Any]] = None,
+        processing_options: Optional[Dict[str, Any]] = None,
     ) -> str:
         """
         Main unified findings processing method.
@@ -107,6 +109,7 @@ class UnifiedFindingsProcessor:
                 - workflow_id: ID of the workflow
                 - execution_id: ID of the workflow execution
                 - step_name: Name of the workflow step
+            processing_options: Optional ingest options (e.g. ignore_typosquat_filtering)
 
         Returns:
             job_id: Unique identifier for tracking the processing job
@@ -119,7 +122,8 @@ class UnifiedFindingsProcessor:
         result = UnifiedFindingsProcessingResult(
             job_id=job_id,
             program_id=str(program_id).strip(),
-            total_findings=self._calculate_total_findings(finding_data)
+            total_findings=self._calculate_total_findings(finding_data),
+            processing_options=dict(processing_options or {}),
         )
 
         self.active_jobs[job_id] = result
@@ -129,7 +133,9 @@ class UnifiedFindingsProcessor:
         #    await self._register_job_with_coordinator(job_id, workflow_context, program_name)
 
         # Start async processing
-        asyncio.create_task(self._process_findings_async(job_id, finding_data, str(program_id).strip()))
+        asyncio.create_task(
+            self._process_findings_async(job_id, finding_data, str(program_id).strip())
+        )
 
         logger.info(f"Started unified findings processing job {job_id} with {result.total_findings} findings")
         if workflow_context:
@@ -223,7 +229,7 @@ class UnifiedFindingsProcessor:
 
                     # Process this finding type
                     batch_result = await self._process_finding_type(
-                        finding_type, findings, program_id, program_name
+                        finding_type, findings, program_id, program_name, result.processing_options
                     )
 
                     result.finding_results[finding_type] = batch_result
@@ -258,6 +264,7 @@ class UnifiedFindingsProcessor:
         findings: List[Dict],
         program_id: str,
         program_name: str,
+        processing_options: Optional[Dict[str, Any]] = None,
     ) -> FindingBatchResult:
         """Process a single finding type"""
         result = FindingBatchResult(finding_type=finding_type, total_count=len(findings))
@@ -271,7 +278,9 @@ class UnifiedFindingsProcessor:
                 return result
 
             # Always use bulk processing for rich event data collection
-            await self._process_bulk(handler, findings, program_id, program_name, result)
+            await self._process_bulk(
+                handler, findings, program_id, program_name, result, processing_options or {}
+            )
 
         except Exception as e:
             logger.error(f"Error processing {finding_type} batch: {e}")
@@ -286,12 +295,15 @@ class UnifiedFindingsProcessor:
         findings: List[Dict],
         program_id: str,
         program_name: str,
-        result: FindingBatchResult
+        result: FindingBatchResult,
+        processing_options: Optional[Dict[str, Any]] = None,
     ):
         """Process findings using bulk operations"""
         try:
             # Use bulk repository methods for large batches
-            bulk_result = await handler(findings, program_id, program_name, bulk=True)
+            bulk_result = await handler(
+                findings, program_id, program_name, bulk=True, processing_options=processing_options or {}
+            )
 
             # Handle different return formats based on finding type
             if len(bulk_result) == 8:
@@ -396,7 +408,12 @@ class UnifiedFindingsProcessor:
 
     # Finding type handlers
     async def _handle_nuclei_findings(
-        self, findings: List[Dict], program_id: str, program_name: str, bulk: bool = False
+        self,
+        findings: List[Dict],
+        program_id: str,
+        program_name: str,
+        bulk: bool = False,
+        processing_options: Optional[Dict[str, Any]] = None,
     ) -> Tuple:
         """Handle nuclei finding processing"""
         # Handle the case where findings is a single dict instead of a list
@@ -504,9 +521,16 @@ class UnifiedFindingsProcessor:
             return record_id, action, event_data
 
     async def _handle_typosquat_domain_findings(
-        self, findings: List[Dict], program_id: str, program_name: str, bulk: bool = False
+        self,
+        findings: List[Dict],
+        program_id: str,
+        program_name: str,
+        bulk: bool = False,
+        processing_options: Optional[Dict[str, Any]] = None,
     ) -> Tuple:
         """Handle typosquat domain finding processing"""
+        options = processing_options or {}
+        ignore_typosquat_filtering = bool(options.get("ignore_typosquat_filtering"))
         # Handle the case where findings is a single dict instead of a list
         if isinstance(findings, dict):
             findings = [findings]
@@ -534,7 +558,10 @@ class UnifiedFindingsProcessor:
                     finding_data.setdefault("program_id", program_id)
                     finding_data.setdefault("program_name", program_name)
 
-                    result_tuple = await TyposquatFindingsRepository.create_or_update_typosquat_finding(finding_data)
+                    result_tuple = await TyposquatFindingsRepository.create_or_update_typosquat_finding(
+                        finding_data,
+                        ignore_typosquat_filtering=ignore_typosquat_filtering,
+                    )
                     if len(result_tuple) == 3:
                         record_id, action, event_data = result_tuple
                     else:
@@ -643,7 +670,10 @@ class UnifiedFindingsProcessor:
         else:
             findings[0].setdefault("program_id", program_id)
             findings[0].setdefault("program_name", program_name)
-            result_tuple = await TyposquatFindingsRepository.create_or_update_typosquat_finding(findings[0])
+            result_tuple = await TyposquatFindingsRepository.create_or_update_typosquat_finding(
+                findings[0],
+                ignore_typosquat_filtering=ignore_typosquat_filtering,
+            )
             if len(result_tuple) == 3:
                 record_id, action, event_data = result_tuple
             else:
@@ -669,7 +699,12 @@ class UnifiedFindingsProcessor:
             return record_id, action, event_data
 
     async def _handle_wpscan_findings(
-        self, findings: List[Dict], program_id: str, program_name: str, bulk: bool = False
+        self,
+        findings: List[Dict],
+        program_id: str,
+        program_name: str,
+        bulk: bool = False,
+        processing_options: Optional[Dict[str, Any]] = None,
     ) -> Tuple:
         """Handle WPScan finding processing"""
         # Handle the case where findings is a single dict instead of a list

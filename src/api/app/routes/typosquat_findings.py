@@ -418,8 +418,24 @@ async def create_typosquat_finding(
         if total_typosquat_domain == 0:
             raise HTTPException(status_code=400, detail="No typosquat domain findings provided for processing")
 
+        ignore_typosquat_filtering = bool(data.get("ignore_typosquat_filtering"))
+        if ignore_typosquat_filtering:
+            logger.info(
+                "ignore_typosquat_filtering=true on typosquat ingest for program_id=%s (%s domains)",
+                program_id,
+                total_typosquat_domain,
+            )
+
+        processing_options = {}
+        if ignore_typosquat_filtering:
+            processing_options["ignore_typosquat_filtering"] = True
+
         # Use unified processor - always async, never blocks API
-        job_id = await unified_findings_processor.process_findings_unified(typosquat_domain_data, str(program_id).strip())
+        job_id = await unified_findings_processor.process_findings_unified(
+            typosquat_domain_data,
+            str(program_id).strip(),
+            processing_options=processing_options,
+        )
 
 
         return TyposquatProcessingResponse(
@@ -3062,6 +3078,10 @@ class TyposquatURLCreateRequest(BaseModel):
     typosquat_domain_id: Optional[str] = Field(None, description="Typosquat domain ID to associate with this URL")
     typosquat_certificate_id: Optional[str] = Field(None, description="Typosquat certificate ID to associate with this URL")
     notes: Optional[str] = Field(None, description="Notes")
+    ignore_typosquat_filtering: Optional[bool] = Field(
+        False,
+        description="When true, skip program typosquat insert filters when auto-creating the parent domain",
+    )
     # TLS data for SSL certificate processing (not stored in URL table)
     tls: Optional[Dict[str, Any]] = Field(None, description="TLS/SSL certificate data from httpx for certificate creation")
     

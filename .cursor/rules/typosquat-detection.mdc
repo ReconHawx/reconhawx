@@ -180,6 +180,10 @@ Treat input domains directly as typosquat variations (skip generation).
 
 **Use Case:** When you have a list of suspicious domains (e.g., from threat intel) and want to analyze them without generating new variations.
 
+#### 3. Manual analysis with filter bypass
+
+When `ignore_typosquat_filtering: true`, the runner skips the pre-flight `POST /findings/typosquat/check-filter` call and the API skips the pre-insertion `TyposquatFilteringService` gate for **new** domain rows. Updates to existing findings are unchanged. Default is `false` (automated workflows, CT-monitor, gather-api). The Typosquat findings UI **Analyze Domains** modal exposes this as an optional checkbox.
+
 ### Variation Generation (VariationGenerator)
 
 Uses dnstwist library with offset-based rotation for large variation spaces:

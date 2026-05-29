@@ -1137,7 +1137,12 @@ class TaskExecutor:
                         logger.info(f"🔍 TYPOSQUAT: Sending {len(typosquat_findings)} typosquat findings to dedicated endpoint (fallback)")
 
                         typosquat_success, typosquat_response = self.data_api_client.send_typosquat_findings(
-                            step_name, ingest_pid, self.execution_id, typosquat_findings, self.asset_processor
+                            step_name,
+                            ingest_pid,
+                            self.execution_id,
+                            typosquat_findings,
+                            self.asset_processor,
+                            ignore_typosquat_filtering=bool((task_def.params or {}).get("ignore_typosquat_filtering")),
                         )
                         logger.info(f"🔍 TYPOSQUAT SENDING RESULT (fallback): {typosquat_success}")
                         if typosquat_success:
@@ -3992,7 +3997,7 @@ class TaskExecutor:
                         if batch_assets and self.progressive_streaming_enabled:
                             task_id = list(outputs.keys())[0] if outputs else None
                             sent = await self._send_batch_assets_progressively(
-                                batch_assets, program_name, step_name, task_id
+                                batch_assets, program_name, step_name, task_id, params
                             )
                             progressive_assets_sent_count[0] += sent
                         self._merge_batch_into_aggregated_assets(
@@ -4285,7 +4290,9 @@ class TaskExecutor:
                     task_id = list(outputs.keys())[0] if outputs else None
                     logger.info(f"Sending progressive assets for task {task_id} with {len(batch_assets)} asset types")
 
-                    assets_sent = await self._send_batch_assets_progressively(batch_assets, program_name, step_name, task_id)
+                    assets_sent = await self._send_batch_assets_progressively(
+                        batch_assets, program_name, step_name, task_id, task_def.params
+                    )
                     progressive_assets_sent_count[0] += assets_sent
                     logger.info(f"Sent {assets_sent} assets for task {task_id}")
 
@@ -4589,10 +4596,18 @@ class TaskExecutor:
 
             raise
     
-    async def _send_batch_assets_progressively(self, assets_and_findings: Dict, program_name: str, step_name: str, task_id: Optional[str] = None) -> int:
+    async def _send_batch_assets_progressively(
+        self,
+        assets_and_findings: Dict,
+        program_name: str,
+        step_name: str,
+        task_id: Optional[str] = None,
+        task_params: Optional[Dict[str, Any]] = None,
+    ) -> int:
         """Send batch assets progressively during execution"""
         assets_sent = 0
         ingest_pid = (self.program_id or "").strip()
+        ignore_typosquat_filtering = bool((task_params or {}).get("ignore_typosquat_filtering"))
         if not ingest_pid:
             logger.error("program_id not set on TaskExecutor; cannot post assets/findings")
             return 0
@@ -4743,7 +4758,7 @@ class TaskExecutor:
                 try:
                     logger.info(f"Progressively sending {len(typosquat_domain_findings)} typosquat domain findings to /findings/typosquat")
                     typosquat_domain_response = await self.async_data_api_client.post_typosquat_domain_findings(
-                        typosquat_domain_findings, ingest_pid
+                        typosquat_domain_findings, ingest_pid, ignore_typosquat_filtering=ignore_typosquat_filtering
                     )
                     domain_success = typosquat_domain_response.get("status") != "error"
 
@@ -4764,7 +4779,7 @@ class TaskExecutor:
                 try:
                     logger.info(f"Progressively sending {len(typosquat_url_findings)} typosquat URL findings to /findings/typosquat-url")
                     typosquat_url_response = await self.async_data_api_client.post_typosquat_url_findings(
-                        typosquat_url_findings, ingest_pid
+                        typosquat_url_findings, ingest_pid, ignore_typosquat_filtering=ignore_typosquat_filtering
                     )
                     url_success = typosquat_url_response.get("status") != "error"
 

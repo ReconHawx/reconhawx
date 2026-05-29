@@ -116,6 +116,7 @@ typosquat_detection:
   geoip_checks: true
   exclude_tested: true
   include_subdomains: false
+  ignore_typosquat_filtering: false
   recalculate_risk: false
   enable_fuzzing: false
   fuzzer_wordlist: /workspace/files/webcontent_test.txt
