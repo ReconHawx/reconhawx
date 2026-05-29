@@ -34,6 +34,26 @@ function TaskParameterSelector({
   const onParameterChangeRef = React.useRef(onParameterChange);
   onParameterChangeRef.current = onParameterChange;
 
+  // Raw textarea text for array params — avoids losing trailing newlines while typing
+  // (parsed arrays drop empty lines, which would swallow Enter before the next TLD/fuzzer line).
+  const [arrayParamDrafts, setArrayParamDrafts] = React.useState({});
+
+  const serializeArrayParam = (value) =>
+    Array.isArray(value) ? value.join('\n') : '';
+
+  React.useEffect(() => {
+    if (!taskConfig?.params) {
+      return;
+    }
+    const drafts = {};
+    Object.entries(taskConfig.params).forEach(([name, cfg]) => {
+      if (cfg.type === 'array') {
+        drafts[name] = serializeArrayParam(taskParams[name]);
+      }
+    });
+    setArrayParamDrafts(drafts);
+  }, [taskType, selectedNode?.id, taskConfig]);
+
   // Initialize taskParams with default values for parameters that haven't been explicitly set.
   // Only depend on taskType/taskParams so we don't re-run on every parent render (onParameterChange is inline and would reset wordlist state).
   React.useEffect(() => {
@@ -161,15 +181,26 @@ function TaskParameterSelector({
         );
       }
 
-      case 'array':
-        const textareaValue = Array.isArray(currentValue) ? currentValue.join('\n') : '';
+      case 'array': {
+        const serialized = serializeArrayParam(currentValue);
+        const textareaValue =
+          arrayParamDrafts[paramName] !== undefined ? arrayParamDrafts[paramName] : serialized;
         return (
           <>
             <Form.Control
               as="textarea"
               rows={4}
               value={textareaValue}
-              onChange={(e) => handleArrayParamChange(paramName, e.target.value)}
+              onChange={(e) => {
+                const raw = e.target.value;
+                setArrayParamDrafts((prev) => ({ ...prev, [paramName]: raw }));
+                handleArrayParamChange(paramName, raw);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.stopPropagation();
+                }
+              }}
               placeholder={getPlaceholderText(paramName)}
             />
             <Form.Text className="text-muted">
@@ -177,6 +208,7 @@ function TaskParameterSelector({
             </Form.Text>
           </>
         );
+      }
 
       case 'checkbox-group': {
         const selected = Array.isArray(currentValue) ? currentValue : [];
@@ -236,6 +268,8 @@ function TaskParameterSelector({
         return 'Enter each command on a separate line\nExample:\necho "Hello World"\nls -la /tmp\ncat /etc/passwd';
       case 'fuzzers':
         return 'Enter each fuzzer on a separate line\nExample:\naddition\nbitsquatting\ndictionary';
+      case 'duplicate_tlds':
+        return 'Enter each TLD on a separate line (no leading dot)\nExample:\norg\nlive\nnet';
       default:
         return `Enter each item on a separate line`;
     }
@@ -249,6 +283,12 @@ function TaskParameterSelector({
         return 'Enter each command on a separate line. Commands will be executed in order. Spaces are preserved.';
       case 'fuzzers':
         return 'Enter each fuzzer on a separate line. Available fuzzers depend on dnstwist.';
+      case 'duplicate_tlds':
+        return (
+          'Enter TLD labels only (e.g. org, live, co.uk). Original dnstwist TLDs are kept; each base ' +
+          'variation also gets copies with these TLDs (multi-part suffixes use tldextract). ' +
+          'max_variations applies to the base set before duplication.'
+        );
       default:
         return 'Enter each item on a separate line. You can include spaces within each item.';
     }
@@ -693,6 +733,13 @@ function TaskParameterSelector({
       </Card.Header>
       <Card.Body>
         {Object.entries(taskConfig.params).map(([paramName, paramConfig]) => {
+          if (
+            taskType === 'typosquat_detection' &&
+            taskParams.analyze_input_as_variations &&
+            (paramName === 'max_variations' || paramName === 'duplicate_tlds')
+          ) {
+            return null;
+          }
           // Special handling for timeout
           if (paramName === 'timeout') {
             return (

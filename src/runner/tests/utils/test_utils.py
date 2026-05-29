@@ -8,6 +8,7 @@ from utils.utils import (
     get_valid_domains,
     get_valid_ips,
     get_valid_urls,
+    hostname_without_public_suffix,
     is_valid_domain,
     is_valid_ip,
     is_valid_url,
@@ -103,3 +104,18 @@ def test_normalize_url_for_comparison_strips_query_and_fragment() -> None:
 
 def test_normalize_url_for_comparison_keeps_root_slash() -> None:
     assert normalize_url_for_comparison("http://a.com:8080/") == "http://a.com:8080/"
+
+
+@pytest.mark.parametrize(
+    "hostname,expected",
+    [
+        ("d0main.com", "d0main"),
+        ("d0main.example.com", "d0main.example"),
+        ("d0main.domain.co.uk", "d0main.domain"),
+        ("www.example.co.uk", "www.example"),
+        ("", None),
+        ("nodot", None),
+    ],
+)
+def test_hostname_without_public_suffix(hostname: str, expected: str | None) -> None:
+    assert hostname_without_public_suffix(hostname) == expected

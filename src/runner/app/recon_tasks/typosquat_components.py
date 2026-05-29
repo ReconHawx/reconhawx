@@ -27,6 +27,7 @@ import ipaddress
 
 from .base import FindingType
 from models.base import utcnow
+from utils.utils import hostname_without_public_suffix
 from models.findings import TyposquatDomain
 from utils import normalize_url_for_storage
 from utils.html_extractor import extract_text_from_gowitness_jsonl, extract_text_from_image_ocr
@@ -185,6 +186,62 @@ PARKING_A_CIDRS: List[str] = [
 PARKING_A_NETWORKS = [ipaddress.ip_network(cidr) for cidr in PARKING_A_CIDRS]
 
 
+def _normalize_duplicate_tld(tld: str) -> Optional[str]:
+    """Normalize a TLD label for duplicate_tlds expansion (no leading dot, lowercase)."""
+    if not isinstance(tld, str):
+        return None
+    normalized = tld.strip().lstrip('.').lower()
+    return normalized or None
+
+
+def expand_variations_with_duplicate_tlds(
+    domain_to_fuzzers: Dict[str, List[str]],
+    duplicate_tlds: List[str],
+) -> Dict[str, List[str]]:
+    """
+    For each variation domain, emit additional domains with the same label and each listed TLD.
+    Original entries are preserved; new keys copy (or merge) fuzzer lists from the source variation.
+    """
+    if not duplicate_tlds:
+        return domain_to_fuzzers
+
+    normalized_tlds: List[str] = []
+    seen_tlds: set = set()
+    for raw in duplicate_tlds:
+        tld = _normalize_duplicate_tld(raw)
+        if tld and tld not in seen_tlds:
+            seen_tlds.add(tld)
+            normalized_tlds.append(tld)
+
+    if not normalized_tlds:
+        return domain_to_fuzzers
+
+    base_count = len(domain_to_fuzzers)
+    added_count = 0
+
+    for domain, fuzzers in list(domain_to_fuzzers.items()):
+        host = hostname_without_public_suffix(domain)
+        if not host:
+            logger.debug(f"Skipping TLD duplication (no public suffix): {domain}")
+            continue
+
+        for tld in normalized_tlds:
+            candidate = f"{host}.{tld}"
+            if candidate in domain_to_fuzzers:
+                for fuzzer_type in fuzzers:
+                    if fuzzer_type not in domain_to_fuzzers[candidate]:
+                        domain_to_fuzzers[candidate].append(fuzzer_type)
+            else:
+                domain_to_fuzzers[candidate] = list(fuzzers)
+                added_count += 1
+
+    logger.info(
+        f"TLD duplication: base={base_count}, duplicate_tlds={normalized_tlds}, "
+        f"added={added_count}, final={len(domain_to_fuzzers)}"
+    )
+    return domain_to_fuzzers
+
+
 class VariationGenerator:
     """Handles domain variation generation using dnstwist with fallback strategies"""
 
@@ -242,7 +299,8 @@ class VariationGenerator:
             logger.warning(f"Error updating variation offset for {domain}: {e}")
 
     def generate_variations_with_fuzzers(self, domain: str, max_variations: int = 100,
-                                       fuzzers: Optional[List[str]] = None, program_name: str = "") -> Dict[str, List[str]]:
+                                       fuzzers: Optional[List[str]] = None, program_name: str = "",
+                                       duplicate_tlds: Optional[List[str]] = None) -> Dict[str, List[str]]:
         """Generate domain variations using dnstwist library with offset-based rotation"""
         if '.' not in domain:
             logger.warning(f"Invalid domain format: {domain}")
@@ -418,6 +476,10 @@ class VariationGenerator:
                     else:
                         logger.info(f"Generated {len(domain_to_fuzzers)} variations for {domain} using library")
 
+                    if duplicate_tlds:
+                        domain_to_fuzzers = expand_variations_with_duplicate_tlds(
+                            domain_to_fuzzers, duplicate_tlds
+                        )
                     return domain_to_fuzzers
                     
             except Exception as e:
@@ -425,9 +487,17 @@ class VariationGenerator:
                 logger.info("Falling back to subprocess method")
         
         # Fallback: use subprocess method
-        return self._generate_via_subprocess(domain, max_variations, fuzzers)
+        return self._generate_via_subprocess(
+            domain, max_variations, fuzzers, duplicate_tlds=duplicate_tlds
+        )
     
-    def _generate_via_subprocess(self, domain: str, max_variations: int, fuzzers: Optional[List[str]]) -> Dict[str, List[str]]:
+    def _generate_via_subprocess(
+        self,
+        domain: str,
+        max_variations: int,
+        fuzzers: Optional[List[str]],
+        duplicate_tlds: Optional[List[str]] = None,
+    ) -> Dict[str, List[str]]:
         """Fallback method using dnstwist binary subprocess"""
         try:
             logger.info(f"Generating variations for {domain} using dnstwist binary (fallback)")
@@ -474,6 +544,10 @@ class VariationGenerator:
                     count += 1
             
             logger.info(f"Generated {len(domain_to_fuzzers)} variations for {domain} using binary")
+            if duplicate_tlds:
+                domain_to_fuzzers = expand_variations_with_duplicate_tlds(
+                    domain_to_fuzzers, duplicate_tlds
+                )
             return domain_to_fuzzers
             
         except subprocess.TimeoutExpired:

@@ -211,6 +211,14 @@ export const TASK_TYPES = {
       max_workers: { type: 'number', default: 5, description: 'Maximum parallel workers' },
       domains_per_worker: { type: 'number', default: 20, description: 'Domains per worker batch' },
       fuzzers: { type: 'array', default: [], description: 'Specific dnstwist fuzzers to use (one per line, e.g., addition, bitsquatting, dictionary)' },
+      duplicate_tlds: {
+        type: 'array',
+        default: [],
+        description:
+          'Extra TLDs to emit for each generated variation (one per line, e.g. org, live). ' +
+          'Keeps dnstwist TLDs and adds label.tld copies. Only used when analyze_input_as_variations is false. ' +
+          'Total domains scale roughly as max_variations × (1 + count), minus overlaps.',
+      },
       active_checks: { type: 'boolean', default: true, description: 'Enable SSL/HTTP checks' },
       geoip_checks: { type: 'boolean', default: true, description: 'Enable GeoIP lookups' },
       exclude_tested: { type: 'boolean', default: true, description: 'Exclude already tested domains' },

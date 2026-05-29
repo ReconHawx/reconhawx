@@ -215,6 +215,8 @@ self._update_variation_offset(domain, program_name, new_offset)  # → 100
 # Next run will test variations 100-200
 ```
 
+**TLD duplication (`duplicate_tlds`):** Optional list of extra TLD labels (e.g. `org`, `live`, `co.uk`). After dnstwist selects up to `max_variations` base domains, the runner keeps those entries and adds copies for each listed TLD (`expand_variations_with_duplicate_tlds` in `typosquat_components.py`). Host parsing uses **`tldextract`** (`hostname_without_public_suffix` in `utils/utils.py`) so multi-part public suffixes are correct (e.g. `d0main.domain.co.uk` + `org` → `d0main.domain.org`, not `d0main.domain.co.org`). Hostnames with no detected public suffix are skipped. `max_variations` applies only to the base dnstwist window; total domains scale roughly as `max_variations × (1 + len(duplicate_tlds))` minus overlaps. Not used when `analyze_input_as_variations` is true. Workflow builder: `duplicate_tlds` in `constants.js` (array textarea, one TLD per line).
+
 ### Deduplication Strategy
 
 **Two-Level Deduplication:**

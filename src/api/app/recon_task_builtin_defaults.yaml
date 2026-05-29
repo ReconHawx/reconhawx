@@ -111,6 +111,7 @@ typosquat_detection:
   max_workers: 5
   domains_per_worker: 20
   fuzzers: []
+  duplicate_tlds: []
   active_checks: true
   geoip_checks: true
   exclude_tested: true

@@ -1,5 +1,5 @@
 import re
-from typing import List
+from typing import List, Optional
 from urllib.parse import urlparse
 import logging
 import tldextract
@@ -325,6 +325,38 @@ def normalize_url_for_comparison(url: str) -> str:
     except Exception as e:
         logger.error(f"Error normalizing URL for comparison {url}: {str(e)}")
         return ""
+
+
+def hostname_without_public_suffix(hostname: str) -> Optional[str]:
+    """
+    Return the hostname with the public suffix removed (via tldextract).
+
+    Examples:
+    - d0main.com -> d0main
+    - d0main.example.com -> d0main.example
+    - d0main.domain.co.uk -> d0main.domain
+
+    Returns None when no public suffix is detected.
+    """
+    if not hostname or not isinstance(hostname, str):
+        return None
+
+    hostname = hostname.strip().lower()
+    if not hostname:
+        return None
+
+    try:
+        extracted = tldextract.extract(hostname)
+        if not extracted.suffix:
+            return None
+        if extracted.subdomain:
+            return f"{extracted.subdomain}.{extracted.domain}"
+        if extracted.domain:
+            return extracted.domain
+        return None
+    except Exception as e:
+        logger.debug(f"hostname_without_public_suffix failed for '{hostname}': {e}")
+        return None
 
 
 def extract_apex_domain(domain_name: str) -> str:

@@ -109,19 +109,28 @@ class TyposquatDetection(Task):
         # Extract parameters
         max_variations = params.get("max_variations", 100) if params else 100
         fuzzers = params.get("fuzzers", []) if params else []
+        duplicate_tlds = params.get("duplicate_tlds", []) if params else []
+        if not isinstance(duplicate_tlds, list):
+            duplicate_tlds = []
         exclude_tested = params.get("exclude_tested", True) if params else True
         include_subdomains = params.get("include_subdomains", False) if params else False
         analyze_input_as_variations = params.get("analyze_input_as_variations", False) if params else False
         
         logger.info(f"Preparing variations for domains: {domains_to_process}")
-        logger.info(f"Parameters: max_variations={max_variations}, exclude_tested={exclude_tested}, include_subdomains={include_subdomains}, analyze_input_as_variations={analyze_input_as_variations}")
+        logger.info(
+            f"Parameters: max_variations={max_variations}, duplicate_tlds={duplicate_tlds}, "
+            f"exclude_tested={exclude_tested}, include_subdomains={include_subdomains}, "
+            f"analyze_input_as_variations={analyze_input_as_variations}"
+        )
         
         # Handle input analysis mode
         if analyze_input_as_variations:
             return self._prepare_input_analysis_mode(domains_to_process, include_subdomains)
         
         # Standard variation generation mode
-        return self._prepare_standard_mode(domains_to_process, max_variations, fuzzers, exclude_tested, include_subdomains)
+        return self._prepare_standard_mode(
+            domains_to_process, max_variations, fuzzers, duplicate_tlds, exclude_tested, include_subdomains
+        )
     
     def _prepare_input_analysis_mode(self, domains: List[str], include_subdomains: bool) -> List[Dict]:
         """Prepare input domains for direct analysis as typosquat variations"""
@@ -154,8 +163,9 @@ class TyposquatDetection(Task):
         
         return all_variations
     
-    def _prepare_standard_mode(self, domains: List[str], max_variations: int, fuzzers: List[str], 
-                             exclude_tested: bool, include_subdomains: bool) -> List[Dict]:
+    def _prepare_standard_mode(self, domains: List[str], max_variations: int, fuzzers: List[str],
+                             duplicate_tlds: List[str], exclude_tested: bool,
+                             include_subdomains: bool) -> List[Dict]:
         """Prepare domains using standard variation generation"""
         logger.info("Using standard variation generation mode")
         
@@ -186,7 +196,7 @@ class TyposquatDetection(Task):
             logger.info(f"Generating variations for domain: {domain}")
             # Generate variations with deduplication retry logic
             domain_variations = self._generate_variations_with_retry(
-                domain, max_variations, fuzzers, already_tested, exclude_tested
+                domain, max_variations, fuzzers, duplicate_tlds, already_tested, exclude_tested
             )
 
             # Track exhausted domains
@@ -219,7 +229,8 @@ class TyposquatDetection(Task):
         return all_variations
     
     def _generate_variations_with_retry(self, domain: str, max_variations: int, fuzzers: List[str],
-                                      already_tested: set, exclude_tested: bool) -> Dict[str, List[str]]:
+                                      duplicate_tlds: List[str], already_tested: set,
+                                      exclude_tested: bool) -> Dict[str, List[str]]:
         """Generate variations with retry logic for deduplication using Redis cache and API"""
         current_max_variations = max_variations
         domain_to_fuzzers = {}
@@ -240,7 +251,11 @@ class TyposquatDetection(Task):
 
             # Generate variations using component (with offset-based rotation)
             all_domain_variations = self.variation_generator.generate_variations_with_fuzzers(
-                domain, current_max_variations, fuzzers=fuzzers, program_name=self.program_name
+                domain,
+                current_max_variations,
+                fuzzers=fuzzers,
+                program_name=self.program_name,
+                duplicate_tlds=duplicate_tlds,
             )
 
             generated_count = len(all_domain_variations)
