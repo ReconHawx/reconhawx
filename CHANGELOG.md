@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.44.0](https://github.com/ReconHawx/reconhawx/compare/v0.43.0...v0.44.0) (2026-06-02)
+
+
+### Features
+
+* **ct-monitor:** run self-hosted certstream with program-gated scaling ([eb90545](https://github.com/ReconHawx/reconhawx/commit/eb90545c90ef8a04706cef829b48f3aff835a530))
+
 ## [0.43.0](https://github.com/ReconHawx/reconhawx/compare/v0.42.0...v0.43.0) (2026-06-02)
 
 
