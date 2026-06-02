@@ -19,6 +19,7 @@ resources:
   - ../base/frontend
   - ../base/headlamp
   - ../base/event-handler
+  - ../base/certstream-server
   - ../base/ct-monitor
   - ../base/runner
 

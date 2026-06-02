@@ -6,7 +6,7 @@ Monitors CT logs in real-time for certificates issued to domains
 that look similar to protected domains (typosquatting detection).
 
 This service:
-1. Streams certificates from CertStream (all major CT logs)
+1. Streams certificates from self-hosted certstream-server (all major CT logs)
 2. Matches certificate domains against protected domains per program
 3. Publishes alerts to NATS when suspicious certificates are found
 4. Triggers automatic typosquat analysis workflows
@@ -42,7 +42,11 @@ import uvicorn
 from config import get_config, CTMonitorConfig
 import program_ct_settings
 from certstream_consumer import CertStreamConsumer
-from ct_log_poller import CTLogPoller
+from certstream_k8s import (
+    certstream_health_url_from_ws,
+    scale_certstream_deployment,
+    wait_for_certstream_http_ready,
+)
 from variation_generator import DnstwistVariationGenerator
 from protected_domain_similarity import best_match_among_protected
 from alert_publisher import CTAlertPublisher
@@ -75,7 +79,7 @@ class CTMonitorService:
     Main CT monitoring service.
     
     Coordinates all components:
-    - CTLogPoller or CertStreamConsumer: Receives certificates
+    - CertStreamConsumer: Receives certificates from self-hosted certstream-server
     - DnstwistVariationGenerator: Fast O(1) lookup for pre-computed variations
     - Keyword + API-aligned similarity vs protected domains (per-program threshold)
     - CTAlertPublisher: Publishes alerts to NATS
@@ -88,8 +92,7 @@ class CTMonitorService:
         logging.getLogger().setLevel(self.config.log_level)
         
         # Components (initialized in start())
-        self.consumer: Optional[CertStreamConsumer] = None  # CertStream fallback
-        self.poller: Optional[CTLogPoller] = None  # Direct CT log polling
+        self.consumer: Optional[CertStreamConsumer] = None
         self.publisher: Optional[CTAlertPublisher] = None
         
         # Primary matcher: dnstwist variation generator (fast O(1) lookup)
@@ -131,28 +134,16 @@ class CTMonitorService:
         self._any_program_ct_monitoring_enabled: bool = False
         self._ct_fetch_active: bool = False
         self._ct_ingest_task: Optional[asyncio.Task] = None
+        self._certstream_replicas_desired: Optional[int] = None
         # Global runtime from API GET /internal/ct-monitor/runtime-settings (merged with defaults)
         self._runtime_overlay: Dict[str, int] = {
             "domain_refresh_interval": self.config.domain_refresh_interval,
             "stats_interval": self.config.stats_interval,
-            "ct_poll_interval": self.config.ct_poll_interval,
-            "ct_batch_size": self.config.ct_batch_size,
-            "ct_max_entries_per_poll": self.config.ct_max_entries_per_poll,
-            "ct_start_offset": self.config.ct_start_offset,
         }
-        # Union of per-program TLD allowlists for CertStream / CTLogPoller
+        # Union of per-program TLD allowlists for CertStreamConsumer
         self._ingestion_tld_union: Set[str] = program_ct_settings.default_tld_set()
         # Snapshot for /status: programs with ct_monitoring_enabled (after last successful refresh)
         self._programs_ct_enabled_detail: List[Dict[str, Any]] = []
-
-    def _poll_sig_from_overlay(self) -> Tuple[int, int, int, int]:
-        o = self._runtime_overlay
-        return (
-            int(o["ct_poll_interval"]),
-            int(o["ct_batch_size"]),
-            int(o["ct_max_entries_per_poll"]),
-            int(o["ct_start_offset"]),
-        )
 
     async def _fetch_runtime_settings_from_api(self) -> None:
         headers: Dict[str, str] = {}
@@ -189,15 +180,10 @@ class CTMonitorService:
             logger.warning("Runtime settings fetch error: %s", e)
 
     async def reload_runtime_settings_now(self) -> None:
-        """Apply new global runtime from API; restart CT ingestion if poll parameters changed."""
+        """Apply new global runtime from API (domain refresh / stats intervals)."""
         if not self._running:
             raise RuntimeError("CT monitor service is not running")
-        old_sig = self._poll_sig_from_overlay()
         await self._fetch_runtime_settings_from_api()
-        new_sig = self._poll_sig_from_overlay()
-        if old_sig != new_sig and self._ct_fetch_active:
-            logger.info("CT poll/batch runtime changed; restarting CT ingestion")
-            await self._stop_ct_ingestion()
 
     async def start(self):
         """Start the CT monitoring service"""
@@ -229,10 +215,8 @@ class CTMonitorService:
                 logger.warning("No CT match config loaded - alerts will not be generated")
                 logger.warning("Ensure programs have ct_monitoring_enabled and protected domains or keywords")
             
-            # Poller / CertStream are started only when ≥1 program has ct_monitoring_enabled
-            self.poller = None
             self.consumer = None
-            logger.info("Using direct CT log polling")            
+            logger.info("Using self-hosted CertStream at %s", self.config.certstream_url)
             self._monitoring_task = asyncio.create_task(self._run_monitoring())
             
         except Exception as e:
@@ -267,41 +251,52 @@ class CTMonitorService:
             await self._stop_ct_ingestion()
 
     async def _reconcile_ct_ingestion(self) -> None:
-        """Turn CT log / CertStream ingestion on or off to match API program flags."""
+        """Turn CertStream ingestion and certstream-server replicas on/off per program flags."""
         want = self._any_program_ct_monitoring_enabled
         ingest_running = (
             self._ct_ingest_task is not None and not self._ct_ingest_task.done()
         )
 
         if not want:
-            if not self._ct_fetch_active:
-                return
             await self._stop_ct_ingestion()
+            await self._reconcile_certstream_replicas(0)
             return
+
+        scaled_up = await self._reconcile_certstream_replicas(1)
+        if scaled_up:
+            health_url = certstream_health_url_from_ws(self.config.certstream_url)
+            await wait_for_certstream_http_ready(
+                health_url,
+                timeout_sec=float(self.config.certstream_ready_timeout_sec),
+            )
 
         if self._ct_fetch_active and ingest_running:
             return
 
-        await self._start_ct_log_ingestion()
+        await self._start_certstream_ingestion()
 
-    async def _start_ct_log_ingestion(self) -> None:
-        if self._ct_ingest_task and not self._ct_ingest_task.done():
-            return
-        await self._stop_ct_ingestion()
-        o = self._runtime_overlay
-        if o["ct_start_offset"] > 0:
-            logger.info(f"Starting {o['ct_start_offset']:,} entries behind for testing")
-        self.poller = CTLogPoller(
-            callback=self._on_certificate,
-            tld_filter=self._ingestion_tld_union,
-            poll_interval=o["ct_poll_interval"],
-            batch_size=o["ct_batch_size"],
-            max_entries_per_poll=o["ct_max_entries_per_poll"],
-            start_offset=o["ct_start_offset"],
+    async def _reconcile_certstream_replicas(self, replicas: int) -> bool:
+        """Scale certstream-server Deployment. Returns True if replica count changed."""
+        if self._certstream_replicas_desired == replicas:
+            return False
+
+        ok = await scale_certstream_deployment(
+            replicas,
+            deployment_name=self.config.certstream_deployment_name,
+            namespace=self.config.kubernetes_namespace,
+            enabled=self.config.certstream_scale_enabled,
         )
-        self._ct_ingest_task = asyncio.create_task(self.poller.start())
-        self._ct_fetch_active = True
-        logger.info("CT log polling started (≥1 program has CT monitoring enabled)")
+        if ok:
+            prev = self._certstream_replicas_desired
+            self._certstream_replicas_desired = replicas
+            if replicas == 0 and prev != 0:
+                logger.info(
+                    "certstream-server scaled to 0 replicas (no programs with CT monitoring enabled)"
+                )
+            elif replicas == 1 and prev != 1:
+                logger.info("certstream-server scaled to 1 replica (CT monitoring enabled)")
+            return True
+        return False
 
     async def _start_certstream_ingestion(self) -> None:
         if self._ct_ingest_task and not self._ct_ingest_task.done():
@@ -318,8 +313,6 @@ class CTMonitorService:
         logger.info("CertStream ingestion started (≥1 program has CT monitoring enabled)")
 
     async def _stop_ct_ingestion(self) -> None:
-        if self.poller:
-            self.poller.stop()
         if self.consumer:
             self.consumer.stop()
         if self._ct_ingest_task:
@@ -329,7 +322,6 @@ class CTMonitorService:
             except asyncio.CancelledError:
                 pass
             self._ct_ingest_task = None
-        self.poller = None
         self.consumer = None
         if self._ct_fetch_active:
             logger.info("CT provider ingestion stopped (no programs with CT monitoring enabled)")
@@ -351,9 +343,6 @@ class CTMonitorService:
             except asyncio.CancelledError:
                 pass
         
-        # Stop CT source
-        if self.poller:
-            self.poller.stop()
         if self.consumer:
             self.consumer.stop()
         
@@ -372,12 +361,7 @@ class CTMonitorService:
     
     def get_status(self) -> Dict[str, Any]:
         """Get current status and statistics"""
-        # Get stats from either poller or consumer
-        source_stats = None
-        if self.poller:
-            source_stats = self.poller.get_stats()
-        elif self.consumer:
-            source_stats = self.consumer.get_stats()
+        source_stats = self.consumer.get_stats() if self.consumer else None
         
         stats_dict = {}
         if source_stats:
@@ -397,21 +381,6 @@ class CTMonitorService:
         protected_count = self.variation_generator.get_protected_domain_count()
         var_stats = self.variation_generator.get_stats()
         
-        # Get CT log states if using direct polling
-        ct_logs = []
-        if self.poller:
-            log_states = self.poller.get_log_states()
-            for url, state in log_states.items():
-                ct_logs.append({
-                    "name": state["name"],
-                    "operator": state.get("operator", "Unknown"),
-                    "tree_size": state["tree_size"],
-                    "last_index": state["last_index"],
-                    "errors": state["errors"],
-                    "last_poll": state.get("last_poll"),
-                    "connected": state["errors"] < 10  # Consider connected if < 10 errors
-                })
-        
         return {
             "status": "running" if self._running else "stopped",
             "ct_source": self.config.ct_source,
@@ -424,7 +393,9 @@ class CTMonitorService:
                 "programs": len(self.protected_domains),
                 "variation_stats": var_stats
             },
-            "ct_logs": ct_logs,
+            "certstream_url": self.config.certstream_url,
+            "certstream_scale_enabled": self.config.certstream_scale_enabled,
+            "certstream_replicas_desired": self._certstream_replicas_desired,
             "config": {
                 "runtime_overlay": dict(self._runtime_overlay),
                 "ingestion_tld_union": sorted(self._ingestion_tld_union),
@@ -891,12 +862,7 @@ class CTMonitorService:
     
     def _log_stats(self):
         """Log current processing statistics"""
-        # Get stats from either poller or consumer
-        source_stats = None
-        if self.poller:
-            source_stats = self.poller.get_stats()
-        elif self.consumer:
-            source_stats = self.consumer.get_stats()
+        source_stats = self.consumer.get_stats() if self.consumer else None
         
         if source_stats:
             stats_dict = source_stats.to_dict()
@@ -920,17 +886,6 @@ class CTMonitorService:
                 f"variations={var_count:,} (from {protected_count} domains)"
             )
             
-            # Log CT log states if using direct polling
-            if self.poller:
-                log_states = self.poller.get_log_states()
-                for url, state in log_states.items():
-                    logger.debug(
-                        f"  📜 {state['name']}: "
-                        f"tree_size={state['tree_size']:,}, "
-                        f"last_index={state['last_index']:,}, "
-                        f"errors={state['errors']}"
-                    )
-
 
 # Global service instance
 _service_instance: Optional[CTMonitorService] = None
@@ -1069,7 +1024,7 @@ async def refresh_domains():
 
 @http_app.post("/reload-runtime-settings")
 async def reload_runtime_settings():
-    """Reload global CT runtime from API (intervals / poll sizing); may restart CT ingestion."""
+    """Reload global CT runtime from API (domain refresh / stats intervals)."""
     service = get_service()
     if not service.is_running():
         return JSONResponse(

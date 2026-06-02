@@ -264,12 +264,13 @@ main() {
   fi
 
   run_tool_long "Kubernetes: restart app deployments" \
-    mk rollout restart deploy/api deploy/frontend deploy/event-handler deploy/ct-monitor -n "$RECONHAWX_NS"
+    mk rollout restart deploy/api deploy/frontend deploy/event-handler deploy/certstream-server deploy/ct-monitor -n "$RECONHAWX_NS"
 
   ui_step "Kubernetes: waiting for rollouts"
   tool_stream mk rollout status deploy/api -n "$RECONHAWX_NS" --timeout=10m
   tool_stream mk rollout status deploy/frontend -n "$RECONHAWX_NS" --timeout=5m
   tool_stream mk rollout status deploy/event-handler -n "$RECONHAWX_NS" --timeout=5m
+  tool_stream mk rollout status deploy/certstream-server -n "$RECONHAWX_NS" --timeout=10m
   tool_stream mk rollout status deploy/ct-monitor -n "$RECONHAWX_NS" --timeout=5m
   ui_ok "Rollouts complete"
 

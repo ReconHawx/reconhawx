@@ -11,7 +11,7 @@ Superusers can use **Admin → System upgrade** (`/admin/system-upgrade`) when t
 1. Downloads the **GitHub release source tarball** for `latest` or a specific semver (or pulls a **staged tarball** you uploaded for air-gapped clusters),
 2. Runs **`kubernetes/base-update/pre-apply.d/`** hooks, then **`kubectl apply -k kubernetes/base-update/`**,
 3. Optionally runs **`reconhawx-kueue-quota-sync.py`** when “Resync Kueue quotas” is checked,
-4. **`kubectl rollout restart`** for **api**, **frontend**, **event-handler**, and **ct-monitor**, then waits for rollouts.
+4. **`kubectl rollout restart`** for **api**, **frontend**, **event-handler**, **certstream-server**, and **ct-monitor**, then waits for rollouts.
 5. Runs **Helm** for **Loki**, **Alloy**, and **Grafana** in **`monitoring`** (same logic as [`reconhawx-observability-helm.sh`](../reconhawx-observability-helm.sh), **strict** mode: the Job fails if `helm` or `kubernetes/observability` is missing). Needs **egress** to the Grafana Helm chart repository unless you mirror charts.
 
 **Use the UI when:** operators have superuser access, outbound GitHub (or staged tarball) is available from the cluster, and the bundled **`upgrader-sa` RBAC** is acceptable for your security model.
@@ -76,7 +76,7 @@ MINIKUBE_PROFILE=my-profile ./update-minikube.sh
 2. **Print version context** — Manifest **`APP_VERSION`**, GitHub **latest release tag**, and in-cluster **`reconhawx-version`** when present.
 3. **Pre-apply hooks** — Run shell scripts in **[`kubernetes/base-update/pre-apply.d/`](../kubernetes/base-update/pre-apply.d/)** (if any) **before** applying manifests. They perform idempotent cluster fixups—for example removing a workload replaced by a different controller kind. Authors: see [`kubernetes/base-update/pre-apply.d/README.md`](../kubernetes/base-update/pre-apply.d/README.md).
 4. **Apply** — `kubectl apply -k` on **[`kubernetes/base-update/`](../kubernetes/base-update/kustomization.yaml)** (not full `kubernetes/base/`). The **update** overlay applies the same workloads and config as `base` but **omits** `jwt-secret` and `postgres-secret` from the bundle so applying an **unpacked release** does **not** overwrite live database or signing secrets with example files. It includes **[`kubernetes/base/kueue/core`](../kubernetes/base/kueue/core/kustomization.yaml)** (flavors, local queues, RBAC) but **not** the **ClusterQueue** manifests under [`kubernetes/base/kueue/cluster-queues/`](../kubernetes/base/kueue/cluster-queues/kustomization.yaml), so upgrades **do not reset** cluster-sized `nominalQuota` values. To recompute quotas after scaling nodes, run **`RECONHAWX_KUEUE_RESYNC_QUOTAS=1 ./update-kubernetes.sh`** (or **`update-minikube.sh`**) from a directory that contains [`reconhawx-kueue-quota-sync.py`](../reconhawx-kueue-quota-sync.py), or invoke that script manually.
-5. **Roll out** — `kubectl rollout restart` for **api**, **frontend**, **event-handler**, and **ct-monitor**, then wait for rollouts to finish.
+5. **Roll out** — `kubectl rollout restart` for **api**, **frontend**, **event-handler**, **certstream-server**, and **ct-monitor**, then wait for rollouts to finish.
 
 Restarting **api** creates a new Pod: the **`run-migrations`** init container runs again with the **migrations** image for the target release, then the API container starts. If migrations fail, the API Pod will not become Ready until the issue is fixed—see [Database migrations (automated)](install-on-kubernetes.md#database-migrations-automated).
 
@@ -112,7 +112,7 @@ Equivalent high-level steps:
 4. Restart workloads and wait:
 
    ```bash
-   kubectl rollout restart deploy/api deploy/frontend deploy/event-handler deploy/ct-monitor -n reconhawx
+   kubectl rollout restart deploy/api deploy/frontend deploy/event-handler deploy/certstream-server deploy/ct-monitor -n reconhawx
    kubectl rollout status deploy/api -n reconhawx --timeout=10m
    # … repeat for other deployments as needed
    ```

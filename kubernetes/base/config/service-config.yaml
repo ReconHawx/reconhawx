@@ -12,6 +12,7 @@ data:
   nats.url: "nats://nats:4222"
   redis.url: "redis://redis:6379/0"
   event-handler.url: "http://event-handler:8000"
+  certstream.url: "ws://certstream:4000/"
 
   # Application Configuration
   service.port: "8000"

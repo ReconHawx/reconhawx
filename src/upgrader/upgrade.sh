@@ -213,12 +213,13 @@ main() {
   fi
 
   ui_step "Rollout restart"
-  kubectl rollout restart deploy/api deploy/frontend deploy/event-handler deploy/ct-monitor -n "$RECONHAWX_NS"
+  kubectl rollout restart deploy/api deploy/frontend deploy/event-handler deploy/certstream-server deploy/ct-monitor -n "$RECONHAWX_NS"
 
   ui_step "Waiting for rollouts"
   kubectl rollout status deploy/api -n "$RECONHAWX_NS" --timeout=10m
   kubectl rollout status deploy/frontend -n "$RECONHAWX_NS" --timeout=5m
   kubectl rollout status deploy/event-handler -n "$RECONHAWX_NS" --timeout=5m
+  kubectl rollout status deploy/certstream-server -n "$RECONHAWX_NS" --timeout=10m
   kubectl rollout status deploy/ct-monitor -n "$RECONHAWX_NS" --timeout=5m
   ui_ok "Upgrade complete"
 }

@@ -221,8 +221,10 @@ export function CTMonitorInner({ embedded = false }) {
                       : '—'}
                   </p>
                   <p className="small text-muted mb-0">
-                    Per-program similarity and TLD allowlists are configured on each program (Typosquat tab)
-                    and listed below. Global poll intervals are under System Settings → CT monitor.
+                    Certificates are streamed from self-hosted certstream-server (
+                    {status?.certstream_url || 'ws://certstream:4000/'}). Per-program similarity and TLD
+                    allowlists are on each program (Typosquat tab). Global refresh intervals: System Settings →
+                    CT monitor.
                   </p>
                 </Col>
                 <Col md={6} className="text-end">
@@ -460,52 +462,6 @@ export function CTMonitorInner({ embedded = false }) {
             </Col>
           </Row>
 
-          {/* CT Log Connections */}
-          {status.ct_logs && status.ct_logs.length > 0 && (
-            <Row className="mb-4">
-              <Col>
-                <Card className="rh-elevated-card">
-                  <Card.Header>
-                    <h5 className="mb-0">CT Log Connections</h5>
-                  </Card.Header>
-                  <Card.Body>
-                    <Table striped bordered hover responsive>
-                      <thead>
-                        <tr>
-                          <th>Log Name</th>
-                          <th>Operator</th>
-                          <th>Tree Size</th>
-                          <th>Last Index</th>
-                          <th>Errors</th>
-                          <th>Status</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {status.ct_logs.map((log, idx) => (
-                          <tr key={idx}>
-                            <td>{log.name}</td>
-                            <td>{log.operator || 'Unknown'}</td>
-                            <td>{formatNumber(log.tree_size)}</td>
-                            <td>{formatNumber(log.last_index)}</td>
-                            <td>
-                              <Badge bg={log.errors === 0 ? 'success' : log.errors < 10 ? 'warning' : 'danger'}>
-                                {log.errors}
-                              </Badge>
-                            </td>
-                            <td>
-                              <Badge bg={log.connected ? 'success' : 'danger'}>
-                                {log.connected ? 'Connected' : 'Disconnected'}
-                              </Badge>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </Table>
-                  </Card.Body>
-                </Card>
-              </Col>
-            </Row>
-          )}
         </>
       )}
     </Outer>

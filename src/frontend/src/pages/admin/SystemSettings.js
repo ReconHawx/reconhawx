@@ -143,11 +143,7 @@ function SystemSettings() {
 
   const [ctMonitorRuntime, setCtMonitorRuntime] = useState({
     domain_refresh_interval: '',
-    stats_interval: '',
-    ct_poll_interval: '',
-    ct_batch_size: '',
-    ct_max_entries_per_poll: '',
-    ct_start_offset: ''
+    stats_interval: ''
   });
   const [ctMonitorRuntimeLoading, setCtMonitorRuntimeLoading] = useState(false);
   const [ctMonitorRuntimeSaving, setCtMonitorRuntimeSaving] = useState(false);
@@ -461,11 +457,7 @@ function SystemSettings() {
       const s = response.settings || {};
       setCtMonitorRuntime({
         domain_refresh_interval: String(s.domain_refresh_interval ?? ''),
-        stats_interval: String(s.stats_interval ?? ''),
-        ct_poll_interval: String(s.ct_poll_interval ?? ''),
-        ct_batch_size: String(s.ct_batch_size ?? ''),
-        ct_max_entries_per_poll: String(s.ct_max_entries_per_poll ?? ''),
-        ct_start_offset: String(s.ct_start_offset ?? '')
+        stats_interval: String(s.stats_interval ?? '')
       });
     } catch (err) {
       setError('Failed to load CT monitor runtime settings: ' + (err.response?.data?.detail || err.message));
@@ -702,11 +694,7 @@ function SystemSettings() {
       setError('');
       const payload = {
         domain_refresh_interval: parseInt(ctMonitorRuntime.domain_refresh_interval, 10),
-        stats_interval: parseInt(ctMonitorRuntime.stats_interval, 10),
-        ct_poll_interval: parseInt(ctMonitorRuntime.ct_poll_interval, 10),
-        ct_batch_size: parseInt(ctMonitorRuntime.ct_batch_size, 10),
-        ct_max_entries_per_poll: parseInt(ctMonitorRuntime.ct_max_entries_per_poll, 10),
-        ct_start_offset: parseInt(ctMonitorRuntime.ct_start_offset, 10)
+        stats_interval: parseInt(ctMonitorRuntime.stats_interval, 10)
       };
       for (const [k, v] of Object.entries(payload)) {
         if (Number.isNaN(v)) {
@@ -1834,53 +1822,10 @@ function SystemSettings() {
                           }
                         />
                       </Form.Group>
-                      <Form.Group className="mb-3">
-                        <Form.Label>CT poll interval (seconds)</Form.Label>
-                        <Form.Control
-                          type="number"
-                          min={1}
-                          value={ctMonitorRuntime.ct_poll_interval}
-                          onChange={(e) =>
-                            setCtMonitorRuntime({ ...ctMonitorRuntime, ct_poll_interval: e.target.value })
-                          }
-                        />
-                      </Form.Group>
-                      <Form.Group className="mb-3">
-                        <Form.Label>CT batch size</Form.Label>
-                        <Form.Control
-                          type="number"
-                          min={1}
-                          value={ctMonitorRuntime.ct_batch_size}
-                          onChange={(e) =>
-                            setCtMonitorRuntime({ ...ctMonitorRuntime, ct_batch_size: e.target.value })
-                          }
-                        />
-                      </Form.Group>
-                      <Form.Group className="mb-3">
-                        <Form.Label>Max entries per poll</Form.Label>
-                        <Form.Control
-                          type="number"
-                          min={1}
-                          value={ctMonitorRuntime.ct_max_entries_per_poll}
-                          onChange={(e) =>
-                            setCtMonitorRuntime({ ...ctMonitorRuntime, ct_max_entries_per_poll: e.target.value })
-                          }
-                        />
-                      </Form.Group>
-                      <Form.Group className="mb-0">
-                        <Form.Label>CT start offset</Form.Label>
-                        <Form.Control
-                          type="number"
-                          min={0}
-                          value={ctMonitorRuntime.ct_start_offset}
-                          onChange={(e) =>
-                            setCtMonitorRuntime({ ...ctMonitorRuntime, ct_start_offset: e.target.value })
-                          }
-                        />
-                        <Form.Text className="text-muted">
-                          Entries behind log head on startup (0 in production). Changing this restarts CT ingestion.
-                        </Form.Text>
-                      </Form.Group>
+                      <p className="text-muted small mb-0">
+                        Certificate ingestion uses the in-cluster certstream-server aggregator (all CT logs).
+                        Per-program TLD allowlists are configured on each program&apos;s Typosquat tab.
+                      </p>
                     </>
                   )}
                 </Card.Body>
