@@ -41,6 +41,17 @@ function TaskParameterSelector({
   const serializeArrayParam = (value) =>
     Array.isArray(value) ? value.join('\n') : '';
 
+  const arrayParamsSnapshot = React.useMemo(() => {
+    if (!taskConfig?.params) {
+      return '';
+    }
+    return Object.entries(taskConfig.params)
+      .filter(([, cfg]) => cfg.type === 'array')
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([name]) => `${name}=${serializeArrayParam(taskParams[name])}`)
+      .join('\n');
+  }, [taskConfig, taskParams]);
+
   React.useEffect(() => {
     if (!taskConfig?.params) {
       return;
@@ -52,7 +63,7 @@ function TaskParameterSelector({
       }
     });
     setArrayParamDrafts(drafts);
-  }, [taskType, selectedNode?.id, taskConfig]);
+  }, [taskType, selectedNode?.id, arrayParamsSnapshot, taskConfig]);
 
   // Initialize taskParams with default values for parameters that haven't been explicitly set.
   // Only depend on taskType/taskParams so we don't re-run on every parent render (onParameterChange is inline and would reset wordlist state).
@@ -183,8 +194,11 @@ function TaskParameterSelector({
 
       case 'array': {
         const serialized = serializeArrayParam(currentValue);
+        const draft = arrayParamDrafts[paramName];
         const textareaValue =
-          arrayParamDrafts[paramName] !== undefined ? arrayParamDrafts[paramName] : serialized;
+          draft !== undefined && !(draft === '' && serialized)
+            ? draft
+            : serialized;
         return (
           <>
             <Form.Control
