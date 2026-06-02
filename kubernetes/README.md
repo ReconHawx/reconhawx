@@ -109,7 +109,8 @@ The API image ships **PostgreSQL 15 client tools** (`postgresql-client-15`). The
 | **Frontend** | React UI behind nginx |
 | **Headlamp** | In-cluster [Headlamp](https://headlamp.dev/) Kubernetes UI (`ghcr.io/headlamp-k8s/headlamp`); reached at **`/headlamp/`** on the same host as the frontend (nginx proxies to the `headlamp` Service). The pod loads a kubeconfig from the `headlamp-kubeconfig` ConfigMap that uses **`tokenFile`** pointed at the mounted **`headlamp-admin`** ServiceAccount token, so the UI does not require pasting a token for normal use. The optional **`headlamp-admin`** legacy token Secret remains for break-glass / tooling; see [in-cluster access](https://headlamp.dev/docs/latest/installation/in-cluster/). |
 | **Event Handler** | NATS event consumer |
-| **CT Monitor** | Certificate Transparency log watcher |
+| **certstream-server** | Aggregates all public CT logs; WebSocket on port 4000 (`certstream` Service). Image tag **1.6.0** (not tied to `APP_VERSION`). **Starts at 0 replicas**; ct-monitor scales to 1 when any program has CT monitoring enabled. Requires egress to CT log endpoints. |
+| **CT Monitor** | Typosquat detection from certstream feed (`CERTSTREAM_URL` → `ws://certstream:4000/`); RBAC to scale `certstream-server` 0/1 with program gating |
 | **Runner** | RBAC for workflow runner jobs (pods created dynamically by the API) |
 | **Config** | `recon-config` ConfigMap shared by all services |
 

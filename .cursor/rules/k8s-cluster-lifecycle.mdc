@@ -26,7 +26,7 @@ Install scripts **do not** run SQL migrations; the API Deployment’s **`run-mig
 
 ## Update scripts
 
-**`update-kubernetes.sh`** / **`update-minikube.sh`** apply **`kubernetes/base-update/`** (not full **`base`**) so **jwt-secret** / **postgres-secret** from the repo are not reapplied. They run **`kubernetes/base-update/pre-apply.d/*.sh`** in order, then **`kubectl apply -k kubernetes/base-update/`**, then **`kubectl rollout restart`** on **api**, **frontend**, **event-handler**, **ct-monitor**. **`RECONHAWX_KUEUE_RESYNC_QUOTAS=1`** runs **`reconhawx-kueue-quota-sync.py`** after apply.
+**`update-kubernetes.sh`** / **`update-minikube.sh`** apply **`kubernetes/base-update/`** (not full **`base`**) so **jwt-secret** / **postgres-secret** from the repo are not reapplied. They run **`kubernetes/base-update/pre-apply.d/*.sh`** in order, then **`kubectl apply -k kubernetes/base-update/`**, then **`kubectl rollout restart`** on **api**, **frontend**, **event-handler**, **certstream-server**, **ct-monitor**. **`RECONHAWX_KUEUE_RESYNC_QUOTAS=1`** runs **`reconhawx-kueue-quota-sync.py`** after apply.
 
 Pre-apply hook environment contract: **`.cursor/rules/k8s-kustomize-patterns.mdc`** (Pre-apply hooks section).
 

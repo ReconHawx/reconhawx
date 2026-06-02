@@ -6,6 +6,7 @@ metadata:
 
 resources:
   - serviceaccount.yaml
+  - ct-monitor-rbac.yaml
   - deployment.yaml
   - service.yaml
 

@@ -17,10 +17,10 @@ _SHADOW_MODULES = (
     "main",
     "alert_publisher",
     "certstream_consumer",
-    "ct_log_poller",
     "variation_generator",
     "program_ct_settings",
     "protected_domain_similarity",
+    "certstream_k8s",
 )
 
 

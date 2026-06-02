@@ -1564,10 +1564,6 @@ class CtMonitorRuntimeUpdateRequest(BaseModel):
 
     domain_refresh_interval: Optional[int] = Field(None, ge=1, le=86400)
     stats_interval: Optional[int] = Field(None, ge=1, le=3600)
-    ct_poll_interval: Optional[int] = Field(None, ge=1, le=600)
-    ct_batch_size: Optional[int] = Field(None, ge=1, le=5000)
-    ct_max_entries_per_poll: Optional[int] = Field(None, ge=1, le=100000)
-    ct_start_offset: Optional[int] = Field(None, ge=0, le=10_000_000)
 
 
 @router.get("/ct-monitor/runtime-settings", response_model=Dict[str, Any])

@@ -25,12 +25,25 @@ spec:
         imagePullPolicy: IfNotPresent
         resources:
           requests:
-            memory: "256Mi"
-            cpu: "100m"
-          limits:
             memory: "512Mi"
-            cpu: "500m"
+            cpu: "200m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
         env:
+        - name: CERTSTREAM_URL
+          valueFrom:
+            configMapKeyRef:
+              name: service-config
+              key: certstream.url
+        - name: CT_CERTSTREAM_SCALE_ENABLED
+          value: "true"
+        - name: CERTSTREAM_DEPLOYMENT_NAME
+          value: "certstream-server"
+        - name: KUBERNETES_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
         - name: API_URL
           valueFrom:
             configMapKeyRef:

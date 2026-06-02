@@ -17,10 +17,6 @@ CT_MONITOR_RUNTIME_KEY = "ct_monitor_runtime"
 _DEFAULTS: Dict[str, Any] = {
     "domain_refresh_interval": 300,
     "stats_interval": 60,
-    "ct_poll_interval": 10,
-    "ct_batch_size": 100,
-    "ct_max_entries_per_poll": 1000,
-    "ct_start_offset": 0,
 }
 
 
@@ -37,10 +33,7 @@ def merge_ct_monitor_runtime(db_value: Optional[Dict[str, Any]]) -> Dict[str, An
         if k not in db_value or db_value[k] is None:
             continue
         try:
-            if k == "ct_start_offset":
-                out[k] = int(db_value[k])
-            else:
-                out[k] = int(db_value[k])
+            out[k] = int(db_value[k])
         except (TypeError, ValueError):
             logger.warning("Invalid ct_monitor_runtime value for %s: %r", k, db_value.get(k))
     return out
