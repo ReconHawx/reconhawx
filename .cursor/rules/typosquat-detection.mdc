@@ -184,6 +184,15 @@ Treat input domains directly as typosquat variations (skip generation).
 
 When `ignore_typosquat_filtering: true`, the runner skips the pre-flight `POST /findings/typosquat/check-filter` call and the API skips the pre-insertion `TyposquatFilteringService` gate for **new** domain rows. Updates to existing findings are unchanged. Default is `false` (automated workflows, CT-monitor, gather-api). The Typosquat findings UI **Analyze Domains** modal exposes this as an optional checkbox.
 
+#### 4. Automatic bypass for protected-domain seeds (standard mode)
+
+When `analyze_input_as_variations: false` (dnstwist variation generation), variations whose **seed input** (`original_domain`) apex-matches a program `protected_domains` entry automatically bypass typosquat filtering:
+
+- **Runner pre-flight:** protected-seed variations are excluded from `POST /findings/typosquat/check-filter`; other variations are filtered as usual.
+- **API ingest:** each finding (and associated typosquat URLs) from a protected seed carries per-finding `ignore_typosquat_filtering: true`.
+
+This is distinct from the global task param in section 3 — only variations generated from protected seeds are bypassed, not the entire run. Apex-normalized matching applies (e.g. seed `www.brand.com` matches protected `brand.com`). Does not apply to `analyze_input_as_variations: true` flows.
+
 ### Variation Generation (VariationGenerator)
 
 Uses dnstwist library with offset-based rotation for large variation spaces:

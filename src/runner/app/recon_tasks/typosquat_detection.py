@@ -19,7 +19,8 @@ from .typosquat_components import (
     VariationCacheManager,
     TyposquatAnalyzer,
     SubdomainWorkflowOrchestrator,
-    ApiClient
+    ApiClient,
+    is_protected_domain_seed,
 )
 
 logger = logging.getLogger(__name__)
@@ -209,6 +210,7 @@ class TyposquatDetection(Task):
             for variation_domain, fuzzer_types in domain_variations.items():
                 variation = {
                     "domain": variation_domain,
+                    "original_domain": domain,
                     "fuzzers": fuzzer_types
                 }
 
@@ -410,20 +412,46 @@ class TyposquatDetection(Task):
         elif not include_subdomains:
             try:
                 api_client = self._ensure_api_client()
-                unique_domains = list({v.get("domain") for v in all_variations if v.get("domain")})
+                if not analyze_input_as_variations:
+                    protected_domains = self.typosquat_analyzer._get_program_protected_domains(
+                        self.program_name
+                    )
+                    bypass_variations = [
+                        v for v in all_variations
+                        if is_protected_domain_seed(v.get("original_domain", ""), protected_domains)
+                    ]
+                    filterable_variations = [
+                        v for v in all_variations
+                        if not is_protected_domain_seed(v.get("original_domain", ""), protected_domains)
+                    ]
+                    if bypass_variations:
+                        logger.info(
+                            f"Pre-flight: {len(bypass_variations)} variations from protected seeds "
+                            f"bypass filter; {len(filterable_variations)} sent to check-filter"
+                        )
+                else:
+                    bypass_variations = []
+                    filterable_variations = list(all_variations)
+
+                unique_domains = list({
+                    v.get("domain") for v in filterable_variations if v.get("domain")
+                })
                 if unique_domains:
                     filter_result = api_client.check_domain_filtering(unique_domains, self.program_name)
                     filtered_set = set(filter_result.get("filtered", []))
                     if filtered_set:
-                        before_count = len(all_variations)
-                        all_variations = [v for v in all_variations if v.get("domain") not in filtered_set]
+                        before_count = len(filterable_variations)
+                        filterable_variations = [
+                            v for v in filterable_variations if v.get("domain") not in filtered_set
+                        ]
                         logger.info(
-                            f"Pre-flight filter removed {before_count - len(all_variations)} variations "
-                            f"({len(filtered_set)} domains filtered), {len(all_variations)} remaining"
+                            f"Pre-flight filter removed {before_count - len(filterable_variations)} variations "
+                            f"({len(filtered_set)} domains filtered), {len(filterable_variations)} remaining"
                         )
-                        if not all_variations:
-                            logger.info("All variations filtered out by pre-flight check - skipping worker")
-                            return []
+                all_variations = bypass_variations + filterable_variations
+                if not all_variations:
+                    logger.info("All variations filtered out by pre-flight check - skipping worker")
+                    return []
             except Exception as e:
                 logger.warning(f"Pre-flight filter check failed ({e}), proceeding with all variations")
         else:

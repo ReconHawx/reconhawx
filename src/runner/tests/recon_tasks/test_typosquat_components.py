@@ -11,6 +11,7 @@ from recon_tasks.typosquat_components import (
     _extract_apex_domain,
     _levenshtein_distance,
     _levenshtein_similarity,
+    is_protected_domain_seed,
 )
 
 
@@ -31,6 +32,16 @@ def test_extract_apex_domain() -> None:
     assert _extract_apex_domain("WWW.Example.com") == "example.com"
     assert _extract_apex_domain("deep.sub.example.com") == "example.com"
     assert _extract_apex_domain("example") == "example"
+
+
+def test_is_protected_domain_seed_apex_match() -> None:
+    protected = ["brand.com", "other.org"]
+    assert is_protected_domain_seed("brand.com", protected) is True
+    assert is_protected_domain_seed("www.brand.com", protected) is True
+    assert is_protected_domain_seed("other.org", protected) is True
+    assert is_protected_domain_seed("unrelated.net", protected) is False
+    assert is_protected_domain_seed("", protected) is False
+    assert is_protected_domain_seed("brand.com", []) is False
 
 
 def test_calculate_domain_similarity_no_protected_domains() -> None:
@@ -122,3 +133,40 @@ def test_detect_parked_domain_title_and_body_keywords(analyzer: TyposquatAnalyze
     # minimal_content also triggers because body is short.
     assert reasons.get("title_keywords")
     assert reasons.get("body_keywords")
+
+
+def test_parse_worker_output_sets_bypass_for_protected_seed(analyzer: TyposquatAnalyzer, monkeypatch) -> None:
+    import json
+
+    from recon_tasks.base import FindingType
+
+    monkeypatch.setattr(
+        analyzer,
+        "_get_program_protected_domains",
+        lambda program_name: ["brand.com"],
+    )
+
+    worker_line = json.dumps(
+        {
+            "typo_domain": "br4nd.com",
+            "original_domain": "brand.com",
+            "fuzzers": ["replacement"],
+            "info": {
+                "registered": True,
+                "dns_a": ["1.2.3.4"],
+            },
+            "typosquat_urls": [{"url": "http://br4nd.com/"}],
+        }
+    )
+
+    result, _, _, _ = analyzer.parse_worker_output(
+        worker_line, {"analyze_input_as_variations": False}
+    )
+
+    findings = result[FindingType.TYPOSQUAT_DOMAIN]
+    assert len(findings) == 1
+    assert findings[0]["ignore_typosquat_filtering"] is True
+
+    urls = result[FindingType.TYPOSQUAT_URL]
+    assert len(urls) == 1
+    assert urls[0]["ignore_typosquat_filtering"] is True

@@ -113,6 +113,15 @@ def _extract_apex_domain(domain: str) -> str:
     return domain.lower()
 
 
+def is_protected_domain_seed(seed: str, protected_domains: List[str]) -> bool:
+    """Return True when seed apex matches any program protected domain (apex-normalized)."""
+    if not seed or not protected_domains:
+        return False
+    seed_apex = _extract_apex_domain(seed.strip().lower())
+    protected_apexes = {_extract_apex_domain(p.strip().lower()) for p in protected_domains if p}
+    return seed_apex in protected_apexes
+
+
 def _calculate_domain_similarity(typo_domain: str, protected_domains: List[str]) -> Tuple[float, Optional[str], float]:
     """
     Calculate maximum similarity between typo_domain and any protected domain.
@@ -1552,9 +1561,14 @@ class TyposquatAnalyzer:
 
         # Track if this chunk has subdomain discovery enabled
         include_subdomains = params.get("include_subdomains", False) if params else False
+        analyze_input_as_variations = params.get("analyze_input_as_variations", False) if params else False
+        protected_domains: List[str] = []
+        if not analyze_input_as_variations and program_name:
+            protected_domains = self._get_program_protected_domains(program_name)
         subdomain_discovery_enabled = include_subdomains
         found_subdomain_discovery_marker = False
         subdomains_for_phase3 = []
+        bypass_typo_domains: set = set()
 
         # Handle both string and parsed dict outputs
         if isinstance(actual_output, str):
@@ -1584,6 +1598,17 @@ class TyposquatAnalyzer:
                 
                 # Get domain info without calculating risk score (API will handle this)
                 domain_info = result.get("info", {})
+
+                seed_bypass = (
+                    not analyze_input_as_variations
+                    and is_protected_domain_seed(result.get("original_domain", ""), protected_domains)
+                )
+                if seed_bypass:
+                    logger.debug(
+                        f"Protected seed {result.get('original_domain')}: "
+                        f"bypassing typosquat filter for {result.get('typo_domain')}"
+                    )
+                    bypass_typo_domains.add(result.get("typo_domain", ""))
                 
                 # Extract typosquat URLs for parked domain detection
                 typosquat_urls_for_detection = result.get("typosquat_urls", [])
@@ -1662,6 +1687,8 @@ class TyposquatAnalyzer:
                     for url_data in result["typosquat_urls"]:
                         # Add program_name to each URL for proper storage
                         url_data["program_name"] = program_name
+                        if seed_bypass:
+                            url_data["ignore_typosquat_filtering"] = True
                         typosquat_urls.append(url_data)
                         logger.debug(f"Extracted typosquat URL: {url_data.get('url', 'unknown')}")
                 
@@ -1731,6 +1758,8 @@ class TyposquatAnalyzer:
                 "parked_detection_reasons": finding.parked_detection_reasons,
                 "parked_confidence": finding.parked_confidence
             }
+            if finding.typo_domain in bypass_typo_domains:
+                finding_dict["ignore_typosquat_filtering"] = True
             findings_dicts.append(finding_dict)
 
         # Build the result in the format expected by the API

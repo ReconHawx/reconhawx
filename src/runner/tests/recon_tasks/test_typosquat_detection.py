@@ -116,6 +116,52 @@ def test_get_command_runs_preflight_without_ignore_filtering(task, monkeypatch) 
     assert result == []
 
 
+def test_get_command_selective_preflight_protected_seed_bypass(task, monkeypatch) -> None:
+    calls: list[list[str]] = []
+    built_variations: list[dict] = []
+
+    class FakeApiClient:
+        def check_domain_filtering(self, domains, program_name):
+            calls.append(list(domains))
+            return {"filtered": list(domains), "allowed": []}
+
+    task.api_client = FakeApiClient()
+    monkeypatch.setattr(task, "_ensure_api_client", lambda: task.api_client)
+    monkeypatch.setattr(
+        task.typosquat_analyzer,
+        "_get_program_protected_domains",
+        lambda program_name: ["brand.com"],
+    )
+    monkeypatch.setattr(
+        task,
+        "prepare_input_data",
+        lambda input_data, params: [
+            {"domain": "br4nd.com", "original_domain": "brand.com", "fuzzers": ["replacement"]},
+            {"domain": "other.net", "original_domain": "other.org", "fuzzers": ["replacement"]},
+        ],
+    )
+
+    def capture_build(variations, active_checks, geoip_checks, max_workers):
+        built_variations.extend(variations)
+        return ["echo worker"]
+
+    monkeypatch.setattr(task, "_build_worker_command_with_stdin", capture_build)
+
+    result = task.get_command(
+        ["brand.com", "other.org"],
+        {
+            "analyze_input_as_variations": False,
+            "include_subdomains": False,
+            "ignore_typosquat_filtering": False,
+        },
+    )
+
+    assert result == ["echo worker"]
+    assert calls == [["other.net"]]
+    assert len(built_variations) == 1
+    assert built_variations[0]["domain"] == "br4nd.com"
+
+
 def test_process_spawned_task_outputs_returns_screenshot_findings(task, monkeypatch) -> None:
     import io
     import tarfile

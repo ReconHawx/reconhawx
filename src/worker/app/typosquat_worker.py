@@ -118,7 +118,9 @@ def process_variations(variations_data, analyzer, args, results):
                             "fuzzers": variation_entry.get('fuzzers', []),
                             "timestamp": datetime.now(timezone.utc).isoformat()
                         }
-                        
+                        if variation_entry.get("original_domain"):
+                            result["original_domain"] = variation_entry["original_domain"]
+
                         # Add subdomain discovery marker and run subfinder if enabled
                         if args.subdomain_discovery_enabled:
                             result["_subdomain_discovery_enabled"] = True
