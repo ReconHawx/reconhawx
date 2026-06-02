@@ -389,7 +389,13 @@ def get_chunk_size(self, input_data, params=None):
 
 def get_last_execution_threshold(self):
     return parameter_manager.get_last_execution_threshold(self.name)
+
+def skips_last_execution_filter(self):
+    """Return True when the task owns input dedup (runner skips last-execution filter)."""
+    return False
 ```
+
+Override `skips_last_execution_filter()` to return `True` for orchestrators that deduplicate internally (e.g. `typosquat_detection` uses Redis variation cache + offset rotation). This disables runner/API input filtering and legacy Redis timestamp writes for that task; it is separate from workflow `force: true`.
 
 Source of truth for missing keys is **`recon_task_builtin_defaults.yaml`** on the API; the runner does not ship duplicate default dicts.
 

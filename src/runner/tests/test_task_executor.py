@@ -6,9 +6,82 @@ The AssetFilter DSL is pure Python and worth pinning down.
 
 from __future__ import annotations
 
+from typing import Any, Dict, List, Optional
+from unittest.mock import MagicMock
+
 import pytest
 
-from task_executor import AssetFilter
+from models.workflow import TaskDefinition
+from recon_tasks.base import AssetType, Task
+from task_executor import AssetFilter, TaskExecutor
+
+
+class _SkipLastExecTask(Task):
+    name = "skip_last_exec"
+    description = "test"
+    input_type = AssetType.SUBDOMAIN
+    output_types = [AssetType.SUBDOMAIN]
+
+    def skips_last_execution_filter(self) -> bool:
+        return True
+
+    def get_command(self, input_data: Any, params: Optional[Dict[Any, Any]] = None) -> str:
+        return ""
+
+    def parse_output(self, output: Any, params: Optional[Dict[Any, Any]] = None) -> Dict[AssetType, List[Any]]:
+        return {AssetType.SUBDOMAIN: []}
+
+    def get_timestamp_hash(self, target: Any, params: Optional[Dict[Any, Any]] = None) -> str:
+        return "hash"
+
+
+class _NormalTask(Task):
+    name = "normal"
+    description = "test"
+    input_type = AssetType.SUBDOMAIN
+    output_types = [AssetType.SUBDOMAIN]
+
+    def get_command(self, input_data: Any, params: Optional[Dict[Any, Any]] = None) -> str:
+        return ""
+
+    def parse_output(self, output: Any, params: Optional[Dict[Any, Any]] = None) -> Dict[AssetType, List[Any]]:
+        return {AssetType.SUBDOMAIN: []}
+
+    def get_timestamp_hash(self, target: Any, params: Optional[Dict[Any, Any]] = None) -> str:
+        return "hash"
+
+
+@pytest.fixture
+def executor() -> TaskExecutor:
+    return TaskExecutor(MagicMock())
+
+
+def test_should_filter_by_last_execution_respects_force(executor: TaskExecutor) -> None:
+    task = _NormalTask()
+    task_def = TaskDefinition(name="step", force=True)
+    assert executor._should_filter_by_last_execution(task, task_def) is False
+
+
+def test_should_filter_by_last_execution_respects_task_hook(executor: TaskExecutor) -> None:
+    task = _SkipLastExecTask()
+    task_def = TaskDefinition(name="step", force=False)
+    assert executor._should_filter_by_last_execution(task, task_def) is False
+
+
+def test_should_filter_by_last_execution_default_true(executor: TaskExecutor) -> None:
+    task = _NormalTask()
+    task_def = TaskDefinition(name="step", force=False)
+    assert executor._should_filter_by_last_execution(task, task_def) is True
+
+
+def test_use_api_last_execution_false_when_task_skips_filter(
+    executor: TaskExecutor, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("RUNNER_LAST_EXECUTION_SOURCE", "api")
+    executor.program_id = "prog-uuid"
+    task = _SkipLastExecTask()
+    task_def = TaskDefinition(name="step", force=False)
+    assert executor._use_api_last_execution(task_def, task) is False
 
 
 def test_empty_filter_includes_all() -> None:

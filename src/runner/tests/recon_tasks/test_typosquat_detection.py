@@ -52,6 +52,10 @@ def test_get_timestamp_hash_encodes_task_name(task) -> None:
     assert "typosquat_detection" in decoded
 
 
+def test_skips_last_execution_filter(task) -> None:
+    assert task.skips_last_execution_filter() is True
+
+
 def test_build_worker_command_with_stdin_chunks_and_flags(task) -> None:
     variations = [{"domain": f"v{i}.com", "fuzzers": ["insertion"]} for i in range(75)]
     commands = task._build_worker_command_with_stdin(

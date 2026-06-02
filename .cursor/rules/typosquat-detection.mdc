@@ -232,10 +232,12 @@ self._update_variation_offset(domain, program_name, new_offset)  # → 100
 
 ### Deduplication Strategy
 
+**Runner last-execution filter:** Seed subdomain inputs **bypass** the runner/API last-execution check (`TyposquatDetection.skips_last_execution_filter()`). The same seed may be re-run on every workflow; dedup happens at the **variation** level below—not on the input domain.
+
 **Two-Level Deduplication:**
 
 1. **Redis Cache (Fast, Recent)**
-   - Key: `typosquat:tested:{program_name}:{original_domain}:{variation_domain}`
+   - Key: `typosquat:tested:{program_name}:{variation_domain}`
    - TTL: 30 days (configurable via `TYPOSQUAT_CACHE_TTL`)
    - Purpose: Avoid re-testing recently tested variations
 

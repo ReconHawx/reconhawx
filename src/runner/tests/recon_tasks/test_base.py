@@ -136,6 +136,10 @@ def test_get_last_execution_threshold_delegates(task: _DummyTask, monkeypatch) -
     assert task.get_last_execution_threshold() == 48
 
 
+def test_skips_last_execution_filter_defaults_false(task: _DummyTask) -> None:
+    assert task.skips_last_execution_filter() is False
+
+
 def test_transform_to_findings_default_is_empty(task: _DummyTask) -> None:
     assert task.transform_to_findings({}, {}) == {}
 

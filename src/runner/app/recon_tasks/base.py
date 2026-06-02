@@ -572,6 +572,10 @@ class Task(ABC):
         #logger.debug(f"Task {self.name} requesting last_execution_threshold")
         return parameter_manager.get_last_execution_threshold(self.name)
 
+    def skips_last_execution_filter(self) -> bool:
+        """When True, runner does not filter inputs by last execution (task owns dedup)."""
+        return False
+
     @abstractmethod
     def get_timestamp_hash(self, target: Any, params: Optional[Dict[Any, Any]] = None) -> str:
         """Generate a unique hash for the task execution based on target and params"""

@@ -522,12 +522,19 @@ class TaskExecutor:
                 return t
         return task.get_last_execution_threshold()
 
-    def _use_api_last_execution(self, task_def: TaskDefinition) -> bool:
+    def _should_filter_by_last_execution(self, task: Task, task_def: TaskDefinition) -> bool:
+        if task_def.force:
+            return False
+        if task.skips_last_execution_filter():
+            return False
+        return True
+
+    def _use_api_last_execution(self, task_def: TaskDefinition, task: Task) -> bool:
         from task_components import last_execution_source
 
         return (
             last_execution_source() == "api"
-            and not task_def.force
+            and self._should_filter_by_last_execution(task, task_def)
             and bool((self.program_id or "").strip())
         )
 
@@ -1982,7 +1989,7 @@ class TaskExecutor:
         """Resolve program asset inputs asynchronously"""
         from task_components import AsyncDataApiClient
         all_input_data = []
-        use_api_eligible = self._use_api_last_execution(task_def)
+        use_api_eligible = self._use_api_last_execution(task_def, task)
         
         async with AsyncDataApiClient(API_URL, self.redis_client) as async_client:
             for input_name in input_names:
@@ -2564,14 +2571,29 @@ class TaskExecutor:
             should_use_progressive = (len(input_data) > 100)  # Use progressive for datasets > 100
             
             # Filter based on last execution
-            if task_def.force:
-                logger.info("Force flag is true, skipping last execution check")
+            if not self._should_filter_by_last_execution(task, task_def):
+                if task_def.force:
+                    logger.info("Force flag is true, skipping last execution check")
+                elif task.skips_last_execution_filter():
+                    logger.info(
+                        "Task %s skips last execution filter (task owns dedup)",
+                        task.name,
+                    )
                 filtered_input_data = input_data
 
                 # Apply input limit when force flag is used
-                if input_limit and len(filtered_input_data) > input_limit:
+                if task_def.force and input_limit and len(filtered_input_data) > input_limit:
                     filtered_input_data = filtered_input_data[:input_limit]
                     logger.info(f"Applied input limit {input_limit} with force flag, reduced to {len(filtered_input_data)} targets")
+                elif (
+                    not task_def.force
+                    and input_limit
+                    and len(filtered_input_data) > input_limit
+                ):
+                    filtered_input_data = filtered_input_data[:input_limit]
+                    logger.info(
+                        f"Applied input limit {input_limit}, reduced to {len(filtered_input_data)} targets"
+                    )
             else:
                 logger.info(f"Force flag is false, checking last execution for {len(input_data)} targets")
 
@@ -3570,6 +3592,10 @@ class TaskExecutor:
         """Update last execution timestamps for successful task executions only"""
         from task_components import last_execution_source
 
+        if task_instance.skips_last_execution_filter():
+            logger.debug("Skipping Redis timestamp updates (task skips last execution filter)")
+            return
+
         if last_execution_source() == "api":
             logger.debug("Skipping Redis timestamp updates (RUNNER_LAST_EXECUTION_SOURCE=api)")
             return
@@ -3618,6 +3644,10 @@ class TaskExecutor:
         (job order matches input_data order).
         """
         from task_components import last_execution_source
+
+        if task_instance.skips_last_execution_filter():
+            logger.debug("Skipping Redis timestamp updates (task skips last execution filter)")
+            return
 
         if last_execution_source() == "api":
             logger.debug("Skipping Redis timestamp updates (RUNNER_LAST_EXECUTION_SOURCE=api)")

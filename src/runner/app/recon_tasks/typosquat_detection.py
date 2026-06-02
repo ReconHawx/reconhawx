@@ -45,6 +45,10 @@ class TyposquatDetection(Task):
     output_types = [FindingType.TYPOSQUAT_DOMAIN, FindingType.TYPOSQUAT_URL, FindingType.TYPOSQUAT_SCREENSHOT]
     chunk_size = 20  # Default chunk size for domain variations
 
+    def skips_last_execution_filter(self) -> bool:
+        """Variation dedup is handled by Redis cache and offset rotation, not seed-domain last execution."""
+        return True
+
     def __init__(self):
         super().__init__()
 
