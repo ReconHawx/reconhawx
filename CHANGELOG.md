@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.43.0](https://github.com/ReconHawx/reconhawx/compare/v0.42.0...v0.43.0) (2026-06-02)
+
+
+### Features
+
+* **typosquat:** accept variations from protected domain seeds without filter gate ([51fa3d6](https://github.com/ReconHawx/reconhawx/commit/51fa3d675f7f4075d7cb057987c3917e56ff5ddd))
+
+
+### Bug Fixes
+
+* **frontend:** show saved array task params when reopening workflow tasks ([8a718fa](https://github.com/ReconHawx/reconhawx/commit/8a718fa3efea920de14f25fd28fb7ee2b42e4800))
+* **runner:** allow typosquat to re-run seed domains every workflow ([a1d3512](https://github.com/ReconHawx/reconhawx/commit/a1d3512ceaf157f67b1454b0a7e36a163005fe85))
+
 ## [0.42.0](https://github.com/ReconHawx/reconhawx/compare/v0.41.0...v0.42.0) (2026-05-29)
 
 
