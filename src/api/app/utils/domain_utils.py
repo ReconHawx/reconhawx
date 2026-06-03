@@ -248,10 +248,14 @@ def extract_apex_domain(domain_name: str) -> str:
             apex_domain = f"{extracted.domain}.{extracted.suffix}"
             #logger.debug(f"Extracted apex domain '{apex_domain}' from '{domain_name}'")
             return apex_domain
-        else:
-            # If extraction fails, log warning and return original domain
-            logger.warning(f"Could not extract apex domain from '{domain_name}', returning original")
+        # Public-suffix-only strings (e.g. go.id, com.br) — common in CT / odd hostnames.
+        if extracted.suffix and not extracted.domain:
             return domain_name
+        logger.debug(
+            "Could not extract apex domain from '%s', returning original",
+            domain_name,
+        )
+        return domain_name
             
     except Exception as e:
         logger.error(f"Error extracting apex domain from '{domain_name}': {str(e)}")

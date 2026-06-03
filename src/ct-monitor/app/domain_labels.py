@@ -62,7 +62,10 @@ def extract_apex_domain(domain_name: str) -> str:
         extracted = tldextract.extract(domain_name)
         if extracted.domain and extracted.suffix:
             return f"{extracted.domain}.{extracted.suffix}"
-        logger.warning(
+        # Public-suffix-only strings (e.g. go.id, com.br) are common in CT SAN lists.
+        if extracted.suffix and not extracted.domain:
+            return domain_name
+        logger.debug(
             "Could not extract apex domain from '%s', returning original",
             domain_name,
         )
