@@ -9,7 +9,7 @@ import asyncio
 import logging
 import threading
 import time
-from typing import Any, Awaitable, Callable, Dict, Optional, Set
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Set, Tuple
 
 from certstream.core import CertStreamClient
 
@@ -55,6 +55,68 @@ def message_passes_tld_filter(cert_data: Dict[str, Any], tld_filter: Optional[Se
         if tld in tld_filter:
             return True
     return False
+
+
+def build_certificate_info_from_message(
+    cert_data: Dict[str, Any],
+    tld_filter: Optional[Set[str]],
+) -> Tuple[Optional[CertificateInfo], bool]:
+    """
+    Build CertificateInfo from a CertStream message.
+
+    Returns (cert_info, filtered_by_tld). cert_info is None when the message
+    should not be matched (non-update, no domains, or TLD filter rejected).
+    """
+    message_type = cert_data.get("message_type")
+    if message_type != "certificate_update":
+        return None, False
+
+    data = cert_data.get("data", {})
+    leaf_cert = data.get("leaf_cert", {})
+
+    all_domains: Set[str] = set()
+
+    subject = leaf_cert.get("subject", {})
+    cn = subject.get("CN")
+    if cn and isinstance(cn, str):
+        all_domains.add(cn.lower().strip())
+
+    for domain in leaf_cert.get("all_domains", []):
+        if isinstance(domain, str):
+            clean_domain = domain.lstrip("*.").lower().strip()
+            if clean_domain:
+                all_domains.add(clean_domain)
+
+    if not all_domains:
+        return None, False
+
+    if tld_filter:
+        filtered_domains = set()
+        for domain in all_domains:
+            tld = domain.split(".")[-1] if "." in domain else ""
+            if tld in tld_filter:
+                filtered_domains.add(domain)
+
+        if not filtered_domains:
+            return None, True
+
+        all_domains = filtered_domains
+
+    issuer = leaf_cert.get("issuer", {})
+    cert_info = CertificateInfo(
+        domains=list(all_domains),
+        issuer=issuer.get("O", "Unknown") if isinstance(issuer, dict) else "Unknown",
+        issuer_cn=issuer.get("CN", "Unknown") if isinstance(issuer, dict) else "Unknown",
+        not_before=leaf_cert.get("not_before"),
+        not_after=leaf_cert.get("not_after"),
+        fingerprint=leaf_cert.get("fingerprint"),
+        serial_number=leaf_cert.get("serial_number"),
+        source=data.get("source", {}).get("name", "unknown"),
+        cert_index=data.get("cert_index"),
+        seen_at=data.get("seen"),
+        update_type=data.get("update_type"),
+    )
+    return cert_info, False
 
 
 class _StoppableCertStreamClient(CertStreamClient):
@@ -104,6 +166,8 @@ class CertStreamConsumer:
         reconnect_delay: int = 5,
         queue_maxsize: int = 5000,
         yield_every_n: int = 50,
+        match_concurrency: int = 4,
+        queue_drop_watermark: float = 0.8,
     ):
         self.callback = callback
         self.certstream_url = certstream_url
@@ -119,8 +183,13 @@ class CertStreamConsumer:
         self._client: Optional[_StoppableCertStreamClient] = None
         self._queue_maxsize = max(1, int(queue_maxsize))
         self._yield_every_n = max(1, int(yield_every_n))
+        self._match_concurrency = max(1, int(match_concurrency))
+        self._queue_drop_watermark = min(0.99, max(0.1, float(queue_drop_watermark)))
         self._last_queue_drop_log = 0.0
         self._processed_since_yield = 0
+        self._match_sem: Optional[asyncio.Semaphore] = None
+        self._match_in_flight = 0
+        self._pending_tasks: Set[asyncio.Task] = set()
 
     async def start(self):
         """Start consuming certificates with automatic reconnection."""
@@ -128,8 +197,10 @@ class CertStreamConsumer:
         self._stop_event.clear()
         self._loop = asyncio.get_running_loop()
         self._queue = asyncio.Queue(maxsize=self._queue_maxsize)
+        self._match_sem = asyncio.Semaphore(self._match_concurrency)
 
         logger.info("Starting CertStream consumer (URL: %s)", self.certstream_url)
+        logger.info("Match concurrency: %s", self._match_concurrency)
         if self.tld_filter:
             logger.info("TLD filter enabled: %s", sorted(self.tld_filter))
         else:
@@ -169,7 +240,8 @@ class CertStreamConsumer:
             self._stats.filtered_before_queue += 1
             return
 
-        if self._queue.qsize() >= int(self._queue_maxsize * 0.8):
+        drop_at = int(self._queue_maxsize * self._queue_drop_watermark)
+        if self._queue.qsize() >= drop_at:
             self._stats.queue_drops += 1
             self._log_queue_drop()
             return
@@ -187,6 +259,12 @@ class CertStreamConsumer:
 
     def get_queue_maxsize(self) -> int:
         return self._queue_maxsize
+
+    def get_match_concurrency(self) -> int:
+        return self._match_concurrency
+
+    def get_match_in_flight(self) -> int:
+        return self._match_in_flight
 
     def _run_certstream_thread(self) -> None:
         def on_message(message, _context):
@@ -237,19 +315,28 @@ class CertStreamConsumer:
                 continue
             except asyncio.CancelledError:
                 break
-            try:
-                await self._process_certificate(cert_data)
-            except Exception as e:
-                logger.error("Error processing certificate: %s", e)
-                self._stats.errors += 1
-            finally:
-                self._processed_since_yield += 1
-                if self._processed_since_yield >= self._yield_every_n:
-                    self._processed_since_yield = 0
-                    await asyncio.sleep(0)
 
-    async def _process_certificate(self, cert_data: Dict[str, Any]):
-        """Process a single certificate from the stream."""
+            task = asyncio.create_task(self._handle_cert_data(cert_data))
+            self._pending_tasks.add(task)
+            task.add_done_callback(self._pending_tasks.discard)
+
+            self._processed_since_yield += 1
+            if self._processed_since_yield >= self._yield_every_n:
+                self._processed_since_yield = 0
+                await asyncio.sleep(0)
+
+        if self._pending_tasks:
+            await asyncio.gather(*self._pending_tasks, return_exceptions=True)
+
+    def _ensure_match_sem(self) -> asyncio.Semaphore:
+        if self._match_sem is None:
+            self._match_sem = asyncio.Semaphore(self._match_concurrency)
+        return self._match_sem
+
+    async def _handle_cert_data(self, cert_data: Dict[str, Any]) -> None:
+        """Process one queued message with bounded match concurrency."""
+        match_sem = self._ensure_match_sem()
+
         self._stats.total_received += 1
 
         if self._stats.total_received % 100 == 0:
@@ -268,57 +355,14 @@ class CertStreamConsumer:
                 cert_data.get("message_type"),
             )
 
-        message_type = cert_data.get("message_type")
-        if message_type != "certificate_update":
-            return
-
-        data = cert_data.get("data", {})
-        leaf_cert = data.get("leaf_cert", {})
-
-        all_domains = set()
-
-        subject = leaf_cert.get("subject", {})
-        cn = subject.get("CN")
-        if cn and isinstance(cn, str):
-            all_domains.add(cn.lower().strip())
-
-        all_domains_from_cert = leaf_cert.get("all_domains", [])
-        for domain in all_domains_from_cert:
-            if isinstance(domain, str):
-                clean_domain = domain.lstrip("*.").lower().strip()
-                if clean_domain:
-                    all_domains.add(clean_domain)
-
-        if not all_domains:
-            return
-
-        if self.tld_filter:
-            filtered_domains = set()
-            for domain in all_domains:
-                tld = domain.split(".")[-1] if "." in domain else ""
-                if tld in self.tld_filter:
-                    filtered_domains.add(domain)
-
-            if not filtered_domains:
-                self._stats.filtered_by_tld += 1
-                return
-
-            all_domains = filtered_domains
-
-        issuer = leaf_cert.get("issuer", {})
-        cert_info = CertificateInfo(
-            domains=list(all_domains),
-            issuer=issuer.get("O", "Unknown") if isinstance(issuer, dict) else "Unknown",
-            issuer_cn=issuer.get("CN", "Unknown") if isinstance(issuer, dict) else "Unknown",
-            not_before=leaf_cert.get("not_before"),
-            not_after=leaf_cert.get("not_after"),
-            fingerprint=leaf_cert.get("fingerprint"),
-            serial_number=leaf_cert.get("serial_number"),
-            source=data.get("source", {}).get("name", "unknown"),
-            cert_index=data.get("cert_index"),
-            seen_at=data.get("seen"),
-            update_type=data.get("update_type"),
+        cert_info, filtered_by_tld = build_certificate_info_from_message(
+            cert_data, self.tld_filter or None
         )
+        if filtered_by_tld:
+            self._stats.filtered_by_tld += 1
+            return
+        if cert_info is None:
+            return
 
         self._stats.processed += 1
 
@@ -326,7 +370,7 @@ class CertStreamConsumer:
             logger.info(
                 "Processed %s certs | Latest: %s | Issuer: %s",
                 self._stats.processed,
-                list(all_domains)[:3],
+                cert_info.domains[:3],
                 cert_info.issuer,
             )
 
@@ -334,15 +378,23 @@ class CertStreamConsumer:
             logger.debug(
                 "Certificate #%s: domains=%s, issuer=%s",
                 self._stats.processed,
-                list(all_domains),
+                cert_info.domains,
                 cert_info.issuer,
             )
 
-        try:
-            await self.callback(cert_info)
-        except Exception as e:
-            logger.error("Error in certificate callback: %s", e)
-            self._stats.errors += 1
+        async with match_sem:
+            self._match_in_flight += 1
+            try:
+                await self.callback(cert_info)
+            except Exception as e:
+                logger.error("Error in certificate callback: %s", e)
+                self._stats.errors += 1
+            finally:
+                self._match_in_flight -= 1
+
+    async def _process_certificate(self, cert_data: Dict[str, Any]):
+        """Process a single certificate from the stream (tests / direct invocation)."""
+        await self._handle_cert_data(cert_data)
 
     def stop(self):
         """Stop consuming certificates."""

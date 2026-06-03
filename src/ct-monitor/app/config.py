@@ -14,11 +14,24 @@ Environment variables:
 - CERTSTREAM_DEPLOYMENT_NAME, KUBERNETES_NAMESPACE, CT_CERTSTREAM_READY_TIMEOUT
 - CERTSTREAM_QUEUE_MAXSIZE: asyncio queue depth (default 5000)
 - CERTSTREAM_YIELD_EVERY_N: event-loop yield every N dequeued certs (default 50)
+- CT_MATCH_CONCURRENCY: parallel certificate match slots (default min(4, cpu_count))
+- CERTSTREAM_QUEUE_DROP_WATERMARK: queue fill ratio before drop (default 0.8)
 """
 
 import os
 from dataclasses import dataclass, field
 from typing import Set
+
+
+def default_match_concurrency() -> int:
+    raw = os.getenv("CT_MATCH_CONCURRENCY", "").strip()
+    if raw:
+        try:
+            return max(1, int(raw))
+        except ValueError:
+            pass
+    cpu = os.cpu_count() or 2
+    return max(1, min(4, cpu))
 
 
 def certstream_scale_enabled_default() -> bool:
@@ -108,6 +121,10 @@ class CTMonitorConfig:
     )
     certstream_yield_every_n: int = field(
         default_factory=lambda: max(1, int(os.getenv("CERTSTREAM_YIELD_EVERY_N", "50")))
+    )
+    match_concurrency: int = field(default_factory=default_match_concurrency)
+    certstream_queue_drop_watermark: float = field(
+        default_factory=lambda: float(os.getenv("CERTSTREAM_QUEUE_DROP_WATERMARK", "0.8"))
     )
 
 

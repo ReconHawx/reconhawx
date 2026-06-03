@@ -76,7 +76,9 @@ event-handler
 
 **K8s scaler:** `CT_CERTSTREAM_SCALE_ENABLED` (`true` in cluster; `false` for local dev), `CERTSTREAM_DEPLOYMENT_NAME` (default `certstream-server`), `KUBERNETES_NAMESPACE`, `CT_CERTSTREAM_READY_TIMEOUT` (default 90s). Auto-enables when ServiceAccount token is present unless explicitly off.
 
-**CertStream consumer:** `CERTSTREAM_QUEUE_MAXSIZE` (default 5000), `CERTSTREAM_YIELD_EVERY_N` (default 50).
+**CertStream consumer:** `CERTSTREAM_QUEUE_MAXSIZE` (default 5000), `CERTSTREAM_YIELD_EVERY_N` (default 50), `CERTSTREAM_QUEUE_DROP_WATERMARK` (default 0.8 — drop when queue fill ≥ this ratio).
+
+**Matching throughput:** `CT_MATCH_CONCURRENCY` (default `min(4, cpu_count)` — parallel `match_certificate_sync` slots; raise with CPU limits on the Deployment).
 
 **Ingestion TLD filter:** `CT_INGESTION_TLD_FILTER_ENABLED` (default `false` — all certificate TLDs). When `true`, uses per-program `tld_filter` union.
 
@@ -113,8 +115,10 @@ Unchanged: NATS `events.typosquat.ct_alert`, priority from match type/score.
 ### Performance
 - **Ingestion TLD filter is off by default** — expect high CertStream volume and large variation maps; use queue backpressure and adequate memory
 - When `CT_INGESTION_TLD_FILTER_ENABLED=true`, frames can be filtered **before** the asyncio queue
-- Protected-domain reload builds dnstwist variations via `asyncio.to_thread`; certificate matching uses `certificate_matcher.match_certificate_sync` off the event loop
-- Backpressure: queue drops when ≥80% full (`queue_drops`, `filtered_before_queue` in `/status` stats); tune `CERTSTREAM_QUEUE_MAXSIZE`, `CERTSTREAM_YIELD_EVERY_N`
+- Protected-domain reload builds dnstwist variations via `asyncio.to_thread`; certificate matching uses `certificate_matcher.match_certificate_sync` off the event loop in **bounded parallel** tasks (`CT_MATCH_CONCURRENCY`)
+- Similarity short-circuit: `similarity_impossible_by_length` skips Levenshtein when edit distance cannot reach per-program `similarity_threshold` (safe; no false negatives)
+- Backpressure: queue drops when fill ≥ `CERTSTREAM_QUEUE_DROP_WATERMARK` (default 80%); `/status` exposes `offered_per_second`, `processed_per_second`, `drop_rate`, `match_in_flight`, `similarity_skipped`
+- Tune `CERTSTREAM_QUEUE_MAXSIZE`, `CERTSTREAM_YIELD_EVERY_N`, `CT_MATCH_CONCURRENCY`, and ct-monitor CPU (e.g. 4 cores in base Deployment)
 - certstream-server load-sheds slow clients; keep ct-monitor queue healthy
 
 ### Error handling

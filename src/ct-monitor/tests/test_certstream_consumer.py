@@ -15,6 +15,7 @@ async def test_process_certificate_ignores_non_certificate_update():
         seen.append(c)
 
     consumer = CertStreamConsumer(callback=cb, tld_filter={"com"})
+    consumer._ensure_match_sem()
     await consumer._process_certificate({"message_type": "heartbeat", "data": {}})
     assert seen == []
 
@@ -29,6 +30,7 @@ async def test_process_certificate_wildcard_and_case():
         seen.append(c)
 
     consumer = CertStreamConsumer(callback=cb, tld_filter=None)
+    consumer._ensure_match_sem()
     msg = {
         "message_type": "certificate_update",
         "data": {
@@ -162,3 +164,52 @@ async def test_enqueue_drops_when_queue_80_percent_full():
 
     consumer._enqueue_message(com_msg)
     assert consumer._stats.queue_drops >= 1
+
+
+@pytest.mark.asyncio
+async def test_parallel_match_respects_concurrency_limit():
+    from certstream_consumer import CertStreamConsumer
+
+    max_in_flight = 0
+    observed_peak = 0
+    in_flight = 0
+    gate = asyncio.Event()
+    started = asyncio.Event()
+
+    async def slow_cb(_cert):
+        nonlocal in_flight, max_in_flight, observed_peak
+        in_flight += 1
+        observed_peak = max(observed_peak, in_flight)
+        if in_flight > max_in_flight:
+            max_in_flight = in_flight
+        started.set()
+        await gate.wait()
+        in_flight -= 1
+
+    consumer = CertStreamConsumer(
+        callback=slow_cb,
+        tld_filter=None,
+        queue_maxsize=50,
+        match_concurrency=2,
+    )
+    consumer._running = True
+    consumer._ensure_match_sem()
+
+    msg = {
+        "message_type": "certificate_update",
+        "data": {
+            "leaf_cert": {
+                "subject": {"CN": "a.example.com"},
+                "all_domains": [],
+                "issuer": {"O": "O", "CN": "CN"},
+            },
+            "source": {"name": "s"},
+        },
+    }
+
+    tasks = [asyncio.create_task(consumer._handle_cert_data(msg)) for _ in range(4)]
+    await asyncio.wait_for(started.wait(), timeout=2.0)
+    await asyncio.sleep(0.05)
+    assert observed_peak <= 2
+    gate.set()
+    await asyncio.gather(*tasks)

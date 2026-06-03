@@ -41,3 +41,33 @@ def test_typo_suffix_hostnames_multi_label():
     assert "a.b.c.d.com" in labels
     assert "d.com" in labels
     assert all(len(s.split(".")) >= 2 for s in labels)
+
+
+def test_similarity_impossible_by_length_unrelated():
+    from protected_domain_similarity import similarity_impossible_by_length
+
+    assert similarity_impossible_by_length(
+        "completely-unrelated-label.net",
+        [len("examplecom")],
+        0.85,
+    ) is True
+
+
+def test_similarity_impossible_by_length_does_not_skip_examp1e():
+    from protected_domain_similarity import (
+        _collapse_hostname_alphanumeric,
+        similarity_impossible_by_length,
+    )
+
+    protected_len = len(_collapse_hostname_alphanumeric("example.com"))
+    assert similarity_impossible_by_length(
+        "examp1e.com",
+        [protected_len],
+        0.85,
+    ) is False
+
+
+def test_similarity_impossible_disabled_at_threshold_one():
+    from protected_domain_similarity import similarity_impossible_by_length
+
+    assert similarity_impossible_by_length("x.com", [3], 1.0) is False

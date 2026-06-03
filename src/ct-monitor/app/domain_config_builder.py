@@ -7,13 +7,28 @@ Used during API refresh so dnstwist variation generation does not block HTTP pro
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Set, Tuple, Union
 
 import program_ct_settings
+from protected_domain_similarity import _collapse_hostname_alphanumeric
 from variation_generator import DnstwistVariationGenerator
 
 logger = logging.getLogger(__name__)
+
+
+def _protected_collapsed_lengths(protected_list: List[str]) -> List[int]:
+    lengths: List[int] = []
+    seen: Set[int] = set()
+    for p in protected_list:
+        collapsed = _collapse_hostname_alphanumeric(p)
+        if not collapsed:
+            continue
+        n = len(collapsed)
+        if n not in seen:
+            seen.add(n)
+            lengths.append(n)
+    return lengths
 
 
 @dataclass
@@ -23,6 +38,7 @@ class ProgramCTMatchState:
     keywords: List[str]
     similarity_threshold: float
     protected_list: List[str]
+    protected_collapsed_lengths: List[int] = field(default_factory=list)
 
 
 @dataclass
@@ -122,10 +138,12 @@ def build_domain_config_from_loaded(
             total_variations += variations_added
 
         sim_thr = program_ct_settings.program_similarity_threshold(program_data)
+        protected_list = sorted(domains)
         program_match_states[program_name] = ProgramCTMatchState(
             keywords=keywords_norm,
             similarity_threshold=sim_thr,
-            protected_list=sorted(domains),
+            protected_list=protected_list,
+            protected_collapsed_lengths=_protected_collapsed_lengths(protected_list),
         )
         total_domains += len(domains)
         kw_info = f", {len(keywords_norm)} keywords" if keywords_norm else ""

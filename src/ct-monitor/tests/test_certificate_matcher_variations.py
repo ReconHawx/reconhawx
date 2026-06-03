@@ -2,15 +2,14 @@
 
 from unittest.mock import patch
 
-from domain_config_builder import MatchingSnapshot, ProgramCTMatchState
-from models import CertificateInfo
-from variation_generator import DnstwistVariationGenerator
-
 
 @patch("dnstwist.Fuzzer")
 def test_match_certificate_cross_tld_variation(mock_fuzzer_class):
     from certificate_matcher import match_certificate_sync
+    from domain_config_builder import MatchingSnapshot
+    from models import CertificateInfo
     from unittest.mock import MagicMock
+    from variation_generator import DnstwistVariationGenerator
 
     inner = MagicMock()
     inner.generate = MagicMock()
@@ -37,7 +36,7 @@ def test_match_certificate_cross_tld_variation(mock_fuzzer_class):
         issuer="O",
         issuer_cn="CN",
     )
-    pending, count = match_certificate_sync(cert, snap)
+    pending, count, _skipped = match_certificate_sync(cert, snap)
     assert count == 1
     assert len(pending) == 1
     match, program = pending[0]
@@ -50,7 +49,10 @@ def test_match_certificate_cross_tld_variation(mock_fuzzer_class):
 @patch("dnstwist.Fuzzer")
 def test_match_certificate_prefix_does_not_match_variation(mock_fuzzer_class):
     from certificate_matcher import match_certificate_sync
+    from domain_config_builder import MatchingSnapshot
+    from models import CertificateInfo
     from unittest.mock import MagicMock
+    from variation_generator import DnstwistVariationGenerator
 
     inner = MagicMock()
     inner.generate = MagicMock()
@@ -72,19 +74,23 @@ def test_match_certificate_prefix_does_not_match_variation(mock_fuzzer_class):
         program_match_states={},
     )
     cert = CertificateInfo(domains=["my-d0main.net"], issuer="O", issuer_cn="CN")
-    pending, count = match_certificate_sync(cert, snap)
+    pending, count, _skipped = match_certificate_sync(cert, snap)
     assert count == 0
     assert pending == []
 
 
 def test_match_certificate_keyword_with_typo_label():
     from certificate_matcher import match_certificate_sync
+    from domain_config_builder import MatchingSnapshot, ProgramCTMatchState
+    from models import CertificateInfo
+    from variation_generator import DnstwistVariationGenerator
 
     vg = DnstwistVariationGenerator()
     state = ProgramCTMatchState(
         keywords=["production"],
         similarity_threshold=0.99,
         protected_list=["domain.com"],
+        protected_collapsed_lengths=[len("domaincom")],
     )
     snap = MatchingSnapshot(
         variation_generator=vg,
@@ -95,7 +101,7 @@ def test_match_certificate_keyword_with_typo_label():
         issuer="O",
         issuer_cn="CN",
     )
-    pending, count = match_certificate_sync(cert, snap)
+    pending, count, _skipped = match_certificate_sync(cert, snap)
     assert count == 1
     match, program = pending[0]
     assert program == "prog1"

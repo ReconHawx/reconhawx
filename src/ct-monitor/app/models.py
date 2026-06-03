@@ -121,12 +121,24 @@ class ProcessingStats:
     errors: int = 0
     filtered_before_queue: int = 0
     queue_drops: int = 0
+    similarity_skipped: int = 0
     start_time: datetime = field(default_factory=_utcnow)
     
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(
+        self,
+        *,
+        match_in_flight: int = 0,
+        match_concurrency: int = 0,
+        service_similarity_skipped: int = 0,
+    ) -> Dict[str, Any]:
         runtime = (_utcnow() - self.start_time).total_seconds()
         rate = self.total_received / runtime if runtime > 0 else 0
-        
+        offered = self.total_received + self.queue_drops
+        offered_rate = offered / runtime if runtime > 0 else 0.0
+        processed_rate = self.processed / runtime if runtime > 0 else 0.0
+        drop_rate = (self.queue_drops / offered) if offered > 0 else 0.0
+        sim_skipped = service_similarity_skipped or self.similarity_skipped
+
         return {
             "total_received": self.total_received,
             "filtered_by_tld": self.filtered_by_tld,
@@ -139,7 +151,13 @@ class ProcessingStats:
             "errors": self.errors,
             "filtered_before_queue": self.filtered_before_queue,
             "queue_drops": self.queue_drops,
+            "similarity_skipped": sim_skipped,
             "runtime_seconds": int(runtime),
-            "certs_per_second": round(rate, 2)
+            "certs_per_second": round(rate, 2),
+            "offered_per_second": round(offered_rate, 2),
+            "processed_per_second": round(processed_rate, 2),
+            "drop_rate": round(drop_rate, 4),
+            "match_in_flight": match_in_flight,
+            "match_concurrency": match_concurrency,
         }
 

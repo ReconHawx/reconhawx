@@ -32,7 +32,8 @@ def test_match_keyword_or_similarity_keyword():
         protected_list=["example.com"],
     )
     cert = CertificateInfo(domains=[], issuer="O", issuer_cn="CN")
-    m = _match_keyword_or_similarity("portal-corpinternal.evil.com", state, cert)
+    m, skipped = _match_keyword_or_similarity("portal-corpinternal.evil.com", state, cert)
+    assert skipped is False
     assert m is not None
     assert m.match_type == "keyword"
     assert m.matched is True
@@ -49,7 +50,8 @@ def test_match_keyword_or_similarity_protected_similarity():
         protected_list=["example.com"],
     )
     cert = CertificateInfo(domains=[], issuer="O", issuer_cn="CN")
-    m = _match_keyword_or_similarity("examp1e.com", state, cert)
+    m, skipped = _match_keyword_or_similarity("examp1e.com", state, cert)
+    assert skipped is False
     assert m is not None
     assert m.match_type == "protected_similarity"
     assert m.protected_domain == "example.com"
@@ -66,5 +68,33 @@ def test_match_keyword_or_similarity_below_threshold():
         protected_list=["example.com"],
     )
     cert = CertificateInfo(domains=[], issuer="O", issuer_cn="CN")
-    m = _match_keyword_or_similarity("completely-unrelated-label.net", state, cert)
+    m, skipped = _match_keyword_or_similarity("completely-unrelated-label.net", state, cert)
     assert m is None
+
+
+def test_match_certificate_sync_counts_similarity_skipped():
+    from certificate_matcher import match_certificate_sync
+    from domain_config_builder import ProgramCTMatchState
+    from domain_config_builder import MatchingSnapshot
+    from variation_generator import DnstwistVariationGenerator
+    from models import CertificateInfo
+
+    state = ProgramCTMatchState(
+        keywords=[],
+        similarity_threshold=0.85,
+        protected_list=["example.com"],
+        protected_collapsed_lengths=[len("examplecom")],
+    )
+    snap = MatchingSnapshot(
+        variation_generator=DnstwistVariationGenerator(),
+        program_match_states={"prog1": state},
+    )
+    cert = CertificateInfo(
+        domains=["qwertyuiopasdfghjklzxcvbnmzzzzzzzzzzzzzzzz.net"],
+        issuer="O",
+        issuer_cn="CN",
+    )
+    pending, count, skipped = match_certificate_sync(cert, snap)
+    assert count == 0
+    assert pending == []
+    assert skipped >= 1

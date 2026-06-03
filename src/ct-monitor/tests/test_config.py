@@ -73,3 +73,17 @@ def test_certstream_scale_config_defaults(monkeypatch):
     assert cfg.kubernetes_namespace == "reconhawx"
     assert cfg.certstream_scale_enabled is False
     assert cfg.certstream_ready_timeout_sec == 90
+
+
+def test_match_concurrency_from_env(monkeypatch):
+    from config import CTMonitorConfig
+
+    monkeypatch.setenv("CT_MATCH_CONCURRENCY", "8")
+    assert CTMonitorConfig().match_concurrency == 8
+
+
+def test_match_concurrency_default_positive(monkeypatch):
+    from config import CTMonitorConfig
+
+    monkeypatch.delenv("CT_MATCH_CONCURRENCY", raising=False)
+    assert CTMonitorConfig().match_concurrency >= 1

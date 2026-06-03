@@ -303,6 +303,8 @@ class CTMonitorService:
             reconnect_delay=self.config.reconnect_delay,
             queue_maxsize=self.config.certstream_queue_maxsize,
             yield_every_n=self.config.certstream_yield_every_n,
+            match_concurrency=self.config.match_concurrency,
+            queue_drop_watermark=self.config.certstream_queue_drop_watermark,
         )
         self._ct_ingest_task = asyncio.create_task(self.consumer.start())
         self._ct_fetch_active = True
@@ -361,7 +363,11 @@ class CTMonitorService:
         
         stats_dict = {}
         if source_stats:
-            stats_dict = source_stats.to_dict()
+            stats_dict = source_stats.to_dict(
+                match_in_flight=self.consumer.get_match_in_flight() if self.consumer else 0,
+                match_concurrency=self.consumer.get_match_concurrency() if self.consumer else 0,
+                service_similarity_skipped=self._stats.similarity_skipped,
+            )
         if self.consumer:
             stats_dict["certstream_queue_size"] = self.consumer.get_queue_size()
             stats_dict["certstream_queue_maxsize"] = self.consumer.get_queue_maxsize()
@@ -373,6 +379,7 @@ class CTMonitorService:
             "skipped_existing": self._stats.skipped_existing,
             "cache_hits": self._stats.cache_hits,
             "cache_misses": self._stats.cache_misses,
+            "similarity_skipped": self._stats.similarity_skipped,
         })
         
         # Get variation generator stats
@@ -405,6 +412,9 @@ class CTMonitorService:
                     else None
                 ),
                 "stats_interval": self._runtime_overlay["stats_interval"],
+                "match_concurrency": self.config.match_concurrency,
+                "certstream_queue_maxsize": self.config.certstream_queue_maxsize,
+                "certstream_queue_drop_watermark": self.config.certstream_queue_drop_watermark,
             },
             "programs_ct_enabled": list(self._programs_ct_enabled_detail),
         }
@@ -542,9 +552,13 @@ class CTMonitorService:
         if snap is None:
             return
 
-        pending, matches_inc = await asyncio.to_thread(match_certificate_sync, cert_info, snap)
+        pending, matches_inc, similarity_skipped = await asyncio.to_thread(
+            match_certificate_sync, cert_info, snap
+        )
         if matches_inc:
             self._stats.matches_found += matches_inc
+        if similarity_skipped:
+            self._stats.similarity_skipped += similarity_skipped
 
         for match, program_name in pending:
             await self._publish_alert(match, cert_info, program_name)

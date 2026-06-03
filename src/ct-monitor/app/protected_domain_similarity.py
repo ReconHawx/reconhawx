@@ -97,3 +97,36 @@ def best_match_among_protected(typo_fqdn: str, protected_domains: List[str]) -> 
             best_s = s
             best_p = p
     return best_s, best_p
+
+
+def similarity_impossible_by_length(
+    typo_fqdn: str,
+    protected_collapsed_lengths: List[int],
+    similarity_threshold: float,
+) -> bool:
+    """
+    Return True when no protected domain can reach similarity_threshold.
+
+    Safe to skip full Levenshtein: edit distance is at least |len(a)-len(b)|.
+    Checks all typo suffix fragments (same as best_similarity_typo_to_protected).
+    """
+    if not protected_collapsed_lengths or similarity_threshold >= 1.0:
+        return False
+
+    max_edit_frac = 1.0 - similarity_threshold
+    fragments = _typo_suffix_hostnames(typo_fqdn)
+    if not fragments:
+        fragments = [typo_fqdn]
+
+    for frag in fragments:
+        ca = _collapse_hostname_alphanumeric(frag)
+        if not ca:
+            continue
+        la = len(ca)
+        for lb in protected_collapsed_lengths:
+            if lb <= 0:
+                continue
+            mx = max(la, lb)
+            if abs(la - lb) / mx <= max_edit_frac:
+                return False
+    return True

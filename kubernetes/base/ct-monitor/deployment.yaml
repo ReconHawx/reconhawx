@@ -25,12 +25,14 @@ spec:
         imagePullPolicy: IfNotPresent
         resources:
           requests:
-            memory: "512Mi"
-            cpu: "200m"
-          limits:
             memory: "1Gi"
             cpu: "1000m"
+          limits:
+            memory: "2Gi"
+            cpu: "4000m"
         env:
+        - name: CT_MATCH_CONCURRENCY
+          value: "4"
         - name: CERTSTREAM_URL
           valueFrom:
             configMapKeyRef:
