@@ -22,52 +22,49 @@ def test_cert_metadata_details():
 
 
 def test_match_keyword_or_similarity_keyword():
-    from config import CTMonitorConfig
-    from main import CTMonitorService, ProgramCTMatchState
+    from certificate_matcher import _match_keyword_or_similarity
+    from domain_config_builder import ProgramCTMatchState
     from models import CertificateInfo
 
-    svc = CTMonitorService(CTMonitorConfig(enable_cache=False))
     state = ProgramCTMatchState(
         keywords=["corpinternal"],
         similarity_threshold=0.99,
         protected_list=["example.com"],
     )
     cert = CertificateInfo(domains=[], issuer="O", issuer_cn="CN")
-    m = svc._match_keyword_or_similarity("portal-corpinternal.evil.com", state, cert)
+    m = _match_keyword_or_similarity("portal-corpinternal.evil.com", state, cert)
     assert m is not None
     assert m.match_type == "keyword"
     assert m.matched is True
 
 
 def test_match_keyword_or_similarity_protected_similarity():
-    from config import CTMonitorConfig
-    from main import CTMonitorService, ProgramCTMatchState
+    from certificate_matcher import _match_keyword_or_similarity
+    from domain_config_builder import ProgramCTMatchState
     from models import CertificateInfo
 
-    svc = CTMonitorService(CTMonitorConfig(enable_cache=False))
     state = ProgramCTMatchState(
         keywords=[],
         similarity_threshold=0.85,
         protected_list=["example.com"],
     )
     cert = CertificateInfo(domains=[], issuer="O", issuer_cn="CN")
-    m = svc._match_keyword_or_similarity("examp1e.com", state, cert)
+    m = _match_keyword_or_similarity("examp1e.com", state, cert)
     assert m is not None
     assert m.match_type == "protected_similarity"
     assert m.protected_domain == "example.com"
 
 
 def test_match_keyword_or_similarity_below_threshold():
-    from config import CTMonitorConfig
-    from main import CTMonitorService, ProgramCTMatchState
+    from certificate_matcher import _match_keyword_or_similarity
+    from domain_config_builder import ProgramCTMatchState
     from models import CertificateInfo
 
-    svc = CTMonitorService(CTMonitorConfig(enable_cache=False))
     state = ProgramCTMatchState(
         keywords=[],
         similarity_threshold=0.99,
         protected_list=["example.com"],
     )
     cert = CertificateInfo(domains=[], issuer="O", issuer_cn="CN")
-    m = svc._match_keyword_or_similarity("completely-unrelated-label.net", state, cert)
+    m = _match_keyword_or_similarity("completely-unrelated-label.net", state, cert)
     assert m is None

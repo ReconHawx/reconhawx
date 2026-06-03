@@ -21,6 +21,8 @@ _SHADOW_MODULES = (
     "program_ct_settings",
     "protected_domain_similarity",
     "certstream_k8s",
+    "domain_config_builder",
+    "certificate_matcher",
 )
 
 

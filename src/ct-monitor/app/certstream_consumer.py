@@ -18,6 +18,43 @@ from models import CertificateInfo, ProcessingStats
 logger = logging.getLogger(__name__)
 
 DEFAULT_CERTSTREAM_URL = "ws://certstream:4000/"
+_QUEUE_DROP_LOG_INTERVAL_SEC = 10.0
+
+
+def extract_domains_from_message(cert_data: Dict[str, Any]) -> Set[str]:
+    """Lightweight domain extraction for pre-queue TLD filtering."""
+    if cert_data.get("message_type") != "certificate_update":
+        return set()
+    data = cert_data.get("data", {})
+    leaf_cert = data.get("leaf_cert", {})
+    all_domains: Set[str] = set()
+
+    subject = leaf_cert.get("subject", {})
+    cn = subject.get("CN")
+    if cn and isinstance(cn, str):
+        all_domains.add(cn.lower().strip())
+
+    for domain in leaf_cert.get("all_domains", []):
+        if isinstance(domain, str):
+            clean = domain.lstrip("*.").lower().strip()
+            if clean:
+                all_domains.add(clean)
+
+    return all_domains
+
+
+def message_passes_tld_filter(cert_data: Dict[str, Any], tld_filter: Optional[Set[str]]) -> bool:
+    """Return True if the frame should be enqueued (no filter = accept all)."""
+    if not tld_filter:
+        return True
+    domains = extract_domains_from_message(cert_data)
+    if not domains:
+        return False
+    for domain in domains:
+        tld = domain.split(".")[-1] if "." in domain else ""
+        if tld in tld_filter:
+            return True
+    return False
 
 
 class _StoppableCertStreamClient(CertStreamClient):
@@ -56,7 +93,7 @@ class CertStreamConsumer:
     Consumes certificate transparency logs in real-time via CertStream.
 
     Aggregates all major CT logs through certstream-server; TLD filtering
-    is applied client-side before matching.
+    is applied before enqueue and again when building CertificateInfo.
     """
 
     def __init__(
@@ -66,6 +103,7 @@ class CertStreamConsumer:
         tld_filter: Optional[Set[str]] = None,
         reconnect_delay: int = 5,
         queue_maxsize: int = 5000,
+        yield_every_n: int = 50,
     ):
         self.callback = callback
         self.certstream_url = certstream_url
@@ -79,7 +117,10 @@ class CertStreamConsumer:
         self._thread: Optional[threading.Thread] = None
         self._stop_event = threading.Event()
         self._client: Optional[_StoppableCertStreamClient] = None
-        self._queue_maxsize = queue_maxsize
+        self._queue_maxsize = max(1, int(queue_maxsize))
+        self._yield_every_n = max(1, int(yield_every_n))
+        self._last_queue_drop_log = 0.0
+        self._processed_since_yield = 0
 
     async def start(self):
         """Start consuming certificates with automatic reconnection."""
@@ -92,7 +133,7 @@ class CertStreamConsumer:
         if self.tld_filter:
             logger.info("TLD filter enabled: %s", sorted(self.tld_filter))
         else:
-            logger.warning("No TLD filter - processing ALL certificates (high volume!)")
+            logger.info("TLD filter disabled — processing all certificate TLDs")
 
         self._processor_task = asyncio.create_task(self._process_queue())
         self._thread = threading.Thread(
@@ -108,18 +149,44 @@ class CertStreamConsumer:
             logger.info("CertStream consumer cancelled")
             raise
 
+    def _log_queue_drop(self) -> None:
+        now = time.monotonic()
+        if now - self._last_queue_drop_log >= _QUEUE_DROP_LOG_INTERVAL_SEC:
+            self._last_queue_drop_log = now
+            qsize = self._queue.qsize() if self._queue is not None else 0
+            logger.warning(
+                "CertStream message queue full (max=%s, size=%s); dropped=%s total",
+                self._queue_maxsize,
+                qsize,
+                self._stats.queue_drops,
+            )
+
     def _enqueue_message(self, message: Dict[str, Any]) -> None:
         if not self._running or self._queue is None or self._loop is None:
             return
+
+        if not message_passes_tld_filter(message, self.tld_filter or None):
+            self._stats.filtered_before_queue += 1
+            return
+
+        if self._queue.qsize() >= int(self._queue_maxsize * 0.8):
+            self._stats.queue_drops += 1
+            self._log_queue_drop()
+            return
+
         try:
             self._queue.put_nowait(message)
         except asyncio.QueueFull:
-            self._stats.errors += 1
-            if self._stats.errors % 100 == 1:
-                logger.warning(
-                    "CertStream message queue full (max=%s); dropping frames",
-                    self._queue_maxsize,
-                )
+            self._stats.queue_drops += 1
+            self._log_queue_drop()
+
+    def get_queue_size(self) -> int:
+        if self._queue is None:
+            return 0
+        return self._queue.qsize()
+
+    def get_queue_maxsize(self) -> int:
+        return self._queue_maxsize
 
     def _run_certstream_thread(self) -> None:
         def on_message(message, _context):
@@ -175,6 +242,11 @@ class CertStreamConsumer:
             except Exception as e:
                 logger.error("Error processing certificate: %s", e)
                 self._stats.errors += 1
+            finally:
+                self._processed_since_yield += 1
+                if self._processed_since_yield >= self._yield_every_n:
+                    self._processed_since_yield = 0
+                    await asyncio.sleep(0)
 
     async def _process_certificate(self, cert_data: Dict[str, Any]):
         """Process a single certificate from the stream."""
@@ -182,10 +254,11 @@ class CertStreamConsumer:
 
         if self._stats.total_received % 100 == 0:
             logger.debug(
-                "CertStream progress: received=%s, processed=%s, filtered=%s",
+                "CertStream progress: received=%s, processed=%s, filtered=%s, pre_queue_filtered=%s",
                 self._stats.total_received,
                 self._stats.processed,
                 self._stats.filtered_by_tld,
+                self._stats.filtered_before_queue,
             )
 
         if self._stats.total_received <= 5:

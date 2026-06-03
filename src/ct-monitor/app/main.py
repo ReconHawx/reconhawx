@@ -30,7 +30,6 @@ import os
 import signal
 import sys
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
 from typing import Dict, Set, Optional, List, Any, Tuple
 
 import aiohttp
@@ -48,7 +47,12 @@ from certstream_k8s import (
     wait_for_certstream_http_ready,
 )
 from variation_generator import DnstwistVariationGenerator
-from protected_domain_similarity import best_match_among_protected
+from domain_config_builder import (
+    MatchingSnapshot,
+    ProgramCTMatchState,
+    build_domain_config_from_loaded,
+)
+from certificate_matcher import match_certificate_sync
 from alert_publisher import CTAlertPublisher
 from models import CertificateInfo, ProcessingStats, MatchResult
 
@@ -63,15 +67,6 @@ apply_service_logging(
     text_format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class ProgramCTMatchState:
-    """Per-program keywords and API-aligned similarity inputs (protected_domain_similarity.py)."""
-
-    keywords: List[str]
-    similarity_threshold: float
-    protected_list: List[str]
 
 
 class CTMonitorService:
@@ -140,10 +135,11 @@ class CTMonitorService:
             "domain_refresh_interval": self.config.domain_refresh_interval,
             "stats_interval": self.config.stats_interval,
         }
-        # Union of per-program TLD allowlists for CertStreamConsumer
-        self._ingestion_tld_union: Set[str] = program_ct_settings.default_tld_set()
+        # Per-program TLD union for CertStreamConsumer (only when ingestion filter enabled)
+        self._ingestion_tld_union: Set[str] = set()
         # Snapshot for /status: programs with ct_monitoring_enabled (after last successful refresh)
         self._programs_ct_enabled_detail: List[Dict[str, Any]] = []
+        self._matching_snapshot: Optional[MatchingSnapshot] = None
 
     async def _fetch_runtime_settings_from_api(self) -> None:
         headers: Dict[str, str] = {}
@@ -307,6 +303,8 @@ class CTMonitorService:
             certstream_url=self.config.certstream_url,
             tld_filter=self._ingestion_tld_union,
             reconnect_delay=self.config.reconnect_delay,
+            queue_maxsize=self.config.certstream_queue_maxsize,
+            yield_every_n=self.config.certstream_yield_every_n,
         )
         self._ct_ingest_task = asyncio.create_task(self.consumer.start())
         self._ct_fetch_active = True
@@ -366,7 +364,10 @@ class CTMonitorService:
         stats_dict = {}
         if source_stats:
             stats_dict = source_stats.to_dict()
-        
+        if self.consumer:
+            stats_dict["certstream_queue_size"] = self.consumer.get_queue_size()
+            stats_dict["certstream_queue_maxsize"] = self.consumer.get_queue_maxsize()
+
         # Include service-level stats
         stats_dict.update({
             "matches_found": self._stats.matches_found,
@@ -396,9 +397,15 @@ class CTMonitorService:
             "certstream_url": self.config.certstream_url,
             "certstream_scale_enabled": self.config.certstream_scale_enabled,
             "certstream_replicas_desired": self._certstream_replicas_desired,
+            "ingestion_tld_filter_enabled": self.config.ingestion_tld_filter_enabled,
             "config": {
                 "runtime_overlay": dict(self._runtime_overlay),
-                "ingestion_tld_union": sorted(self._ingestion_tld_union),
+                "ingestion_tld_filter_enabled": self.config.ingestion_tld_filter_enabled,
+                "ingestion_tld_union": (
+                    sorted(self._ingestion_tld_union)
+                    if self.config.ingestion_tld_filter_enabled
+                    else None
+                ),
                 "domain_refresh_interval": self._runtime_overlay["domain_refresh_interval"],
                 "stats_interval": self._runtime_overlay["stats_interval"],
             },
@@ -454,127 +461,57 @@ class CTMonitorService:
                     except Exception as e:
                         logger.debug(f"Error loading program {program_name}: {e}")
 
-                any_ct_enabled = any(
-                    bool(pd.get("ct_monitoring_enabled")) for _, pd in loaded
+                prev_union = (
+                    set(self._ingestion_tld_union)
+                    if self.config.ingestion_tld_filter_enabled
+                    else None
                 )
 
-                prev_union = set(self._ingestion_tld_union)
+                bundle = await asyncio.to_thread(build_domain_config_from_loaded, loaded)
 
                 async with self._domain_config_lock:
-                    self._any_program_ct_monitoring_enabled = any_ct_enabled
-                    self.variation_generator.clear()
-                    self.program_match_states.clear()
-                    self.protected_domains.clear()
+                    self._any_program_ct_monitoring_enabled = bundle.any_ct_enabled
+                    self._ingestion_tld_union = set(bundle.ingestion_tld_union)
+                    self.protected_domains = bundle.protected_domains
+                    self.program_match_states = bundle.program_match_states
+                    self.variation_generator = bundle.variation_generator
+                    self._programs_ct_enabled_detail = bundle.programs_ct_enabled_detail
+                    self._matching_snapshot = bundle.matching_snapshot()
 
-                    union_tlds: Set[str] = set()
-                    for _, program_data in loaded:
-                        if not program_data.get("ct_monitoring_enabled"):
-                            continue
-                        ptlds, _ = program_ct_settings.program_tlds_and_similarity(program_data)
-                        union_tlds |= ptlds
-                    if any_ct_enabled:
-                        self._ingestion_tld_union = (
-                            union_tlds if union_tlds else program_ct_settings.default_tld_set()
-                        )
-                    else:
-                        self._ingestion_tld_union = program_ct_settings.default_tld_set()
+                if self.config.ingestion_tld_filter_enabled:
                     logger.info(
                         "CT ingestion TLD union (%s programs enabled): %s",
-                        "≥1" if any_ct_enabled else "0",
-                        sorted(self._ingestion_tld_union),
+                        "≥1" if bundle.any_ct_enabled else "0",
+                        sorted(bundle.ingestion_tld_union),
                     )
-
-                    total_domains = 0
-                    total_variations = 0
-
-                    for program_name, program_data in loaded:
-                        if not program_data.get("ct_monitoring_enabled"):
-                            continue
-
-                        domains = set()
-                        protected = program_data.get("protected_domains", [])
-                        if protected:
-                            domains.update(d.lower().strip() for d in protected if d)
-                        seeds = program_data.get("seed_domains", [])
-                        if seeds:
-                            domains.update(d.lower().strip() for d in seeds if d)
-                        settings = program_data.get("settings", {})
-                        if isinstance(settings, dict):
-                            root_domains = settings.get("root_domains", [])
-                            if root_domains:
-                                domains.update(d.lower().strip() for d in root_domains if d)
-
-                        raw_keywords = program_data.get("protected_subdomain_prefixes") or []
-                        keywords_norm: List[str] = []
-                        seen_kw: Set[str] = set()
-                        for k in raw_keywords:
-                            if not k:
-                                continue
-                            k2 = str(k).lower().strip()
-                            if k2 and k2 not in seen_kw:
-                                seen_kw.add(k2)
-                                keywords_norm.append(k2)
-
-                        if not domains and not keywords_norm:
-                            continue
-
-                        self.protected_domains[program_name] = domains
-                        if domains:
-                            variations_added = self.variation_generator.add_protected_domains(
-                                list(domains),
-                                program_name,
-                                max_variations_per_domain=5000,
-                            )
-                            total_variations += variations_added
-                        else:
-                            variations_added = 0
-
-                        _, sim_thr = program_ct_settings.program_tlds_and_similarity(program_data)
-                        protected_sorted = sorted(domains)
-                        self.program_match_states[program_name] = ProgramCTMatchState(
-                            keywords=keywords_norm,
-                            similarity_threshold=sim_thr,
-                            protected_list=protected_sorted,
-                        )
-
-                        total_domains += len(domains)
-                        kw_info = f", {len(keywords_norm)} keywords" if keywords_norm else ""
-                        logger.info(
-                            f"  ✓ Program '{program_name}': {len(domains)} protected domains{kw_info}, "
-                            f"{variations_added:,} variations generated (CT similarity={sim_thr:.2f})"
-                        )
-
-                    prog_ct_rows: List[Dict[str, Any]] = []
-                    for program_name, program_data in loaded:
-                        if not program_data.get("ct_monitoring_enabled"):
-                            continue
-                        ptlds, sim_thr = program_ct_settings.program_tlds_and_similarity(program_data)
-                        prog_ct_rows.append(
-                            {
-                                "program_name": program_name,
-                                "similarity_threshold": round(float(sim_thr), 4),
-                                "tld_allowlist": sorted(ptlds),
-                                "matcher_active": program_name in self.program_match_states,
-                            }
-                        )
-                    prog_ct_rows.sort(key=lambda r: r["program_name"])
-                    self._programs_ct_enabled_detail = prog_ct_rows
-
-                    var_stats = self.variation_generator.get_stats()
+                else:
                     logger.info(
-                        f"Loaded {total_domains} protected domains across {len(self.program_match_states)} programs"
+                        "CT ingestion TLD filter disabled — matching all certificate TLDs (%s programs enabled)",
+                        "≥1" if bundle.any_ct_enabled else "0",
                     )
-                    logger.info(
-                        f"Generated {total_variations:,} total variations for fast O(1) matching"
-                    )
-                    if var_stats.get("variations_by_fuzzer"):
-                        top_fuzzers = sorted(
-                            var_stats["variations_by_fuzzer"].items(),
-                            key=lambda x: -x[1],
-                        )[:5]
-                        logger.info(f"Top fuzzers: {dict(top_fuzzers)}")
+                var_stats = bundle.variation_generator.get_stats()
+                logger.info(
+                    "Loaded %s protected domains across %s programs",
+                    bundle.total_domains,
+                    len(bundle.program_match_states),
+                )
+                logger.info(
+                    "Generated %s total variations for fast O(1) matching",
+                    f"{bundle.total_variations:,}",
+                )
+                if var_stats.get("variations_by_fuzzer"):
+                    top_fuzzers = sorted(
+                        var_stats["variations_by_fuzzer"].items(),
+                        key=lambda x: -x[1],
+                    )[:5]
+                    logger.info("Top fuzzers: %s", dict(top_fuzzers))
 
-                if self._ct_fetch_active and self._ingestion_tld_union != prev_union:
+                if (
+                    self.config.ingestion_tld_filter_enabled
+                    and self._ct_fetch_active
+                    and prev_union is not None
+                    and self._ingestion_tld_union != prev_union
+                ):
                     logger.info("CT ingestion TLD union changed; restarting CT provider")
                     await self._stop_ct_ingestion()
         
@@ -613,124 +550,18 @@ class CTMonitorService:
             "cert_all_domains": cert_info.domains,
         }
 
-    def _match_keyword_or_similarity(
-        self,
-        domain_lower: str,
-        state: ProgramCTMatchState,
-        cert_info: CertificateInfo,
-    ) -> Optional[MatchResult]:
-        base_details = dict(self._cert_metadata_details(cert_info))
-        base_details["match_source"] = "keyword_or_similarity"
-
-        for keyword in state.keywords:
-            if keyword in domain_lower:
-                d = dict(base_details)
-                d["matched_keyword"] = keyword
-                return MatchResult(
-                    matched=True,
-                    protected_domain=keyword,
-                    cert_domain=domain_lower,
-                    similarity_score=0.90,
-                    match_type="keyword",
-                    details=d,
-                )
-
-        if state.protected_list:
-            best_s, best_p = best_match_among_protected(domain_lower, state.protected_list)
-            if best_s >= state.similarity_threshold and best_p is not None:
-                d = dict(base_details)
-                d["similarity_threshold"] = state.similarity_threshold
-                return MatchResult(
-                    matched=True,
-                    protected_domain=best_p,
-                    cert_domain=domain_lower,
-                    similarity_score=best_s,
-                    match_type="protected_similarity",
-                    details=d,
-                )
-
-        return None
-
     async def _on_certificate(self, cert_info: CertificateInfo):
         """
-        Handle incoming certificate from CertStream/CT logs.
-
-        Per SAN: (1) exact dnstwist variation, (2) else keyword then API-aligned similarity per program.
-
-        Called for each certificate that passes TLD filtering.
+        Handle incoming certificate from CertStream (matching runs off the event loop).
         """
-        pending: List[Tuple[MatchResult, str]] = []
-
         async with self._domain_config_lock:
-            alerted_domains = set()
+            snap = self._matching_snapshot
+        if snap is None:
+            return
 
-            for domain in cert_info.domains:
-                domain_lower = domain.lower().strip()
-
-                if domain_lower in alerted_domains:
-                    continue
-
-                if self.variation_generator.is_legitimate_subdomain(domain_lower):
-                    continue
-
-                if self.variation_generator.is_protected_domain(domain_lower):
-                    continue
-
-                variation_info = self.variation_generator.match(domain_lower)
-
-                if variation_info:
-                    alerted_domains.add(domain_lower)
-                    self._stats.matches_found += 1
-
-                    match = MatchResult(
-                        matched=True,
-                        protected_domain=variation_info.protected_domain,
-                        cert_domain=domain_lower,
-                        similarity_score=0.95,
-                        match_type=f"dnstwist:{variation_info.fuzzer}",
-                        details={
-                            "fuzzer": variation_info.fuzzer,
-                            **self._cert_metadata_details(cert_info),
-                            "match_source": "variation_generator",
-                        },
-                    )
-
-                    logger.warning(
-                        f"🚨 CT ALERT: {match.cert_domain} matches variation of {match.protected_domain} "
-                        f"(program={variation_info.program_name}, fuzzer={variation_info.fuzzer})"
-                    )
-
-                    pending.append((match, variation_info.program_name))
-
-            for domain in cert_info.domains:
-                domain_lower = domain.lower().strip()
-
-                if domain_lower in alerted_domains:
-                    continue
-
-                if self.variation_generator.is_legitimate_subdomain(domain_lower):
-                    continue
-
-                if self.variation_generator.is_protected_domain(domain_lower):
-                    continue
-
-                for program_name, state in list(self.program_match_states.items()):
-                    if domain_lower in alerted_domains:
-                        continue
-                    try:
-                        match = self._match_keyword_or_similarity(domain_lower, state, cert_info)
-                        if match:
-                            alerted_domains.add(domain_lower)
-                            self._stats.matches_found += 1
-                            logger.warning(
-                                f"🚨 CT ALERT: {match.cert_domain} looks like {match.protected_domain} "
-                                f"(program={program_name}, type={match.match_type}, "
-                                f"score={match.similarity_score:.2f})"
-                            )
-                            pending.append((match, program_name))
-                    except Exception as e:
-                        logger.error(f"Error processing certificate for program {program_name}: {e}")
-                        self._stats.errors += 1
+        pending, matches_inc = await asyncio.to_thread(match_certificate_sync, cert_info, snap)
+        if matches_inc:
+            self._stats.matches_found += matches_inc
 
         for match, program_name in pending:
             await self._publish_alert(match, cert_info, program_name)

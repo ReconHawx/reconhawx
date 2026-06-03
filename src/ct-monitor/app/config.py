@@ -6,12 +6,15 @@ Environment variables:
 - NATS_URL: NATS server URL (default: nats://nats:4222)
 - INTERNAL_SERVICE_API_KEY: API authentication key
 - CERTSTREAM_URL: WebSocket URL for self-hosted certstream-server
-- CT_TLD_FILTER: Comma-separated TLDs (legacy env fallback; per-program TLD union preferred)
+- CT_INGESTION_TLD_FILTER_ENABLED: when true, filter certs by program tld_filter union (default false)
+- CT_TLD_FILTER: legacy; only used if CT_INGESTION_TLD_FILTER_ENABLED=true
 - CT_DOMAIN_REFRESH_INTERVAL: Seconds between domain refreshes (default: 300)
 - LOG_LEVEL: Logging level (default: INFO)
 - CT_MONITOR_AUTO_START: If true, start monitoring on pod boot after API is reachable (default: true)
 - CT_CERTSTREAM_SCALE_ENABLED: Scale certstream-server Deployment 0/1 (auto-detect in-cluster)
 - CERTSTREAM_DEPLOYMENT_NAME, KUBERNETES_NAMESPACE, CT_CERTSTREAM_READY_TIMEOUT
+- CERTSTREAM_QUEUE_MAXSIZE: asyncio queue depth (default 5000)
+- CERTSTREAM_YIELD_EVERY_N: event-loop yield every N dequeued certs (default 50)
 """
 
 import os
@@ -36,11 +39,12 @@ class CTMonitorConfig:
     # NATS Configuration
     nats_url: str = field(default_factory=lambda: os.getenv("NATS_URL", "nats://nats:4222"))
 
-    # TLD Filter - fallback when no programs enabled (per-program union from API when active)
-    tld_filter: Set[str] = field(
-        default_factory=lambda: set(
-            os.getenv("CT_TLD_FILTER", "com,net,org,io,co,app,xyz,online,site,info,biz").split(",")
-        )
+    # Ingestion TLD filter (off by default — all CT certificate TLDs are matched)
+    ingestion_tld_filter_enabled: bool = field(
+        default_factory=lambda: os.getenv("CT_INGESTION_TLD_FILTER_ENABLED", "false")
+        .strip()
+        .lower()
+        in ("true", "1", "yes", "on")
     )
 
     # Refresh interval for protected domains (seconds)
@@ -104,6 +108,12 @@ class CTMonitorConfig:
     certstream_scale_enabled: bool = field(default_factory=certstream_scale_enabled_default)
     certstream_ready_timeout_sec: int = field(
         default_factory=lambda: int(os.getenv("CT_CERTSTREAM_READY_TIMEOUT", "90"))
+    )
+    certstream_queue_maxsize: int = field(
+        default_factory=lambda: int(os.getenv("CERTSTREAM_QUEUE_MAXSIZE", "5000"))
+    )
+    certstream_yield_every_n: int = field(
+        default_factory=lambda: max(1, int(os.getenv("CERTSTREAM_YIELD_EVERY_N", "50")))
     )
 
 

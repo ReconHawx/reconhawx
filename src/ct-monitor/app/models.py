@@ -119,6 +119,8 @@ class ProcessingStats:
     cache_hits: int = 0
     cache_misses: int = 0
     errors: int = 0
+    filtered_before_queue: int = 0
+    queue_drops: int = 0
     start_time: datetime = field(default_factory=_utcnow)
     
     def to_dict(self) -> Dict[str, Any]:
@@ -135,6 +137,8 @@ class ProcessingStats:
             "cache_hits": self.cache_hits,
             "cache_misses": self.cache_misses,
             "errors": self.errors,
+            "filtered_before_queue": self.filtered_before_queue,
+            "queue_drops": self.queue_drops,
             "runtime_seconds": int(runtime),
             "certs_per_second": round(rate, 2)
         }
