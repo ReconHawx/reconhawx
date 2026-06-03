@@ -108,7 +108,6 @@ function ProgramDetail() {
   const [savingFiltering, setSavingFiltering] = useState(false);
   const [savingCtMonitoring, setSavingCtMonitoring] = useState(false);
   const [ctMonitorProgram, setCtMonitorProgram] = useState({
-    tld_filter: '',
     similarity_threshold: ''
   });
   const [savingCtMonitorProgram, setSavingCtMonitorProgram] = useState(false);
@@ -272,7 +271,6 @@ function ProgramDetail() {
     setAiPrompts({ typosquat: prompts.typosquat || '' });
     const cms = program?.ct_monitor_program_settings || {};
     setCtMonitorProgram({
-      tld_filter: cms.tld_filter != null ? String(cms.tld_filter) : '',
       similarity_threshold:
         cms.similarity_threshold !== undefined && cms.similarity_threshold !== null
           ? String(cms.similarity_threshold)
@@ -440,7 +438,6 @@ function ProgramDetail() {
         similarity_threshold = n;
       }
       const settings = {
-        tld_filter: ctMonitorProgram.tld_filter.trim(),
         similarity_threshold
       };
       await programAPI.update(programName, { ct_monitor_program_settings: settings }, true);
@@ -1565,19 +1562,10 @@ function ProgramDetail() {
                   These settings control how the CT monitor matches certificates for <strong>this program only</strong>.
                   They are separate from &quot;Typosquat filtering&quot; below (which applies when inserting typosquat findings into the database).
                 </p>
-                <Form.Group className="mb-3">
-                  <Form.Label>TLD allowlist (comma-separated)</Form.Label>
-                  <Form.Control
-                    type="text"
-                    placeholder="e.g. com,net,org,io"
-                    value={ctMonitorProgram.tld_filter}
-                    onChange={(e) => setCtMonitorProgram({ ...ctMonitorProgram, tld_filter: e.target.value })}
-                    disabled={!isUserManager}
-                  />
-                  <Form.Text className="text-muted">
-                    Only certificate names in these TLDs are considered for this program. Leave empty to use the default allowlist (same as the old global CT_TLD_FILTER).
-                  </Form.Text>
-                </Form.Group>
+                <p className="text-muted small mb-3">
+                  The CT monitor matches certificates from <strong>all TLDs</strong> in the certificate stream
+                  against this program&apos;s variations and keywords.
+                </p>
                 <Form.Group className="mb-0">
                   <Form.Label>CT matcher similarity threshold (0–1)</Form.Label>
                   <Form.Control

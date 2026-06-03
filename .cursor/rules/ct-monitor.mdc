@@ -40,7 +40,7 @@ CTMonitorService (main.py)
 
 ### CertStreamConsumer (`certstream_consumer.py`)
 - **Primary** ingress: `certstream.listen_for_events` pattern via `CertStreamClient` in a daemon thread
-- Bridges messages into asyncio; `_process_certificate()` applies TLD filter then callback
+- Bridges messages into asyncio; optional TLD filter at enqueue (off by default — all TLDs matched)
 - Reconnects on disconnect (`CT_RECONNECT_DELAY`, default 5s)
 - Default URL: `ws://certstream:4000/` (`CERTSTREAM_URL`)
 
@@ -50,7 +50,7 @@ CTMonitorService (main.py)
 |------|--------|
 | CertStream URL | `CERTSTREAM_URL` / ConfigMap `certstream.url` |
 | Global refresh + stats intervals | `system_settings.ct_monitor_runtime`; API internal + admin routes |
-| Per-program TLD + similarity | `programs.ct_monitor_program_settings` on `GET /programs/{name}` |
+| Per-program similarity | `programs.ct_monitor_program_settings.similarity_threshold` on `GET /programs/{name}` |
 
 ### DnstwistVariationGenerator / `protected_domain_similarity.py` / `CTAlertPublisher`
 - Unchanged: see previous patterns in this file’s matching and alert sections below.
@@ -60,7 +60,7 @@ CTMonitorService (main.py)
 ```
 certstream-server (all CT logs)
     ↓
-CertStreamConsumer (TLD filter = union of enabled programs)
+CertStreamConsumer (all TLDs by default; optional CT_INGESTION_TLD_FILTER_ENABLED)
     ↓
 CTMonitorService._on_certificate()
     → variation match → keyword/similarity → NATS events.typosquat.ct_alert
@@ -76,7 +76,11 @@ event-handler
 
 **K8s scaler:** `CT_CERTSTREAM_SCALE_ENABLED` (`true` in cluster; `false` for local dev), `CERTSTREAM_DEPLOYMENT_NAME` (default `certstream-server`), `KUBERNETES_NAMESPACE`, `CT_CERTSTREAM_READY_TIMEOUT` (default 90s). Auto-enables when ServiceAccount token is present unless explicitly off.
 
-**Matching:** per-program TLD union from API; legacy env `CT_TLD_FILTER` when no programs enabled
+**CertStream consumer:** `CERTSTREAM_QUEUE_MAXSIZE` (default 5000), `CERTSTREAM_YIELD_EVERY_N` (default 50).
+
+**Ingestion TLD filter:** `CT_INGESTION_TLD_FILTER_ENABLED` (default `false` — all certificate TLDs). When `true`, uses per-program `tld_filter` union.
+
+**Variations:** unlimited dnstwist permutations per protected domain (no cap unless `max_variations` passed explicitly)
 
 **Runtime:** `CT_DOMAIN_REFRESH_INTERVAL`, `CT_STATS_INTERVAL` (overridable via `ct_monitor_runtime` in DB)
 
@@ -96,13 +100,18 @@ Unchanged: NATS `events.typosquat.ct_alert`, priority from match type/score.
 
 ## HTTP Control API
 
-- `GET /status`, `POST /start`, `POST /stop`, `POST /refresh-domains`, `POST /reload-runtime-settings`, `GET /health`
+- `GET /status` — full stats (admin UI); not used for Kubernetes probes
+- `GET /health` — lightweight; **liveness and readiness** probes use this path only
+- `POST /start`, `POST /stop`, `POST /refresh-domains`, `POST /reload-runtime-settings`
 
 ## Development Guidelines
 
 ### Performance
-- **TLD filtering is critical** — full certstream volume is millions/day
-- certstream-server load-sheds slow clients; keep ct-monitor queue healthy (`queue_maxsize` in consumer)
+- **Ingestion TLD filter is off by default** — expect high CertStream volume and large variation maps; use queue backpressure and adequate memory
+- When `CT_INGESTION_TLD_FILTER_ENABLED=true`, frames can be filtered **before** the asyncio queue
+- Domain refresh builds dnstwist variations via `asyncio.to_thread`; certificate matching uses `certificate_matcher.match_certificate_sync` off the event loop
+- Backpressure: queue drops when ≥80% full (`queue_drops`, `filtered_before_queue` in `/status` stats); tune `CERTSTREAM_QUEUE_MAXSIZE`, `CERTSTREAM_YIELD_EVERY_N`
+- certstream-server load-sheds slow clients; keep ct-monitor queue healthy
 
 ### Error handling
 - CertStream thread reconnects automatically

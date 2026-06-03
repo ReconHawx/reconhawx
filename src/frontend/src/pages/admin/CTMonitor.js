@@ -210,21 +210,24 @@ export function CTMonitorInner({ embedded = false }) {
                 <Col md={6}>
                   <p><strong>CT Source:</strong> {status?.ct_source || 'N/A'}</p>
                   <p className="mb-1">
-                    <strong>Ingestion TLD union:</strong>{' '}
-                    <span className="text-muted small">
-                      (certificates must match one of these TLDs before per-program matching)
-                    </span>
+                    <strong>Certificate TLDs:</strong>{' '}
+                    {status?.ingestion_tld_filter_enabled || status?.config?.ingestion_tld_filter_enabled ? (
+                      <span className="text-muted small">filtered at ingestion</span>
+                    ) : (
+                      <Badge bg="info">All TLDs (filter disabled)</Badge>
+                    )}
                   </p>
-                  <p className="small font-monospace mb-2" style={{ wordBreak: 'break-all' }}>
-                    {(status?.config?.ingestion_tld_union || []).length > 0
-                      ? status.config.ingestion_tld_union.join(', ')
-                      : '—'}
-                  </p>
+                  {(status?.ingestion_tld_filter_enabled || status?.config?.ingestion_tld_filter_enabled) && (
+                    <p className="small font-monospace mb-2" style={{ wordBreak: 'break-all' }}>
+                      {(status?.config?.ingestion_tld_union || []).length > 0
+                        ? status.config.ingestion_tld_union.join(', ')
+                        : '—'}
+                    </p>
+                  )}
                   <p className="small text-muted mb-0">
                     Certificates are streamed from self-hosted certstream-server (
-                    {status?.certstream_url || 'ws://certstream:4000/'}). Per-program similarity and TLD
-                    allowlists are on each program (Typosquat tab). Global refresh intervals: System Settings →
-                    CT monitor.
+                    {status?.certstream_url || 'ws://certstream:4000/'}). Per-program similarity threshold is on
+                    each program (Typosquat tab). Global refresh intervals: System Settings → CT monitor.
                   </p>
                 </Col>
                 <Col md={6} className="text-end">
@@ -292,7 +295,7 @@ export function CTMonitorInner({ embedded = false }) {
                       <tr>
                         <th>Program</th>
                         <th>Similarity threshold</th>
-                        <th>TLD allowlist (effective)</th>
+                        <th>Certificate TLDs</th>
                         <th>Matcher</th>
                       </tr>
                     </thead>
@@ -306,9 +309,15 @@ export function CTMonitorInner({ embedded = false }) {
                           </td>
                           <td>{typeof row.similarity_threshold === 'number' ? row.similarity_threshold : '—'}</td>
                           <td>
-                            <code className="small" style={{ wordBreak: 'break-all' }}>
-                              {(row.tld_allowlist || []).join(', ') || '—'}
-                            </code>
+                            {row.tld_allowlist === 'all' ? (
+                              <span className="text-muted">All</span>
+                            ) : (
+                              <code className="small" style={{ wordBreak: 'break-all' }}>
+                                {Array.isArray(row.tld_allowlist)
+                                  ? row.tld_allowlist.join(', ') || '—'
+                                  : '—'}
+                              </code>
+                            )}
                           </td>
                           <td>
                             {row.matcher_active ? (
@@ -363,7 +372,7 @@ export function CTMonitorInner({ embedded = false }) {
                       <StatBox
                         value={formatNumber(status.stats?.processed)}
                         label="Certificates Processed"
-                        tooltip="Certificates that were successfully parsed and had at least one domain matching the TLD filter. These certificates are checked for typosquatting against protected domains."
+                        tooltip="Certificates that were successfully parsed and passed to typosquat matching (all TLDs when ingestion filter is disabled)."
                         className="text-info"
                       />
                     </Col>

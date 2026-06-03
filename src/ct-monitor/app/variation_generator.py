@@ -8,7 +8,7 @@ This uses the same dnstwist library as the runner for consistency.
 """
 
 import logging
-from typing import Dict, List, Set, Optional
+from typing import Dict, List, Optional, Set
 from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
@@ -96,7 +96,7 @@ class DnstwistVariationGenerator:
         self, 
         domain: str, 
         program_name: str,
-        max_variations: int = 5000
+        max_variations: Optional[int] = None,
     ) -> Dict[str, str]:
         """
         Generate all variations for a protected domain.
@@ -104,7 +104,7 @@ class DnstwistVariationGenerator:
         Args:
             domain: Protected domain (e.g., "microsoft.com")
             program_name: Program name for tracking
-            max_variations: Maximum variations to generate per domain
+            max_variations: Cap per domain (None = unlimited)
             
         Returns:
             Dict mapping variation -> fuzzer type
@@ -128,7 +128,7 @@ class DnstwistVariationGenerator:
                 
                 count = 0
                 for perm in permutations:
-                    if count >= max_variations:
+                    if max_variations is not None and count >= max_variations:
                         logger.warning(f"Reached max variations ({max_variations}) for {domain}")
                         break
                     
@@ -162,7 +162,7 @@ class DnstwistVariationGenerator:
         self, 
         domain: str, 
         program_name: str,
-        max_variations: int = 5000
+        max_variations: Optional[int] = None,
     ) -> int:
         """
         Add a protected domain and generate its variations.
@@ -170,7 +170,7 @@ class DnstwistVariationGenerator:
         Args:
             domain: Protected domain
             program_name: Program name
-            max_variations: Maximum variations per domain
+            max_variations: Cap per domain (None = unlimited)
             
         Returns:
             Number of variations generated
@@ -220,7 +220,7 @@ class DnstwistVariationGenerator:
         self, 
         domains: List[str], 
         program_name: str,
-        max_variations_per_domain: int = 5000
+        max_variations_per_domain: Optional[int] = None,
     ) -> int:
         """
         Add multiple protected domains for a program.
@@ -228,7 +228,7 @@ class DnstwistVariationGenerator:
         Args:
             domains: List of protected domains
             program_name: Program name
-            max_variations_per_domain: Max variations per domain
+            max_variations_per_domain: Cap per domain (None = unlimited)
             
         Returns:
             Total number of variations added

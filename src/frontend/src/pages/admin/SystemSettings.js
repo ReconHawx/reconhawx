@@ -1791,7 +1791,7 @@ function SystemSettings() {
                 <Card.Body>
                   <p className="text-muted small">
                     Global intervals and CT log polling behavior for the ct-monitor service (stored in the database).
-                    Per-program TLD filter and similarity are configured on each program&apos;s Typosquat tab.
+                    Per-program CT matcher similarity is configured on each program&apos;s Typosquat tab (all certificate TLDs are matched).
                   </p>
                   {ctMonitorRuntimeLoading ? (
                     <div className="text-center py-4">
@@ -1824,7 +1824,7 @@ function SystemSettings() {
                       </Form.Group>
                       <p className="text-muted small mb-0">
                         Certificate ingestion uses the in-cluster certstream-server aggregator (all CT logs).
-                        Per-program TLD allowlists are configured on each program&apos;s Typosquat tab.
+                        Per-program CT matcher similarity is configured on each program&apos;s Typosquat tab.
                       </p>
                     </>
                   )}
