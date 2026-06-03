@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.45.1](https://github.com/ReconHawx/reconhawx/compare/v0.45.0...v0.45.1) (2026-06-03)
+
+
+### Bug Fixes
+
+* **ct-monitor:** reduce certstream queue drops with parallel matching ([401b111](https://github.com/ReconHawx/reconhawx/commit/401b11188795fce5c7aad99b8244884ff8e37887))
+* **ct-monitor:** stop apex warnings for public-suffix-only hostnames ([bcdca40](https://github.com/ReconHawx/reconhawx/commit/bcdca40e599cbeb68d3d271c9d0b29380ea1b5f0))
+
 ## [0.45.0](https://github.com/ReconHawx/reconhawx/compare/v0.44.1...v0.45.0) (2026-06-03)
 
 
