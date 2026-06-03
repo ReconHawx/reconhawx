@@ -8,7 +8,6 @@ def test_ct_monitor_config_explicit_kwargs():
         api_url="http://custom:9000",
         api_key="k",
         nats_url="nats://n:4222",
-        tld_filter={"net", "org"},
         domain_refresh_interval=120,
         enable_cache=False,
         ct_monitor_auto_start=False,
@@ -16,18 +15,9 @@ def test_ct_monitor_config_explicit_kwargs():
     assert cfg.api_url == "http://custom:9000"
     assert cfg.api_key == "k"
     assert cfg.nats_url == "nats://n:4222"
-    assert cfg.tld_filter == {"net", "org"}
     assert cfg.domain_refresh_interval == 120
     assert cfg.enable_cache is False
     assert cfg.ct_monitor_auto_start is False
-
-
-def test_ct_tld_filter_from_env(monkeypatch):
-    from config import CTMonitorConfig
-
-    monkeypatch.setenv("CT_TLD_FILTER", "io,app,dev")
-    cfg = CTMonitorConfig()
-    assert cfg.tld_filter == {"io", "app", "dev"}
 
 
 def test_ct_enable_cache_explicit():
@@ -67,6 +57,13 @@ def test_certstream_url_from_env(monkeypatch):
 
     monkeypatch.setenv("CERTSTREAM_URL", "ws://localhost:4000/")
     assert CTMonitorConfig().certstream_url == "ws://localhost:4000/"
+
+
+def test_ingestion_tld_filter_disabled_by_default(monkeypatch):
+    from config import CTMonitorConfig
+
+    monkeypatch.delenv("CT_INGESTION_TLD_FILTER_ENABLED", raising=False)
+    assert CTMonitorConfig().ingestion_tld_filter_enabled is False
 
 
 def test_certstream_scale_config_defaults(monkeypatch):
