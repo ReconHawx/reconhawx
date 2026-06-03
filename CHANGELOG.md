@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.45.0](https://github.com/ReconHawx/reconhawx/compare/v0.44.1...v0.45.0) (2026-06-03)
+
+
+### Features
+
+* **ct-monitor:** match typosquat variations on certificates across any TLD ([b32174e](https://github.com/ReconHawx/reconhawx/commit/b32174e11615ee9f0fcc9b03b38598c71b7cdc5f))
+* **ct-monitor:** reload program config only on startup and API changes ([3486806](https://github.com/ReconHawx/reconhawx/commit/3486806bfe42010c96d8c0e80e1b0ae6ca60ddbe))
+
 ## [0.44.1](https://github.com/ReconHawx/reconhawx/compare/v0.44.0...v0.44.1) (2026-06-03)
 
 
