@@ -92,7 +92,11 @@ event-handler
 
 ## Matching Algorithm
 
-Unchanged: Stage 1 dnstwist O(1); Stage 2 keywords + `best_similarity_typo_to_protected`; skip legitimate subdomains.
+Two stages; skip legitimate subdomains of protected FQDNs and exact protected FQDN hits.
+
+**Stage 1 — dnstwist variations (O(1)):** Pre-computed variation **registrable hostname labels** (public suffix stripped via `tldextract` in `domain_labels.hostname_without_public_suffix`). Certificate SANs match when their label equals a variation label **exactly** — any TLD (`d0main.live` matches variation from `d0main.com`; `my-d0main.net` does not).
+
+**Stage 2 — keywords + similarity:** Protected subdomain **keywords** still use substring match on the full hostname (`production` in `production-d0main.live`). Fuzzy match uses `best_similarity_typo_to_protected` with apex extraction via `tldextract` (`domain_labels.extract_apex_domain` in ct-monitor; keep in sync with API `protected_domain_similarity_service.py`).
 
 ## Alert Publishing
 

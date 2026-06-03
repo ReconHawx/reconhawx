@@ -6,10 +6,8 @@ similarity to protected domains and protected keyword matching.
 import logging
 from typing import Any, Dict, List, Optional, Tuple
 
-from services.protected_domain_similarity_service import (
-    _extract_apex_domain,
-    best_similarity_typo_to_protected,
-)
+from utils.domain_utils import extract_apex_domain
+from services.protected_domain_similarity_service import best_similarity_typo_to_protected
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +32,7 @@ class TyposquatFilteringService:
             s = raw.strip().lower()
             if not s:
                 continue
-            apex = _extract_apex_domain(s).lower()
+            apex = extract_apex_domain(s).lower()
             if apex and apex not in seen:
                 seen.add(apex)
                 out.append(apex)
@@ -64,11 +62,11 @@ class TyposquatFilteringService:
 
         typo_apex_lower: Optional[str] = None
         if typo_domain:
-            typo_apex_lower = _extract_apex_domain(typo_domain).lower()
+            typo_apex_lower = extract_apex_domain(typo_domain).lower()
 
         # --- Check 0: exact apex match with protected domain or asset apex → filter out ---
         if typo_apex_lower:
-            protected_apexes = {_extract_apex_domain(p).lower() for p in (protected_domains or [])}
+            protected_apexes = {extract_apex_domain(p).lower() for p in (protected_domains or [])}
             asset_apexes = {a.lower() for a in (asset_apex_domains or [])}
             blocked_apexes = protected_apexes | asset_apexes
             if typo_apex_lower in blocked_apexes:

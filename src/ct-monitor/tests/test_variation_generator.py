@@ -47,8 +47,12 @@ def test_add_protected_domain_mocked_fuzzer(mock_fuzzer_class):
     info = g.match("exammple.com")
     assert info is not None
     assert info.protected_domain == "example.com"
+    assert info.variation == "exammple"
     assert info.fuzzer == "insertion"
     assert info.program_name == "prog1"
+    # TLD-agnostic: same registrable label, different public suffix
+    assert g.match("exammple.live") is not None
+    assert g.match("my-exammple.net") is None
     assert g.is_protected_domain("example.com") is True
     assert g.is_legitimate_subdomain("www.example.com") is True
     assert g.add_protected_domain("example.com", "prog1") == 0

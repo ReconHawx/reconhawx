@@ -11,6 +11,8 @@ import logging
 from typing import Dict, List, Optional, Set
 from dataclasses import dataclass
 
+from domain_labels import hostname_without_public_suffix
+
 logger = logging.getLogger(__name__)
 
 # Available dnstwist fuzzers
@@ -35,7 +37,7 @@ PRIORITY_FUZZERS = [
 
 @dataclass
 class VariationInfo:
-    """Information about a domain variation"""
+    """Information about a domain variation (registrable hostname label, TLD-agnostic)."""
     variation: str
     protected_domain: str
     fuzzer: str
@@ -47,7 +49,7 @@ class DnstwistVariationGenerator:
     Generates domain variations using dnstwist library.
     
     Pre-computes all variations for protected domains and provides
-    fast O(1) lookup for incoming certificate domains.
+    fast O(1) TLD-agnostic lookup (exact registrable hostname label match).
     """
     
     def __init__(self, fuzzers: Optional[List[str]] = None):
@@ -65,8 +67,7 @@ class DnstwistVariationGenerator:
             logger.warning(f"Invalid fuzzers ignored: {invalid}")
             self.fuzzers = [f for f in self.fuzzers if f in AVAILABLE_FUZZERS]
         
-        # Storage for variations
-        # variation_domain -> VariationInfo
+        # Storage for variations (registrable hostname label -> VariationInfo)
         self._variations: Dict[str, VariationInfo] = {}
         
         # Protected domains by program
@@ -190,25 +191,31 @@ class DnstwistVariationGenerator:
         
         # Generate variations
         variations = self.generate_variations(domain, program_name, max_variations)
-        
-        # Store variations
+        protected_label = hostname_without_public_suffix(domain)
+
+        # Store variations keyed by registrable hostname label (TLD-agnostic)
         added = 0
-        for variation, fuzzer in variations.items():
-            variation = variation.lower().strip()
-            
+        for variation_fqdn, fuzzer in variations.items():
+            label = hostname_without_public_suffix(variation_fqdn.lower().strip())
+            if not label:
+                continue
+            if protected_label and label == protected_label:
+                continue
+
             # Only add if not already present (first domain wins)
-            if variation not in self._variations:
-                self._variations[variation] = VariationInfo(
-                    variation=variation,
+            if label not in self._variations:
+                self._variations[label] = VariationInfo(
+                    variation=label,
                     protected_domain=domain,
                     fuzzer=fuzzer,
-                    program_name=program_name
+                    program_name=program_name,
                 )
                 added += 1
-                
+
                 # Update fuzzer stats
-                self._stats["variations_by_fuzzer"][fuzzer] = \
+                self._stats["variations_by_fuzzer"][fuzzer] = (
                     self._stats["variations_by_fuzzer"].get(fuzzer, 0) + 1
+                )
         
         self._stats["total_variations"] = len(self._variations)
         self._stats["protected_domains"] = sum(len(d) for d in self._protected_domains.values())
@@ -252,18 +259,21 @@ class DnstwistVariationGenerator:
     
     def match(self, cert_domain: str) -> Optional[VariationInfo]:
         """
-        Check if a certificate domain matches any known variation.
-        
-        This is O(1) lookup - very fast for high-volume CT streams.
-        
+        Check if a certificate domain matches any known variation (any TLD).
+
+        Exact match on registrable hostname label (public suffix stripped via tldextract).
+        O(1) lookup for high-volume CT streams.
+
         Args:
             cert_domain: Domain from certificate
-            
+
         Returns:
             VariationInfo if match found, None otherwise
         """
-        cert_domain = cert_domain.lower().strip()
-        return self._variations.get(cert_domain)
+        label = hostname_without_public_suffix(cert_domain.lower().strip())
+        if not label:
+            return None
+        return self._variations.get(label)
     
     def is_protected_domain(self, domain: str) -> bool:
         """Check if domain is a protected domain (not a variation)"""

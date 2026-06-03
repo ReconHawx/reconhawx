@@ -20,6 +20,12 @@ def test_examp1e_regression():
     assert best_similarity_typo_to_protected("examp1e.com", "example.com") >= 0.85
 
 
+def test_examp1e_co_uk_apex_via_tldextract():
+    from protected_domain_similarity import best_similarity_typo_to_protected
+
+    assert best_similarity_typo_to_protected("examp1e.co.uk", "example.co.uk") >= 0.85
+
+
 def test_collapsed_dot_split_cap():
     from protected_domain_similarity import best_similarity_typo_to_protected
 

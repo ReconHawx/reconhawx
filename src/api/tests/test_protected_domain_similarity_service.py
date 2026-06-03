@@ -26,6 +26,10 @@ def test_apex_typo_regression_examp1e():
     assert best_similarity_typo_to_protected("examp1e.com", "example.com") >= 0.85
 
 
+def test_apex_typo_regression_examp1e_co_uk():
+    assert best_similarity_typo_to_protected("examp1e.co.uk", "example.co.uk") >= 0.85
+
+
 def test_literal_fqdn_match_is_full_similarity():
     assert best_similarity_typo_to_protected("dcs-entreprise.com", "dcs-entreprise.com") == 1.0
     assert best_similarity_typo_to_protected("dcs-Entreprise.COM.", "dcs-entreprise.com") == 1.0

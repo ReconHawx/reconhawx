@@ -6,6 +6,7 @@ import asyncio
 import logging
 from datetime import datetime, timezone
 from typing import Dict, List, Any
+from utils.domain_utils import extract_apex_domain
 from db import get_db_session
 from models.postgres import TyposquatDomain, Program
 from services.typosquat_auto_resolve_service import TyposquatAutoResolveService
@@ -47,13 +48,6 @@ def _levenshtein_similarity(s1: str, s2: str) -> float:
     return 1.0 - (distance / max_len)
 
 
-def _extract_apex_domain(domain: str) -> str:
-    parts = domain.lower().split('.')
-    if len(parts) >= 2:
-        return '.'.join(parts[-2:])
-    return domain.lower()
-
-
 def _collapse_hostname_alphanumeric(domain: str) -> str:
     """Lowercase hostname, strip trailing dot, keep only alphanumerics (merges labels and drops hyphens/dots)."""
     if not domain:
@@ -90,8 +84,8 @@ def _pair_similarity(hostname_fragment: str, protected: str) -> float:
     cand_lit = _normalize_fqdn_literal(hostname_fragment)
     prot_lit = _normalize_fqdn_literal(protected)
     apex_sim = _levenshtein_similarity(
-        _extract_apex_domain(hostname_fragment),
-        _extract_apex_domain(protected),
+        extract_apex_domain(hostname_fragment),
+        extract_apex_domain(protected),
     )
     ca = _collapse_hostname_alphanumeric(hostname_fragment)
     cb = _collapse_hostname_alphanumeric(protected)

@@ -7,6 +7,8 @@ when changing apex/collapsed/suffix logic in the API.
 
 from typing import List, Optional, Tuple
 
+from domain_labels import extract_apex_domain
+
 _MAX_LABELS_FOR_SUFFIX_SCAN = 32
 _COLLAPSED_MATCH_NON_LITERAL_CAP = 0.99
 
@@ -38,13 +40,6 @@ def _levenshtein_similarity(s1: str, s2: str) -> float:
     return 1.0 - (distance / max_len)
 
 
-def _extract_apex_domain(domain: str) -> str:
-    parts = domain.lower().split(".")
-    if len(parts) >= 2:
-        return ".".join(parts[-2:])
-    return domain.lower()
-
-
 def _collapse_hostname_alphanumeric(domain: str) -> str:
     if not domain:
         return ""
@@ -73,8 +68,8 @@ def _pair_similarity(hostname_fragment: str, protected: str) -> float:
     cand_lit = _normalize_fqdn_literal(hostname_fragment)
     prot_lit = _normalize_fqdn_literal(protected)
     apex_sim = _levenshtein_similarity(
-        _extract_apex_domain(hostname_fragment),
-        _extract_apex_domain(protected),
+        extract_apex_domain(hostname_fragment),
+        extract_apex_domain(protected),
     )
     ca = _collapse_hostname_alphanumeric(hostname_fragment)
     cb = _collapse_hostname_alphanumeric(protected)
