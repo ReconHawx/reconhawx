@@ -132,7 +132,6 @@ class CTMonitorService:
         self._certstream_replicas_desired: Optional[int] = None
         # Global runtime from API GET /internal/ct-monitor/runtime-settings (merged with defaults)
         self._runtime_overlay: Dict[str, int] = {
-            "domain_refresh_interval": self.config.domain_refresh_interval,
             "stats_interval": self.config.stats_interval,
         }
         # Per-program TLD union for CertStreamConsumer (only when ingestion filter enabled)
@@ -176,7 +175,7 @@ class CTMonitorService:
             logger.warning("Runtime settings fetch error: %s", e)
 
     async def reload_runtime_settings_now(self) -> None:
-        """Apply new global runtime from API (domain refresh / stats intervals)."""
+        """Apply new global runtime from API (stats interval)."""
         if not self._running:
             raise RuntimeError("CT monitor service is not running")
         await self._fetch_runtime_settings_from_api()
@@ -192,7 +191,7 @@ class CTMonitorService:
         logger.info("=" * 60)
         logger.info(f"API URL: {self.config.api_url}")
         logger.info(f"NATS URL: {self.config.nats_url}")
-        logger.info("Per-program CT similarity / TLD filter from API; global intervals from API runtime settings")
+        logger.info("Per-program CT similarity / TLD filter from API; stats interval from API runtime settings")
         logger.info("=" * 60)
         
         self._running = True
@@ -221,11 +220,10 @@ class CTMonitorService:
             raise
     
     async def _run_monitoring(self):
-        """Run domain refresh, stats, and conditional CT log / CertStream ingestion."""
+        """Run stats reporting and conditional CT log / CertStream ingestion."""
         try:
             await asyncio.gather(
                 self._ct_ingestion_loop(),
-                self._domain_refresh_loop(),
                 self._stats_reporter(),
                 return_exceptions=True,
             )
@@ -406,7 +404,6 @@ class CTMonitorService:
                     if self.config.ingestion_tld_filter_enabled
                     else None
                 ),
-                "domain_refresh_interval": self._runtime_overlay["domain_refresh_interval"],
                 "stats_interval": self._runtime_overlay["stats_interval"],
             },
             "programs_ct_enabled": list(self._programs_ct_enabled_detail),
@@ -525,20 +522,6 @@ class CTMonitorService:
         if not self._running:
             raise RuntimeError("CT monitor service is not running")
         await self._refresh_protected_domains()
-    
-    async def _domain_refresh_loop(self):
-        """Periodically refresh protected domains from API"""
-        while self._running:
-            try:
-                await self._fetch_runtime_settings_from_api()
-                interval = max(1, int(self._runtime_overlay["domain_refresh_interval"]))
-                await asyncio.sleep(interval)
-                if self._running:
-                    await self._refresh_protected_domains()
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                logger.error(f"Error in domain refresh loop: {e}")
     
     @staticmethod
     def _cert_metadata_details(cert_info: CertificateInfo) -> Dict[str, Any]:
@@ -855,7 +838,7 @@ async def refresh_domains():
 
 @http_app.post("/reload-runtime-settings")
 async def reload_runtime_settings():
-    """Reload global CT runtime from API (domain refresh / stats intervals)."""
+    """Reload global CT runtime from API (stats interval)."""
     service = get_service()
     if not service.is_running():
         return JSONResponse(

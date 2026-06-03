@@ -32,7 +32,7 @@ CTMonitorService (main.py)
 ## Component Responsibilities
 
 ### CTMonitorService (`main.py`)
-- Orchestrates lifecycle, HTTP control API, domain refresh, stats
+- Orchestrates lifecycle, HTTP control API, stats
 - **CertStream ingestion** only when `≥1` program has `ct_monitoring_enabled` (`_reconcile_ct_ingestion` every 2s)
 - **certstream-server replicas** scaled 0/1 in the same reconcile loop (scale up → HTTP ready poll → start consumer; scale down after stop consumer)
 - **Pod auto-start**: lifespan probes API then `start()`; set `CT_MONITOR_AUTO_START=false` to idle until `POST /start`
@@ -49,7 +49,7 @@ CTMonitorService (main.py)
 | What | Where |
 |------|--------|
 | CertStream URL | `CERTSTREAM_URL` / ConfigMap `certstream.url` |
-| Global refresh + stats intervals | `system_settings.ct_monitor_runtime`; API internal + admin routes |
+| Global stats interval | `system_settings.ct_monitor_runtime`; API internal + admin routes |
 | Per-program similarity | `programs.ct_monitor_program_settings.similarity_threshold` on `GET /programs/{name}` |
 
 ### DnstwistVariationGenerator / `protected_domain_similarity.py` / `CTAlertPublisher`
@@ -82,13 +82,13 @@ event-handler
 
 **Variations:** unlimited dnstwist permutations per protected domain (no cap unless `max_variations` passed explicitly)
 
-**Runtime:** `CT_DOMAIN_REFRESH_INTERVAL`, `CT_STATS_INTERVAL` (overridable via `ct_monitor_runtime` in DB)
+**Runtime:** `CT_STATS_INTERVAL` (overridable via `ct_monitor_runtime` in DB)
 
 **HTTP:** `CT_MONITOR_HTTP_HOST`, `CT_MONITOR_HTTP_PORT` (default 8002)
 
 ## Protected Domains Loading
 
-Unchanged: `GET /programs`, `GET /programs/{name}` for `ct_monitoring_enabled` programs; rebuild variations on refresh.
+`GET /programs`, `GET /programs/{name}` for `ct_monitoring_enabled` programs; rebuild variations on each reload. Triggers: ct-monitor `start()`, and API `sync_ct_monitor_program_config()` → `POST /refresh-domains` when CT-related program settings change (no periodic polling).
 
 ## Matching Algorithm
 
@@ -109,7 +109,7 @@ Unchanged: NATS `events.typosquat.ct_alert`, priority from match type/score.
 ### Performance
 - **Ingestion TLD filter is off by default** — expect high CertStream volume and large variation maps; use queue backpressure and adequate memory
 - When `CT_INGESTION_TLD_FILTER_ENABLED=true`, frames can be filtered **before** the asyncio queue
-- Domain refresh builds dnstwist variations via `asyncio.to_thread`; certificate matching uses `certificate_matcher.match_certificate_sync` off the event loop
+- Protected-domain reload builds dnstwist variations via `asyncio.to_thread`; certificate matching uses `certificate_matcher.match_certificate_sync` off the event loop
 - Backpressure: queue drops when ≥80% full (`queue_drops`, `filtered_before_queue` in `/status` stats); tune `CERTSTREAM_QUEUE_MAXSIZE`, `CERTSTREAM_YIELD_EVERY_N`
 - certstream-server load-sheds slow clients; keep ct-monitor queue healthy
 

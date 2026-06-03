@@ -15,7 +15,6 @@ CT_MONITOR_RUNTIME_KEY = "ct_monitor_runtime"
 
 # Defaults aligned with ct-monitor CTMonitorConfig (same literals as env fallbacks there)
 _DEFAULTS: Dict[str, Any] = {
-    "domain_refresh_interval": 300,
     "stats_interval": 60,
 }
 

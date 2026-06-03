@@ -1562,7 +1562,6 @@ async def get_worker_status(
 class CtMonitorRuntimeUpdateRequest(BaseModel):
     """Partial update for global CT monitor runtime (stored in system_settings)."""
 
-    domain_refresh_interval: Optional[int] = Field(None, ge=1, le=86400)
     stats_interval: Optional[int] = Field(None, ge=1, le=3600)
 
 

@@ -142,7 +142,6 @@ function SystemSettings() {
   const [ollamaModelsFetchError, setOllamaModelsFetchError] = useState('');
 
   const [ctMonitorRuntime, setCtMonitorRuntime] = useState({
-    domain_refresh_interval: '',
     stats_interval: ''
   });
   const [ctMonitorRuntimeLoading, setCtMonitorRuntimeLoading] = useState(false);
@@ -456,7 +455,6 @@ function SystemSettings() {
       const response = await adminAPI.getCtMonitorRuntimeSettings();
       const s = response.settings || {};
       setCtMonitorRuntime({
-        domain_refresh_interval: String(s.domain_refresh_interval ?? ''),
         stats_interval: String(s.stats_interval ?? '')
       });
     } catch (err) {
@@ -693,7 +691,6 @@ function SystemSettings() {
       setCtMonitorRuntimeSaving(true);
       setError('');
       const payload = {
-        domain_refresh_interval: parseInt(ctMonitorRuntime.domain_refresh_interval, 10),
         stats_interval: parseInt(ctMonitorRuntime.stats_interval, 10)
       };
       for (const [k, v] of Object.entries(payload)) {
@@ -1790,7 +1787,8 @@ function SystemSettings() {
                 </Card.Header>
                 <Card.Body>
                   <p className="text-muted small">
-                    Global intervals and CT log polling behavior for the ct-monitor service (stored in the database).
+                    Global stats logging interval for the ct-monitor service (stored in the database).
+                    Program CT config (protected domains, variations) reloads on ct-monitor startup and when CT-related program settings are saved in the API.
                     Per-program CT matcher similarity is configured on each program&apos;s Typosquat tab (all certificate TLDs are matched).
                   </p>
                   {ctMonitorRuntimeLoading ? (
@@ -1799,18 +1797,6 @@ function SystemSettings() {
                     </div>
                   ) : (
                     <>
-                      <Form.Group className="mb-3">
-                        <Form.Label>Domain refresh interval (seconds)</Form.Label>
-                        <Form.Control
-                          type="number"
-                          min={1}
-                          value={ctMonitorRuntime.domain_refresh_interval}
-                          onChange={(e) =>
-                            setCtMonitorRuntime({ ...ctMonitorRuntime, domain_refresh_interval: e.target.value })
-                          }
-                        />
-                        <Form.Text className="text-muted">How often ct-monitor reloads program config from the API.</Form.Text>
-                      </Form.Group>
                       <Form.Group className="mb-3">
                         <Form.Label>Stats log interval (seconds)</Form.Label>
                         <Form.Control

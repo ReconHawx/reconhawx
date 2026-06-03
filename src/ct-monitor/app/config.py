@@ -8,7 +8,6 @@ Environment variables:
 - CERTSTREAM_URL: WebSocket URL for self-hosted certstream-server
 - CT_INGESTION_TLD_FILTER_ENABLED: when true, filter certs by program tld_filter union (default false)
 - CT_TLD_FILTER: legacy; only used if CT_INGESTION_TLD_FILTER_ENABLED=true
-- CT_DOMAIN_REFRESH_INTERVAL: Seconds between domain refreshes (default: 300)
 - LOG_LEVEL: Logging level (default: INFO)
 - CT_MONITOR_AUTO_START: If true, start monitoring on pod boot after API is reachable (default: true)
 - CT_CERTSTREAM_SCALE_ENABLED: Scale certstream-server Deployment 0/1 (auto-detect in-cluster)
@@ -45,11 +44,6 @@ class CTMonitorConfig:
         .strip()
         .lower()
         in ("true", "1", "yes", "on")
-    )
-
-    # Refresh interval for protected domains (seconds)
-    domain_refresh_interval: int = field(
-        default_factory=lambda: int(os.getenv("CT_DOMAIN_REFRESH_INTERVAL", "300"))
     )
 
     # CertStream (self-hosted certstream-server)

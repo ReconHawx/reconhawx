@@ -8,14 +8,12 @@ def test_ct_monitor_config_explicit_kwargs():
         api_url="http://custom:9000",
         api_key="k",
         nats_url="nats://n:4222",
-        domain_refresh_interval=120,
         enable_cache=False,
         ct_monitor_auto_start=False,
     )
     assert cfg.api_url == "http://custom:9000"
     assert cfg.api_key == "k"
     assert cfg.nats_url == "nats://n:4222"
-    assert cfg.domain_refresh_interval == 120
     assert cfg.enable_cache is False
     assert cfg.ct_monitor_auto_start is False
 

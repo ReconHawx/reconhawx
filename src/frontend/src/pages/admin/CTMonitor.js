@@ -227,7 +227,8 @@ export function CTMonitorInner({ embedded = false }) {
                   <p className="small text-muted mb-0">
                     Certificates are streamed from self-hosted certstream-server (
                     {status?.certstream_url || 'ws://certstream:4000/'}). Per-program similarity threshold is on
-                    each program (Typosquat tab). Global refresh intervals: System Settings → CT monitor.
+                    each program (Typosquat tab). Program config reloads on startup and when CT settings are saved.
+                    Global stats interval: System Settings → CT monitor.
                   </p>
                 </Col>
                 <Col md={6} className="text-end">
