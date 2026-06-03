@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.44.1](https://github.com/ReconHawx/reconhawx/compare/v0.44.0...v0.44.1) (2026-06-03)
+
+
+### Bug Fixes
+
+* **ct-monitor:** stop probe failures and restarts under certstream load  ([#150](https://github.com/ReconHawx/reconhawx/issues/150)) ([c0b250b](https://github.com/ReconHawx/reconhawx/commit/c0b250b4a421c4cc460b3f8515d180b4a3074852))
+
 ## [0.44.0](https://github.com/ReconHawx/reconhawx/compare/v0.43.0...v0.44.0) (2026-06-02)
 
 
