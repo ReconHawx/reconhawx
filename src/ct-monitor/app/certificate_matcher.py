@@ -5,13 +5,15 @@ Synchronous certificate matching (runs in asyncio.to_thread).
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from domain_config_builder import MatchingSnapshot, ProgramCTMatchState
 from models import CertificateInfo, MatchResult
 from protected_domain_similarity import (
-    best_match_among_protected,
-    similarity_impossible_by_length,
+    PreparedTypo,
+    best_match_among_prepared,
+    prepare_typo,
+    similarity_impossible_by_length_prepared,
 )
 
 logger = logging.getLogger(__name__)
@@ -27,46 +29,72 @@ def _cert_metadata_details(cert_info: CertificateInfo) -> Dict[str, Any]:
     }
 
 
+def _first_matching_keyword(
+    domain_lower: str,
+    keywords: List[str],
+    matched_keywords: Optional[Set[str]],
+) -> Optional[str]:
+    """First keyword (in program order) present in the domain.
+
+    ``matched_keywords`` is the automaton scan result for this domain across all
+    programs; when None, fall back to per-keyword substring checks.
+    """
+    if matched_keywords is not None:
+        for keyword in keywords:
+            if keyword in matched_keywords:
+                return keyword
+        return None
+    for keyword in keywords:
+        if keyword in domain_lower:
+            return keyword
+    return None
+
+
 def _match_keyword_or_similarity(
     domain_lower: str,
     state: ProgramCTMatchState,
     cert_info: CertificateInfo,
+    matched_keywords: Optional[Set[str]] = None,
+    prepared: Optional[PreparedTypo] = None,
 ) -> Tuple[Optional[MatchResult], bool]:
     """
     Keyword or protected similarity match.
 
     Returns (match_or_none, similarity_skipped_by_length_gate).
     """
-    base_details = dict(_cert_metadata_details(cert_info))
-    base_details["match_source"] = "keyword_or_similarity"
+    keyword = _first_matching_keyword(domain_lower, state.keywords, matched_keywords)
+    if keyword is not None:
+        d = dict(_cert_metadata_details(cert_info))
+        d["match_source"] = "keyword_or_similarity"
+        d["matched_keyword"] = keyword
+        return (
+            MatchResult(
+                matched=True,
+                protected_domain=keyword,
+                cert_domain=domain_lower,
+                similarity_score=0.90,
+                match_type="keyword",
+                details=d,
+            ),
+            False,
+        )
 
-    for keyword in state.keywords:
-        if keyword in domain_lower:
-            d = dict(base_details)
-            d["matched_keyword"] = keyword
-            return (
-                MatchResult(
-                    matched=True,
-                    protected_domain=keyword,
-                    cert_domain=domain_lower,
-                    similarity_score=0.90,
-                    match_type="keyword",
-                    details=d,
-                ),
-                False,
-            )
-
-    if state.protected_list:
-        if similarity_impossible_by_length(
-            domain_lower,
+    if state.protected_prepared:
+        if prepared is None:
+            prepared = prepare_typo(domain_lower)
+        if similarity_impossible_by_length_prepared(
+            prepared,
             state.protected_collapsed_lengths,
             state.similarity_threshold,
         ):
             return None, True
 
-        best_s, best_p = best_match_among_protected(domain_lower, state.protected_list)
+        best_s, best_p = best_match_among_prepared(
+            prepared, state.protected_prepared, score_cutoff=state.similarity_threshold
+        )
         if best_s >= state.similarity_threshold and best_p is not None:
-            d = dict(base_details)
+            d = dict(_cert_metadata_details(cert_info))
+            d["match_source"] = "keyword_or_similarity"
             d["similarity_threshold"] = state.similarity_threshold
             return (
                 MatchResult(
@@ -134,12 +162,25 @@ def match_certificate_sync(
             pending.append((match, variation_info.program_name))
             continue
 
+        if not snap.program_match_states:
+            continue
+
+        # Shared per-domain work: one automaton scan for all programs' keywords,
+        # and one PreparedTypo (suffix fragments + collapsed + apex) reused by
+        # every program's similarity check.
+        matched_keywords = snap.find_keywords(domain_lower)
+        prepared: Optional[PreparedTypo] = None
+
         for program_name, state in snap.program_match_states.items():
-            if domain_lower in alerted_domains:
-                break
             try:
+                if prepared is None and state.protected_prepared:
+                    prepared = prepare_typo(domain_lower)
                 match, skipped = _match_keyword_or_similarity(
-                    domain_lower, state, cert_info
+                    domain_lower,
+                    state,
+                    cert_info,
+                    matched_keywords=matched_keywords,
+                    prepared=prepared,
                 )
                 if skipped:
                     similarity_skipped += 1
