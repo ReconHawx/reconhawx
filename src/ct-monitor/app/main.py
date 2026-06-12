@@ -302,7 +302,6 @@ class CTMonitorService:
             tld_filter=self._ingestion_tld_union,
             reconnect_delay=self.config.reconnect_delay,
             queue_maxsize=self.config.certstream_queue_maxsize,
-            yield_every_n=self.config.certstream_yield_every_n,
             match_concurrency=self.config.match_concurrency,
             queue_drop_watermark=self.config.certstream_queue_drop_watermark,
         )
@@ -547,8 +546,9 @@ class CTMonitorService:
         """
         Handle incoming certificate from CertStream (matching runs off the event loop).
         """
-        async with self._domain_config_lock:
-            snap = self._matching_snapshot
+        # Plain reference read: refresh swaps the whole snapshot object atomically,
+        # so no lock is needed here (avoids contention with config rebuilds).
+        snap = self._matching_snapshot
         if snap is None:
             return
 

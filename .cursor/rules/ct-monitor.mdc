@@ -76,9 +76,9 @@ event-handler
 
 **K8s scaler:** `CT_CERTSTREAM_SCALE_ENABLED` (`true` in cluster; `false` for local dev), `CERTSTREAM_DEPLOYMENT_NAME` (default `certstream-server`), `KUBERNETES_NAMESPACE`, `CT_CERTSTREAM_READY_TIMEOUT` (default 90s). Auto-enables when ServiceAccount token is present unless explicitly off.
 
-**CertStream consumer:** `CERTSTREAM_QUEUE_MAXSIZE` (default 5000), `CERTSTREAM_YIELD_EVERY_N` (default 50), `CERTSTREAM_QUEUE_DROP_WATERMARK` (default 0.8 — drop when queue fill ≥ this ratio).
+**CertStream consumer:** `CERTSTREAM_QUEUE_MAXSIZE` (default 5000), `CERTSTREAM_QUEUE_DROP_WATERMARK` (default 0.8 — drop when queue fill ≥ this ratio).
 
-**Matching throughput:** `CT_MATCH_CONCURRENCY` (default `min(4, cpu_count)` — parallel `match_certificate_sync` slots; raise with CPU limits on the Deployment).
+**Matching throughput:** `CT_MATCH_CONCURRENCY` (default `min(4, cpu_count)` — number of long-lived consumer worker tasks draining the queue; raise with CPU limits on the Deployment).
 
 **Ingestion TLD filter:** `CT_INGESTION_TLD_FILTER_ENABLED` (default `false` — all certificate TLDs). When `true`, uses per-program `tld_filter` union.
 
@@ -98,7 +98,7 @@ Two stages; skip legitimate subdomains of protected FQDNs and exact protected FQ
 
 **Stage 1 — dnstwist variations (O(1)):** Pre-computed variation **registrable hostname labels** (public suffix stripped via `tldextract` in `domain_labels.hostname_without_public_suffix`). Certificate SANs match when their label equals a variation label **exactly** — any TLD (`d0main.live` matches variation from `d0main.com`; `my-d0main.net` does not).
 
-**Stage 2 — keywords + similarity:** Protected subdomain **keywords** still use substring match on the full hostname (`production` in `production-d0main.live`). Fuzzy match uses `best_similarity_typo_to_protected` with apex extraction via `tldextract` (`domain_labels.extract_apex_domain` in ct-monitor; keep in sync with API `protected_domain_similarity_service.py`).
+**Stage 2 — keywords + similarity:** Protected subdomain **keywords** match as substrings of the full hostname (`production` in `production-d0main.live`); one **Aho-Corasick automaton** over all programs' keywords scans each domain once (`build_keyword_automaton` in `domain_config_builder.py`; substring fallback when `pyahocorasick` is unavailable — first program in load order wins either way). Fuzzy match uses **rapidfuzz** Levenshtein (numerically identical to the API's pure-Python scoring; keep logic in sync with API `protected_domain_similarity_service.py`) over precomputed inputs: per-protected `PreparedProtected` (apex/collapsed, built once per config refresh) and per-SAN `PreparedTypo` (suffix fragments + apex/collapsed, built once and shared across programs). Apex extraction via `tldextract` (`domain_labels.py`, bundled PSL snapshot + LRU cache).
 
 ## Alert Publishing
 
@@ -115,10 +115,11 @@ Unchanged: NATS `events.typosquat.ct_alert`, priority from match type/score.
 ### Performance
 - **Ingestion TLD filter is off by default** — expect high CertStream volume and large variation maps; use queue backpressure and adequate memory
 - When `CT_INGESTION_TLD_FILTER_ENABLED=true`, frames can be filtered **before** the asyncio queue
-- Protected-domain reload builds dnstwist variations via `asyncio.to_thread`; certificate matching uses `certificate_matcher.match_certificate_sync` off the event loop in **bounded parallel** tasks (`CT_MATCH_CONCURRENCY`)
-- Similarity short-circuit: `similarity_impossible_by_length` skips Levenshtein when edit distance cannot reach per-program `similarity_threshold` (safe; no false negatives)
-- Backpressure: queue drops when fill ≥ `CERTSTREAM_QUEUE_DROP_WATERMARK` (default 80%); `/status` exposes `offered_per_second`, `processed_per_second`, `drop_rate`, `match_in_flight`, `similarity_skipped`
-- Tune `CERTSTREAM_QUEUE_MAXSIZE`, `CERTSTREAM_YIELD_EVERY_N`, `CT_MATCH_CONCURRENCY`, and ct-monitor CPU (e.g. 4 cores in base Deployment)
+- Protected-domain reload builds dnstwist variations + precomputed match state (`PreparedProtected`, keyword automaton) via `asyncio.to_thread`; certificate matching uses `certificate_matcher.match_certificate_sync` off the event loop
+- Consumer runs a **fixed pool** of `CT_MATCH_CONCURRENCY` worker tasks draining the queue (not task-per-message), so backpressure is real: queue fills → drops at `CERTSTREAM_QUEUE_DROP_WATERMARK` (default 80%)
+- Similarity hot path: rapidfuzz Levenshtein with `score_cutoff` at the per-program threshold, plus `similarity_impossible_by_length_prepared` length gate (safe; no false negatives); per-SAN `PreparedTypo` is built once and reused across programs
+- `/status` exposes `offered_per_second`, `processed_per_second`, `drop_rate`, `match_in_flight`, `similarity_skipped`
+- Tune `CERTSTREAM_QUEUE_MAXSIZE`, `CT_MATCH_CONCURRENCY`, and ct-monitor CPU (e.g. 4 cores in base Deployment)
 - certstream-server load-sheds slow clients; keep ct-monitor queue healthy
 
 ### Error handling
@@ -133,6 +134,7 @@ Unchanged: NATS `events.typosquat.ct_alert`, priority from match type/score.
 
 - `certstream` (certstream-python)
 - `dnstwist`, `nats-py`, `aiohttp`, `fastapi`, `uvicorn`, `redis`
+- `rapidfuzz` (Levenshtein hot path), `pyahocorasick` (keyword automaton), `tldextract`
 
 ## Troubleshooting
 

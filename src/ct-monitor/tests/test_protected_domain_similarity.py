@@ -71,3 +71,97 @@ def test_similarity_impossible_disabled_at_threshold_one():
     from protected_domain_similarity import similarity_impossible_by_length
 
     assert similarity_impossible_by_length("x.com", [3], 1.0) is False
+
+
+def test_rapidfuzz_similarity_parity_with_pure_python():
+    from protected_domain_similarity import (
+        _levenshtein_distance_py,
+        _levenshtein_similarity,
+    )
+
+    pairs = [
+        ("example.com", "examp1e.com"),
+        ("examplecom", "exarnplecom"),
+        ("", ""),
+        ("a", ""),
+        ("kitten", "sitting"),
+        ("domain", "domian"),
+        ("short", "averylongdomainnamestring"),
+        ("dcsentreprisecom", "dcsentreprisecom"),
+    ]
+    for s1, s2 in pairs:
+        max_len = max(len(s1), len(s2))
+        expected = (
+            1.0 if max_len == 0 else 1.0 - _levenshtein_distance_py(s1, s2) / max_len
+        )
+        assert abs(_levenshtein_similarity(s1, s2) - expected) < 1e-9, (s1, s2)
+
+
+def test_best_match_among_prepared_matches_unprepared_path():
+    from protected_domain_similarity import (
+        best_match_among_prepared,
+        best_match_among_protected,
+        prepare_protected,
+        prepare_typo,
+    )
+
+    protected = ["example.com", "dcs-entreprise.com", "enterprise.com"]
+    prepared = [prepare_protected(p) for p in protected]
+    typos = [
+        "examp1e.com",
+        "dcs-entre.prise.com",
+        "www.exarnple.co.uk",
+        "unrelated-zzz.net",
+        "login.examp1e.com",
+    ]
+    for typo in typos:
+        s1, p1 = best_match_among_protected(typo, protected)
+        s2, p2 = best_match_among_prepared(prepare_typo(typo), prepared)
+        assert abs(s1 - s2) < 1e-9, typo
+        assert p1 == p2, typo
+
+
+def test_best_match_among_prepared_score_cutoff():
+    from protected_domain_similarity import (
+        best_match_among_prepared,
+        best_match_among_protected,
+        prepare_protected,
+        prepare_typo,
+    )
+
+    prepared = [prepare_protected("example.com")]
+
+    # Above cutoff: same score as the uncapped path.
+    s_full, _ = best_match_among_protected("examp1e.com", ["example.com"])
+    s_cut, p_cut = best_match_among_prepared(
+        prepare_typo("examp1e.com"), prepared, score_cutoff=0.85
+    )
+    assert abs(s_cut - s_full) < 1e-9
+    assert p_cut == "example.com"
+    assert s_cut >= 0.85
+
+    # Below cutoff: rapidfuzz returns 0.0 — never selected by threshold callers.
+    s_low, p_low = best_match_among_prepared(
+        prepare_typo("totally-unrelated-zzz.net"), prepared, score_cutoff=0.85
+    )
+    assert s_low == 0.0
+    assert p_low is None
+
+
+def test_similarity_impossible_prepared_matches_unprepared():
+    from protected_domain_similarity import (
+        prepare_typo,
+        similarity_impossible_by_length,
+        similarity_impossible_by_length_prepared,
+    )
+
+    cases = [
+        ("completely-unrelated-label.net", [10], 0.85),
+        ("examp1e.com", [10], 0.85),
+        ("x.com", [3], 1.0),
+        ("a.b.c.example.com", [10, 25], 0.9),
+    ]
+    for typo, lengths, thr in cases:
+        assert similarity_impossible_by_length_prepared(
+            prepare_typo(typo), lengths, thr
+        ) == similarity_impossible_by_length(typo, lengths, thr), (typo, lengths, thr)

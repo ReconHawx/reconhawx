@@ -165,7 +165,6 @@ class CertStreamConsumer:
         tld_filter: Optional[Set[str]] = None,
         reconnect_delay: int = 5,
         queue_maxsize: int = 5000,
-        yield_every_n: int = 50,
         match_concurrency: int = 4,
         queue_drop_watermark: float = 0.8,
     ):
@@ -182,14 +181,10 @@ class CertStreamConsumer:
         self._stop_event = threading.Event()
         self._client: Optional[_StoppableCertStreamClient] = None
         self._queue_maxsize = max(1, int(queue_maxsize))
-        self._yield_every_n = max(1, int(yield_every_n))
         self._match_concurrency = max(1, int(match_concurrency))
         self._queue_drop_watermark = min(0.99, max(0.1, float(queue_drop_watermark)))
         self._last_queue_drop_log = 0.0
-        self._processed_since_yield = 0
-        self._match_sem: Optional[asyncio.Semaphore] = None
         self._match_in_flight = 0
-        self._pending_tasks: Set[asyncio.Task] = set()
 
     async def start(self):
         """Start consuming certificates with automatic reconnection."""
@@ -197,7 +192,6 @@ class CertStreamConsumer:
         self._stop_event.clear()
         self._loop = asyncio.get_running_loop()
         self._queue = asyncio.Queue(maxsize=self._queue_maxsize)
-        self._match_sem = asyncio.Semaphore(self._match_concurrency)
 
         logger.info("Starting CertStream consumer (URL: %s)", self.certstream_url)
         logger.info("Match concurrency: %s", self._match_concurrency)
@@ -308,6 +302,25 @@ class CertStreamConsumer:
                 time.sleep(self.reconnect_delay)
 
     async def _process_queue(self) -> None:
+        """Run a fixed pool of worker tasks that drain the queue.
+
+        Bounding concurrency at the queue consumers (instead of task-per-message
+        gated by a semaphore) keeps backpressure real: when matching falls behind,
+        the queue fills and the drop watermark engages.
+        """
+        workers = [
+            asyncio.create_task(self._worker_loop())
+            for _ in range(self._match_concurrency)
+        ]
+        try:
+            await asyncio.gather(*workers)
+        except asyncio.CancelledError:
+            for w in workers:
+                w.cancel()
+            await asyncio.gather(*workers, return_exceptions=True)
+            raise
+
+    async def _worker_loop(self) -> None:
         while self._running:
             try:
                 cert_data = await asyncio.wait_for(self._queue.get(), timeout=1.0)
@@ -315,28 +328,10 @@ class CertStreamConsumer:
                 continue
             except asyncio.CancelledError:
                 break
-
-            task = asyncio.create_task(self._handle_cert_data(cert_data))
-            self._pending_tasks.add(task)
-            task.add_done_callback(self._pending_tasks.discard)
-
-            self._processed_since_yield += 1
-            if self._processed_since_yield >= self._yield_every_n:
-                self._processed_since_yield = 0
-                await asyncio.sleep(0)
-
-        if self._pending_tasks:
-            await asyncio.gather(*self._pending_tasks, return_exceptions=True)
-
-    def _ensure_match_sem(self) -> asyncio.Semaphore:
-        if self._match_sem is None:
-            self._match_sem = asyncio.Semaphore(self._match_concurrency)
-        return self._match_sem
+            await self._handle_cert_data(cert_data)
 
     async def _handle_cert_data(self, cert_data: Dict[str, Any]) -> None:
-        """Process one queued message with bounded match concurrency."""
-        match_sem = self._ensure_match_sem()
-
+        """Process one queued message."""
         self._stats.total_received += 1
 
         if self._stats.total_received % 100 == 0:
@@ -382,15 +377,14 @@ class CertStreamConsumer:
                 cert_info.issuer,
             )
 
-        async with match_sem:
-            self._match_in_flight += 1
-            try:
-                await self.callback(cert_info)
-            except Exception as e:
-                logger.error("Error in certificate callback: %s", e)
-                self._stats.errors += 1
-            finally:
-                self._match_in_flight -= 1
+        self._match_in_flight += 1
+        try:
+            await self.callback(cert_info)
+        except Exception as e:
+            logger.error("Error in certificate callback: %s", e)
+            self._stats.errors += 1
+        finally:
+            self._match_in_flight -= 1
 
     async def _process_certificate(self, cert_data: Dict[str, Any]):
         """Process a single certificate from the stream (tests / direct invocation)."""

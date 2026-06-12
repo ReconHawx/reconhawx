@@ -62,3 +62,35 @@ def test_add_protected_domain_mocked_fuzzer(mock_fuzzer_class):
     assert stats["total_variations"] == 0
     assert stats["programs"] == 0
     assert "dnstwist_available" in stats
+    assert g.is_protected_domain("example.com") is False
+    assert g.is_legitimate_subdomain("www.example.com") is False
+
+
+@patch("dnstwist.Fuzzer")
+def test_label_suffix_subdomain_checks(mock_fuzzer_class):
+    from variation_generator import DnstwistVariationGenerator
+
+    inner = MagicMock()
+    inner.generate = MagicMock()
+    inner.permutations = MagicMock(return_value=[])
+    mock_cm = MagicMock()
+    mock_cm.__enter__.return_value = inner
+    mock_cm.__exit__.return_value = False
+    mock_fuzzer_class.return_value = mock_cm
+
+    g = DnstwistVariationGenerator(fuzzers=["replacement"])
+    g.add_protected_domain("example.com", "prog1")
+    g.add_protected_domain("sub.brand.co.uk", "prog1")
+
+    # Same semantics as the old endswith(".protected") scan.
+    assert g.is_legitimate_subdomain("a.b.example.com") is True
+    assert g.is_legitimate_subdomain("WWW.Example.COM") is True
+    assert g.is_legitimate_subdomain("example.com") is False  # exact, not subdomain
+    assert g.is_legitimate_subdomain("notexample.com") is False
+    assert g.is_legitimate_subdomain("example.com.evil.net") is False
+    assert g.is_legitimate_subdomain("x.sub.brand.co.uk") is True
+    assert g.is_legitimate_subdomain("brand.co.uk") is False
+
+    assert g.is_protected_domain("example.com") is True
+    assert g.is_protected_domain("Example.COM") is True
+    assert g.is_protected_domain("other.com") is False

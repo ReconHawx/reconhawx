@@ -73,6 +73,9 @@ class DnstwistVariationGenerator:
         # Protected domains by program
         # program_name -> set of protected domains
         self._protected_domains: Dict[str, Set[str]] = {}
+
+        # Flat set of all protected FQDNs across programs (O(1) lookups)
+        self._protected_fqdn_set: Set[str] = set()
         
         # Statistics
         self._stats = {
@@ -188,6 +191,7 @@ class DnstwistVariationGenerator:
             return 0
         
         self._protected_domains[program_name].add(domain)
+        self._protected_fqdn_set.add(domain)
         
         # Generate variations
         variations = self.generate_variations(domain, program_name, max_variations)
@@ -277,27 +281,25 @@ class DnstwistVariationGenerator:
     
     def is_protected_domain(self, domain: str) -> bool:
         """Check if domain is a protected domain (not a variation)"""
-        domain = domain.lower().strip()
-        for program_domains in self._protected_domains.values():
-            if domain in program_domains:
-                return True
-        return False
+        return domain.lower().strip() in self._protected_fqdn_set
     
     def is_legitimate_subdomain(self, cert_domain: str) -> bool:
         """Check if cert_domain is a legitimate subdomain of a protected domain"""
+        if not self._protected_fqdn_set:
+            return False
         cert_domain = cert_domain.lower().strip()
-        
-        for program_domains in self._protected_domains.values():
-            for protected in program_domains:
-                if cert_domain.endswith(f".{protected}"):
-                    return True
-        
+        # Each proper label-suffix lookup replaces an O(N) endswith scan.
+        labels = cert_domain.split(".")
+        for i in range(1, len(labels)):
+            if ".".join(labels[i:]) in self._protected_fqdn_set:
+                return True
         return False
     
     def clear(self):
         """Clear all variations and protected domains"""
         self._variations.clear()
         self._protected_domains.clear()
+        self._protected_fqdn_set.clear()
         self._stats = {
             "total_variations": 0,
             "variations_by_fuzzer": {},

@@ -15,7 +15,6 @@ async def test_process_certificate_ignores_non_certificate_update():
         seen.append(c)
 
     consumer = CertStreamConsumer(callback=cb, tld_filter={"com"})
-    consumer._ensure_match_sem()
     await consumer._process_certificate({"message_type": "heartbeat", "data": {}})
     assert seen == []
 
@@ -30,7 +29,6 @@ async def test_process_certificate_wildcard_and_case():
         seen.append(c)
 
     consumer = CertStreamConsumer(callback=cb, tld_filter=None)
-    consumer._ensure_match_sem()
     msg = {
         "message_type": "certificate_update",
         "data": {
@@ -167,24 +165,21 @@ async def test_enqueue_drops_when_queue_80_percent_full():
 
 
 @pytest.mark.asyncio
-async def test_parallel_match_respects_concurrency_limit():
+async def test_worker_pool_respects_concurrency_and_keeps_backpressure():
     from certstream_consumer import CertStreamConsumer
 
-    max_in_flight = 0
     observed_peak = 0
     in_flight = 0
+    done = 0
     gate = asyncio.Event()
-    started = asyncio.Event()
 
     async def slow_cb(_cert):
-        nonlocal in_flight, max_in_flight, observed_peak
+        nonlocal in_flight, observed_peak, done
         in_flight += 1
         observed_peak = max(observed_peak, in_flight)
-        if in_flight > max_in_flight:
-            max_in_flight = in_flight
-        started.set()
         await gate.wait()
         in_flight -= 1
+        done += 1
 
     consumer = CertStreamConsumer(
         callback=slow_cb,
@@ -193,7 +188,7 @@ async def test_parallel_match_respects_concurrency_limit():
         match_concurrency=2,
     )
     consumer._running = True
-    consumer._ensure_match_sem()
+    consumer._queue = asyncio.Queue(maxsize=50)
 
     msg = {
         "message_type": "certificate_update",
@@ -206,10 +201,27 @@ async def test_parallel_match_respects_concurrency_limit():
             "source": {"name": "s"},
         },
     }
+    for _ in range(4):
+        consumer._queue.put_nowait(msg)
 
-    tasks = [asyncio.create_task(consumer._handle_cert_data(msg)) for _ in range(4)]
-    await asyncio.wait_for(started.wait(), timeout=2.0)
+    processor = asyncio.create_task(consumer._process_queue())
+    for _ in range(200):
+        if in_flight >= 2:
+            break
+        await asyncio.sleep(0.01)
     await asyncio.sleep(0.05)
-    assert observed_peak <= 2
+    assert observed_peak == 2
+    assert consumer.get_match_in_flight() == 2
+    # Unprocessed messages stay queued (real backpressure), not in pending tasks.
+    assert consumer._queue.qsize() == 2
+
     gate.set()
-    await asyncio.gather(*tasks)
+    for _ in range(200):
+        if done == 4:
+            break
+        await asyncio.sleep(0.01)
+    assert done == 4
+
+    consumer._running = False
+    processor.cancel()
+    await asyncio.gather(processor, return_exceptions=True)
