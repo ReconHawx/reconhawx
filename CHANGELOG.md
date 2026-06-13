@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.46.0](https://github.com/ReconHawx/reconhawx/compare/v0.45.1...v0.46.0) (2026-06-13)
+
+
+### Features
+
+* **ct-monitor:** discover in-scope subdomains from CT logs per program ([8311d89](https://github.com/ReconHawx/reconhawx/commit/8311d8906d299f11f92f0cb03b9eec84948fbafb))
+* **ct-monitor:** notify on subdomains discovered via CT asset monitoring ([9f33f3e](https://github.com/ReconHawx/reconhawx/commit/9f33f3eea729b86e286f0ff70bd0ff508287ca8a))
+
+
+### Performance
+
+* **ct-monitor:** speed up certificate matching ~85x against variations and keywords ([994f510](https://github.com/ReconHawx/reconhawx/commit/994f5103d961de973a6d391df0f94aa833b1ae2e))
+
 ## [0.45.1](https://github.com/ReconHawx/reconhawx/compare/v0.45.0...v0.45.1) (2026-06-03)
 
 
