@@ -172,3 +172,39 @@ async def test_stop_flushes_pending(fake_http):
     await sub.add("a.example.com", "prog1", PROGRAM_ID)
     await sub.stop()
     assert len(fake_http.calls) == 1
+
+
+class _FakePublisher:
+    calls = []
+
+    async def publish_asset_discovered(self, program_name, program_id, subdomain):
+        _FakePublisher.calls.append(
+            {"program_name": program_name, "program_id": program_id, "subdomain": subdomain}
+        )
+        return True
+
+
+@pytest.mark.asyncio
+async def test_successful_post_publishes_nats_events(fake_http):
+    pub = _FakePublisher()
+    _FakePublisher.calls = []
+    sub = _submitter(event_publisher=pub)
+    await sub.add("a.example.com", "prog1", PROGRAM_ID)
+    await sub.add("b.example.com", "prog1", PROGRAM_ID)
+    await sub.flush_now()
+
+    assert len(_FakePublisher.calls) == 2
+    assert {c["subdomain"] for c in _FakePublisher.calls} == {"a.example.com", "b.example.com"}
+    assert sub.asset_events_published == 2
+
+
+@pytest.mark.asyncio
+async def test_failed_post_does_not_publish_events(fake_http):
+    pub = _FakePublisher()
+    _FakePublisher.calls = []
+    sub = _submitter(event_publisher=pub)
+    fake_http.status = 500
+    await sub.add("a.example.com", "prog1", PROGRAM_ID)
+    await sub.flush_now()
+    assert _FakePublisher.calls == []
+    assert sub.asset_events_published == 0

@@ -41,6 +41,7 @@ class CTAlertPublisher:
     # Subject format matches API's event_publisher: events.{category}.{type}
     # event-handler parses this as event_type = "typosquat.ct_alert"
     SUBJECT = "events.typosquat.ct_alert"
+    ASSET_DISCOVERY_SUBJECT = "events.assets.ct_subdomain.discovered"
     
     def __init__(self, nats_url: str = "nats://nats:4222"):
         self.nats_url = nats_url
@@ -248,6 +249,62 @@ class CTAlertPublisher:
             logger.error(f"Error publishing alert: {e}")
             return False
     
+    async def publish_asset_discovered(
+        self,
+        program_name: str,
+        program_id: str,
+        subdomain: str,
+    ) -> bool:
+        """
+        Publish a CT asset discovery event after successful POST /assets ingest.
+
+        Subject events.assets.ct_subdomain.discovered parses to
+        event_type assets.ct_subdomain.discovered in the event-handler.
+        """
+        if not self._js or not self._connected:
+            logger.error("Not connected to NATS, cannot publish asset discovery event")
+            return False
+
+        subdomain = subdomain.lower().strip()
+        if not subdomain:
+            return False
+
+        try:
+            payload = {
+                "event": "ct_asset_discovered",
+                "program_name": program_name,
+                "program_id": program_id,
+                "name": subdomain,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "domain_list": subdomain,
+                "domain_list_array": [subdomain],
+                "source": "ct_monitoring",
+            }
+
+            msg_id = f"ct-asset-{program_id}-{subdomain}"
+
+            ack = await self._js.publish(
+                self.ASSET_DISCOVERY_SUBJECT,
+                json.dumps(payload).encode(),
+                headers={"Nats-Msg-Id": msg_id},
+                timeout=10.0,
+            )
+
+            logger.info(
+                "Published CT asset discovery: %s (program=%s, stream_seq=%s)",
+                subdomain,
+                program_name,
+                ack.seq,
+            )
+            return True
+
+        except NatsTimeoutError:
+            logger.error("Timeout publishing CT asset discovery event to NATS")
+            return False
+        except Exception as e:
+            logger.error("Error publishing CT asset discovery event: %s", e)
+            return False
+
     async def publish_batch(
         self,
         matches: list,  # List of (MatchResult, CertificateInfo, str) tuples

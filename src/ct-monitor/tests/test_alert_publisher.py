@@ -47,3 +47,54 @@ async def test_publish_alert_not_connected():
     cert = CertificateInfo(domains=["bad.com"], issuer="O", issuer_cn="CN")
     ok = await pub.publish_alert(mr, cert, "prog")
     assert ok is False
+
+
+@pytest.mark.asyncio
+async def test_publish_asset_discovered_not_connected():
+    from alert_publisher import CTAlertPublisher
+
+    pub = CTAlertPublisher()
+    ok = await pub.publish_asset_discovered("prog", "uuid", "api.example.com")
+    assert ok is False
+
+
+@pytest.mark.asyncio
+async def test_publish_asset_discovered_payload(monkeypatch):
+    import json
+
+    from alert_publisher import CTAlertPublisher
+
+    published = []
+
+    class _FakeAck:
+        seq = 42
+
+    class _FakeJS:
+        async def publish(self, subject, data, headers=None, timeout=None):
+            published.append(
+                {
+                    "subject": subject,
+                    "payload": json.loads(data.decode()),
+                    "headers": headers,
+                }
+            )
+            return _FakeAck()
+
+    pub = CTAlertPublisher()
+    pub._js = _FakeJS()
+    pub._connected = True
+
+    ok = await pub.publish_asset_discovered(
+        "my-program",
+        "11111111-1111-1111-1111-111111111111",
+        "api.example.com",
+    )
+    assert ok is True
+    assert len(published) == 1
+    assert published[0]["subject"] == "events.assets.ct_subdomain.discovered"
+    payload = published[0]["payload"]
+    assert payload["program_name"] == "my-program"
+    assert payload["program_id"] == "11111111-1111-1111-1111-111111111111"
+    assert payload["name"] == "api.example.com"
+    assert payload["source"] == "ct_monitoring"
+    assert payload["domain_list_array"] == ["api.example.com"]

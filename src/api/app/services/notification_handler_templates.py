@@ -28,6 +28,7 @@ def _get_webhook_for_handler(
     # Map handler keys to notification_settings paths
     webhook_paths = {
         "ct_alert": ("events", "ct_alerts"),
+        "ct_asset_discovered": ("events", "ct_asset_alerts"),
         "subdomain_created_resolved": ("events", "assets", "created", "subdomain"),
         "subdomain_resolved": ("events", "assets", "updated", "subdomain"),
         "nuclei": ("events", "findings"),
@@ -108,6 +109,29 @@ def get_notification_handler_templates() -> Dict[str, Dict[str, Any]]:
                 "color": 15158332,
                 "batch_color": 15105570,
                 "batching": {"max_events": 10, "max_delay_seconds": 60},
+            },
+        },
+        "ct_asset_discovered": {
+            "id": "notify_ct_asset_discovered",
+            "event_type": ["assets.ct_subdomain.discovered"],
+            "description": "Discord notification for subdomains discovered via CT asset monitoring",
+            "conditions": [],
+            "action": {
+                "type": "discord_notification",
+                "title_template": "🔍 CT Asset Discovered: {name}",
+                "description_template": (
+                    "**Subdomain:** `{name}`\n"
+                    "**Program:** {program_name}\n"
+                    "**Source:** Certificate Transparency monitoring"
+                ),
+                "batch_title_template": "🔍 CT Assets Discovered ({domain_count})",
+                "batch_description_template": (
+                    "**{domain_count} subdomains** discovered via CT monitoring for program `{program_name}`\n\n"
+                    "**Domains:** {domain_list}"
+                ),
+                "color": 3447003,
+                "batch_color": 3066993,
+                "batching": {"max_events": 15, "max_delay_seconds": 60},
             },
         },
         "subdomain_created_resolved": {
@@ -307,6 +331,13 @@ def _is_event_enabled(notification_settings: Dict[str, Any], handler_key: str) -
             return ct.get("enabled", False)
         return bool(ct)
 
+    # ct asset discovery
+    if handler_key == "ct_asset_discovered":
+        ct = events.get("ct_asset_alerts") or {}
+        if isinstance(ct, dict):
+            return ct.get("enabled", False)
+        return bool(ct)
+
     # subdomain created/updated (specific handlers)
     if handler_key == "subdomain_created_resolved":
         created = (events.get("assets") or {}).get("created") or {}
@@ -359,6 +390,20 @@ def generate_handlers_from_notification_settings(
                 "description": t["description"],
                 "conditions": t["conditions"],
                 "actions": [{**t["action"], "webhook_url": _build_webhook_template("ct_alert")}],
+            }
+            handlers.append(h)
+
+    # CT asset discovery
+    if _is_event_enabled(notification_settings, "ct_asset_discovered"):
+        t = templates["ct_asset_discovered"]
+        wh = _get_webhook_for_handler(notification_settings, "ct_asset_discovered")
+        if wh:
+            h = {
+                "id": t["id"],
+                "event_type": t["event_type"],
+                "description": t["description"],
+                "conditions": t["conditions"],
+                "actions": [{**t["action"], "webhook_url": _build_webhook_template("ct_asset_discovered")}],
             }
             handlers.append(h)
 

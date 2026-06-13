@@ -26,6 +26,9 @@ class TestParseEventType:
     def test_assets_external_link_created(self):
         assert parse_event_type("events.assets.external_link.created") == "assets.external_link.created"
 
+    def test_assets_ct_subdomain_discovered(self):
+        assert parse_event_type("events.assets.ct_subdomain.discovered") == "assets.ct_subdomain.discovered"
+
     def test_findings_typosquat_created(self):
         result = parse_event_type("events.findings.typosquat.created")
         assert result == "findings.typosquat.created"
@@ -95,6 +98,14 @@ class TestNormalizeEventData:
     def test_subdomain_assets_single_creates_domain_vars(self):
         payload = {"program_name": "p1", "name": "api.example.com"}
         result = normalize_event_data("events.assets.subdomain.created", payload)
+        assert result["domain_list"] == "api.example.com"
+        assert result["domain_list_array"] == ["api.example.com"]
+        assert result["domain_count"] == 1
+
+    def test_ct_subdomain_discovered_creates_domain_vars(self):
+        payload = {"program_name": "p1", "name": "api.example.com", "program_id": "uuid"}
+        result = normalize_event_data("events.assets.ct_subdomain.discovered", payload)
+        assert result["event_type"] == "assets.ct_subdomain.discovered"
         assert result["domain_list"] == "api.example.com"
         assert result["domain_list_array"] == ["api.example.com"]
         assert result["domain_count"] == 1
