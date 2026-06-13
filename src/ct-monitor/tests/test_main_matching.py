@@ -94,7 +94,7 @@ def test_match_certificate_sync_counts_similarity_skipped():
         issuer="O",
         issuer_cn="CN",
     )
-    pending, count, skipped = match_certificate_sync(cert, snap)
+    pending, count, skipped, _assets = match_certificate_sync(cert, snap)
     assert count == 0
     assert pending == []
     assert skipped >= 1

@@ -54,6 +54,7 @@ from domain_config_builder import (
 )
 from certificate_matcher import match_certificate_sync
 from alert_publisher import CTAlertPublisher
+from asset_submitter import CTAssetSubmitter
 from models import CertificateInfo, ProcessingStats, MatchResult
 
 from recon_log_format import apply_service_logging, parse_log_level
@@ -89,6 +90,8 @@ class CTMonitorService:
         # Components (initialized in start())
         self.consumer: Optional[CertStreamConsumer] = None
         self.publisher: Optional[CTAlertPublisher] = None
+        # CT asset monitoring: batched POST /assets for scope-matched SANs
+        self.asset_submitter: Optional[CTAssetSubmitter] = None
         
         # Primary matcher: dnstwist variation generator (fast O(1) lookup)
         self.variation_generator = DnstwistVariationGenerator()
@@ -139,6 +142,10 @@ class CTMonitorService:
         # Snapshot for /status: programs with ct_monitoring_enabled (after last successful refresh)
         self._programs_ct_enabled_detail: List[Dict[str, Any]] = []
         self._matching_snapshot: Optional[MatchingSnapshot] = None
+        # CT asset monitoring state (after last successful refresh)
+        self._any_program_ct_asset_monitoring_enabled: bool = False
+        self._any_program_ct_typosquat_enabled: bool = False
+        self._programs_asset_enabled_detail: List[Dict[str, Any]] = []
 
     async def _fetch_runtime_settings_from_api(self) -> None:
         headers: Dict[str, str] = {}
@@ -200,6 +207,17 @@ class CTMonitorService:
             # Initialize publisher and connect to NATS
             self.publisher = CTAlertPublisher(self.config.nats_url)
             await self.publisher.connect()
+
+            # Asset submitter (CT asset monitoring → POST /assets)
+            self.asset_submitter = CTAssetSubmitter(
+                api_url=self.config.api_url,
+                api_key=self.config.api_key,
+                redis_client=self.redis_client,
+                cache_ttl=self.config.asset_cache_ttl,
+                flush_interval=self.config.asset_flush_interval,
+                batch_max=self.config.asset_batch_max,
+            )
+            await self.asset_submitter.start()
 
             await self._fetch_runtime_settings_from_api()
             
@@ -343,6 +361,11 @@ class CTMonitorService:
         if self.consumer:
             self.consumer.stop()
         
+        # Flush and stop the asset submitter
+        if self.asset_submitter:
+            await self.asset_submitter.stop()
+            self.asset_submitter = None
+        
         # Disconnect from NATS
         if self.publisher:
             await self.publisher.disconnect()
@@ -379,7 +402,10 @@ class CTMonitorService:
             "cache_hits": self._stats.cache_hits,
             "cache_misses": self._stats.cache_misses,
             "similarity_skipped": self._stats.similarity_skipped,
+            "asset_matches": self._stats.asset_matches,
         })
+        if self.asset_submitter:
+            stats_dict.update(self.asset_submitter.get_stats())
         
         # Get variation generator stats
         var_count = self.variation_generator.get_variation_count()
@@ -390,6 +416,8 @@ class CTMonitorService:
             "status": "running" if self._running else "stopped",
             "ct_source": self.config.ct_source,
             "any_program_ct_monitoring_enabled": self._any_program_ct_monitoring_enabled,
+            "any_program_ct_typosquat_enabled": self._any_program_ct_typosquat_enabled,
+            "any_program_ct_asset_monitoring_enabled": self._any_program_ct_asset_monitoring_enabled,
             "ct_fetch_active": self._ct_fetch_active,
             "stats": stats_dict,
             "protected_domains": {
@@ -416,6 +444,7 @@ class CTMonitorService:
                 "certstream_queue_drop_watermark": self.config.certstream_queue_drop_watermark,
             },
             "programs_ct_enabled": list(self._programs_ct_enabled_detail),
+            "programs_asset_enabled": list(self._programs_asset_enabled_detail),
         }
     
     async def _refresh_protected_domains(self):
@@ -477,11 +506,14 @@ class CTMonitorService:
 
                 async with self._domain_config_lock:
                     self._any_program_ct_monitoring_enabled = bundle.any_ct_enabled
+                    self._any_program_ct_typosquat_enabled = bundle.any_typosquat_enabled
+                    self._any_program_ct_asset_monitoring_enabled = bundle.any_asset_enabled
                     self._ingestion_tld_union = set(bundle.ingestion_tld_union)
                     self.protected_domains = bundle.protected_domains
                     self.program_match_states = bundle.program_match_states
                     self.variation_generator = bundle.variation_generator
                     self._programs_ct_enabled_detail = bundle.programs_ct_enabled_detail
+                    self._programs_asset_enabled_detail = bundle.programs_asset_enabled_detail
                     self._matching_snapshot = bundle.matching_snapshot()
 
                 if self.config.ingestion_tld_filter_enabled:
@@ -505,6 +537,12 @@ class CTMonitorService:
                     "Generated %s total variations for fast O(1) matching",
                     f"{bundle.total_variations:,}",
                 )
+                if bundle.any_asset_enabled:
+                    logger.info(
+                        "CT asset monitoring enabled for %s program(s) (%s apex roots indexed)",
+                        len(bundle.asset_match_states),
+                        len(bundle.asset_apex_index),
+                    )
                 if var_stats.get("variations_by_fuzzer"):
                     top_fuzzers = sorted(
                         var_stats["variations_by_fuzzer"].items(),
@@ -552,13 +590,18 @@ class CTMonitorService:
         if snap is None:
             return
 
-        pending, matches_inc, similarity_skipped = await asyncio.to_thread(
+        pending, matches_inc, similarity_skipped, asset_matches = await asyncio.to_thread(
             match_certificate_sync, cert_info, snap
         )
         if matches_inc:
             self._stats.matches_found += matches_inc
         if similarity_skipped:
             self._stats.similarity_skipped += similarity_skipped
+
+        if asset_matches and self.asset_submitter:
+            self._stats.asset_matches += len(asset_matches)
+            for hostname, program_name, program_id in asset_matches:
+                await self.asset_submitter.add(hostname, program_name, program_id)
 
         for match, program_name in pending:
             await self._publish_alert(match, cert_info, program_name)

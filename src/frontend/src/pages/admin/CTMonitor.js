@@ -75,7 +75,11 @@ export function CTMonitorInner({ embedded = false }) {
   };
 
   const handleStop = async () => {
-    if (!window.confirm('Are you sure you want to stop the CT monitor? This will stop monitoring for typosquat certificates.')) {
+    if (
+      !window.confirm(
+        'Are you sure you want to stop the CT monitor? This will stop typosquat detection and CT asset discovery for all programs.'
+      )
+    ) {
       return;
     }
 
@@ -135,6 +139,27 @@ export function CTMonitorInner({ embedded = false }) {
 
   const Outer = embedded ? 'div' : Container;
   const outerProps = embedded ? {} : { fluid: true };
+
+  const typosquatFeatureEnabled =
+    status?.any_program_ct_typosquat_enabled ??
+    (Array.isArray(status?.programs_ct_enabled) && status.programs_ct_enabled.length > 0);
+
+  const assetFeatureEnabled =
+    status?.any_program_ct_asset_monitoring_enabled ??
+    (Array.isArray(status?.programs_asset_enabled) && status.programs_asset_enabled.length > 0);
+
+  const assetPrograms = Array.isArray(status?.programs_asset_enabled) ? status.programs_asset_enabled : [];
+  const indexedApexRoots = assetPrograms.reduce(
+    (sum, row) => sum + (Array.isArray(row.apex_roots) ? row.apex_roots.length : 0),
+    0
+  );
+
+  const formatApexRoots = (roots) => {
+    if (!Array.isArray(roots) || roots.length === 0) return '—';
+    const joined = roots.join(', ');
+    if (joined.length <= 80) return joined;
+    return `${joined.slice(0, 77)}…`;
+  };
 
   if (loading && !status) {
     return (
@@ -209,6 +234,20 @@ export function CTMonitorInner({ embedded = false }) {
               <Row>
                 <Col md={6}>
                   <p><strong>CT Source:</strong> {status?.ct_source || 'N/A'}</p>
+                  <p className="mb-2">
+                    <strong>Features:</strong>{' '}
+                    <Badge bg={typosquatFeatureEnabled ? 'success' : 'secondary'} className="me-1">
+                      Typosquat {typosquatFeatureEnabled ? 'on' : 'off'}
+                    </Badge>
+                    <Badge bg={assetFeatureEnabled ? 'success' : 'secondary'} className="me-1">
+                      Asset discovery {assetFeatureEnabled ? 'on' : 'off'}
+                    </Badge>
+                    {typeof status?.ct_fetch_active === 'boolean' && (
+                      <Badge bg={status.ct_fetch_active ? 'info' : 'secondary'}>
+                        Ingestion {status.ct_fetch_active ? 'active' : 'idle'}
+                      </Badge>
+                    )}
+                  </p>
                   <p className="mb-1">
                     <strong>Certificate TLDs:</strong>{' '}
                     {status?.ingestion_tld_filter_enabled || status?.config?.ingestion_tld_filter_enabled ? (
@@ -225,10 +264,10 @@ export function CTMonitorInner({ embedded = false }) {
                     </p>
                   )}
                   <p className="small text-muted mb-0">
-                    Certificates are streamed from self-hosted certstream-server (
-                    {status?.certstream_url || 'ws://certstream:4000/'}). Per-program similarity threshold is on
-                    each program (Typosquat tab). Program config reloads on startup and when CT settings are saved.
-                    Global stats interval: System Settings → CT monitor.
+                    Certificates stream from self-hosted certstream-server (
+                    {status?.certstream_url || 'ws://certstream:4000/'}). Enable typosquat monitoring on each
+                    program&apos;s Typosquat tab; enable asset discovery on the Scope tab. Config reloads on startup
+                    and when CT-related program settings are saved. Global stats interval: System Settings → CT monitor.
                   </p>
                 </Col>
                 <Col md={6} className="text-end">
@@ -278,18 +317,18 @@ export function CTMonitorInner({ embedded = false }) {
 
       {status && (
         <Row className="mb-4">
-          <Col>
-            <Card className="rh-elevated-card">
+          <Col md={6} className="mb-3 mb-md-0">
+            <Card className="rh-elevated-card h-100">
               <Card.Header>
-                <h5 className="mb-0">Programs with CT monitoring enabled</h5>
+                <h5 className="mb-0">Typosquat programs</h5>
               </Card.Header>
               <Card.Body className="p-0">
                 {!Array.isArray(status.programs_ct_enabled) ? (
                   <p className="text-muted p-3 mb-0">
-                    Per-program settings are not in this status response (deploy an updated ct-monitor build).
+                    Typosquat program settings are not in this status response (deploy an updated ct-monitor build).
                   </p>
                 ) : status.programs_ct_enabled.length === 0 ? (
-                  <p className="text-muted p-3 mb-0">No programs have CT monitoring enabled.</p>
+                  <p className="text-muted p-3 mb-0">No programs have typosquat CT monitoring enabled.</p>
                 ) : (
                   <Table striped bordered hover responsive className="mb-0">
                     <thead>
@@ -328,7 +367,7 @@ export function CTMonitorInner({ embedded = false }) {
                                 placement="top"
                                 overlay={
                                   <Tooltip id={`tip-${row.program_name}`}>
-                                    No protected domains or keywords yet — add assets on the program Typosquat tab
+                                    No protected domains or keywords yet — configure on the program Typosquat tab
                                     to start matching.
                                   </Tooltip>
                                 }
@@ -347,17 +386,79 @@ export function CTMonitorInner({ embedded = false }) {
               </Card.Body>
             </Card>
           </Col>
+          <Col md={6}>
+            <Card className="rh-elevated-card h-100">
+              <Card.Header>
+                <h5 className="mb-0">Asset discovery programs</h5>
+              </Card.Header>
+              <Card.Body className="p-0">
+                {!Array.isArray(status.programs_asset_enabled) ? (
+                  <p className="text-muted p-3 mb-0">
+                    Asset discovery program settings are not in this status response (deploy an updated ct-monitor build).
+                  </p>
+                ) : status.programs_asset_enabled.length === 0 ? (
+                  <p className="text-muted p-3 mb-0">No programs have CT asset discovery enabled.</p>
+                ) : (
+                  <Table striped bordered hover responsive className="mb-0">
+                    <thead>
+                      <tr>
+                        <th>Program</th>
+                        <th>Apex roots</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {status.programs_asset_enabled.map((row) => {
+                        const roots = Array.isArray(row.apex_roots) ? row.apex_roots : [];
+                        const display = formatApexRoots(roots);
+                        return (
+                          <tr key={row.program_name}>
+                            <td>
+                              <Link to={`/programs/${encodeURIComponent(row.program_name)}`}>
+                                {row.program_name}
+                              </Link>
+                            </td>
+                            <td>
+                              {roots.length === 0 ? (
+                                <span className="text-muted">—</span>
+                              ) : (
+                                <OverlayTrigger
+                                  placement="top"
+                                  overlay={
+                                    <Tooltip id={`apex-${row.program_name}`}>
+                                      {roots.join(', ')}
+                                    </Tooltip>
+                                  }
+                                >
+                                  <span>
+                                    <Badge bg="secondary" className="me-1">
+                                      {roots.length}
+                                    </Badge>
+                                    <code className="small" style={{ wordBreak: 'break-all' }}>
+                                      {display}
+                                    </code>
+                                  </span>
+                                </OverlayTrigger>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </Table>
+                )}
+              </Card.Body>
+            </Card>
+          </Col>
         </Row>
       )}
 
       {status && (
         <>
-          {/* Processing Statistics */}
           <Row className="mb-4">
             <Col>
               <Card className="rh-elevated-card">
                 <Card.Header>
-                  <h5 className="mb-0">Processing Statistics</h5>
+                  <h5 className="mb-0">Certificate pipeline</h5>
                 </Card.Header>
                 <Card.Body>
                   <Row>
@@ -365,7 +466,7 @@ export function CTMonitorInner({ embedded = false }) {
                       <StatBox
                         value={formatNumber(status.stats?.total_received)}
                         label="Certificates Received"
-                        tooltip="Total number of CT log entries fetched from Certificate Transparency logs. This includes all entries, even those that couldn't be parsed or had no domains."
+                        tooltip="Total CT log entries fetched from Certificate Transparency logs, including entries that could not be parsed or had no domains."
                         className="text-primary"
                       />
                     </Col>
@@ -373,7 +474,7 @@ export function CTMonitorInner({ embedded = false }) {
                       <StatBox
                         value={formatNumber(status.stats?.processed)}
                         label="Certificates Processed"
-                        tooltip="Certificates that were successfully parsed and passed to typosquat matching (all TLDs when ingestion filter is disabled)."
+                        tooltip="Certificates successfully parsed and passed to matching (typosquat and asset discovery share this pipeline)."
                         className="text-info"
                       />
                     </Col>
@@ -381,41 +482,25 @@ export function CTMonitorInner({ embedded = false }) {
                       <StatBox
                         value={formatNumber(status.stats?.filtered_by_tld)}
                         label="Filtered by TLD"
-                        tooltip="Certificates that were successfully parsed but had no domains matching the configured TLD filter (e.g., only .ru or .cn domains when filter is com,net,org). These are skipped before matching."
+                        tooltip="Certificates parsed but dropped because no SAN matched the configured ingestion TLD filter."
                         className="text-warning"
-                      />
-                    </Col>
-                    <Col md={3}>
-                      <StatBox
-                        value={formatNumber(status.stats?.matches_found)}
-                        label="Matches Found"
-                        tooltip="Number of certificates that matched protected domains (typosquatting detected). These certificates contain domains that look similar to your protected domains."
-                        className="text-success"
-                      />
-                    </Col>
-                  </Row>
-                  <Row className="mt-3">
-                    <Col md={3}>
-                      <StatBox
-                        value={formatNumber(status.stats?.alerts_published)}
-                        label="Alerts Published"
-                        tooltip="Number of alerts successfully published to NATS. Each match generates an alert that triggers automatic typosquat analysis workflows."
-                        className="text-danger"
                       />
                     </Col>
                     <Col md={3}>
                       <StatBox
                         value={formatNumber(status.stats?.errors)}
                         label="Errors"
-                        tooltip="Number of errors encountered during processing. This includes parsing errors, network errors, and other exceptions."
+                        tooltip="Parsing, network, and other processing errors in the CertStream consumer."
                         className="text-secondary"
                       />
                     </Col>
+                  </Row>
+                  <Row className="mt-3">
                     <Col md={3}>
                       <StatBox
                         value={status.stats?.certs_per_second?.toFixed(2) || '0.00'}
                         label="Certs/Second"
-                        tooltip="Average processing rate: certificates received per second. Higher rates indicate better performance."
+                        tooltip="Average rate of certificates received from CertStream."
                         className="text-primary"
                       />
                     </Col>
@@ -427,18 +512,189 @@ export function CTMonitorInner({ embedded = false }) {
                         className="text-info"
                       />
                     </Col>
+                    {status.stats?.certstream_queue_size != null && (
+                      <Col md={3}>
+                        <StatBox
+                          value={formatNumber(status.stats.certstream_queue_size)}
+                          label="Queue Size"
+                          tooltip={`Certificates waiting in the asyncio queue (max ${formatNumber(status.stats?.certstream_queue_maxsize)}).`}
+                          className="text-warning"
+                        />
+                      </Col>
+                    )}
+                    {status.stats?.queue_drops != null && (
+                      <Col md={3}>
+                        <StatBox
+                          value={formatNumber(status.stats.queue_drops)}
+                          label="Queue Drops"
+                          tooltip="Certificates dropped because the processing queue exceeded its high-water mark."
+                          className="text-danger"
+                        />
+                      </Col>
+                    )}
+                  </Row>
+                  {(status.stats?.match_in_flight != null || status.stats?.match_concurrency != null) && (
+                    <Row className="mt-3">
+                      {status.stats?.match_in_flight != null && (
+                        <Col md={3}>
+                          <StatBox
+                            value={formatNumber(status.stats.match_in_flight)}
+                            label="Match In Flight"
+                            tooltip="Certificate match workers currently processing."
+                            className="text-secondary"
+                          />
+                        </Col>
+                      )}
+                      {status.stats?.match_concurrency != null && (
+                        <Col md={3}>
+                          <StatBox
+                            value={formatNumber(status.stats.match_concurrency)}
+                            label="Match Concurrency"
+                            tooltip="Configured parallel certificate match workers."
+                            className="text-secondary"
+                          />
+                        </Col>
+                      )}
+                    </Row>
+                  )}
+                </Card.Body>
+              </Card>
+            </Col>
+          </Row>
+
+          <Row className="mb-4">
+            <Col>
+              <Card className="rh-elevated-card">
+                <Card.Header>
+                  <h5 className="mb-0">Typosquat detection</h5>
+                </Card.Header>
+                <Card.Body>
+                  <Row>
+                    <Col md={4}>
+                      <StatBox
+                        value={formatNumber(status.stats?.matches_found)}
+                        label="Matches Found"
+                        tooltip="Certificates whose domains matched protected domains or typosquat rules."
+                        className="text-success"
+                      />
+                    </Col>
+                    <Col md={4}>
+                      <StatBox
+                        value={formatNumber(status.stats?.alerts_published)}
+                        label="Alerts Published"
+                        tooltip="Alerts successfully published to NATS (events.typosquat.ct_alert), triggering typosquat workflows."
+                        className="text-danger"
+                      />
+                    </Col>
+                    <Col md={4}>
+                      <StatBox
+                        value={formatNumber(status.stats?.skipped_existing)}
+                        label="Skipped (Existing)"
+                        tooltip="Matches skipped because the typosquat domain already exists in the database (Redis-cached API check)."
+                        className="text-warning"
+                      />
+                    </Col>
+                  </Row>
+                  <Row className="mt-3">
+                    <Col md={4}>
+                      <StatBox
+                        value={formatNumber(status.stats?.cache_hits)}
+                        label="Dedup Cache Hits"
+                        tooltip="Typosquat existence checks answered from Redis without calling the API."
+                        className="text-info"
+                      />
+                    </Col>
+                    <Col md={4}>
+                      <StatBox
+                        value={formatNumber(status.stats?.cache_misses)}
+                        label="Dedup Cache Misses"
+                        tooltip="Typosquat existence checks that required an API lookup."
+                        className="text-info"
+                      />
+                    </Col>
+                    <Col md={4}>
+                      <StatBox
+                        value={formatNumber(status.stats?.similarity_skipped)}
+                        label="Similarity Skipped"
+                        tooltip="Candidate domains skipped because similarity to protected domains was below the program threshold."
+                        className="text-secondary"
+                      />
+                    </Col>
                   </Row>
                 </Card.Body>
               </Card>
             </Col>
           </Row>
 
-          {/* Domain Protection */}
           <Row className="mb-4">
             <Col>
               <Card className="rh-elevated-card">
                 <Card.Header>
-                  <h5 className="mb-0">Domain Protection</h5>
+                  <h5 className="mb-0">Asset discovery</h5>
+                </Card.Header>
+                <Card.Body>
+                  <Row>
+                    <Col md={4}>
+                      <StatBox
+                        value={formatNumber(status.stats?.asset_matches)}
+                        label="Scope Matches"
+                        tooltip="Certificate SANs that matched a program's in-scope patterns (before dedup and submission)."
+                        className="text-success"
+                      />
+                    </Col>
+                    <Col md={4}>
+                      <StatBox
+                        value={formatNumber(status.stats?.assets_submitted)}
+                        label="Assets Submitted"
+                        tooltip="Subdomain hostnames successfully POSTed to /assets (inserted even when unresolved)."
+                        className="text-primary"
+                      />
+                    </Col>
+                    <Col md={4}>
+                      <StatBox
+                        value={formatNumber(status.stats?.asset_dedup_hits)}
+                        label="Dedup Hits"
+                        tooltip="Scope matches skipped because the hostname was recently submitted (Redis dedup)."
+                        className="text-info"
+                      />
+                    </Col>
+                  </Row>
+                  <Row className="mt-3">
+                    <Col md={4}>
+                      <StatBox
+                        value={formatNumber(status.stats?.batches_posted)}
+                        label="Batches Posted"
+                        tooltip="Successful batched POST /assets requests to the API."
+                        className="text-secondary"
+                      />
+                    </Col>
+                    <Col md={4}>
+                      <StatBox
+                        value={formatNumber(status.stats?.post_failures)}
+                        label="Post Failures"
+                        tooltip="Failed asset submission batches (hostnames remain eligible for retry on next sighting)."
+                        className="text-danger"
+                      />
+                    </Col>
+                    <Col md={4}>
+                      <StatBox
+                        value={formatNumber(status.stats?.buffered)}
+                        label="Buffered"
+                        tooltip="Hostnames currently waiting in the per-program submit buffer before the next flush."
+                        className="text-warning"
+                      />
+                    </Col>
+                  </Row>
+                </Card.Body>
+              </Card>
+            </Col>
+          </Row>
+
+          <Row className="mb-4">
+            <Col md={6} className="mb-3 mb-md-0">
+              <Card className="rh-elevated-card h-100">
+                <Card.Header>
+                  <h5 className="mb-0">Typosquat protection</h5>
                 </Card.Header>
                 <Card.Body>
                   <Row>
@@ -446,7 +702,7 @@ export function CTMonitorInner({ embedded = false }) {
                       <StatBox
                         value={formatNumber(status.protected_domains?.total)}
                         label="Protected Domains"
-                        tooltip="Total number of protected domains across all programs. These are domains from protected_domains, seed_domains, and root_domains settings that are monitored for typosquatting."
+                        tooltip="Protected domains across typosquat-enabled programs (used for variation and similarity matching)."
                         className="text-primary"
                       />
                     </Col>
@@ -454,19 +710,50 @@ export function CTMonitorInner({ embedded = false }) {
                       <StatBox
                         value={formatNumber(status.protected_domains?.variations)}
                         label="Variations Generated"
-                        tooltip="Total number of typosquat variations pre-generated using dnstwist. These variations are used for fast O(1) lookup matching against certificate domains."
+                        tooltip="Pre-generated dnstwist variations used for O(1) typosquat lookup."
                         className="text-info"
                       />
                     </Col>
                     <Col md={4}>
                       <StatBox
                         value={formatNumber(status.protected_domains?.programs)}
-                        label="Programs Monitored"
-                        tooltip="Number of programs that have protected domains configured and are actively being monitored for typosquatting."
+                        label="Programs with Domains"
+                        tooltip="Programs with protected domains loaded for typosquat matching."
                         className="text-success"
                       />
                     </Col>
                   </Row>
+                </Card.Body>
+              </Card>
+            </Col>
+            <Col md={6}>
+              <Card className="rh-elevated-card h-100">
+                <Card.Header>
+                  <h5 className="mb-0">Asset scope coverage</h5>
+                </Card.Header>
+                <Card.Body>
+                  <Row>
+                    <Col md={6}>
+                      <StatBox
+                        value={formatNumber(assetPrograms.length)}
+                        label="Programs"
+                        tooltip="Programs with CT asset discovery enabled and valid in-scope rules."
+                        className="text-primary"
+                      />
+                    </Col>
+                    <Col md={6}>
+                      <StatBox
+                        value={formatNumber(indexedApexRoots)}
+                        label="Indexed Apex Roots"
+                        tooltip="Total registrable apex domains indexed for scope prefiltering across asset-enabled programs."
+                        className="text-info"
+                      />
+                    </Col>
+                  </Row>
+                  <p className="text-muted small mb-0 mt-3">
+                    Matching uses scope patterns configured on each program&apos;s Scope tab. The API re-checks scope
+                    when subdomains are ingested.
+                  </p>
                 </Card.Body>
               </Card>
             </Col>

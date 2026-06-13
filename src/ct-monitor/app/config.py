@@ -15,6 +15,9 @@ Environment variables:
 - CERTSTREAM_QUEUE_MAXSIZE: asyncio queue depth (default 5000)
 - CT_MATCH_CONCURRENCY: parallel certificate match workers (default min(4, cpu_count))
 - CERTSTREAM_QUEUE_DROP_WATERMARK: queue fill ratio before drop (default 0.8)
+- CT_ASSET_CACHE_TTL: Redis dedup TTL for submitted asset hostnames (default 86400)
+- CT_ASSET_FLUSH_INTERVAL: seconds between asset submit flushes (default 15)
+- CT_ASSET_BATCH_MAX: per-program buffer size that forces an immediate flush (default 200)
 """
 
 import os
@@ -121,6 +124,17 @@ class CTMonitorConfig:
     match_concurrency: int = field(default_factory=default_match_concurrency)
     certstream_queue_drop_watermark: float = field(
         default_factory=lambda: float(os.getenv("CERTSTREAM_QUEUE_DROP_WATERMARK", "0.8"))
+    )
+
+    # CT asset monitoring (scope-based subdomain discovery → POST /assets)
+    asset_cache_ttl: int = field(
+        default_factory=lambda: int(os.getenv("CT_ASSET_CACHE_TTL", "86400"))
+    )
+    asset_flush_interval: float = field(
+        default_factory=lambda: float(os.getenv("CT_ASSET_FLUSH_INTERVAL", "15"))
+    )
+    asset_batch_max: int = field(
+        default_factory=lambda: int(os.getenv("CT_ASSET_BATCH_MAX", "200"))
     )
 
 

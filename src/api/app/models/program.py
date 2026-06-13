@@ -46,6 +46,7 @@ class APIProgram(BaseModel):
     typosquat_filtering_settings: Optional[Dict[str, Any]] = None
     ct_monitor_program_settings: Optional[Dict[str, Any]] = None
     ct_monitoring_enabled: bool = False
+    ct_asset_monitoring_enabled: bool = False  # CT log monitoring for in-scope subdomain (asset) discovery
     created_at: Optional[SerializedDatetime] = Field(default_factory=utcnow)
     updated_at: Optional[SerializedDatetime] = Field(default_factory=utcnow)
 

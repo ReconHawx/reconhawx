@@ -114,7 +114,10 @@ async def create_program(
         # Pass program data and restore flag separately to repository
         program_id = await ProgramRepository.create_program(program_dict, restore_from_archive=restore_from_archive)
         
-        if program_id is not None and program_dict.get("ct_monitoring_enabled"):
+        if program_id is not None and (
+            program_dict.get("ct_monitoring_enabled")
+            or program_dict.get("ct_asset_monitoring_enabled")
+        ):
             await sync_ct_monitor_program_config()
 
         if program_id is None:
@@ -181,6 +184,9 @@ async def list_programs(current_user: UserResponse = Depends(get_current_user_fr
                     "ct_monitoring_enabled": bool(
                         program_data_by_name.get(name, {}).get("ct_monitoring_enabled", False)
                     ),
+                    "ct_asset_monitoring_enabled": bool(
+                        program_data_by_name.get(name, {}).get("ct_asset_monitoring_enabled", False)
+                    ),
                 } 
                 for name in program_names
             ]
@@ -198,6 +204,9 @@ async def list_programs(current_user: UserResponse = Depends(get_current_user_fr
                         "ct_monitoring_enabled": bool(
                             program_data_by_name.get(name, {}).get("ct_monitoring_enabled", False)
                         ),
+                        "ct_asset_monitoring_enabled": bool(
+                            program_data_by_name.get(name, {}).get("ct_asset_monitoring_enabled", False)
+                        ),
                     } 
                     for name in program_names
                 ]
@@ -210,6 +219,9 @@ async def list_programs(current_user: UserResponse = Depends(get_current_user_fr
                         "protected_domains": program_data_by_name.get(name, {}).get("protected_domains", []),
                         "ct_monitoring_enabled": bool(
                             program_data_by_name.get(name, {}).get("ct_monitoring_enabled", False)
+                        ),
+                        "ct_asset_monitoring_enabled": bool(
+                            program_data_by_name.get(name, {}).get("ct_asset_monitoring_enabled", False)
                         ),
                     } 
                     for name in program_names if name is not None
@@ -491,14 +503,25 @@ async def update_program(
 
         ct_related = {
             "ct_monitoring_enabled",
+            "ct_asset_monitoring_enabled",
             "protected_domains",
             "protected_subdomain_prefixes",
             "ct_monitor_program_settings",
+            # Scope edits change what CT asset monitoring matches.
+            "scope_domains",
+            "out_of_scope_domains",
+            "domain_regex",
+            "out_of_scope_regex",
         }
-        if update_data.keys() & ct_related and (
+        ct_typosquat_active = (
             "ct_monitoring_enabled" in update_data
             or existing_program.get("ct_monitoring_enabled")
-        ):
+        )
+        ct_asset_active = (
+            "ct_asset_monitoring_enabled" in update_data
+            or existing_program.get("ct_asset_monitoring_enabled")
+        )
+        if update_data.keys() & ct_related and (ct_typosquat_active or ct_asset_active):
             await sync_ct_monitor_program_config()
         
         logger.info(f"Successfully updated program: {final_program_name}")

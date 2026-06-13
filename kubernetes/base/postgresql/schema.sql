@@ -216,7 +216,8 @@ CREATE TABLE public.programs (
     ct_monitoring_enabled boolean DEFAULT false NOT NULL,
     ct_monitor_program_settings jsonb DEFAULT '{}'::jsonb NOT NULL,
     scope_domains jsonb DEFAULT '[]'::jsonb NOT NULL,
-    out_of_scope_domains jsonb DEFAULT '[]'::jsonb NOT NULL
+    out_of_scope_domains jsonb DEFAULT '[]'::jsonb NOT NULL,
+    ct_asset_monitoring_enabled boolean DEFAULT false NOT NULL
 );
 
 
@@ -302,6 +303,13 @@ COMMENT ON COLUMN public.programs.scope_domains IS 'Structured in-scope domain p
 --
 
 COMMENT ON COLUMN public.programs.out_of_scope_domains IS 'Structured out-of-scope patterns (same shape as scope_domains). Legacy out_of_scope_regex still applies when non-empty.';
+
+
+--
+-- Name: COLUMN programs.ct_asset_monitoring_enabled; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.programs.ct_asset_monitoring_enabled IS 'CT log monitoring for in-scope subdomain (asset) discovery; matched SANs are ingested via POST /assets.';
 
 
 --

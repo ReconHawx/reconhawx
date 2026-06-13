@@ -122,6 +122,7 @@ class ProcessingStats:
     filtered_before_queue: int = 0
     queue_drops: int = 0
     similarity_skipped: int = 0
+    asset_matches: int = 0
     start_time: datetime = field(default_factory=_utcnow)
     
     def to_dict(
@@ -152,6 +153,7 @@ class ProcessingStats:
             "filtered_before_queue": self.filtered_before_queue,
             "queue_drops": self.queue_drops,
             "similarity_skipped": sim_skipped,
+            "asset_matches": self.asset_matches,
             "runtime_seconds": int(runtime),
             "certs_per_second": round(rate, 2),
             "offered_per_second": round(offered_rate, 2),

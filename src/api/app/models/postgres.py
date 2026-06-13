@@ -168,6 +168,7 @@ class Program(Base):
     typosquat_filtering_settings = Column(JSONB, default=dict)  # {"min_similarity_percent": 60.0, "enabled": true}
     ai_analysis_settings = Column(JSONB, default=dict)  # {"enabled": false, "model": "llama3:latest", ...}
     ct_monitoring_enabled = Column(Boolean, nullable=False, default=False)  # CT log monitoring for typosquat alerts
+    ct_asset_monitoring_enabled = Column(Boolean, nullable=False, default=False)  # CT log monitoring for in-scope subdomain (asset) discovery
     ct_monitor_program_settings = Column(JSONB, nullable=False, default=dict)  # {"similarity_threshold": 0.75}; tld_filter ignored unless CT_INGESTION_TLD_FILTER_ENABLED on ct-monitor
     created_at = Column(DateTime, default=utcnow, nullable=False)
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
