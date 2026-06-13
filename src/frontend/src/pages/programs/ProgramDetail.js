@@ -51,7 +51,8 @@ const DEFAULT_NOTIFICATION_SETTINGS = {
       }
     },
     findings: { nuclei_severities: [], nuclei_webhook_url: '' },
-    ct_alerts: { enabled: false, webhook_url: '' }
+    ct_alerts: { enabled: false, webhook_url: '' },
+    ct_asset_alerts: { enabled: false, webhook_url: '' }
   },
 };
 
@@ -83,6 +84,7 @@ function mergeProgramNotificationSettings(programSettings) {
         nuclei_webhook_url: psEvents.findings?.nuclei_webhook_url || '',
       },
       ct_alerts: normalizeEventVal(psEvents.ct_alerts),
+      ct_asset_alerts: normalizeEventVal(psEvents.ct_asset_alerts),
     },
   };
 }
@@ -2540,12 +2542,12 @@ function ProgramDetail() {
 
                     <Row className="mb-3">
                       <Col md={6}>
-                        <h6>CT Monitor Alerts</h6>
+                        <h6>CT Typosquat Alerts</h6>
                         <p className="text-muted small">Certificate Transparency typosquat alerts (critical/high)</p>
                         <Form.Check
                           type="checkbox"
                           id="notify-ct-alerts"
-                          label="Enable CT alerts"
+                          label="Enable CT typosquat alerts"
                           checked={Boolean(ns.events.ct_alerts?.enabled)}
                           onChange={(e) => setNotificationSettings({
                             ...ns,
@@ -2560,13 +2562,47 @@ function ProgramDetail() {
                           <Form.Control
                             size="sm"
                             className="mt-2"
-                            placeholder="CT alerts webhook (optional, uses global)"
+                            placeholder="CT typosquat webhook (optional, uses global)"
                             value={ns.events.ct_alerts?.webhook_url || ''}
                             onChange={(e) => setNotificationSettings({
                               ...ns,
                               events: {
                                 ...ns.events,
                                 ct_alerts: { ...(ns.events.ct_alerts || {}), enabled: true, webhook_url: e.target.value }
+                              }
+                            })}
+                            disabled={!canEdit || savingNotifications}
+                          />
+                        )}
+                      </Col>
+                      <Col md={6}>
+                        <h6>CT Asset Discovery</h6>
+                        <p className="text-muted small">In-scope subdomains discovered via CT asset monitoring</p>
+                        <Form.Check
+                          type="checkbox"
+                          id="notify-ct-asset-alerts"
+                          label="Enable CT asset discovery alerts"
+                          checked={Boolean(ns.events.ct_asset_alerts?.enabled)}
+                          onChange={(e) => setNotificationSettings({
+                            ...ns,
+                            events: {
+                              ...ns.events,
+                              ct_asset_alerts: { ...(ns.events.ct_asset_alerts || {}), enabled: e.target.checked, webhook_url: ns.events.ct_asset_alerts?.webhook_url || '' }
+                            }
+                          })}
+                          disabled={!canEdit || savingNotifications}
+                        />
+                        {ns.events.ct_asset_alerts?.enabled && (
+                          <Form.Control
+                            size="sm"
+                            className="mt-2"
+                            placeholder="CT asset discovery webhook (optional, uses global)"
+                            value={ns.events.ct_asset_alerts?.webhook_url || ''}
+                            onChange={(e) => setNotificationSettings({
+                              ...ns,
+                              events: {
+                                ...ns.events,
+                                ct_asset_alerts: { ...(ns.events.ct_asset_alerts || {}), enabled: true, webhook_url: e.target.value }
                               }
                             })}
                             disabled={!canEdit || savingNotifications}

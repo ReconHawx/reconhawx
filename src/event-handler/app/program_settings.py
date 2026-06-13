@@ -120,6 +120,7 @@ class ProgramSettingsProvider:
 
         out = dict(settings)
         out["notify_webhook_ct_alert"] = get_wh("events", "ct_alerts")
+        out["notify_webhook_ct_asset_discovered"] = get_wh("events", "ct_asset_alerts")
         out["notify_webhook_subdomain_created_resolved"] = get_wh("events", "assets", "created", "subdomain")
         out["notify_webhook_subdomain_resolved"] = get_wh("events", "assets", "updated", "subdomain")
         out["notify_webhook_nuclei"] = get_wh("events", "findings", key="nuclei_webhook_url")

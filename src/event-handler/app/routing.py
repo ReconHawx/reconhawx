@@ -156,12 +156,13 @@ def normalize_event_data(subject: str, payload: Dict[str, Any]) -> Dict[str, Any
 
         # Handle single asset events
         else:
-            # Handle single subdomain events
-            if event_type.startswith('assets.subdomain') and 'name' in payload:
-                domain_names = [payload['name']]
-                normalized['domain_list'] = payload['name']
-                normalized['domain_list_array'] = domain_names
-                normalized['domain_count'] = 1
+            # Handle single subdomain and CT subdomain discovery events
+            if event_type.startswith('assets.subdomain') or event_type.startswith('assets.ct_subdomain'):
+                if 'name' in payload:
+                    domain_names = [payload['name']]
+                    normalized['domain_list'] = payload['name']
+                    normalized['domain_list_array'] = domain_names
+                    normalized['domain_count'] = 1
 
             # Handle single IP events
             elif event_type.startswith('assets.ip'):

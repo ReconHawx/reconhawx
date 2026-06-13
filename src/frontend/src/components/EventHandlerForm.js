@@ -29,6 +29,7 @@ const EVENT_TYPES = [
   'assets.subdomain.created',
   'assets.subdomain.resolved',
   'assets.subdomain.updated',
+  'assets.ct_subdomain.discovered',
   'assets.url.created',
   'assets.url.updated',
   'assets.external_link.created',

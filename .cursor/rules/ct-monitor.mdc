@@ -19,7 +19,7 @@ CTMonitorService (main.py)
 ├── DnstwistVariationGenerator — PRIMARY: O(1) variation lookup (typosquat)
 ├── protected_domain_similarity.py — keywords + API-aligned similarity (typosquat)
 ├── scope_matcher.py — program scope matching (asset monitoring)
-├── CTAlertPublisher — NATS JetStream (typosquat alerts)
+├── CTAlertPublisher — NATS JetStream (typosquat alerts + CT asset discovery events)
 └── CTAssetSubmitter (asset_submitter.py) — batched POST /assets (asset monitoring)
 ```
 
@@ -66,7 +66,7 @@ CertStreamConsumer (all TLDs by default; optional CT_INGESTION_TLD_FILTER_ENABLE
     ↓
 CTMonitorService._on_certificate()
     ├─ typosquat: variation match → keyword/similarity → NATS events.typosquat.ct_alert → event-handler
-    └─ asset: scope match (scope_matcher) → CTAssetSubmitter → POST /assets (subdomain, no IPs)
+    └─ asset: scope match (scope_matcher) → CTAssetSubmitter → POST /assets → NATS events.assets.ct_subdomain.discovered → event-handler
 ```
 
 ### CT asset monitoring (scope-based subdomain discovery)
@@ -75,7 +75,7 @@ CTMonitorService._on_certificate()
 - [`scope_matcher.py`](../../src/ct-monitor/app/scope_matcher.py) ports the API's `utils/scope_patterns.py` matching (structured `scope_domains`/`out_of_scope_domains` + legacy regex) with **regexes precompiled per config refresh**; keep semantics in sync with the API module.
 - `domain_config_builder.build_asset_match_states` builds `ProgramAssetMatchState` (program id + `CompiledScopeMatcher`); an **apex prefilter index** (registrable apex → programs, via `domain_labels.extract_apex_domain`) keeps the per-SAN hot path to one tldextract lookup.
 - Asset matching in `match_certificate_sync` runs **before** the typosquat skip rules (`is_legitimate_subdomain` skips exactly what asset monitoring wants); wildcard hostnames are matched/submitted with the leading `*.` stripped. Returns a 4th element: `[(hostname, program_name, program_id), …]`.
-- [`asset_submitter.py`](../../src/ct-monitor/app/asset_submitter.py): Redis dedup (`ct_monitor:asset_seen:{program_id}:{hostname}`, `CT_ASSET_CACHE_TTL` default 24h, keys set **only after successful POST**), per-program buffers flushed every `CT_ASSET_FLUSH_INTERVAL` (15s) or at `CT_ASSET_BATCH_MAX` (200) → `POST /assets` `{"program_id", "assets": {"subdomain": [{"name": …}]}}`. **No DNS resolution** — the API inserts subdomains whether or not they resolve and re-checks scope server-side (authoritative).
+- [`asset_submitter.py`](../../src/ct-monitor/app/asset_submitter.py): Redis dedup (`ct_monitor:asset_seen:{program_id}:{hostname}`, `CT_ASSET_CACHE_TTL` default 24h, keys set **only after successful POST**), per-program buffers flushed every `CT_ASSET_FLUSH_INTERVAL` (15s) or at `CT_ASSET_BATCH_MAX` (200) → `POST /assets` `{"program_id", "assets": {"subdomain": [{"name": …}]}}`, then NATS `events.assets.ct_subdomain.discovered` (one event per hostname). **No DNS resolution** — the API inserts subdomains whether or not they resolve and re-checks scope server-side (authoritative).
 
 ## Configuration (`config.py`)
 
@@ -113,7 +113,8 @@ Two stages; skip legitimate subdomains of protected FQDNs and exact protected FQ
 
 ## Alert Publishing
 
-Unchanged: NATS `events.typosquat.ct_alert`, priority from match type/score.
+- **Typosquat:** NATS `events.typosquat.ct_alert`, priority from match type/score.
+- **Asset discovery:** NATS `events.assets.ct_subdomain.discovered` after successful `POST /assets` (parsed as `assets.ct_subdomain.discovered`); triggers program notification handlers and custom event-handler rules.
 
 ## HTTP Control API
 

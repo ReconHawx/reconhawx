@@ -684,6 +684,14 @@ export function CTMonitorInner({ embedded = false }) {
                         className="text-warning"
                       />
                     </Col>
+                    <Col md={4}>
+                      <StatBox
+                        value={formatNumber(status.stats?.asset_events_published)}
+                        label="Events Published"
+                        tooltip="NATS events.assets.ct_subdomain.discovered messages published for notification handlers."
+                        className="text-primary"
+                      />
+                    </Col>
                   </Row>
                 </Card.Body>
               </Card>

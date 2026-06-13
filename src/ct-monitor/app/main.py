@@ -216,6 +216,7 @@ class CTMonitorService:
                 cache_ttl=self.config.asset_cache_ttl,
                 flush_interval=self.config.asset_flush_interval,
                 batch_max=self.config.asset_batch_max,
+                event_publisher=self.publisher,
             )
             await self.asset_submitter.start()
 
