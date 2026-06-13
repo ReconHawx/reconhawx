@@ -6,7 +6,7 @@ globs: ["src/ct-monitor/app/*.py", "src/ct-monitor/**/*.py", "src/ct-monitor/tes
 
 ## Overview
 
-The CT Monitor Service detects typosquatting from newly issued SSL/TLS certificates. It consumes an aggregated certificate stream from **self-hosted [certstream-server](https://github.com/CaliDog/certstream-server)** via [certstream-python](https://github.com/CaliDog/certstream-python), matches domains against protected programs, and publishes alerts to NATS.
+The CT Monitor Service watches newly issued SSL/TLS certificates for two independent per-program features: **typosquat detection** (`ct_monitoring_enabled` — protected-domain matching → NATS alerts) and **asset monitoring** (`ct_asset_monitoring_enabled` — program-scope matching → subdomain ingest via `POST /assets`). It consumes an aggregated certificate stream from **self-hosted [certstream-server](https://github.com/CaliDog/certstream-server)** via [certstream-python](https://github.com/CaliDog/certstream-python).
 
 ## Core Architecture
 
@@ -16,16 +16,18 @@ certstream-server (kubernetes/base/certstream-server)
 CertStreamConsumer (certstream_consumer.py) — certstream-python in a thread + asyncio queue
     ↓ CertificateInfo
 CTMonitorService (main.py)
-├── DnstwistVariationGenerator — PRIMARY: O(1) variation lookup
-├── protected_domain_similarity.py — keywords + API-aligned similarity
-└── CTAlertPublisher — NATS JetStream
+├── DnstwistVariationGenerator — PRIMARY: O(1) variation lookup (typosquat)
+├── protected_domain_similarity.py — keywords + API-aligned similarity (typosquat)
+├── scope_matcher.py — program scope matching (asset monitoring)
+├── CTAlertPublisher — NATS JetStream (typosquat alerts)
+└── CTAssetSubmitter (asset_submitter.py) — batched POST /assets (asset monitoring)
 ```
 
 ## Infrastructure
 
 | Component | Path | Notes |
 |-----------|------|--------|
-| certstream-server | [`kubernetes/base/certstream-server/`](kubernetes/base/certstream-server/) | **0 replicas by default**; ct-monitor scales to **1** when any program has `ct_monitoring_enabled`, back to **0** when none |
+| certstream-server | [`kubernetes/base/certstream-server/`](kubernetes/base/certstream-server/) | **0 replicas by default**; ct-monitor scales to **1** when any program has `ct_monitoring_enabled` **or** `ct_asset_monitoring_enabled`, back to **0** when none |
 | ct-monitor | [`kubernetes/base/ct-monitor/`](kubernetes/base/ct-monitor/) | `CERTSTREAM_URL` from `service-config`; patches `deployments/scale` via [`certstream_k8s.py`](../../src/ct-monitor/app/certstream_k8s.py) + [`ct-monitor-rbac.yaml`](../../kubernetes/base/ct-monitor/ct-monitor-rbac.yaml) |
 | Image | `ghcr.io/.../certstream-server:1.6.0` | **Independent** of reconhawx `APP_VERSION` — see [`third-party/certstream-server/VERSION`](../../third-party/certstream-server/VERSION) |
 
@@ -33,10 +35,10 @@ CTMonitorService (main.py)
 
 ### CTMonitorService (`main.py`)
 - Orchestrates lifecycle, HTTP control API, stats
-- **CertStream ingestion** only when `≥1` program has `ct_monitoring_enabled` (`_reconcile_ct_ingestion` every 2s)
+- **CertStream ingestion** only when `≥1` program has `ct_monitoring_enabled` **or** `ct_asset_monitoring_enabled` (`_reconcile_ct_ingestion` every 2s)
 - **certstream-server replicas** scaled 0/1 in the same reconcile loop (scale up → HTTP ready poll → start consumer; scale down after stop consumer)
 - **Pod auto-start**: lifespan probes API then `start()`; set `CT_MONITOR_AUTO_START=false` to idle until `POST /start`
-- Program config reload: API `sync_ct_monitor_program_config()` → `POST /refresh-domains`
+- Program config reload: API `sync_ct_monitor_program_config()` → `POST /refresh-domains` (triggered by CT flag, protected-domain, or **scope** field changes)
 
 ### CertStreamConsumer (`certstream_consumer.py`)
 - **Primary** ingress: `certstream.listen_for_events` pattern via `CertStreamClient` in a daemon thread
@@ -63,10 +65,17 @@ certstream-server (all CT logs)
 CertStreamConsumer (all TLDs by default; optional CT_INGESTION_TLD_FILTER_ENABLED)
     ↓
 CTMonitorService._on_certificate()
-    → variation match → keyword/similarity → NATS events.typosquat.ct_alert
-    ↓
-event-handler
+    ├─ typosquat: variation match → keyword/similarity → NATS events.typosquat.ct_alert → event-handler
+    └─ asset: scope match (scope_matcher) → CTAssetSubmitter → POST /assets (subdomain, no IPs)
 ```
+
+### CT asset monitoring (scope-based subdomain discovery)
+
+- Per-program flag **`programs.ct_asset_monitoring_enabled`** (separate from typosquat's `ct_monitoring_enabled`); UI toggle on the program **Scope** tab ("CT asset discovery").
+- [`scope_matcher.py`](../../src/ct-monitor/app/scope_matcher.py) ports the API's `utils/scope_patterns.py` matching (structured `scope_domains`/`out_of_scope_domains` + legacy regex) with **regexes precompiled per config refresh**; keep semantics in sync with the API module.
+- `domain_config_builder.build_asset_match_states` builds `ProgramAssetMatchState` (program id + `CompiledScopeMatcher`); an **apex prefilter index** (registrable apex → programs, via `domain_labels.extract_apex_domain`) keeps the per-SAN hot path to one tldextract lookup.
+- Asset matching in `match_certificate_sync` runs **before** the typosquat skip rules (`is_legitimate_subdomain` skips exactly what asset monitoring wants); wildcard hostnames are matched/submitted with the leading `*.` stripped. Returns a 4th element: `[(hostname, program_name, program_id), …]`.
+- [`asset_submitter.py`](../../src/ct-monitor/app/asset_submitter.py): Redis dedup (`ct_monitor:asset_seen:{program_id}:{hostname}`, `CT_ASSET_CACHE_TTL` default 24h, keys set **only after successful POST**), per-program buffers flushed every `CT_ASSET_FLUSH_INTERVAL` (15s) or at `CT_ASSET_BATCH_MAX` (200) → `POST /assets` `{"program_id", "assets": {"subdomain": [{"name": …}]}}`. **No DNS resolution** — the API inserts subdomains whether or not they resolve and re-checks scope server-side (authoritative).
 
 ## Configuration (`config.py`)
 
@@ -84,13 +93,15 @@ event-handler
 
 **Variations:** unlimited dnstwist permutations per protected domain (no cap unless `max_variations` passed explicitly)
 
+**Asset monitoring:** `CT_ASSET_CACHE_TTL` (default 86400), `CT_ASSET_FLUSH_INTERVAL` (default 15), `CT_ASSET_BATCH_MAX` (default 200)
+
 **Runtime:** `CT_STATS_INTERVAL` (overridable via `ct_monitor_runtime` in DB)
 
 **HTTP:** `CT_MONITOR_HTTP_HOST`, `CT_MONITOR_HTTP_PORT` (default 8002)
 
 ## Protected Domains Loading
 
-`GET /programs`, `GET /programs/{name}` for `ct_monitoring_enabled` programs; rebuild variations on each reload. Triggers: ct-monitor `start()`, and API `sync_ct_monitor_program_config()` → `POST /refresh-domains` when CT-related program settings change (no periodic polling).
+`GET /programs`, `GET /programs/{name}` for `ct_monitoring_enabled` programs (typosquat config) and `ct_asset_monitoring_enabled` programs (scope matchers from `id` + scope fields); rebuild variations and scope matchers on each reload. Triggers: ct-monitor `start()`, and API `sync_ct_monitor_program_config()` → `POST /refresh-domains` when CT-related program settings change — including scope field edits while asset monitoring is on (no periodic polling).
 
 ## Matching Algorithm
 
@@ -142,7 +153,12 @@ Unchanged: NATS `events.typosquat.ct_alert`, priority from match type/score.
 - `kubectl get pods -l app=certstream-server`; `curl http://certstream:4000/example.json`
 - ct-monitor `/status`: `certstream_url`, `certstream_scale_enabled`, `certstream_replicas_desired`
 - `kubectl get deploy certstream-server -n reconhawx` — expect 0/0 when no CT programs, 1/1 when enabled
-- At least one program with `ct_monitoring_enabled`
+- At least one program with `ct_monitoring_enabled` or `ct_asset_monitoring_enabled`
+
+### No assets submitted
+- `/status`: `any_program_ct_asset_monitoring_enabled`, `programs_asset_enabled` (apex roots per program), `asset_matches`, `assets_submitted`, `asset_dedup_hits`, `post_failures`
+- Program needs valid in-scope rules (`scope_domains` or legacy `domain_regex`) — programs without rules or an id are skipped at refresh
+- API re-checks scope on ingest; out-of-scope hostnames count as `out_of_scope` in the assets job, not inserts
 
 ### No alerts
 - Protected domains loaded (`/status` → `protected_domains.total > 0`)
@@ -161,6 +177,8 @@ src/ct-monitor/app/
 ├── certstream_consumer.py
 ├── variation_generator.py
 ├── protected_domain_similarity.py
+├── scope_matcher.py
+├── asset_submitter.py
 ├── alert_publisher.py
 └── models.py
 

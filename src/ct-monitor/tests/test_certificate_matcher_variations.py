@@ -36,7 +36,7 @@ def test_match_certificate_cross_tld_variation(mock_fuzzer_class):
         issuer="O",
         issuer_cn="CN",
     )
-    pending, count, _skipped = match_certificate_sync(cert, snap)
+    pending, count, _skipped, _assets = match_certificate_sync(cert, snap)
     assert count == 1
     assert len(pending) == 1
     match, program = pending[0]
@@ -74,7 +74,7 @@ def test_match_certificate_prefix_does_not_match_variation(mock_fuzzer_class):
         program_match_states={},
     )
     cert = CertificateInfo(domains=["my-d0main.net"], issuer="O", issuer_cn="CN")
-    pending, count, _skipped = match_certificate_sync(cert, snap)
+    pending, count, _skipped, _assets = match_certificate_sync(cert, snap)
     assert count == 0
     assert pending == []
 
@@ -101,7 +101,7 @@ def test_match_certificate_keyword_with_typo_label():
         issuer="O",
         issuer_cn="CN",
     )
-    pending, count, _skipped = match_certificate_sync(cert, snap)
+    pending, count, _skipped, _assets = match_certificate_sync(cert, snap)
     assert count == 1
     match, program = pending[0]
     assert program == "prog1"
@@ -182,7 +182,7 @@ def test_match_certificate_keyword_via_automaton_first_program_wins():
         issuer="O",
         issuer_cn="CN",
     )
-    pending, count, _skipped = match_certificate_sync(cert, snap)
+    pending, count, _skipped, _assets = match_certificate_sync(cert, snap)
     assert count == 1
     match, program = pending[0]
     assert program == "prog1"

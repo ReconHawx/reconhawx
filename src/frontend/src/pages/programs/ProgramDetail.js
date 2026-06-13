@@ -107,6 +107,7 @@ function ProgramDetail() {
   });
   const [savingFiltering, setSavingFiltering] = useState(false);
   const [savingCtMonitoring, setSavingCtMonitoring] = useState(false);
+  const [savingCtAssetMonitoring, setSavingCtAssetMonitoring] = useState(false);
   const [ctMonitorProgram, setCtMonitorProgram] = useState({
     similarity_threshold: ''
   });
@@ -420,6 +421,25 @@ function ProgramDetail() {
       setError('Failed to save: ' + (err.response?.data?.detail || err.message));
     } finally {
       setSavingCtMonitoring(false);
+    }
+  };
+
+  const handleCtAssetMonitoringToggle = async (enabled) => {
+    try {
+      setSavingCtAssetMonitoring(true);
+      setError('');
+      await programAPI.update(programName, { ct_asset_monitoring_enabled: enabled }, true);
+      setSuccess(
+        enabled
+          ? 'CT asset monitoring enabled for this program'
+          : 'CT asset monitoring disabled for this program'
+      );
+      await loadProgram();
+    } catch (err) {
+      console.error('Failed to save CT asset monitoring setting:', err);
+      setError('Failed to save: ' + (err.response?.data?.detail || err.message));
+    } finally {
+      setSavingCtAssetMonitoring(false);
     }
   };
 
@@ -1193,6 +1213,25 @@ function ProgramDetail() {
             <Tab eventKey="scope" title="Scope">
           <Card className="rh-elevated-card mb-4">
             <Card.Header className="rh-card-header-table">
+              <h5 className="mb-0">CT asset discovery</h5>
+            </Card.Header>
+            <Card.Body>
+              <Form.Check
+                type="switch"
+                id="ct-asset-monitoring-enabled"
+                label="Discover in-scope subdomains from certificate transparency logs"
+                checked={!!program.ct_asset_monitoring_enabled}
+                disabled={!isUserManager || savingCtAssetMonitoring}
+                onChange={(e) => handleCtAssetMonitoringToggle(e.target.checked)}
+              />
+              <p className="text-muted small mb-0 mt-2">
+                Matches certificate hostnames from CT logs against the scope patterns below and adds them as subdomain assets, whether or not they resolve to an IP. Toggling updates live config within seconds.
+              </p>
+            </Card.Body>
+          </Card>
+
+          <Card className="rh-elevated-card mb-4">
+            <Card.Header className="rh-card-header-table">
               <div className="d-flex justify-content-between align-items-center">
                 <h5 className="mb-0">
                   In-scope domain patterns
@@ -1539,7 +1578,7 @@ function ProgramDetail() {
                   onChange={(e) => handleCtMonitoringToggle(e.target.checked)}
                 />
                 <p className="text-muted small mb-0 mt-2">
-                  The CT monitor service stays up for config reloads; it only pulls from CT log providers while at least one program has this enabled. Toggling updates live config within seconds.
+                  The CT monitor service stays up for config reloads; it only pulls from CT log providers while at least one program has CT monitoring enabled. Toggling updates live config within seconds.
                 </p>
               </Card.Body>
             </Card>

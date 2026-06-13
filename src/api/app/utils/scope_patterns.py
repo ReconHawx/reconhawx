@@ -2,6 +2,9 @@
 
 Patterns use dot-separated labels; a label may be ``*`` (wildcard label).
 Legacy regex arrays are matched separately with re.match.
+
+Keep matching semantics in sync with ct-monitor's precompiled port in
+``src/ct-monitor/app/scope_matcher.py`` (CT asset monitoring).
 """
 
 from __future__ import annotations

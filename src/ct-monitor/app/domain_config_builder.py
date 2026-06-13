@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 import program_ct_settings
 from protected_domain_similarity import PreparedProtected, prepare_protected
+from scope_matcher import CompiledScopeMatcher
 from variation_generator import DnstwistVariationGenerator
 
 try:
@@ -54,6 +55,30 @@ class ProgramCTMatchState:
             )
 
 
+@dataclass
+class ProgramAssetMatchState:
+    """Per-program scope matcher for CT asset (subdomain) discovery."""
+
+    program_name: str
+    program_id: str
+    matcher: CompiledScopeMatcher
+
+
+def build_asset_apex_index(
+    asset_match_states: Dict[str, ProgramAssetMatchState],
+) -> Dict[str, List[str]]:
+    """
+    Apex prefilter: registrable apex → program names whose scope rules can
+    match under it. One tldextract lookup per SAN replaces evaluating every
+    program's full scope rule set.
+    """
+    index: Dict[str, List[str]] = {}
+    for program_name, state in asset_match_states.items():
+        for apex in state.matcher.apex_roots:
+            index.setdefault(apex, []).append(program_name)
+    return index
+
+
 def build_keyword_automaton(
     program_match_states: Dict[str, ProgramCTMatchState],
 ) -> Optional[Any]:
@@ -90,6 +115,8 @@ class MatchingSnapshot:
     variation_generator: DnstwistVariationGenerator
     program_match_states: Dict[str, ProgramCTMatchState]
     keyword_automaton: Optional[Any] = None
+    asset_match_states: Dict[str, ProgramAssetMatchState] = field(default_factory=dict)
+    asset_apex_index: Dict[str, List[str]] = field(default_factory=dict)
 
     def find_keywords(self, domain_lower: str) -> Optional[Set[str]]:
         """
@@ -100,6 +127,10 @@ class MatchingSnapshot:
         if self.keyword_automaton is None:
             return None
         return {kw for _, kw in self.keyword_automaton.iter(domain_lower)}
+
+    def asset_candidate_programs(self, apex: str) -> List[str]:
+        """Program names whose asset scope rules may match a SAN with this apex."""
+        return self.asset_apex_index.get(apex, [])
 
 
 @dataclass
@@ -115,20 +146,78 @@ class DomainConfigBundle:
     total_domains: int
     total_variations: int
     keyword_automaton: Optional[Any] = None
+    # CT asset monitoring (scope-based subdomain discovery)
+    any_typosquat_enabled: bool = False
+    any_asset_enabled: bool = False
+    asset_match_states: Dict[str, ProgramAssetMatchState] = field(default_factory=dict)
+    asset_apex_index: Dict[str, List[str]] = field(default_factory=dict)
+    programs_asset_enabled_detail: List[Dict[str, Any]] = field(default_factory=list)
 
     def matching_snapshot(self) -> MatchingSnapshot:
         return MatchingSnapshot(
             variation_generator=self.variation_generator,
             program_match_states=dict(self.program_match_states),
             keyword_automaton=self.keyword_automaton,
+            asset_match_states=dict(self.asset_match_states),
+            asset_apex_index=dict(self.asset_apex_index),
         )
+
+
+def build_asset_match_states(
+    loaded: List[Tuple[str, Any]],
+) -> Dict[str, ProgramAssetMatchState]:
+    """Scope matchers for programs with ct_asset_monitoring_enabled."""
+    states: Dict[str, ProgramAssetMatchState] = {}
+    for program_name, program_data in loaded:
+        if not program_data.get("ct_asset_monitoring_enabled"):
+            continue
+        program_id = str(program_data.get("id") or "").strip()
+        if not program_id:
+            logger.warning(
+                "Program '%s' has ct_asset_monitoring_enabled but no id; skipping",
+                program_name,
+            )
+            continue
+        matcher = CompiledScopeMatcher(
+            scope_domains=program_data.get("scope_domains") or [],
+            out_of_scope_domains=program_data.get("out_of_scope_domains") or [],
+            domain_regex=program_data.get("domain_regex") or [],
+            out_of_scope_regex=program_data.get("out_of_scope_regex") or [],
+        )
+        if not matcher.has_in_scope_rules:
+            logger.warning(
+                "Program '%s' has ct_asset_monitoring_enabled but no valid in-scope rules; skipping",
+                program_name,
+            )
+            continue
+        states[program_name] = ProgramAssetMatchState(
+            program_name=program_name,
+            program_id=program_id,
+            matcher=matcher,
+        )
+        logger.info(
+            "  ✓ Program '%s': CT asset monitoring on (%s apex roots)",
+            program_name,
+            len(matcher.apex_roots),
+        )
+    return states
 
 
 def build_domain_config_from_loaded(
     loaded: List[Tuple[str, Any]],
 ) -> DomainConfigBundle:
     """Sync builder — run via asyncio.to_thread from main."""
-    any_ct_enabled = any(bool(pd.get("ct_monitoring_enabled")) for _, pd in loaded)
+    any_typosquat_enabled = any(
+        bool(pd.get("ct_monitoring_enabled")) for _, pd in loaded
+    )
+    any_asset_enabled = any(
+        bool(pd.get("ct_asset_monitoring_enabled")) for _, pd in loaded
+    )
+    # Gates CertStream ingestion / certstream-server scaling: either feature keeps it on.
+    any_ct_enabled = any_typosquat_enabled or any_asset_enabled
+
+    asset_match_states = build_asset_match_states(loaded)
+    asset_apex_index = build_asset_apex_index(asset_match_states)
 
     if program_ct_settings.ingestion_tld_filter_enabled():
         union_tlds: Set[str] = set()
@@ -137,6 +226,13 @@ def build_domain_config_from_loaded(
                 continue
             ptlds, _ = program_ct_settings.program_tlds_and_similarity(program_data)
             union_tlds |= ptlds
+        # Asset monitoring must see certs for its scope apexes even when the
+        # legacy ingestion TLD filter is enabled.
+        for state in asset_match_states.values():
+            for apex in state.matcher.apex_roots:
+                tld = apex.rsplit(".", 1)[-1] if "." in apex else ""
+                if tld:
+                    union_tlds.add(tld)
         if any_ct_enabled:
             ingestion_tld_union = (
                 union_tlds if union_tlds else program_ct_settings.default_tld_set()
@@ -235,6 +331,15 @@ def build_domain_config_from_loaded(
         )
     prog_ct_rows.sort(key=lambda r: r["program_name"])
 
+    prog_asset_rows: List[Dict[str, Any]] = [
+        {
+            "program_name": state.program_name,
+            "apex_roots": sorted(state.matcher.apex_roots),
+        }
+        for state in asset_match_states.values()
+    ]
+    prog_asset_rows.sort(key=lambda r: r["program_name"])
+
     return DomainConfigBundle(
         any_ct_enabled=any_ct_enabled,
         ingestion_tld_union=ingestion_tld_union,
@@ -245,4 +350,9 @@ def build_domain_config_from_loaded(
         total_domains=total_domains,
         total_variations=total_variations,
         keyword_automaton=build_keyword_automaton(program_match_states),
+        any_typosquat_enabled=any_typosquat_enabled,
+        any_asset_enabled=any_asset_enabled,
+        asset_match_states=asset_match_states,
+        asset_apex_index=asset_apex_index,
+        programs_asset_enabled_detail=prog_asset_rows,
     )

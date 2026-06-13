@@ -5,7 +5,7 @@ from datetime import datetime
 from models.base import utcnow
 import time
 from uuid import UUID
-from sqlalchemy import desc, asc
+from sqlalchemy import desc, asc, or_
 from db import get_db_session
 from services.protected_domain_similarity_service import ProtectedDomainSimilarityService
 from services.typosquat_auto_resolve_service import TyposquatAutoResolveService
@@ -67,6 +67,7 @@ class ProgramRepository(ProgramAccessMixin):
                     typosquat_filtering_settings=program_data.get('typosquat_filtering_settings', {}),
                     ct_monitor_program_settings=program_data.get('ct_monitor_program_settings') or {},
                     ct_monitoring_enabled=bool(program_data.get('ct_monitoring_enabled', False)),
+                    ct_asset_monitoring_enabled=bool(program_data.get('ct_asset_monitoring_enabled', False)),
                 )
                 
                 db.add(program)
@@ -132,6 +133,7 @@ class ProgramRepository(ProgramAccessMixin):
                     'ct_monitor_program_settings': getattr(program, 'ct_monitor_program_settings', None) or {},
                     'ai_analysis_settings': getattr(program, 'ai_analysis_settings', None) or {},
                     'ct_monitoring_enabled': bool(getattr(program, 'ct_monitoring_enabled', False)),
+                    'ct_asset_monitoring_enabled': bool(getattr(program, 'ct_asset_monitoring_enabled', False)),
                     'created_at': program.created_at.isoformat() if program.created_at else None,
                     'updated_at': program.updated_at.isoformat() if program.updated_at else None
                 }
@@ -172,6 +174,7 @@ class ProgramRepository(ProgramAccessMixin):
                     'ct_monitor_program_settings': getattr(program, 'ct_monitor_program_settings', None) or {},
                     'ai_analysis_settings': getattr(program, 'ai_analysis_settings', None) or {},
                     'ct_monitoring_enabled': bool(getattr(program, 'ct_monitoring_enabled', False)),
+                    'ct_asset_monitoring_enabled': bool(getattr(program, 'ct_asset_monitoring_enabled', False)),
                     'created_at': program.created_at.isoformat() if program.created_at else None,
                     'updated_at': program.updated_at.isoformat() if program.updated_at else None
                 }
@@ -262,6 +265,7 @@ class ProgramRepository(ProgramAccessMixin):
                         'ct_monitor_program_settings': getattr(p, 'ct_monitor_program_settings', None) or {},
                         'ai_analysis_settings': getattr(p, 'ai_analysis_settings', None) or {},
                         'ct_monitoring_enabled': bool(getattr(p, 'ct_monitoring_enabled', False)),
+                        'ct_asset_monitoring_enabled': bool(getattr(p, 'ct_asset_monitoring_enabled', False)),
                         'created_at': p.created_at.isoformat() if p.created_at else None,
                         'updated_at': p.updated_at.isoformat() if p.updated_at else None
                     }
@@ -273,11 +277,16 @@ class ProgramRepository(ProgramAccessMixin):
 
     @staticmethod
     async def any_ct_monitoring_enabled() -> bool:
-        """True if at least one program has CT monitoring enabled."""
+        """True if at least one program has CT monitoring (typosquat or asset) enabled."""
         async with get_db_session() as db:
             row = (
                 db.query(Program.id)
-                .filter(Program.ct_monitoring_enabled.is_(True))
+                .filter(
+                    or_(
+                        Program.ct_monitoring_enabled.is_(True),
+                        Program.ct_asset_monitoring_enabled.is_(True),
+                    )
+                )
                 .limit(1)
                 .first()
             )
@@ -489,6 +498,8 @@ class ProgramRepository(ProgramAccessMixin):
                         "typosquat_filtering_settings": getattr(program, 'typosquat_filtering_settings', None) or {},
                         "ct_monitor_program_settings": getattr(program, 'ct_monitor_program_settings', None) or {},
                         "ai_analysis_settings": getattr(program, 'ai_analysis_settings', None) or {},
+                        "ct_monitoring_enabled": bool(getattr(program, 'ct_monitoring_enabled', False)),
+                        "ct_asset_monitoring_enabled": bool(getattr(program, 'ct_asset_monitoring_enabled', False)),
                         "created_at": program.created_at.isoformat() if program.created_at else None,
                         "updated_at": program.updated_at.isoformat() if program.updated_at else None,
                         "domain_count": 0,  # Asset counts are available via separate endpoint (common_assets_repo.py)

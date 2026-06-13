@@ -23,6 +23,9 @@ _SHADOW_MODULES = (
     "certstream_k8s",
     "domain_config_builder",
     "certificate_matcher",
+    "domain_labels",
+    "scope_matcher",
+    "asset_submitter",
 )
 
 

@@ -8,6 +8,7 @@ import logging
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from domain_config_builder import MatchingSnapshot, ProgramCTMatchState
+from domain_labels import extract_apex_domain
 from models import CertificateInfo, MatchResult
 from protected_domain_similarity import (
     PreparedTypo,
@@ -17,6 +18,42 @@ from protected_domain_similarity import (
 )
 
 logger = logging.getLogger(__name__)
+
+# (hostname, program_name, program_id) for an in-scope SAN (CT asset monitoring)
+AssetMatch = Tuple[str, str, str]
+
+
+def _match_assets_for_domain(
+    domain_lower: str,
+    snap: MatchingSnapshot,
+    seen: Set[Tuple[str, str]],
+    out: List[AssetMatch],
+) -> None:
+    """
+    Scope-based asset matching for one SAN.
+
+    Runs before the typosquat skip rules: legitimate subdomains of protected
+    domains are exactly what asset monitoring wants to discover. Wildcard SANs
+    are matched and submitted as the hostname after the leading ``*.``.
+    """
+    host = domain_lower
+    if host.startswith("*."):
+        host = host[2:]
+    if not host or "." not in host:
+        return
+    apex = extract_apex_domain(host)
+    if not apex:
+        return
+    for program_name in snap.asset_candidate_programs(apex):
+        key = (host, program_name)
+        if key in seen:
+            continue
+        state = snap.asset_match_states.get(program_name)
+        if state is None:
+            continue
+        if state.matcher.matches(host):
+            seen.add(key)
+            out.append((host, program_name, state.program_id))
 
 
 def _cert_metadata_details(cert_info: CertificateInfo) -> Dict[str, Any]:
@@ -114,20 +151,28 @@ def _match_keyword_or_similarity(
 def match_certificate_sync(
     cert_info: CertificateInfo,
     snap: MatchingSnapshot,
-) -> Tuple[List[Tuple[MatchResult, str]], int, int]:
+) -> Tuple[List[Tuple[MatchResult, str]], int, int, List[AssetMatch]]:
     """
     Match one certificate against a snapshot.
 
-    Returns (pending alerts, match count, similarity_skipped count).
+    Returns (pending alerts, match count, similarity_skipped count, asset matches).
     """
     pending: List[Tuple[MatchResult, str]] = []
     matches_found = 0
     similarity_skipped = 0
     vg = snap.variation_generator
     alerted_domains: set[str] = set()
+    asset_matches: List[AssetMatch] = []
+    asset_seen: Set[Tuple[str, str]] = set()
 
     for domain in cert_info.domains:
         domain_lower = domain.lower().strip()
+
+        # Asset scope matching runs before the typosquat skip rules below:
+        # is_legitimate_subdomain skips exactly the in-scope hostnames asset
+        # monitoring is meant to discover.
+        if snap.asset_match_states:
+            _match_assets_for_domain(domain_lower, snap, asset_seen, asset_matches)
 
         if domain_lower in alerted_domains:
             continue
@@ -202,4 +247,4 @@ def match_certificate_sync(
                     "Error processing certificate for program %s: %s", program_name, e
                 )
 
-    return pending, matches_found, similarity_skipped
+    return pending, matches_found, similarity_skipped, asset_matches

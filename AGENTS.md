@@ -10,7 +10,7 @@ Use this file as a **first stop** for how the repo is laid out and how to run co
 | Frontend | React UI | [`src/frontend/`](src/frontend/) |
 | Runner | Workflow and batch job orchestration | [`src/runner/`](src/runner/) |
 | Worker | Workflow task worker (dispatched by runner) | [`src/worker/`](src/worker/) |
-| CT-Monitor | Certificate transparency log monitoring | [`src/ct-monitor/`](src/ct-monitor/) |
+| CT-Monitor | Certificate transparency log monitoring (per-program typosquat alerts and scope-based subdomain asset discovery) | [`src/ct-monitor/`](src/ct-monitor/) |
 | certstream-server | In-cluster CT log aggregator (CaliDog certstream-server) | [`src/certstream-server/`](src/certstream-server/) |
 | Event handler | Event consumers / handlers | [`src/event-handler/`](src/event-handler/) |
 | Migrations | PostgreSQL schema migrations (SQL + CLI) | [`src/migrations/`](src/migrations/) |
