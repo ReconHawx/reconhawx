@@ -11,7 +11,7 @@ from auth.dependencies import (
     get_user_accessible_programs,
     require_internal_service_identity,
 )
-from services.ct_monitor_client import sync_ct_monitor_program_config
+from services.ct_monitor_client import schedule_ct_monitor_program_config_sync
 from models.user_postgres import UserResponse
 from services.hackerone_service import HackerOneService
 from services.yeswehack_service import YesWeHackService
@@ -118,7 +118,7 @@ async def create_program(
             program_dict.get("ct_monitoring_enabled")
             or program_dict.get("ct_asset_monitoring_enabled")
         ):
-            await sync_ct_monitor_program_config()
+            schedule_ct_monitor_program_config_sync(reason="program create")
 
         if program_id is None:
              # This might happen if validation (like scope check) fails in the repo
@@ -522,7 +522,7 @@ async def update_program(
             or existing_program.get("ct_asset_monitoring_enabled")
         )
         if update_data.keys() & ct_related and (ct_typosquat_active or ct_asset_active):
-            await sync_ct_monitor_program_config()
+            schedule_ct_monitor_program_config_sync(reason=f"program update {final_program_name}")
         
         logger.info(f"Successfully updated program: {final_program_name}")
         response: Dict[str, Any] = {

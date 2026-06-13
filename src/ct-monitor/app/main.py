@@ -146,6 +146,11 @@ class CTMonitorService:
         self._any_program_ct_asset_monitoring_enabled: bool = False
         self._any_program_ct_typosquat_enabled: bool = False
         self._programs_asset_enabled_detail: List[Dict[str, Any]] = []
+        # Background config refresh (HTTP /refresh-domains)
+        self._config_refresh_in_progress: bool = False
+        self._config_refresh_requested: bool = False
+        self._config_refresh_task: Optional[asyncio.Task] = None
+        self._last_config_refresh_error: Optional[str] = None
 
     async def _fetch_runtime_settings_from_api(self) -> None:
         headers: Dict[str, str] = {}
@@ -446,6 +451,9 @@ class CTMonitorService:
             },
             "programs_ct_enabled": list(self._programs_ct_enabled_detail),
             "programs_asset_enabled": list(self._programs_asset_enabled_detail),
+            "config_refresh_in_progress": self._config_refresh_in_progress,
+            "config_refresh_requested": self._config_refresh_requested,
+            "last_config_refresh_error": self._last_config_refresh_error,
         }
     
     async def _refresh_protected_domains(self):
@@ -559,14 +567,55 @@ class CTMonitorService:
                 ):
                     logger.info("CT ingestion TLD union changed; restarting CT provider")
                     await self._stop_ct_ingestion()
+
+                self._last_config_refresh_error = None
         
         except aiohttp.ClientError as e:
+            self._last_config_refresh_error = str(e)
             logger.error(f"HTTP error refreshing protected domains: {e}")
         except Exception as e:
+            self._last_config_refresh_error = str(e)
             logger.error(f"Error refreshing protected domains: {e}")
 
+    def request_config_refresh(self) -> bool:
+        """
+        Schedule a coalesced background config reload.
+        Returns True when a new worker task was started, False when coalesced into an in-flight refresh.
+        """
+        if not self._running:
+            raise RuntimeError("CT monitor service is not running")
+
+        self._config_refresh_requested = True
+        if self._config_refresh_task is not None and not self._config_refresh_task.done():
+            logger.debug("Config refresh already in progress; coalescing request")
+            return False
+
+        loop = asyncio.get_running_loop()
+        self._config_refresh_task = loop.create_task(self._config_refresh_worker())
+        return True
+
+    async def _config_refresh_worker(self) -> None:
+        """Run coalesced background config reloads for HTTP /refresh-domains."""
+        while True:
+            self._config_refresh_requested = False
+            self._config_refresh_in_progress = True
+            try:
+                await self._refresh_protected_domains()
+            except Exception as e:
+                self._last_config_refresh_error = str(e)
+                logger.exception("Background config refresh failed: %s", e)
+            finally:
+                self._config_refresh_in_progress = False
+
+            if self._config_refresh_requested:
+                logger.info("Config refresh rerun requested; refreshing again")
+                continue
+            break
+
+        self._config_refresh_task = None
+
     async def refresh_domains_now(self) -> None:
-        """Reload program CT config from API while the service is running."""
+        """Reload program CT config from API while the service is running (blocking)."""
         if not self._running:
             raise RuntimeError("CT monitor service is not running")
         await self._refresh_protected_domains()
@@ -874,7 +923,7 @@ async def start_monitoring():
 
 @http_app.post("/refresh-domains")
 async def refresh_domains():
-    """Reload program CT config from the API (running service only)."""
+    """Schedule reload of program CT config from the API (running service only)."""
     service = get_service()
     if not service.is_running():
         return JSONResponse(
@@ -882,12 +931,20 @@ async def refresh_domains():
             content={"status": "error", "message": "Service is not running"},
         )
     try:
-        await service.refresh_domains_now()
+        started = service.request_config_refresh()
         return JSONResponse(
-            content={"status": "success", "message": "Protected domains reloaded from API"}
+            status_code=202,
+            content={
+                "status": "accepted",
+                "message": (
+                    "Protected domains reload scheduled"
+                    if started
+                    else "Protected domains reload already in progress; coalesced"
+                ),
+            },
         )
     except Exception as e:
-        logger.error(f"Error refreshing domains: {e}")
+        logger.error(f"Error scheduling domain refresh: {e}")
         return JSONResponse(
             status_code=500,
             content={"status": "error", "message": str(e)},
