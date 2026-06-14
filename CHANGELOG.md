@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.47.0](https://github.com/ReconHawx/reconhawx/compare/v0.46.0...v0.47.0) (2026-06-14)
+
+
+### Features
+
+* **ct-monitor:** add durable CT monitoring logs ([fc84f75](https://github.com/ReconHawx/reconhawx/commit/fc84f7577495703fb973a421878b199bfe02955b))
+
+
+### Bug Fixes
+
+* **api:** stop program CT settings saves from hanging on monitor reload ([b208bf6](https://github.com/ReconHawx/reconhawx/commit/b208bf6d2ded4526746d5e5923768418e38f2e75))
+
 ## [0.46.0](https://github.com/ReconHawx/reconhawx/compare/v0.45.1...v0.46.0) (2026-06-13)
 
 
