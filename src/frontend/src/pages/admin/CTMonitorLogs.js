@@ -83,6 +83,26 @@ function DetailBlock({ item }) {
   );
 }
 
+function TruncatedValue({ value, as = 'span', maxWidth = '12rem' }) {
+  const Component = as;
+  const displayValue = value || 'N/A';
+  return (
+    <Component
+      title={String(displayValue)}
+      style={{
+        display: 'inline-block',
+        maxWidth,
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap',
+        verticalAlign: 'bottom',
+      }}
+    >
+      {displayValue}
+    </Component>
+  );
+}
+
 export function CTMonitorLogsInner({ embedded = false }) {
   const [items, setItems] = useState([]);
   const [pagination, setPagination] = useState({
@@ -295,8 +315,24 @@ export function CTMonitorLogsInner({ embedded = false }) {
             Refresh
           </Button>
         </Card.Header>
-        <Card.Body className="p-0">
-          <Table striped hover responsive className="mb-0 align-middle">
+        <Card.Body className="p-0" style={{ overflowX: 'auto', maxWidth: '100%' }}>
+          <Table
+            striped
+            hover
+            className="mb-0 align-middle"
+            style={{ tableLayout: 'fixed', minWidth: '1120px', width: '100%' }}
+          >
+            <colgroup>
+              <col style={{ width: '7.5rem' }} />
+              <col style={{ width: '7rem' }} />
+              <col style={{ width: '7rem' }} />
+              <col style={{ width: '9rem' }} />
+              <col style={{ width: '19%' }} />
+              <col style={{ width: '14%' }} />
+              <col style={{ width: '8.5rem' }} />
+              <col style={{ width: '12rem' }} />
+              <col style={{ width: '5.5rem' }} />
+            </colgroup>
             <thead>
               <tr>
                 <th>Time</th>
@@ -321,10 +357,12 @@ export function CTMonitorLogsInner({ embedded = false }) {
                 items.map((item) => (
                   <React.Fragment key={item.id}>
                     <tr>
-                      <td style={{ whiteSpace: 'nowrap' }}>
+                      <td className="text-nowrap">
                         {formatDate(item.occurred_at, 'MMM dd, HH:mm')}
                       </td>
-                      <td>{item.program_name || <span className="text-muted">Unknown</span>}</td>
+                      <td>
+                        <TruncatedValue value={item.program_name || 'Unknown'} maxWidth="6.25rem" />
+                      </td>
                       <td>
                         <Badge bg={EVENT_VARIANTS[item.event_type] || 'secondary'}>
                           {item.event_type}
@@ -335,18 +373,32 @@ export function CTMonitorLogsInner({ embedded = false }) {
                           {item.outcome}
                         </Badge>
                       </td>
-                      <td><code>{item.domain || 'N/A'}</code></td>
-                      <td>{item.protected_domain ? <code>{item.protected_domain}</code> : <span className="text-muted">N/A</span>}</td>
                       <td>
-                        <div>{item.match_type || <span className="text-muted">N/A</span>}</div>
+                        <TruncatedValue value={item.domain} as="code" maxWidth="100%" />
+                      </td>
+                      <td>
+                        {item.protected_domain ? (
+                          <TruncatedValue value={item.protected_domain} as="code" maxWidth="100%" />
+                        ) : (
+                          <span className="text-muted">N/A</span>
+                        )}
+                      </td>
+                      <td>
+                        <TruncatedValue value={item.match_type} maxWidth="7.5rem" />
                         {item.similarity_score != null && (
                           <small className="text-muted">{Number(item.similarity_score).toFixed(3)}</small>
                         )}
                       </td>
                       <td>
-                        <div className="small">{item.cert_issuer || <span className="text-muted">N/A</span>}</div>
+                        <div className="small">
+                          <TruncatedValue value={item.cert_issuer} maxWidth="10rem" />
+                        </div>
                         {item.cert_fingerprint && (
-                          <code className="small">{item.cert_fingerprint.slice(0, 12)}...</code>
+                          <TruncatedValue
+                            value={`${item.cert_fingerprint.slice(0, 12)}...`}
+                            as="code"
+                            maxWidth="10rem"
+                          />
                         )}
                       </td>
                       <td className="text-end">
