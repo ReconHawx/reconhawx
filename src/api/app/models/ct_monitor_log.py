@@ -18,8 +18,6 @@ CtMonitorOutcome = Literal[
     "matched",
     "skipped_legitimate_subdomain",
     "skipped_protected_domain",
-    "skipped_similarity_length_gate",
-    "skipped_similarity_threshold",
     "queued",
     "dedup_skipped",
     "submitted",

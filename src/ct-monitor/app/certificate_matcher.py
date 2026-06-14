@@ -160,16 +160,11 @@ def _match_keyword_or_similarity(
     cert_info: CertificateInfo,
     matched_keywords: Optional[Set[str]] = None,
     prepared: Optional[PreparedTypo] = None,
-    collect_details: bool = False,
-) -> Union[
-    Tuple[Optional[MatchResult], bool],
-    Tuple[Optional[MatchResult], bool, Optional[Dict[str, Any]]],
-]:
+) -> Tuple[Optional[MatchResult], bool]:
     """
     Keyword or protected similarity match.
 
-    Returns (match_or_none, similarity_skipped_by_length_gate) by default.
-    When collect_details=True, returns a third near_miss_details value.
+    Returns (match_or_none, similarity_skipped_by_length_gate).
     """
     keyword = _first_matching_keyword(domain_lower, state.keywords, matched_keywords)
     if keyword is not None:
@@ -187,7 +182,7 @@ def _match_keyword_or_similarity(
             ),
             False,
         )
-        return (*result, None) if collect_details else result
+        return result
 
     if state.protected_prepared:
         if prepared is None:
@@ -197,7 +192,7 @@ def _match_keyword_or_similarity(
             state.protected_collapsed_lengths,
             state.similarity_threshold,
         ):
-            return (None, True, None) if collect_details else (None, True)
+            return None, True
 
         best_s, best_p = best_match_among_prepared(
             prepared, state.protected_prepared, score_cutoff=state.similarity_threshold
@@ -217,27 +212,9 @@ def _match_keyword_or_similarity(
                 ),
                 False,
             )
-            return (*result, None) if collect_details else result
+            return result
 
-        if not collect_details:
-            return None, False
-
-        near_cutoff = max(0.0, state.similarity_threshold - 0.15)
-        near_s, near_p = best_match_among_prepared(
-            prepared, state.protected_prepared, score_cutoff=near_cutoff
-        )
-        if near_p is not None:
-            return (
-                None,
-                False,
-                {
-                    "protected_domain": near_p,
-                    "similarity_score": near_s,
-                    "similarity_threshold": state.similarity_threshold,
-                },
-            )
-
-    return (None, False, None) if collect_details else (None, False)
+    return None, False
 
 
 def match_certificate_sync(
@@ -341,31 +318,15 @@ def match_certificate_sync(
             try:
                 if prepared is None and state.protected_prepared:
                     prepared = prepare_typo(domain_lower)
-                match, skipped, near_miss = _match_keyword_or_similarity(
+                match, skipped = _match_keyword_or_similarity(
                     domain_lower,
                     state,
                     cert_info,
                     matched_keywords=matched_keywords,
                     prepared=prepared,
-                    collect_details=True,
                 )
                 if skipped:
                     similarity_skipped += 1
-                if near_miss and collect_logs:
-                    _append_skip_log(
-                        log_events,
-                        snap=snap,
-                        cert_info=cert_info,
-                        program_name=program_name,
-                        domain=domain_lower,
-                        outcome="skipped_similarity_threshold",
-                        protected_domain=near_miss["protected_domain"],
-                        match_type="protected_similarity",
-                        similarity_score=near_miss["similarity_score"],
-                        details={
-                            "similarity_threshold": near_miss["similarity_threshold"],
-                        },
-                    )
                 if match:
                     alerted_domains.add(domain_lower)
                     matches_found += 1

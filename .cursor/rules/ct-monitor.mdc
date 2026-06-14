@@ -129,7 +129,7 @@ Two stages; skip legitimate subdomains of protected FQDNs and exact protected FQ
 - Duplicate SANs within the same certificate are alerted at most once per domain.
 - If no dnstwist match exists and no program match states exist, the SAN is ignored.
 - Similarity candidates that cannot reach the threshold by collapsed-length bounds skip full Levenshtein safely (`similarity_skipped` stat; no false negatives).
-- Similarity near-misses (`threshold - 0.15 <= score < threshold`) are logged as `skipped_similarity_threshold` when CT log collection is enabled, but do not alert.
+- Similarity non-matches are not durably logged; they are too high-volume for `ct_monitor_logs`.
 - After a match, alert publication is suppressed when `/findings/typosquat/search` already has the exact domain for that program (Redis-cached under `ct_monitor:typosquat_exists:*`); API lookup failures fail open and allow publishing.
 
 ## Alert Publishing
