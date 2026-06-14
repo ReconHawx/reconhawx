@@ -25,6 +25,7 @@ import aiohttp
 
 if TYPE_CHECKING:
     from alert_publisher import CTAlertPublisher
+    from ct_log_submitter import CTLogSubmitter
 
 logger = logging.getLogger(__name__)
 
@@ -44,11 +45,13 @@ class CTAssetSubmitter:
         flush_interval: float = 15.0,
         batch_max: int = 200,
         event_publisher: Optional["CTAlertPublisher"] = None,
+        log_submitter: Optional["CTLogSubmitter"] = None,
     ) -> None:
         self.api_url = api_url.rstrip("/")
         self.api_key = api_key
         self.redis_client = redis_client
         self.event_publisher = event_publisher
+        self.log_submitter = log_submitter
         self.cache_ttl = max(1, int(cache_ttl))
         self.flush_interval = max(1.0, float(flush_interval))
         self.batch_max = max(1, int(batch_max))
@@ -125,6 +128,12 @@ class CTAssetSubmitter:
 
         if self._seen_recently(program_id, hostname):
             self.asset_dedup_hits += 1
+            self._log_asset_submission(
+                program_id=program_id,
+                program_name=program_name,
+                hostname=hostname,
+                outcome="dedup_skipped",
+            )
             return
 
         flush_program: Optional[str] = None
@@ -132,6 +141,13 @@ class CTAssetSubmitter:
             buffer = self._buffers.setdefault(program_id, set())
             self._program_names[program_id] = program_name
             buffer.add(hostname)
+            self._log_asset_submission(
+                program_id=program_id,
+                program_name=program_name,
+                hostname=hostname,
+                outcome="queued",
+                details={"buffer_size": len(buffer)},
+            )
             if len(buffer) >= self.batch_max:
                 flush_program = program_id
 
@@ -191,19 +207,47 @@ class CTAssetSubmitter:
                             body[:300],
                         )
                         self.post_failures += 1
+                        self._log_batch_submission(
+                            program_id=program_id,
+                            program_name=program_name,
+                            hostnames=hostnames,
+                            outcome="submit_failed",
+                            details={"http_status": resp.status, "body": body[:300]},
+                        )
                         return
         except aiohttp.ClientError as e:
             logger.error("CT asset submit HTTP error for program '%s': %s", program_name, e)
             self.post_failures += 1
+            self._log_batch_submission(
+                program_id=program_id,
+                program_name=program_name,
+                hostnames=hostnames,
+                outcome="submit_failed",
+                details={"error": str(e)},
+            )
             return
         except Exception as e:
             logger.error("CT asset submit error for program '%s': %s", program_name, e)
             self.post_failures += 1
+            self._log_batch_submission(
+                program_id=program_id,
+                program_name=program_name,
+                hostnames=hostnames,
+                outcome="submit_failed",
+                details={"error": str(e)},
+            )
             return
 
         self.batches_posted += 1
         self.assets_submitted += len(hostnames)
         self._mark_seen(program_id, hostnames)
+        self._log_batch_submission(
+            program_id=program_id,
+            program_name=program_name,
+            hostnames=hostnames,
+            outcome="submitted",
+            details={"batch_size": len(hostnames)},
+        )
         await self._publish_asset_events(program_name, program_id, hostnames)
         logger.info(
             "CT ASSET: submitted %s subdomain(s) for program '%s' (e.g. %s)",
@@ -227,6 +271,48 @@ class CTAssetSubmitter:
                 self.asset_events_published += 1
             else:
                 self.asset_event_publish_failures += 1
+
+    def _log_asset_submission(
+        self,
+        *,
+        program_id: str,
+        program_name: str,
+        hostname: str,
+        outcome: str,
+        details: Optional[Dict[str, object]] = None,
+    ) -> None:
+        if not self.log_submitter:
+            return
+        self.log_submitter.enqueue(
+            {
+                "program_id": program_id,
+                "program_name": program_name,
+                "event_type": "asset_submission",
+                "outcome": outcome,
+                "domain": hostname,
+                "details": details or {},
+            }
+        )
+
+    def _log_batch_submission(
+        self,
+        *,
+        program_id: str,
+        program_name: str,
+        hostnames: List[str],
+        outcome: str,
+        details: Optional[Dict[str, object]] = None,
+    ) -> None:
+        for hostname in hostnames:
+            event_details = dict(details or {})
+            event_details["batch_domains"] = hostnames
+            self._log_asset_submission(
+                program_id=program_id,
+                program_name=program_name,
+                hostname=hostname,
+                outcome=outcome,
+                details=event_details,
+            )
 
     def get_stats(self) -> Dict[str, int]:
         return {

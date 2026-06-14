@@ -111,6 +111,27 @@ Two stages; skip legitimate subdomains of protected FQDNs and exact protected FQ
 
 **Stage 2 — keywords + similarity:** Protected subdomain **keywords** match as substrings of the full hostname (`production` in `production-d0main.live`); one **Aho-Corasick automaton** over all programs' keywords scans each domain once (`build_keyword_automaton` in `domain_config_builder.py`; substring fallback when `pyahocorasick` is unavailable — first program in load order wins either way). Fuzzy match uses **rapidfuzz** Levenshtein (numerically identical to the API's pure-Python scoring; keep logic in sync with API `protected_domain_similarity_service.py`) over precomputed inputs: per-protected `PreparedProtected` (apex/collapsed, built once per config refresh) and per-SAN `PreparedTypo` (suffix fragments + apex/collapsed, built once and shared across programs). Apex extraction via `tldextract` (`domain_labels.py`, bundled PSL snapshot + LRU cache).
 
+### Typosquat alert match / skip matrix
+
+**Program config required:** A program participates in typosquat alerting only when `ct_monitoring_enabled=true` and it has at least one protected input: `protected_domains`, `seed_domains`, `settings.root_domains`, or `protected_subdomain_prefixes`. Protected-domain inputs feed both dnstwist and similarity; prefixes feed keyword matching only.
+
+**Certificate domains considered:** `certificate_update` messages only. CN and SAN entries are lowercased, trimmed, deduped, and wildcard prefixes are stripped (`*.brand.com` → `brand.com`) before matching. If `CT_INGESTION_TLD_FILTER_ENABLED=true`, a cert/domain is considered only when at least one domain TLD is in the per-program union (plus asset-scope apex TLDs); default is disabled, so all TLDs are matched.
+
+**Alert-producing conditions, in order:**
+- **dnstwist variation:** after public-suffix stripping, the cert hostname label exactly equals a precomputed dnstwist variation label. Match type is `dnstwist:<fuzzer>` and score is `0.95`. The lookup is TLD-agnostic; `d0main.live` can match a variation generated from `domain.com`.
+- **keyword:** any protected prefix/keyword is a lowercase substring of the full cert hostname. Match type is `keyword`, protected value is the keyword, and score is `0.90`.
+- **protected similarity:** best similarity between any cert hostname suffix fragment and any protected domain is `>= ct_monitor_program_settings.similarity_threshold` (default `0.75`, clamped `0..1`). Score is max of apex-vs-apex and collapsed-alphanumeric Levenshtein similarity; identical collapsed-but-not-literal names cap at `0.99`.
+
+**Skip / suppression conditions:**
+- Non-`certificate_update` messages, messages with no domains, queue drops, or TLD-filter misses never reach typosquat matching.
+- Proper subdomains of protected FQDNs are skipped as legitimate (`login.brand.com` when `brand.com` is protected). Asset monitoring still runs before this skip.
+- Exact protected FQDNs are skipped (`brand.com` when `brand.com` is protected).
+- Duplicate SANs within the same certificate are alerted at most once per domain.
+- If no dnstwist match exists and no program match states exist, the SAN is ignored.
+- Similarity candidates that cannot reach the threshold by collapsed-length bounds skip full Levenshtein safely (`similarity_skipped` stat; no false negatives).
+- Similarity near-misses (`threshold - 0.15 <= score < threshold`) are logged as `skipped_similarity_threshold` when CT log collection is enabled, but do not alert.
+- After a match, alert publication is suppressed when `/findings/typosquat/search` already has the exact domain for that program (Redis-cached under `ct_monitor:typosquat_exists:*`); API lookup failures fail open and allow publishing.
+
 ## Alert Publishing
 
 - **Typosquat:** NATS `events.typosquat.ct_alert`, priority from match type/score.

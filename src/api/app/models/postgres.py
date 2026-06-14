@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, ForeignKey, ARRAY, BigInteger, SmallInteger, UniqueConstraint, LargeBinary, func, text, Index
+from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, ForeignKey, ARRAY, BigInteger, SmallInteger, UniqueConstraint, LargeBinary, func, text, Index, Float
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID, INET, JSONB
@@ -190,6 +190,7 @@ class Program(Base):
     findings = relationship("Finding", back_populates="program", cascade="all, delete-orphan")
     workflows = relationship("Workflow", back_populates="program", cascade="all, delete-orphan")
     workflow_logs = relationship("WorkflowLog", back_populates="program", cascade="all, delete-orphan")
+    ct_monitor_logs = relationship("CtMonitorLog", back_populates="program", cascade="all, delete-orphan")
     wordlists = relationship("Wordlist", back_populates="program")
 
 class ApexDomain(Base):
@@ -892,6 +893,37 @@ class TaskTargetEvent(Base):
             name="uq_task_target_event",
         ),
     )
+
+
+class CtMonitorLog(Base):
+    """Durable CT monitor decisions for alerts, skipped candidates, and asset matches."""
+
+    __tablename__ = "ct_monitor_logs"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    program_id = Column(UUID(as_uuid=True), ForeignKey("programs.id", ondelete="CASCADE"), nullable=False, index=True)
+    program_name = Column(String(255), nullable=True, index=True)
+    event_type = Column(String(64), nullable=False, index=True)
+    outcome = Column(String(64), nullable=False, index=True)
+    occurred_at = Column(DateTime, default=utcnow, nullable=False, index=True)
+    domain = Column(Text, nullable=True, index=True)
+    protected_domain = Column(Text, nullable=True)
+    match_type = Column(String(128), nullable=True, index=True)
+    similarity_score = Column(Float, nullable=True)
+    priority = Column(String(32), nullable=True, index=True)
+    cert_fingerprint = Column(String(255), nullable=True, index=True)
+    cert_issuer = Column(Text, nullable=True)
+    cert_source = Column(String(255), nullable=True, index=True)
+    details = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"), default=dict)
+    created_at = Column(DateTime, default=utcnow, server_default=func.now(), nullable=False)
+
+    __table_args__ = (
+        Index("ix_ct_monitor_logs_program_occurred", "program_id", "occurred_at"),
+        Index("ix_ct_monitor_logs_event_outcome", "event_type", "outcome"),
+        Index("ix_ct_monitor_logs_domain", "domain"),
+    )
+
+    program = relationship("Program", back_populates="ct_monitor_logs")
 
 
 class TaskLastExecution(Base):

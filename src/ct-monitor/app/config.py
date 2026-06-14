@@ -18,6 +18,9 @@ Environment variables:
 - CT_ASSET_CACHE_TTL: Redis dedup TTL for submitted asset hostnames (default 86400)
 - CT_ASSET_FLUSH_INTERVAL: seconds between asset submit flushes (default 15)
 - CT_ASSET_BATCH_MAX: per-program buffer size that forces an immediate flush (default 200)
+- CT_LOG_FLUSH_INTERVAL: seconds between durable CT log flushes (default 5)
+- CT_LOG_BATCH_MAX: durable CT log batch size (default 200)
+- CT_LOG_QUEUE_MAXSIZE: in-memory durable CT log queue size (default 5000)
 """
 
 import os
@@ -135,6 +138,15 @@ class CTMonitorConfig:
     )
     asset_batch_max: int = field(
         default_factory=lambda: int(os.getenv("CT_ASSET_BATCH_MAX", "200"))
+    )
+    ct_log_flush_interval: float = field(
+        default_factory=lambda: float(os.getenv("CT_LOG_FLUSH_INTERVAL", "5"))
+    )
+    ct_log_batch_max: int = field(
+        default_factory=lambda: int(os.getenv("CT_LOG_BATCH_MAX", "200"))
+    )
+    ct_log_queue_maxsize: int = field(
+        default_factory=lambda: int(os.getenv("CT_LOG_QUEUE_MAXSIZE", "5000"))
     )
 
 

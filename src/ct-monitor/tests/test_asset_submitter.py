@@ -184,6 +184,14 @@ class _FakePublisher:
         return True
 
 
+class _FakeLogSubmitter:
+    def __init__(self):
+        self.logs = []
+
+    def enqueue(self, log):
+        self.logs.append(log)
+
+
 @pytest.mark.asyncio
 async def test_successful_post_publishes_nats_events(fake_http):
     pub = _FakePublisher()
@@ -208,3 +216,27 @@ async def test_failed_post_does_not_publish_events(fake_http):
     await sub.flush_now()
     assert _FakePublisher.calls == []
     assert sub.asset_events_published == 0
+
+
+@pytest.mark.asyncio
+async def test_asset_submitter_emits_ct_monitor_logs(fake_http):
+    log_submitter = _FakeLogSubmitter()
+    sub = _submitter(log_submitter=log_submitter)
+    await sub.add("a.example.com", "prog1", PROGRAM_ID)
+    await sub.flush_now()
+
+    assert [log["outcome"] for log in log_submitter.logs] == ["queued", "submitted"]
+    assert all(log["event_type"] == "asset_submission" for log in log_submitter.logs)
+    assert all(log["program_id"] == PROGRAM_ID for log in log_submitter.logs)
+
+
+@pytest.mark.asyncio
+async def test_asset_submitter_logs_dedup_skips(fake_http):
+    redis = _FakeRedis()
+    log_submitter = _FakeLogSubmitter()
+    sub = _submitter(redis_client=redis, log_submitter=log_submitter)
+    await sub.add("a.example.com", "prog1", PROGRAM_ID)
+    await sub.flush_now()
+    await sub.add("a.example.com", "prog1", PROGRAM_ID)
+
+    assert "dedup_skipped" in [log["outcome"] for log in log_submitter.logs]

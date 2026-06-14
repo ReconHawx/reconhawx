@@ -18,6 +18,7 @@ import { adminAPI } from '../../services/api';
 import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
 import { EventStatsInner } from './EventStats';
 import { CTMonitorInner } from './CTMonitor';
+import { CTMonitorLogsInner } from './CTMonitorLogs';
 import { WorkerStatusInner } from './WorkerStatus';
 
 const STATUS_VARIANT = {
@@ -30,12 +31,14 @@ const TAB_DEPLOYMENTS = 'deployments';
 const TAB_WORKERS = 'worker-status';
 const TAB_EVENTS = 'events';
 const TAB_CT = 'ct-monitor';
+const TAB_CT_LOGS = 'ct-logs';
 
 const TAB_TITLES = {
   [TAB_DEPLOYMENTS]: 'Deployments',
   [TAB_WORKERS]: 'Worker Status',
   [TAB_EVENTS]: 'Event queue',
   [TAB_CT]: 'CT Monitor',
+  [TAB_CT_LOGS]: 'CT Logs',
 };
 
 function SystemStatus() {
@@ -45,7 +48,7 @@ function SystemStatus() {
   const [searchParams, setSearchParams] = useSearchParams();
 
   const allowedTabs = useMemo(() => {
-    if (superuser) return [TAB_DEPLOYMENTS, TAB_WORKERS, TAB_EVENTS, TAB_CT];
+    if (superuser) return [TAB_DEPLOYMENTS, TAB_WORKERS, TAB_EVENTS, TAB_CT, TAB_CT_LOGS];
     if (admin) return [TAB_EVENTS];
     return [];
   }, [superuser, admin]);
@@ -219,6 +222,11 @@ function SystemStatus() {
         {superuser && (
           <Tab eventKey={TAB_CT} title="CT Monitor">
             <CTMonitorInner embedded />
+          </Tab>
+        )}
+        {superuser && (
+          <Tab eventKey={TAB_CT_LOGS} title="CT Logs">
+            <CTMonitorLogsInner embedded />
           </Tab>
         )}
       </Tabs>

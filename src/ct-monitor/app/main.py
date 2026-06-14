@@ -55,6 +55,7 @@ from domain_config_builder import (
 from certificate_matcher import match_certificate_sync
 from alert_publisher import CTAlertPublisher
 from asset_submitter import CTAssetSubmitter
+from ct_log_submitter import CTLogSubmitter
 from models import CertificateInfo, ProcessingStats, MatchResult
 
 from recon_log_format import apply_service_logging, parse_log_level
@@ -92,6 +93,7 @@ class CTMonitorService:
         self.publisher: Optional[CTAlertPublisher] = None
         # CT asset monitoring: batched POST /assets for scope-matched SANs
         self.asset_submitter: Optional[CTAssetSubmitter] = None
+        self.ct_log_submitter: Optional[CTLogSubmitter] = None
         
         # Primary matcher: dnstwist variation generator (fast O(1) lookup)
         self.variation_generator = DnstwistVariationGenerator()
@@ -213,6 +215,15 @@ class CTMonitorService:
             self.publisher = CTAlertPublisher(self.config.nats_url)
             await self.publisher.connect()
 
+            self.ct_log_submitter = CTLogSubmitter(
+                api_url=self.config.api_url,
+                api_key=self.config.api_key,
+                flush_interval=self.config.ct_log_flush_interval,
+                batch_max=self.config.ct_log_batch_max,
+                queue_maxsize=self.config.ct_log_queue_maxsize,
+            )
+            await self.ct_log_submitter.start()
+
             # Asset submitter (CT asset monitoring → POST /assets)
             self.asset_submitter = CTAssetSubmitter(
                 api_url=self.config.api_url,
@@ -222,6 +233,7 @@ class CTMonitorService:
                 flush_interval=self.config.asset_flush_interval,
                 batch_max=self.config.asset_batch_max,
                 event_publisher=self.publisher,
+                log_submitter=self.ct_log_submitter,
             )
             await self.asset_submitter.start()
 
@@ -371,6 +383,10 @@ class CTMonitorService:
         if self.asset_submitter:
             await self.asset_submitter.stop()
             self.asset_submitter = None
+
+        if self.ct_log_submitter:
+            await self.ct_log_submitter.stop()
+            self.ct_log_submitter = None
         
         # Disconnect from NATS
         if self.publisher:
@@ -412,6 +428,8 @@ class CTMonitorService:
         })
         if self.asset_submitter:
             stats_dict.update(self.asset_submitter.get_stats())
+        if self.ct_log_submitter:
+            stats_dict.update(self.ct_log_submitter.get_stats())
         
         # Get variation generator stats
         var_count = self.variation_generator.get_variation_count()
@@ -630,6 +648,74 @@ class CTMonitorService:
             "cert_all_domains": cert_info.domains,
         }
 
+    def _program_id_for(self, program_name: str) -> Optional[str]:
+        snap = self._matching_snapshot
+        if snap is None:
+            return None
+        return (snap.program_ids or {}).get(program_name)
+
+    def _enqueue_ct_log(self, log: Dict[str, Any]) -> None:
+        if self.ct_log_submitter:
+            self.ct_log_submitter.enqueue(log)
+
+    def _enqueue_match_log(
+        self,
+        *,
+        match: MatchResult,
+        cert_info: CertificateInfo,
+        program_name: str,
+        outcome: str,
+        priority: Optional[str] = None,
+        details: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        program_id = self._program_id_for(program_name)
+        if not program_id:
+            return
+        merged_details = {
+            "certificate": cert_info.to_dict(),
+            "match": match.to_dict(),
+            **(details or {}),
+        }
+        self._enqueue_ct_log(
+            {
+                "program_id": program_id,
+                "program_name": program_name,
+                "event_type": "typosquat_alert" if outcome in ("published", "publish_failed") else "typosquat_skip",
+                "outcome": outcome,
+                "domain": match.cert_domain,
+                "protected_domain": match.protected_domain,
+                "match_type": match.match_type,
+                "similarity_score": match.similarity_score,
+                "priority": priority,
+                "cert_fingerprint": cert_info.fingerprint,
+                "cert_issuer": cert_info.issuer,
+                "cert_source": cert_info.source,
+                "details": merged_details,
+            }
+        )
+
+    def _enqueue_asset_match_log(
+        self,
+        *,
+        hostname: str,
+        program_name: str,
+        program_id: str,
+        cert_info: CertificateInfo,
+    ) -> None:
+        self._enqueue_ct_log(
+            {
+                "program_id": program_id,
+                "program_name": program_name,
+                "event_type": "asset_match",
+                "outcome": "matched",
+                "domain": hostname,
+                "cert_fingerprint": cert_info.fingerprint,
+                "cert_issuer": cert_info.issuer,
+                "cert_source": cert_info.source,
+                "details": {"certificate": cert_info.to_dict()},
+            }
+        )
+
     async def _on_certificate(self, cert_info: CertificateInfo):
         """
         Handle incoming certificate from CertStream (matching runs off the event loop).
@@ -640,9 +726,17 @@ class CTMonitorService:
         if snap is None:
             return
 
-        pending, matches_inc, similarity_skipped, asset_matches = await asyncio.to_thread(
-            match_certificate_sync, cert_info, snap
+        (
+            pending,
+            matches_inc,
+            similarity_skipped,
+            asset_matches,
+            matcher_log_events,
+        ) = await asyncio.to_thread(
+            match_certificate_sync, cert_info, snap, True
         )
+        for log_event in matcher_log_events:
+            self._enqueue_ct_log(log_event)
         if matches_inc:
             self._stats.matches_found += matches_inc
         if similarity_skipped:
@@ -651,6 +745,12 @@ class CTMonitorService:
         if asset_matches and self.asset_submitter:
             self._stats.asset_matches += len(asset_matches)
             for hostname, program_name, program_id in asset_matches:
+                self._enqueue_asset_match_log(
+                    hostname=hostname,
+                    program_name=program_name,
+                    program_id=program_id,
+                    cert_info=cert_info,
+                )
                 await self.asset_submitter.add(hostname, program_name, program_id)
 
         for match, program_name in pending:
@@ -751,6 +851,14 @@ class CTMonitorService:
                 f"(program={program_name})"
             )
             self._stats.skipped_existing += 1
+            priority = self.publisher._calculate_priority(match) if self.publisher else None
+            self._enqueue_match_log(
+                match=match,
+                cert_info=cert_info,
+                program_name=program_name,
+                outcome="skipped_existing",
+                priority=priority,
+            )
             return
         
         logger.info(
@@ -767,6 +875,29 @@ class CTMonitorService:
             )
             if success:
                 self._stats.alerts_published += 1
+                self._enqueue_match_log(
+                    match=match,
+                    cert_info=cert_info,
+                    program_name=program_name,
+                    outcome="published",
+                    priority=self.publisher._calculate_priority(match),
+                )
+            else:
+                self._enqueue_match_log(
+                    match=match,
+                    cert_info=cert_info,
+                    program_name=program_name,
+                    outcome="publish_failed",
+                    priority=self.publisher._calculate_priority(match),
+                )
+        else:
+            self._enqueue_match_log(
+                match=match,
+                cert_info=cert_info,
+                program_name=program_name,
+                outcome="publish_failed",
+                details={"reason": "publisher_not_initialized"},
+            )
     
     async def _stats_reporter(self):
         """Periodically report processing statistics"""

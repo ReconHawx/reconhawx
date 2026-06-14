@@ -5,7 +5,7 @@ Synchronous certificate matching (runs in asyncio.to_thread).
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 from domain_config_builder import MatchingSnapshot, ProgramCTMatchState
 from domain_labels import extract_apex_domain
@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 
 # (hostname, program_name, program_id) for an in-scope SAN (CT asset monitoring)
 AssetMatch = Tuple[str, str, str]
+CtLogEvent = Dict[str, Any]
 
 
 def _match_assets_for_domain(
@@ -66,6 +67,72 @@ def _cert_metadata_details(cert_info: CertificateInfo) -> Dict[str, Any]:
     }
 
 
+def _program_id(snap: MatchingSnapshot, program_name: str) -> Optional[str]:
+    return (snap.program_ids or {}).get(program_name)
+
+
+def _append_skip_log(
+    out: List[CtLogEvent],
+    *,
+    snap: MatchingSnapshot,
+    cert_info: CertificateInfo,
+    program_name: str,
+    domain: str,
+    outcome: str,
+    protected_domain: Optional[str] = None,
+    match_type: Optional[str] = None,
+    similarity_score: Optional[float] = None,
+    details: Optional[Dict[str, Any]] = None,
+) -> None:
+    program_id = _program_id(snap, program_name)
+    if not program_id:
+        return
+    event_details = {
+        "certificate": cert_info.to_dict(),
+        **(details or {}),
+    }
+    out.append(
+        {
+            "program_id": program_id,
+            "program_name": program_name,
+            "event_type": "typosquat_skip",
+            "outcome": outcome,
+            "domain": domain,
+            "protected_domain": protected_domain,
+            "match_type": match_type,
+            "similarity_score": similarity_score,
+            "cert_fingerprint": cert_info.fingerprint,
+            "cert_issuer": cert_info.issuer,
+            "cert_source": cert_info.source,
+            "details": event_details,
+        }
+    )
+
+
+def _protected_domain_programs(
+    snap: MatchingSnapshot,
+    domain_lower: str,
+) -> List[Tuple[str, str]]:
+    matches: List[Tuple[str, str]] = []
+    for program_name, domains in (snap.protected_domains or {}).items():
+        if domain_lower in domains:
+            matches.append((program_name, domain_lower))
+    return matches
+
+
+def _legitimate_subdomain_programs(
+    snap: MatchingSnapshot,
+    domain_lower: str,
+) -> List[Tuple[str, str]]:
+    matches: List[Tuple[str, str]] = []
+    for program_name, domains in (snap.protected_domains or {}).items():
+        for protected in domains:
+            if domain_lower.endswith(f".{protected}"):
+                matches.append((program_name, protected))
+                break
+    return matches
+
+
 def _first_matching_keyword(
     domain_lower: str,
     keywords: List[str],
@@ -93,18 +160,23 @@ def _match_keyword_or_similarity(
     cert_info: CertificateInfo,
     matched_keywords: Optional[Set[str]] = None,
     prepared: Optional[PreparedTypo] = None,
-) -> Tuple[Optional[MatchResult], bool]:
+    collect_details: bool = False,
+) -> Union[
+    Tuple[Optional[MatchResult], bool],
+    Tuple[Optional[MatchResult], bool, Optional[Dict[str, Any]]],
+]:
     """
     Keyword or protected similarity match.
 
-    Returns (match_or_none, similarity_skipped_by_length_gate).
+    Returns (match_or_none, similarity_skipped_by_length_gate) by default.
+    When collect_details=True, returns a third near_miss_details value.
     """
     keyword = _first_matching_keyword(domain_lower, state.keywords, matched_keywords)
     if keyword is not None:
         d = dict(_cert_metadata_details(cert_info))
         d["match_source"] = "keyword_or_similarity"
         d["matched_keyword"] = keyword
-        return (
+        result = (
             MatchResult(
                 matched=True,
                 protected_domain=keyword,
@@ -115,6 +187,7 @@ def _match_keyword_or_similarity(
             ),
             False,
         )
+        return (*result, None) if collect_details else result
 
     if state.protected_prepared:
         if prepared is None:
@@ -124,7 +197,7 @@ def _match_keyword_or_similarity(
             state.protected_collapsed_lengths,
             state.similarity_threshold,
         ):
-            return None, True
+            return (None, True, None) if collect_details else (None, True)
 
         best_s, best_p = best_match_among_prepared(
             prepared, state.protected_prepared, score_cutoff=state.similarity_threshold
@@ -133,7 +206,7 @@ def _match_keyword_or_similarity(
             d = dict(_cert_metadata_details(cert_info))
             d["match_source"] = "keyword_or_similarity"
             d["similarity_threshold"] = state.similarity_threshold
-            return (
+            result = (
                 MatchResult(
                     matched=True,
                     protected_domain=best_p,
@@ -144,14 +217,37 @@ def _match_keyword_or_similarity(
                 ),
                 False,
             )
+            return (*result, None) if collect_details else result
 
-    return None, False
+        if not collect_details:
+            return None, False
+
+        near_cutoff = max(0.0, state.similarity_threshold - 0.15)
+        near_s, near_p = best_match_among_prepared(
+            prepared, state.protected_prepared, score_cutoff=near_cutoff
+        )
+        if near_p is not None:
+            return (
+                None,
+                False,
+                {
+                    "protected_domain": near_p,
+                    "similarity_score": near_s,
+                    "similarity_threshold": state.similarity_threshold,
+                },
+            )
+
+    return (None, False, None) if collect_details else (None, False)
 
 
 def match_certificate_sync(
     cert_info: CertificateInfo,
     snap: MatchingSnapshot,
-) -> Tuple[List[Tuple[MatchResult, str]], int, int, List[AssetMatch]]:
+    collect_logs: bool = False,
+) -> Union[
+    Tuple[List[Tuple[MatchResult, str]], int, int, List[AssetMatch]],
+    Tuple[List[Tuple[MatchResult, str]], int, int, List[AssetMatch], List[CtLogEvent]],
+]:
     """
     Match one certificate against a snapshot.
 
@@ -164,6 +260,7 @@ def match_certificate_sync(
     alerted_domains: set[str] = set()
     asset_matches: List[AssetMatch] = []
     asset_seen: Set[Tuple[str, str]] = set()
+    log_events: List[CtLogEvent] = []
 
     for domain in cert_info.domains:
         domain_lower = domain.lower().strip()
@@ -177,8 +274,32 @@ def match_certificate_sync(
         if domain_lower in alerted_domains:
             continue
         if vg.is_legitimate_subdomain(domain_lower):
+            if collect_logs:
+                for program_name, protected in _legitimate_subdomain_programs(snap, domain_lower):
+                    _append_skip_log(
+                        log_events,
+                        snap=snap,
+                        cert_info=cert_info,
+                        program_name=program_name,
+                        domain=domain_lower,
+                        outcome="skipped_legitimate_subdomain",
+                        protected_domain=protected,
+                        match_type="legitimate_subdomain",
+                    )
             continue
         if vg.is_protected_domain(domain_lower):
+            if collect_logs:
+                for program_name, protected in _protected_domain_programs(snap, domain_lower):
+                    _append_skip_log(
+                        log_events,
+                        snap=snap,
+                        cert_info=cert_info,
+                        program_name=program_name,
+                        domain=domain_lower,
+                        outcome="skipped_protected_domain",
+                        protected_domain=protected,
+                        match_type="protected_domain",
+                    )
             continue
 
         variation_info = vg.match(domain_lower)
@@ -220,15 +341,31 @@ def match_certificate_sync(
             try:
                 if prepared is None and state.protected_prepared:
                     prepared = prepare_typo(domain_lower)
-                match, skipped = _match_keyword_or_similarity(
+                match, skipped, near_miss = _match_keyword_or_similarity(
                     domain_lower,
                     state,
                     cert_info,
                     matched_keywords=matched_keywords,
                     prepared=prepared,
+                    collect_details=True,
                 )
                 if skipped:
                     similarity_skipped += 1
+                if near_miss and collect_logs:
+                    _append_skip_log(
+                        log_events,
+                        snap=snap,
+                        cert_info=cert_info,
+                        program_name=program_name,
+                        domain=domain_lower,
+                        outcome="skipped_similarity_threshold",
+                        protected_domain=near_miss["protected_domain"],
+                        match_type="protected_similarity",
+                        similarity_score=near_miss["similarity_score"],
+                        details={
+                            "similarity_threshold": near_miss["similarity_threshold"],
+                        },
+                    )
                 if match:
                     alerted_domains.add(domain_lower)
                     matches_found += 1
@@ -247,4 +384,6 @@ def match_certificate_sync(
                     "Error processing certificate for program %s: %s", program_name, e
                 )
 
+    if collect_logs:
+        return pending, matches_found, similarity_skipped, asset_matches, log_events
     return pending, matches_found, similarity_skipped, asset_matches

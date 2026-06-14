@@ -321,6 +321,11 @@ export const adminAPI = {
     return response.data;
   },
 
+  searchCtMonitorLogs: async (payload = {}) => {
+    const response = await api.post('/ct-monitor/logs/search', payload);
+    return response.data;
+  },
+
   getWorkflowKubernetesSettings: async () => {
     const response = await api.get('/admin/workflow-kubernetes-settings');
     return response.data;

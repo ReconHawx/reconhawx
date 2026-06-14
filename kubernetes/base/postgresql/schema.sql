@@ -456,6 +456,30 @@ COMMENT ON COLUMN public.certificates.cipher IS 'Cipher';
 
 
 --
+-- Name: ct_monitor_logs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.ct_monitor_logs (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    program_id uuid NOT NULL,
+    program_name character varying(255),
+    event_type character varying(64) NOT NULL,
+    outcome character varying(64) NOT NULL,
+    occurred_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    domain text,
+    protected_domain text,
+    match_type character varying(128),
+    similarity_score double precision,
+    priority character varying(32),
+    cert_fingerprint character varying(255),
+    cert_issuer text,
+    cert_source character varying(255),
+    details jsonb DEFAULT '{}'::jsonb NOT NULL,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+
+
+--
 -- Name: subdomains; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1842,6 +1866,14 @@ ALTER TABLE ONLY public.certificates
 
 
 --
+-- Name: ct_monitor_logs ct_monitor_logs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ct_monitor_logs
+    ADD CONSTRAINT ct_monitor_logs_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: droopescan_findings droopescan_findings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2855,6 +2887,48 @@ CREATE INDEX ix_certificates_subject_cn ON public.certificates USING btree (subj
 --
 
 CREATE INDEX ix_certificates_valid_until ON public.certificates USING btree (valid_until);
+
+
+--
+-- Name: ix_ct_monitor_logs_cert_fingerprint; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_ct_monitor_logs_cert_fingerprint ON public.ct_monitor_logs USING btree (cert_fingerprint);
+
+
+--
+-- Name: ix_ct_monitor_logs_domain; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_ct_monitor_logs_domain ON public.ct_monitor_logs USING btree (domain);
+
+
+--
+-- Name: ix_ct_monitor_logs_event_outcome; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_ct_monitor_logs_event_outcome ON public.ct_monitor_logs USING btree (event_type, outcome);
+
+
+--
+-- Name: ix_ct_monitor_logs_match_type; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_ct_monitor_logs_match_type ON public.ct_monitor_logs USING btree (match_type);
+
+
+--
+-- Name: ix_ct_monitor_logs_program_occurred; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_ct_monitor_logs_program_occurred ON public.ct_monitor_logs USING btree (program_id, occurred_at DESC);
+
+
+--
+-- Name: ix_ct_monitor_logs_program_name; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_ct_monitor_logs_program_name ON public.ct_monitor_logs USING btree (program_name);
 
 
 --
@@ -4122,6 +4196,14 @@ ALTER TABLE ONLY public.urls
 
 ALTER TABLE ONLY public.urls
     ADD CONSTRAINT urls_subdomain_id_fkey FOREIGN KEY (subdomain_id) REFERENCES public.subdomains(id) ON DELETE SET NULL;
+
+
+--
+-- Name: ct_monitor_logs ct_monitor_logs_program_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ct_monitor_logs
+    ADD CONSTRAINT ct_monitor_logs_program_id_fkey FOREIGN KEY (program_id) REFERENCES public.programs(id) ON DELETE CASCADE;
 
 
 --

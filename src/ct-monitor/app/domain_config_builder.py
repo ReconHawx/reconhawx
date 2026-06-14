@@ -117,6 +117,8 @@ class MatchingSnapshot:
     keyword_automaton: Optional[Any] = None
     asset_match_states: Dict[str, ProgramAssetMatchState] = field(default_factory=dict)
     asset_apex_index: Dict[str, List[str]] = field(default_factory=dict)
+    program_ids: Dict[str, str] = field(default_factory=dict)
+    protected_domains: Dict[str, Set[str]] = field(default_factory=dict)
 
     def find_keywords(self, domain_lower: str) -> Optional[Set[str]]:
         """
@@ -152,6 +154,7 @@ class DomainConfigBundle:
     asset_match_states: Dict[str, ProgramAssetMatchState] = field(default_factory=dict)
     asset_apex_index: Dict[str, List[str]] = field(default_factory=dict)
     programs_asset_enabled_detail: List[Dict[str, Any]] = field(default_factory=list)
+    program_ids: Dict[str, str] = field(default_factory=dict)
 
     def matching_snapshot(self) -> MatchingSnapshot:
         return MatchingSnapshot(
@@ -160,6 +163,8 @@ class DomainConfigBundle:
             keyword_automaton=self.keyword_automaton,
             asset_match_states=dict(self.asset_match_states),
             asset_apex_index=dict(self.asset_apex_index),
+            program_ids=dict(self.program_ids),
+            protected_domains={k: set(v) for k, v in self.protected_domains.items()},
         )
 
 
@@ -218,6 +223,11 @@ def build_domain_config_from_loaded(
 
     asset_match_states = build_asset_match_states(loaded)
     asset_apex_index = build_asset_apex_index(asset_match_states)
+    program_ids: Dict[str, str] = {
+        program_name: str(program_data.get("id") or "").strip()
+        for program_name, program_data in loaded
+        if str(program_data.get("id") or "").strip()
+    }
 
     if program_ct_settings.ingestion_tld_filter_enabled():
         union_tlds: Set[str] = set()
@@ -355,4 +365,5 @@ def build_domain_config_from_loaded(
         asset_match_states=asset_match_states,
         asset_apex_index=asset_apex_index,
         programs_asset_enabled_detail=prog_asset_rows,
+        program_ids=program_ids,
     )
