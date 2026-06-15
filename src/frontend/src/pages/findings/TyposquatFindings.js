@@ -24,6 +24,7 @@ import { formatDate } from '../../utils/dateUtils';
 import { initializeUserCache } from '../../utils/userUtils';
 import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
 import { withListReturn } from '../../hooks/useListNavigation';
+import './TyposquatFindings.css';
 
 /** Keep in sync with API `AI_ANALYSIS_BATCH_MAX_FINDINGS` in typosquat_findings.py (temporary cap). */
 const AI_ANALYSIS_BATCH_MAX_FINDINGS = 10;
@@ -2229,8 +2230,8 @@ function TyposquatFindings() {
               <p className="text-muted mb-0">No typosquat findings found matching your criteria.</p>
             </div>
           ) : (
-            <div className="table-responsive">
-              <Table hover className="mb-0">
+            <div className="table-responsive typosquat-findings-table-responsive">
+              <Table hover className="mb-0 typosquat-findings-table">
                 <thead className="table-light">
                   <tr>
                     <th>

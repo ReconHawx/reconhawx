@@ -1,0 +1,29 @@
+.typosquat-findings-table-responsive {
+  max-width: 100%;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  -webkit-overflow-scrolling: touch;
+}
+
+.typosquat-findings-table {
+  min-width: max-content;
+}
+
+.typosquat-findings-table th,
+.typosquat-findings-table td {
+  vertical-align: middle;
+}
+
+.typosquat-findings-table th:nth-child(2),
+.typosquat-findings-table td:nth-child(2) {
+  max-width: 28rem;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.typosquat-findings-table th:nth-child(5),
+.typosquat-findings-table td:nth-child(5) {
+  max-width: 18rem;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
