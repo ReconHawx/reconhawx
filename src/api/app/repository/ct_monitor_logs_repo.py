@@ -203,3 +203,53 @@ class CtMonitorLogsRepository:
                 "items": [_row_to_dict(row, program_name) for row, program_name in rows],
                 "total_count": total_count,
             }
+
+    @staticmethod
+    async def get_filter_values(
+        *,
+        programs: Optional[List[str]] = None,
+    ) -> Dict[str, List[str]]:
+        """Return distinct filter values from stored CT monitor logs."""
+        async with get_db_session() as db:
+            def apply_program_scope(query):
+                if programs is None:
+                    return query
+                if not programs:
+                    return None
+                return query.filter(Program.name.in_(programs))
+
+            def distinct_non_empty(column) -> List[str]:
+                query = db.query(func.distinct(column)).select_from(CtMonitorLog).join(
+                    Program, Program.id == CtMonitorLog.program_id
+                )
+                query = apply_program_scope(query)
+                if query is None:
+                    return []
+                rows = (
+                    query.filter(column.isnot(None), func.trim(column) != "")
+                    .order_by(asc(column))
+                    .all()
+                )
+                return [str(row[0]) for row in rows if row[0] is not None and str(row[0]).strip()]
+
+            program_query = db.query(func.distinct(Program.name)).select_from(CtMonitorLog).join(
+                Program, Program.id == CtMonitorLog.program_id
+            )
+            program_query = apply_program_scope(program_query)
+            if program_query is None:
+                program_names: List[str] = []
+            else:
+                program_rows = (
+                    program_query.filter(Program.name.isnot(None), func.trim(Program.name) != "")
+                    .order_by(asc(Program.name))
+                    .all()
+                )
+                program_names = [
+                    str(row[0]) for row in program_rows if row[0] is not None and str(row[0]).strip()
+                ]
+
+            return {
+                "programs": program_names,
+                "match_types": distinct_non_empty(CtMonitorLog.match_type),
+                "priorities": distinct_non_empty(CtMonitorLog.priority),
+            }

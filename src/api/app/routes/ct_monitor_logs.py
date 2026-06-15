@@ -100,3 +100,21 @@ async def search_ct_monitor_logs(
     except Exception as e:
         logger.exception("Error searching CT monitor logs: %s", e)
         raise HTTPException(status_code=500, detail="Failed to search CT monitor logs")
+
+
+@router.get("/logs/filters", response_model=Dict[str, Any])
+async def get_ct_monitor_log_filters(
+    current_user: UserResponse = Depends(get_current_user_from_middleware),
+):
+    """Return CT monitor log filter values with program access enforcement."""
+    try:
+        programs = _program_filter_for_user(None, current_user)
+        if programs == []:
+            return {"programs": [], "match_types": [], "priorities": []}
+
+        return await CtMonitorLogsRepository.get_filter_values(programs=programs)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Error loading CT monitor log filters: %s", e)
+        raise HTTPException(status_code=500, detail="Failed to load CT monitor log filters")

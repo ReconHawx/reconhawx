@@ -326,6 +326,11 @@ export const adminAPI = {
     return response.data;
   },
 
+  getCtMonitorLogFilters: async () => {
+    const response = await api.get('/ct-monitor/logs/filters');
+    return response.data;
+  },
+
   getWorkflowKubernetesSettings: async () => {
     const response = await api.get('/admin/workflow-kubernetes-settings');
     return response.data;

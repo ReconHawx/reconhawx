@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   Alert,
   Badge,
@@ -59,6 +59,17 @@ const EVENT_VARIANTS = {
   asset_submission: 'primary',
 };
 
+const EMPTY_FILTERS = {
+  search: '',
+  program: '',
+  event_type: '',
+  outcome: '',
+  match_type: '',
+  priority: '',
+  start_time: '',
+  end_time: '',
+};
+
 function isoFromLocal(value) {
   if (!value) return undefined;
   const date = new Date(value);
@@ -103,6 +114,26 @@ function TruncatedValue({ value, as = 'span', maxWidth = '12rem' }) {
   );
 }
 
+function TruncatedBadge({ value, variant = 'secondary' }) {
+  const displayValue = value || 'N/A';
+  return (
+    <Badge
+      bg={variant}
+      title={String(displayValue)}
+      style={{
+        display: 'inline-block',
+        maxWidth: '100%',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap',
+        verticalAlign: 'bottom',
+      }}
+    >
+      {displayValue}
+    </Badge>
+  );
+}
+
 export function CTMonitorLogsInner({ embedded = false }) {
   const [items, setItems] = useState([]);
   const [pagination, setPagination] = useState({
@@ -111,23 +142,38 @@ export function CTMonitorLogsInner({ embedded = false }) {
     current_page: 1,
     page_size: 25,
   });
-  const [filters, setFilters] = useState({
-    search: '',
-    program: '',
-    event_type: '',
-    outcome: '',
-    match_type: '',
-    priority: '',
-    start_time: '',
-    end_time: '',
+  const [filters, setFilters] = useState(EMPTY_FILTERS);
+  const [debouncedFilters, setDebouncedFilters] = useState(EMPTY_FILTERS);
+  const [filterOptions, setFilterOptions] = useState({
+    programs: [],
+    match_types: [],
+    priorities: [],
   });
+  const [loadingFilterOptions, setLoadingFilterOptions] = useState(false);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [expanded, setExpanded] = useState({});
 
-  const loadLogs = async (nextPage = page) => {
+  const loadFilterOptions = useCallback(async () => {
+    try {
+      setLoadingFilterOptions(true);
+      const response = await adminAPI.getCtMonitorLogFilters();
+      setFilterOptions({
+        programs: Array.isArray(response?.programs) ? response.programs : [],
+        match_types: Array.isArray(response?.match_types) ? response.match_types : [],
+        priorities: Array.isArray(response?.priorities) ? response.priorities : [],
+      });
+    } catch (err) {
+      console.error('Failed to load CT monitor log filter values:', err);
+      setFilterOptions({ programs: [], match_types: [], priorities: [] });
+    } finally {
+      setLoadingFilterOptions(false);
+    }
+  }, []);
+
+  const loadLogs = useCallback(async (nextPage = page) => {
     try {
       setLoading(true);
       setError('');
@@ -137,7 +183,7 @@ export function CTMonitorLogsInner({ embedded = false }) {
         sort_by: 'occurred_at',
         sort_dir: 'desc',
       };
-      Object.entries(filters).forEach(([key, value]) => {
+      Object.entries(debouncedFilters).forEach(([key, value]) => {
         const trimmed = typeof value === 'string' ? value.trim() : value;
         if (!trimmed) return;
         if (key === 'start_time' || key === 'end_time') {
@@ -151,35 +197,57 @@ export function CTMonitorLogsInner({ embedded = false }) {
       const response = await adminAPI.searchCtMonitorLogs(payload);
       setItems(response.items || []);
       setPagination(response.pagination || {});
-      setPage(nextPage);
     } catch (err) {
       setError(err?.response?.data?.detail || 'Failed to load CT monitor logs');
       setItems([]);
     } finally {
       setLoading(false);
     }
-  };
+  }, [debouncedFilters, page, pageSize]);
 
   useEffect(() => {
-    loadLogs(1);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pageSize]);
+    loadFilterOptions();
+  }, [loadFilterOptions]);
+
+  useEffect(() => {
+    const handle = setTimeout(() => {
+      setDebouncedFilters(filters);
+    }, 250);
+    return () => clearTimeout(handle);
+  }, [filters]);
+
+  useEffect(() => {
+    loadLogs(page);
+  }, [loadLogs, page]);
+
+  useEffect(() => {
+    if (loadingFilterOptions) return;
+    setFilters((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      if (next.program && !filterOptions.programs.includes(next.program)) {
+        next.program = '';
+        changed = true;
+      }
+      if (next.match_type && !filterOptions.match_types.includes(next.match_type)) {
+        next.match_type = '';
+        changed = true;
+      }
+      if (next.priority && !filterOptions.priorities.includes(next.priority)) {
+        next.priority = '';
+        changed = true;
+      }
+      return changed ? next : prev;
+    });
+  }, [filterOptions, loadingFilterOptions]);
 
   const updateFilter = (key, value) => {
     setFilters((prev) => ({ ...prev, [key]: value }));
+    setPage(1);
   };
 
   const resetFilters = () => {
-    setFilters({
-      search: '',
-      program: '',
-      event_type: '',
-      outcome: '',
-      match_type: '',
-      priority: '',
-      start_time: '',
-      end_time: '',
-    });
+    setFilters(EMPTY_FILTERS);
     setPage(1);
   };
 
@@ -208,7 +276,7 @@ export function CTMonitorLogsInner({ embedded = false }) {
           key={pageNumber}
           active={pageNumber === currentPage}
           disabled={loading}
-          onClick={() => loadLogs(pageNumber)}
+          onClick={() => setPage(pageNumber)}
         >
           {pageNumber}
         </Pagination.Item>
@@ -239,22 +307,22 @@ export function CTMonitorLogsInner({ embedded = false }) {
           </Form.Select>
           <Pagination className="mb-0">
             <Pagination.First
-              onClick={() => loadLogs(1)}
+              onClick={() => setPage(1)}
               disabled={currentPage === 1 || loading}
             />
             <Pagination.Prev
               disabled={currentPage === 1 || loading}
-              onClick={() => loadLogs(Math.max(1, currentPage - 1))}
+              onClick={() => setPage(Math.max(1, currentPage - 1))}
             />
             {startPage > 1 && <Pagination.Ellipsis disabled />}
             {items}
             {endPage < totalPages && <Pagination.Ellipsis disabled />}
             <Pagination.Next
               disabled={currentPage === totalPages || loading}
-              onClick={() => loadLogs(Math.min(totalPages, currentPage + 1))}
+              onClick={() => setPage(Math.min(totalPages, currentPage + 1))}
             />
             <Pagination.Last
-              onClick={() => loadLogs(totalPages)}
+              onClick={() => setPage(totalPages)}
               disabled={currentPage === totalPages || loading}
             />
           </Pagination>
@@ -289,11 +357,18 @@ export function CTMonitorLogsInner({ embedded = false }) {
             </Col>
             <Col md={2}>
               <Form.Label>Program</Form.Label>
-              <Form.Control
+              <Form.Select
                 value={filters.program}
                 onChange={(e) => updateFilter('program', e.target.value)}
-                placeholder="Any"
-              />
+                disabled={loadingFilterOptions}
+              >
+                <option value="">
+                  {loadingFilterOptions ? 'Loading programs...' : 'All programs'}
+                </option>
+                {filterOptions.programs.map((programName) => (
+                  <option key={programName} value={programName}>{programName}</option>
+                ))}
+              </Form.Select>
             </Col>
             <Col md={2}>
               <Form.Label>Event</Form.Label>
@@ -319,19 +394,33 @@ export function CTMonitorLogsInner({ embedded = false }) {
             </Col>
             <Col md={1}>
               <Form.Label>Priority</Form.Label>
-              <Form.Control
+              <Form.Select
                 value={filters.priority}
                 onChange={(e) => updateFilter('priority', e.target.value)}
-                placeholder="Any"
-              />
+                disabled={loadingFilterOptions}
+              >
+                <option value="">
+                  {loadingFilterOptions ? 'Loading...' : 'All'}
+                </option>
+                {filterOptions.priorities.map((priority) => (
+                  <option key={priority} value={priority}>{priority}</option>
+                ))}
+              </Form.Select>
             </Col>
             <Col md={2}>
               <Form.Label>Match type</Form.Label>
-              <Form.Control
+              <Form.Select
                 value={filters.match_type}
                 onChange={(e) => updateFilter('match_type', e.target.value)}
-                placeholder="Any"
-              />
+                disabled={loadingFilterOptions}
+              >
+                <option value="">
+                  {loadingFilterOptions ? 'Loading match types...' : 'All match types'}
+                </option>
+                {filterOptions.match_types.map((matchType) => (
+                  <option key={matchType} value={matchType}>{matchType}</option>
+                ))}
+              </Form.Select>
             </Col>
             <Col md={3}>
               <Form.Label>Start</Form.Label>
@@ -348,11 +437,6 @@ export function CTMonitorLogsInner({ embedded = false }) {
                 value={filters.end_time}
                 onChange={(e) => updateFilter('end_time', e.target.value)}
               />
-            </Col>
-            <Col md="auto">
-              <Button onClick={() => loadLogs(1)} disabled={loading}>
-                {loading ? <Spinner animation="border" size="sm" /> : 'Load'}
-              </Button>
             </Col>
             <Col md="auto">
               <Button variant="outline-secondary" onClick={resetFilters} disabled={loading}>
@@ -383,14 +467,14 @@ export function CTMonitorLogsInner({ embedded = false }) {
             striped
             hover
             className="mb-0 align-middle"
-            style={{ tableLayout: 'fixed', minWidth: '1120px', width: '100%' }}
+            style={{ tableLayout: 'fixed', minWidth: '1220px', width: '100%' }}
           >
             <colgroup>
               <col style={{ width: '7.5rem' }} />
               <col style={{ width: '7rem' }} />
-              <col style={{ width: '7rem' }} />
-              <col style={{ width: '9rem' }} />
-              <col style={{ width: '19%' }} />
+              <col style={{ width: '8.5rem' }} />
+              <col style={{ width: '11rem' }} />
+              <col style={{ width: '18%' }} />
               <col style={{ width: '14%' }} />
               <col style={{ width: '8.5rem' }} />
               <col style={{ width: '12rem' }} />
@@ -427,14 +511,16 @@ export function CTMonitorLogsInner({ embedded = false }) {
                         <TruncatedValue value={item.program_name || 'Unknown'} maxWidth="6.25rem" />
                       </td>
                       <td>
-                        <Badge bg={EVENT_VARIANTS[item.event_type] || 'secondary'}>
-                          {item.event_type}
-                        </Badge>
+                        <TruncatedBadge
+                          value={item.event_type}
+                          variant={EVENT_VARIANTS[item.event_type] || 'secondary'}
+                        />
                       </td>
                       <td>
-                        <Badge bg={OUTCOME_VARIANTS[item.outcome] || 'secondary'}>
-                          {item.outcome}
-                        </Badge>
+                        <TruncatedBadge
+                          value={item.outcome}
+                          variant={OUTCOME_VARIANTS[item.outcome] || 'secondary'}
+                        />
                       </td>
                       <td>
                         <TruncatedValue value={item.domain} as="code" maxWidth="100%" />

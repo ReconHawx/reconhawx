@@ -5,7 +5,7 @@ import pytest
 from models.ct_monitor_log import CtMonitorLogIngestRequest, CtMonitorLogSearchRequest
 from models.user_postgres import UserResponse
 from routes.ct_monitor_internal import ingest_ct_monitor_logs_internal
-from routes.ct_monitor_logs import search_ct_monitor_logs
+from routes.ct_monitor_logs import get_ct_monitor_log_filters, search_ct_monitor_logs
 
 
 def _user(**overrides):
@@ -77,3 +77,32 @@ async def test_search_user_without_access_returns_empty_without_query():
     assert response["items"] == []
     assert response["pagination"]["total_items"] == 0
     search.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_filter_values_are_scoped_to_user_access():
+    with patch(
+        "routes.ct_monitor_logs.CtMonitorLogsRepository.get_filter_values",
+        new_callable=AsyncMock,
+    ) as get_filter_values:
+        get_filter_values.return_value = {
+            "programs": ["prog1"],
+            "match_types": ["similarity"],
+            "priorities": ["high"],
+        }
+        response = await get_ct_monitor_log_filters(_user())
+
+    assert response["programs"] == ["prog1"]
+    get_filter_values.assert_awaited_once_with(programs=["prog1", "prog2"])
+
+
+@pytest.mark.asyncio
+async def test_filter_values_user_without_access_returns_empty_without_query():
+    with patch(
+        "routes.ct_monitor_logs.CtMonitorLogsRepository.get_filter_values",
+        new_callable=AsyncMock,
+    ) as get_filter_values:
+        response = await get_ct_monitor_log_filters(_user(program_permissions={}))
+
+    assert response == {"programs": [], "match_types": [], "priorities": []}
+    get_filter_values.assert_not_awaited()
