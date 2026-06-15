@@ -188,6 +188,80 @@ export function CTMonitorLogsInner({ embedded = false }) {
   };
 
   const totalPages = pagination.total_pages || 1;
+  const totalItems = pagination.total_items || 0;
+  const currentPage = pagination.current_page || page;
+  const renderPagination = () => {
+    if (totalPages <= 1) return null;
+
+    const items = [];
+    const maxVisible = 5;
+    let startPage = Math.max(1, currentPage - Math.floor(maxVisible / 2));
+    let endPage = Math.min(totalPages, startPage + maxVisible - 1);
+
+    if (endPage - startPage + 1 < maxVisible) {
+      startPage = Math.max(1, endPage - maxVisible + 1);
+    }
+
+    for (let pageNumber = startPage; pageNumber <= endPage; pageNumber++) {
+      items.push(
+        <Pagination.Item
+          key={pageNumber}
+          active={pageNumber === currentPage}
+          disabled={loading}
+          onClick={() => loadLogs(pageNumber)}
+        >
+          {pageNumber}
+        </Pagination.Item>
+      );
+    }
+
+    return (
+      <>
+        <div className="text-center text-muted mb-2">
+          Showing {((currentPage - 1) * pageSize) + 1} to {Math.min(currentPage * pageSize, totalItems)} of {totalItems} CT monitor events
+          (Page {currentPage} of {totalPages})
+        </div>
+        <div className="d-flex justify-content-center align-items-center gap-3">
+          <Form.Select
+            size="sm"
+            value={pageSize}
+            onChange={(e) => {
+              setPage(1);
+              setPageSize(parseInt(e.target.value, 10));
+            }}
+            disabled={loading}
+            style={{ width: 'auto' }}
+          >
+            <option value={10}>10 per page</option>
+            <option value={25}>25 per page</option>
+            <option value={50}>50 per page</option>
+            <option value={100}>100 per page</option>
+          </Form.Select>
+          <Pagination className="mb-0">
+            <Pagination.First
+              onClick={() => loadLogs(1)}
+              disabled={currentPage === 1 || loading}
+            />
+            <Pagination.Prev
+              disabled={currentPage === 1 || loading}
+              onClick={() => loadLogs(Math.max(1, currentPage - 1))}
+            />
+            {startPage > 1 && <Pagination.Ellipsis disabled />}
+            {items}
+            {endPage < totalPages && <Pagination.Ellipsis disabled />}
+            <Pagination.Next
+              disabled={currentPage === totalPages || loading}
+              onClick={() => loadLogs(Math.min(totalPages, currentPage + 1))}
+            />
+            <Pagination.Last
+              onClick={() => loadLogs(totalPages)}
+              disabled={currentPage === totalPages || loading}
+            />
+          </Pagination>
+        </div>
+      </>
+    );
+  };
   const Outer = embedded ? 'div' : Container;
 
   return (
@@ -284,17 +358,6 @@ export function CTMonitorLogsInner({ embedded = false }) {
               <Button variant="outline-secondary" onClick={resetFilters} disabled={loading}>
                 Reset
               </Button>
-            </Col>
-            <Col md="auto">
-              <Form.Select
-                value={pageSize}
-                onChange={(e) => setPageSize(Number(e.target.value))}
-                aria-label="Page size"
-              >
-                {[25, 50, 100, 250].map((size) => (
-                  <option key={size} value={size}>{size} / page</option>
-                ))}
-              </Form.Select>
             </Col>
           </Row>
         </Card.Body>
@@ -435,21 +498,7 @@ export function CTMonitorLogsInner({ embedded = false }) {
         </Card.Body>
       </Card>
 
-      <div className="d-flex justify-content-between align-items-center mt-3">
-        <div className="text-muted small">
-          Page {pagination.current_page || page} of {totalPages}
-        </div>
-        <Pagination className="mb-0">
-          <Pagination.Prev
-            disabled={page <= 1 || loading}
-            onClick={() => loadLogs(Math.max(1, page - 1))}
-          />
-          <Pagination.Next
-            disabled={page >= totalPages || loading}
-            onClick={() => loadLogs(Math.min(totalPages, page + 1))}
-          />
-        </Pagination>
-      </div>
+      {!loading && !error && renderPagination()}
     </Outer>
   );
 }
