@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.48.0](https://github.com/ReconHawx/reconhawx/compare/v0.47.1...v0.48.0) (2026-06-15)
+
+
+### Features
+
+* **admin:** make CT monitor log filters data-driven ([67b38cf](https://github.com/ReconHawx/reconhawx/commit/67b38cff42357bf09292ff41b78d6601209f7b53))
+
+
+### Bug Fixes
+
+* **frontend:** keep typosquat findings table within its card ([154070c](https://github.com/ReconHawx/reconhawx/commit/154070c879ce02aa428ea587944447403afe396c))
+* **frontend:** show full CT monitor log pagination controls ([7445fc7](https://github.com/ReconHawx/reconhawx/commit/7445fc7069740505bd9977be3196bb61d72cfc84))
+
 ## [0.47.1](https://github.com/ReconHawx/reconhawx/compare/v0.47.0...v0.47.1) (2026-06-14)
 
 
