@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.47.1](https://github.com/ReconHawx/reconhawx/compare/v0.47.0...v0.47.1) (2026-06-14)
+
+
+### Bug Fixes
+
+* **ct-monitor:** stop logging similarity non-matches ([efd18ef](https://github.com/ReconHawx/reconhawx/commit/efd18efe7282b3a37eaf16fa4db5fbc3605e7b2c))
+* **frontend:** keep CT monitor logs table within its panel ([0bd86af](https://github.com/ReconHawx/reconhawx/commit/0bd86af3019b750b6eabddc41b6ecc9a82255c7a))
+
 ## [0.47.0](https://github.com/ReconHawx/reconhawx/compare/v0.46.0...v0.47.0) (2026-06-14)
 
 
