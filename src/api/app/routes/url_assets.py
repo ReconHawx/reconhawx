@@ -229,7 +229,7 @@ async def import_urls(request: URLImportRequest, current_user: UserResponse = De
                 url_dict = {k: v for k, v in url_dict.items() if v is not None and v != "" and v != "null"}
                 
                 # Use create_or_update_url which handles merging automatically
-                _tid, _action, pending_links = await UrlAssetsRepository.create_or_update_url(url_dict)
+                _tid, _action, pending_links, _implicit = await UrlAssetsRepository.create_or_update_url(url_dict)
                 url_id = _tid
                 if pending_links:
                     await publish_pending_external_link_events(pending_links)

@@ -177,7 +177,7 @@ async def ensure_finding_url_asset(
         url_data["scheme"] = str(scheme).lower()
 
     try:
-        url_id_str, action, _ = await UrlAssetsRepository.create_or_update_url(url_data)
+        url_id_str, action, _, _ = await UrlAssetsRepository.create_or_update_url(url_data)
     except Exception:
         logger.exception("Failed to ensure URL asset for finding url=%s", canonical)
         return None
@@ -230,4 +230,10 @@ async def resolve_finding_asset_ids_with_url_ensure(
     )
     if ensured is None:
         return resolved
-    return replace(resolved, url_id=ensured)
+
+    updated = replace(resolved, url_id=ensured)
+    if resolve_subdomain and updated.subdomain_id is None:
+        url_sub = db.query(URL.subdomain_id).filter(URL.id == ensured).first()
+        if url_sub and url_sub[0]:
+            updated = replace(updated, subdomain_id=url_sub[0])
+    return updated
