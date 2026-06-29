@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Container, Row, Col, Card, Table, Badge, Pagination, Form, InputGroup, Button, Spinner, Alert, Accordion, Modal } from 'react-bootstrap';
+import { Container, Row, Col, Card, Table, Badge, Pagination, Form, InputGroup, Button, Spinner, Alert, Accordion, Modal, OverlayTrigger, Popover } from 'react-bootstrap';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { apexDomainAPI, programAPI } from '../../services/api';
 import { useProgramFilter } from '../../contexts/ProgramFilterContext';
 import { formatDate } from '../../utils/dateUtils';
+import { formatAssetSource, parseSourceFilterParam, serializeSourceFilterParam, sourceFiltersEqual } from '../../utils/assetSource';
+import SourceMultiSelectFilter from '../../components/assets/SourceMultiSelectFilter';
 import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
 import { withListReturn } from '../../hooks/useListNavigation';
 
@@ -24,6 +26,9 @@ function ApexDomains() {
 
   const [searchFilter, setSearchFilter] = useState('');
   const [exactMatchFilter, setExactMatchFilter] = useState('');
+  const [sourceFilter, setSourceFilter] = useState([]);
+  const [distinctSources, setDistinctSources] = useState([]);
+  const [loadingDistinctSources, setLoadingDistinctSources] = useState(false);
 
   // Import/Export related state
   const [showExportModal, setShowExportModal] = useState(false);
@@ -81,6 +86,7 @@ function ApexDomains() {
         search: searchFilter || undefined,
         exact_match: exactMatchFilter || undefined,
         program: programName || undefined,
+        source: sourceFilter.length > 0 ? sourceFilter : undefined,
         sort_by: actualSortField,
         sort_dir: sortDir,
         page,
@@ -105,7 +111,24 @@ function ApexDomains() {
     } finally {
       setLoading(false);
     }
-  }, [pageSize, sortField, sortDirection, searchFilter, exactMatchFilter]);
+  }, [pageSize, sortField, sortDirection, searchFilter, exactMatchFilter, sourceFilter]);
+
+  const fetchDistinctSources = useCallback(async () => {
+    try {
+      setLoadingDistinctSources(true);
+      const sources = await apexDomainAPI.getDistinctValues('source', selectedProgram || undefined);
+      if (sources && Array.isArray(sources)) {
+        setDistinctSources(sources.filter(Boolean).sort());
+      } else {
+        setDistinctSources([]);
+      }
+    } catch (err) {
+      console.error('Error fetching distinct sources:', err);
+      setDistinctSources([]);
+    } finally {
+      setLoadingDistinctSources(false);
+    }
+  }, [selectedProgram]);
 
   const handleSort = (field) => {
     const newDirection = sortField === field && sortDirection === 'asc' ? 'desc' : 'asc';
@@ -140,12 +163,14 @@ function ApexDomains() {
     if (searchFilter) params.set('search', searchFilter);
     if (exactMatchFilter) params.set('exact_match', exactMatchFilter);
     if (selectedProgram) params.set('program', selectedProgram);
+    const serializedSource = serializeSourceFilterParam(sourceFilter);
+    if (serializedSource) params.set('source', serializedSource);
     if (sortField) params.set('sort_by', sortField);
     if (sortDirection) params.set('sort_dir', sortDirection);
     if (currentPage && currentPage !== 1) params.set('page', String(currentPage));
     if (pageSize && pageSize !== 25) params.set('page_size', String(pageSize));
     return params;
-  }, [searchFilter, exactMatchFilter, selectedProgram, sortField, sortDirection, currentPage, pageSize]);
+  }, [searchFilter, exactMatchFilter, selectedProgram, sourceFilter, sortField, sortDirection, currentPage, pageSize]);
 
   // Parse query params into state (runs on URL change and initial load)
   useEffect(() => {
@@ -162,6 +187,9 @@ function ApexDomains() {
     if (urlProgram && urlProgram !== selectedProgram) {
       setSelectedProgram(urlProgram);
     }
+
+    const urlSource = parseSourceFilterParam(urlParams.get('source') || '');
+    if (!sourceFiltersEqual(urlSource, sourceFilter)) setSourceFilter(urlSource);
 
     const urlSortBy = urlParams.get('sort_by');
     if (urlSortBy && urlSortBy !== sortField) setSortField(urlSortBy);
@@ -210,10 +238,13 @@ function ApexDomains() {
     }
   };
 
-  // Fetch programs on component mount
   useEffect(() => {
     fetchPrograms();
   }, []);
+
+  useEffect(() => {
+    fetchDistinctSources();
+  }, [fetchDistinctSources]);
 
   // Initialize selected import program when programs are loaded or selectedProgram changes
   useEffect(() => {
@@ -227,6 +258,7 @@ function ApexDomains() {
   const clearFilters = () => {
     setSearchFilter('');
     setExactMatchFilter('');
+    setSourceFilter([]);
     setSortField('name');
     setSortDirection('asc');
     setCurrentPage(1);
@@ -821,6 +853,26 @@ function ApexDomains() {
     );
   };
 
+  const ColumnFilterPopover = ({ id, isActive, ariaLabel, placement = 'bottom', children }) => {
+    const buttonVariant = isActive ? 'primary' : 'outline-secondary';
+    const overlay = (
+      <Popover id={id} style={{ minWidth: 280, maxWidth: 380 }} onClick={(e) => e.stopPropagation()}>
+        <Popover.Body onClick={(e) => e.stopPropagation()}>
+          {children}
+        </Popover.Body>
+      </Popover>
+    );
+    return (
+      <OverlayTrigger trigger="click" rootClose placement={placement} overlay={overlay}>
+        <Button size="sm" variant={buttonVariant} aria-label={ariaLabel} onClick={(e) => e.stopPropagation()}>
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" style={{ marginRight: 4 }}>
+            <path d="M1.5 1.5a.5.5 0 0 0 0 1h13a.5.5 0 0 0 .4-.8L10 9.2V13a.5.5 0 0 1-.276.447l-2 1A.5.5 0 0 1 7 14V9.2L1.1 1.7a.5.5 0 0 0-.4-.2z" />
+          </svg>
+        </Button>
+      </OverlayTrigger>
+    );
+  };
+
   // Filter apex domains based on search
   const filteredApexDomains = apexDomains.filter(domain => {
     if (!searchFilter) return true;
@@ -952,6 +1004,21 @@ function ApexDomains() {
                       </th>
                       <th>Registrar</th>
                       <th>Registration date</th>
+                      <th style={{ cursor: 'pointer' }} onClick={() => handleSort('source')}>
+                        <div className="d-flex align-items-center gap-2">
+                          <span>Source {getSortIcon('source')}</span>
+                          <ColumnFilterPopover id="filter-source" ariaLabel="Filter by source" isActive={sourceFilter.length > 0}>
+                            <SourceMultiSelectFilter
+                              idPrefix="apex-source"
+                              options={distinctSources}
+                              selected={sourceFilter}
+                              loading={loadingDistinctSources}
+                              onChange={(values) => { setSourceFilter(values); setCurrentPage(1); }}
+                              onClear={() => { setSourceFilter([]); setCurrentPage(1); }}
+                            />
+                          </ColumnFilterPopover>
+                        </div>
+                      </th>
                       <th 
                         style={{ cursor: 'pointer' }}
                         onClick={() => handleSort('updated_at')}
@@ -963,7 +1030,7 @@ function ApexDomains() {
                   <tbody>
                     {filteredApexDomains.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="text-center p-4">
+                        <td colSpan={7} className="text-center p-4">
                           <p className="text-muted mb-0">No apex domains found.</p>
                         </td>
                       </tr>
@@ -1015,6 +1082,9 @@ function ApexDomains() {
                           ) : (
                             <span className="text-muted">N/A</span>
                           )}
+                        </td>
+                        <td className="text-muted">
+                          {formatAssetSource(domain.source)}
                         </td>
                         <td>
                           {formatDateLocal(domain.updated_at)}

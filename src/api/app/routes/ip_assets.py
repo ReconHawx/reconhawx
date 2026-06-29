@@ -19,7 +19,8 @@ class IPsSearchRequest(BaseModel):
     ptr_contains: Optional[str] = Field(None, description="Substring match on PTR record")
     has_service_provider: Optional[bool] = Field(None, description="Filter IPs with/without service provider")
     service_provider: Optional[Union[str, List[str]]] = Field(None, description="Service provider filter")
-    sort_by: Literal['ip_address','program_name','ptr_record','service_provider','updated_at'] = 'ip_address'
+    source: Optional[Union[str, List[str]]] = Field(None, description="Discovery source filter")
+    sort_by: Literal['ip_address','program_name','ptr_record','service_provider','source','updated_at'] = 'ip_address'
     sort_dir: Literal['asc','desc'] = 'asc'
     page: int = Field(1, ge=1)
     page_size: int = Field(25, ge=1, le=10000)
@@ -79,6 +80,7 @@ async def search_ips_typed(request: IPsSearchRequest, current_user: UserResponse
             ptr_contains=request.ptr_contains,
             has_service_provider=request.has_service_provider,
             service_provider=request.service_provider,
+            source=request.source,
             sort_by=request.sort_by,
             sort_dir=request.sort_dir,
             limit=request.page_size,
@@ -204,7 +206,8 @@ async def import_ips(request: IPImportRequest, current_user: UserResponse = Depe
                     "service_provider": ip_data.service_provider,
                     "country": ip_data.country,
                     "city": ip_data.city,
-                    "notes": ip_data.notes
+                    "notes": ip_data.notes,
+                    "source": "manual_import",
                 }
                 
                 # Remove None values and empty strings

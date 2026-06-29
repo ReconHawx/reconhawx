@@ -22,8 +22,9 @@ class SubdomainSearchRequest(BaseModel):
     ip: Optional[Union[str, List[str]]] = Field(None, description="Filter subdomains that resolve to specific IP address(es)")
     has_cname: Optional[bool] = Field(None, description="Filter by presence of CNAME record")
     cname_contains: Optional[str] = Field(None, description="Substring match on CNAME record")
+    source: Optional[Union[str, List[str]]] = Field(None, description="Filter by discovery source(s)")
     program: Optional[Union[str, List[str]]] = Field(None, description="Restrict to program(s) within user's access scope")
-    sort_by: Literal['name','apex_domain','program_name','is_wildcard','updated_at','ip_count','cname_record'] = 'updated_at'
+    sort_by: Literal['name','apex_domain','program_name','is_wildcard','updated_at','ip_count','cname_record','source'] = 'updated_at'
     sort_dir: Literal['asc','desc'] = 'desc'
     page: int = Field(1, ge=1)
     page_size: int = Field(25, ge=1, le=10000)
@@ -89,6 +90,7 @@ async def search_subdomains_typed(request: SubdomainSearchRequest, current_user:
             ip=request.ip,
             has_cname=request.has_cname,
             cname_contains=request.cname_contains,
+            source=request.source,
             programs=programs,
             sort_by=request.sort_by,
             sort_dir=request.sort_dir,
@@ -240,7 +242,8 @@ async def import_domains(request: DomainImportRequest, current_user: UserRespons
                     "is_wildcard": domain_data.is_wildcard or False,
                     "ip": domain_data.ip or [],
                     "cname_record": domain_data.cname_record,
-                    "notes": domain_data.notes
+                    "notes": domain_data.notes,
+                    "source": "manual_import",
                 }
                 
                 

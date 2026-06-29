@@ -4,6 +4,8 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { ipAPI, programAPI } from '../../services/api';
 import { useProgramFilter } from '../../contexts/ProgramFilterContext';
 import { formatDate } from '../../utils/dateUtils';
+import { formatAssetSource, parseSourceFilterParam, serializeSourceFilterParam, sourceFiltersEqual } from '../../utils/assetSource';
+import SourceMultiSelectFilter from '../../components/assets/SourceMultiSelectFilter';
 import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
 import { withListReturn } from '../../hooks/useListNavigation';
 
@@ -25,6 +27,9 @@ function IPs() {
   const [ptrTextFilter, setPtrTextFilter] = useState('');
   const [serviceProviderFilter, setServiceProviderFilter] = useState('');
   const [serviceProviders, setServiceProviders] = useState([]);
+  const [sourceFilter, setSourceFilter] = useState([]);
+  const [distinctSources, setDistinctSources] = useState([]);
+  const [loadingDistinctSources, setLoadingDistinctSources] = useState(false);
   const [sortField, setSortField] = useState('updated_at');
   const [sortDirection, setSortDirection] = useState('desc');
   const [selectedItems, setSelectedItems] = useState(new Set());
@@ -85,6 +90,7 @@ function IPs() {
         // Normal case: filter by specific service provider
         params.service_provider = serviceProviderFilter;
       }
+      if (sourceFilter.length > 0) params.source = sourceFilter;
 
       params.sort_by = sortField;
       params.sort_dir = sortDirection === 'asc' ? 'asc' : 'desc';
@@ -108,10 +114,28 @@ function IPs() {
     hasPtrFilter,
     ptrTextFilter,
     serviceProviderFilter,
+    sourceFilter,
     sortField,
     sortDirection,
     pageSize
   ]);
+
+  const fetchDistinctSources = useCallback(async () => {
+    try {
+      setLoadingDistinctSources(true);
+      const sources = await ipAPI.getDistinctValues('source', selectedProgram || undefined);
+      if (sources && Array.isArray(sources)) {
+        setDistinctSources(sources.filter(Boolean).sort());
+      } else {
+        setDistinctSources([]);
+      }
+    } catch (err) {
+      console.error('Error fetching distinct sources:', err);
+      setDistinctSources([]);
+    } finally {
+      setLoadingDistinctSources(false);
+    }
+  }, [selectedProgram]);
 
   const fetchServiceProviders = async () => {
     try {
@@ -163,6 +187,8 @@ function IPs() {
     if (hasPtrFilter) params.set('has_ptr', hasPtrFilter);
     if (ptrTextFilter) params.set('ptr_contains', ptrTextFilter);
     if (serviceProviderFilter) params.set('service_provider', serviceProviderFilter);
+    const serializedSource = serializeSourceFilterParam(sourceFilter);
+    if (serializedSource) params.set('source', serializedSource);
     if (sortField) params.set('sort_by', sortField);
     if (sortDirection) params.set('sort_dir', sortDirection);
     if (currentPage && currentPage !== 1) params.set('page', String(currentPage));
@@ -175,6 +201,7 @@ function IPs() {
     hasPtrFilter,
     ptrTextFilter,
     serviceProviderFilter,
+    sourceFilter,
     sortField,
     sortDirection,
     currentPage,
@@ -204,6 +231,9 @@ function IPs() {
 
     const urlProvider = urlParams.get('service_provider') || '';
     if (urlProvider !== serviceProviderFilter) setServiceProviderFilter(urlProvider);
+
+    const urlSource = parseSourceFilterParam(urlParams.get('source') || '');
+    if (!sourceFiltersEqual(urlSource, sourceFilter)) setSourceFilter(urlSource);
 
     const urlSortBy = urlParams.get('sort_by');
     if (urlSortBy && urlSortBy !== sortField) setSortField(urlSortBy);
@@ -250,10 +280,11 @@ function IPs() {
     }
   };
 
-  // Fetch service providers on component mount
+  // Fetch service providers and distinct sources on mount / program change
   useEffect(() => {
     fetchServiceProviders();
-  }, []);
+    fetchDistinctSources();
+  }, [fetchDistinctSources]);
 
   // Fetch programs on component mount
   useEffect(() => {
@@ -273,6 +304,7 @@ function IPs() {
     setHasPtrFilter('');
     setPtrTextFilter('');
     setServiceProviderFilter('');
+    setSourceFilter([]);
     setCurrentPage(1);
     // URL will be updated by sync effect
   };
@@ -1027,6 +1059,21 @@ function IPs() {
                           </ColumnFilterPopover>
                         </div>
                       </th>
+                      <th style={{ cursor: 'pointer' }} onClick={() => handleSort('source')}>
+                        <div className="d-flex align-items-center gap-2">
+                          <span>Source {getSortIcon('source')}</span>
+                          <ColumnFilterPopover id="filter-source" ariaLabel="Filter by source" isActive={sourceFilter.length > 0}>
+                            <SourceMultiSelectFilter
+                              idPrefix="ip-source"
+                              options={distinctSources}
+                              selected={sourceFilter}
+                              loading={loadingDistinctSources}
+                              onChange={(values) => { setSourceFilter(values); setCurrentPage(1); }}
+                              onClear={() => { setSourceFilter([]); setCurrentPage(1); }}
+                            />
+                          </ColumnFilterPopover>
+                        </div>
+                      </th>
                       <th 
                         style={{ cursor: 'pointer' }}
                         onClick={() => handleSort('updated_at')}
@@ -1038,7 +1085,7 @@ function IPs() {
                   <tbody>
                     {ips.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="text-center p-4">
+                        <td colSpan={7} className="text-center p-4">
                           <p className="text-muted mb-0">No IP addresses found matching the current filters.</p>
                         </td>
                       </tr>
@@ -1079,6 +1126,9 @@ function IPs() {
                           ) : (
                             <span className="text-muted">-</span>
                           )}
+                        </td>
+                        <td className="text-muted">
+                          {formatAssetSource(ip.source)}
                         </td>
                         <td className="text-muted">
                           {formatDateLocal(ip.updated_at)}

@@ -4,6 +4,8 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { urlAPI, programAPI } from '../../services/api';
 import { useProgramFilter } from '../../contexts/ProgramFilterContext';
 import { formatDate } from '../../utils/dateUtils';
+import { formatAssetSource, parseSourceFilterParam, serializeSourceFilterParam, sourceFiltersEqual } from '../../utils/assetSource';
+import SourceMultiSelectFilter from '../../components/assets/SourceMultiSelectFilter';
 import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
 import { withListReturn } from '../../hooks/useListNavigation';
 
@@ -41,6 +43,9 @@ function URLs() {
   const [portFilter, setPortFilter] = useState('');
   const [showOnlyUnusualPorts, setShowOnlyUnusualPorts] = useState(false);
   const [ports, setPorts] = useState([]);
+  const [sourceFilter, setSourceFilter] = useState([]);
+  const [distinctSources, setDistinctSources] = useState([]);
+  const [loadingDistinctSources, setLoadingDistinctSources] = useState(false);
   const [sortField, setSortField] = useState('updated_at');
   const [sortDirection, setSortDirection] = useState('desc');
   const [selectedItems, setSelectedItems] = useState(new Set());
@@ -99,6 +104,7 @@ function URLs() {
       if (techDropdownFilter) params.technology = techDropdownFilter;
       if (portFilter) params.port = parseInt(portFilter);
       if (showOnlyUnusualPorts) params.unusual_ports = true;
+      if (sourceFilter.length > 0) params.source = sourceFilter;
       params.sort_by = sortField;
       params.sort_dir = sortDirection === 'asc' ? 'asc' : 'desc';
       params.page = page;
@@ -116,7 +122,7 @@ function URLs() {
     } finally {
       setLoading(false);
     }
-  }, [pageSize, searchFilter, exactMatchFilter, protocolFilter, showOnlyRootUrls, selectedProgram, statusFilter, techTextFilter, techDropdownFilter, portFilter, showOnlyUnusualPorts, sortField, sortDirection]);
+  }, [pageSize, searchFilter, exactMatchFilter, protocolFilter, showOnlyRootUrls, selectedProgram, statusFilter, techTextFilter, techDropdownFilter, portFilter, showOnlyUnusualPorts, sourceFilter, sortField, sortDirection]);
 
   const handleSort = (field) => {
     const newDirection = sortField === field && sortDirection === 'asc' ? 'desc' : 'asc';
@@ -160,6 +166,23 @@ function URLs() {
     }
   }, [selectedProgram]);
 
+  const fetchDistinctSources = useCallback(async () => {
+    try {
+      setLoadingDistinctSources(true);
+      const sources = await urlAPI.getDistinctValues('source', selectedProgram || undefined);
+      if (sources && Array.isArray(sources)) {
+        setDistinctSources(sources.filter(Boolean).sort());
+      } else {
+        setDistinctSources([]);
+      }
+    } catch (err) {
+      console.error('Error fetching distinct sources:', err);
+      setDistinctSources([]);
+    } finally {
+      setLoadingDistinctSources(false);
+    }
+  }, [selectedProgram]);
+
   const fetchPrograms = useCallback(async () => {
     try {
       const response = await programAPI.getAll();
@@ -200,6 +223,8 @@ function URLs() {
     if (techDropdownFilter) params.set('technology', techDropdownFilter);
     if (portFilter) params.set('port', portFilter);
     if (showOnlyUnusualPorts) params.set('unusual_ports', 'true');
+    const serializedSource = serializeSourceFilterParam(sourceFilter);
+    if (serializedSource) params.set('source', serializedSource);
     if (sortField) params.set('sort_by', sortField);
     if (sortDirection) params.set('sort_dir', sortDirection);
     if (currentPage && currentPage !== 1) params.set('page', String(currentPage));
@@ -216,6 +241,7 @@ function URLs() {
     techDropdownFilter,
     portFilter,
     showOnlyUnusualPorts,
+    sourceFilter,
     sortField,
     sortDirection,
     currentPage,
@@ -259,6 +285,9 @@ function URLs() {
     const normalizedUnusualPorts = urlUnusualPorts === 'true';
     if (urlUnusualPorts !== null && normalizedUnusualPorts !== showOnlyUnusualPorts) setShowOnlyUnusualPorts(normalizedUnusualPorts);
 
+    const urlSource = parseSourceFilterParam(urlParams.get('source') || '');
+    if (!sourceFiltersEqual(urlSource, sourceFilter)) setSourceFilter(urlSource);
+
     const urlSortBy = urlParams.get('sort_by');
     if (urlSortBy && urlSortBy !== sortField) setSortField(urlSortBy);
 
@@ -295,7 +324,8 @@ function URLs() {
   useEffect(() => {
     fetchTechnologies();
     fetchPorts();
-  }, [selectedProgram, fetchTechnologies, fetchPorts]);
+    fetchDistinctSources();
+  }, [selectedProgram, fetchTechnologies, fetchPorts, fetchDistinctSources]);
 
   // Load Font Awesome CSS on component mount
   useEffect(() => {
@@ -324,6 +354,7 @@ function URLs() {
     setTechDropdownFilter('');
     setPortFilter('');
     setShowOnlyUnusualPorts(false);
+    setSourceFilter([]);
     setPageSize(25);
     setCurrentPage(1);
     // URL will be updated by sync effect
@@ -1172,6 +1203,21 @@ function URLs() {
                           </ColumnFilterPopover>
                         </div>
                       </th>
+                      <th style={{ cursor: 'pointer' }} onClick={() => handleSort('source')}>
+                        <div className="d-flex align-items-center gap-2">
+                          <span>Source {getSortIcon('source')}</span>
+                          <ColumnFilterPopover id="filter-source" ariaLabel="Filter by source" isActive={sourceFilter.length > 0}>
+                            <SourceMultiSelectFilter
+                              idPrefix="url-source"
+                              options={distinctSources}
+                              selected={sourceFilter}
+                              loading={loadingDistinctSources}
+                              onChange={(values) => { setSourceFilter(values); setCurrentPage(1); }}
+                              onClear={() => { setSourceFilter([]); setCurrentPage(1); }}
+                            />
+                          </ColumnFilterPopover>
+                        </div>
+                      </th>
                       <th 
                         style={{ cursor: 'pointer' }}
                         onClick={() => handleSort('updated_at')}
@@ -1183,7 +1229,7 @@ function URLs() {
                   <tbody>
                     {urls.length === 0 ? (
                       <tr>
-                        <td colSpan={8} className="text-center p-4">
+                        <td colSpan={9} className="text-center p-4">
                           <p className="text-muted mb-0">No URLs found matching the current filters.</p>
                         </td>
                       </tr>
@@ -1249,6 +1295,9 @@ function URLs() {
                           ) : (
                             <span className="text-muted">None</span>
                           )}
+                        </td>
+                        <td className="text-muted">
+                          {formatAssetSource(url.source)}
                         </td>
                         <td className="text-muted">
                           {formatDate(url.updated_at, 'MMM dd, yyyy HH:mm:ss')}

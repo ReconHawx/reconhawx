@@ -4,6 +4,8 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { certificateAPI, programAPI } from '../../services/api';
 import { useProgramFilter } from '../../contexts/ProgramFilterContext';
 import { formatDate } from '../../utils/dateUtils';
+import { formatAssetSource, parseSourceFilterParam, serializeSourceFilterParam, sourceFiltersEqual } from '../../utils/assetSource';
+import SourceMultiSelectFilter from '../../components/assets/SourceMultiSelectFilter';
 import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
 import { withListReturn } from '../../hooks/useListNavigation';
 
@@ -65,6 +67,9 @@ function Certificates() {
   const [programs, setPrograms] = useState([]);
   const [selectedImportProgram, setSelectedImportProgram] = useState('');
   const [issuerOrganizations, setIssuerOrganizations] = useState([]);
+  const [sourceFilter, setSourceFilter] = useState([]);
+  const [distinctSources, setDistinctSources] = useState([]);
+  const [loadingDistinctSources, setLoadingDistinctSources] = useState(false);
   const [importProgress, setImportProgress] = useState({
     current: 0,
     total: 0,
@@ -87,6 +92,7 @@ function Certificates() {
       if (tlsVersionFilter) params.tls_version = tlsVersionFilter;
       if (issuerOrgFilter) params.issuer_organization = issuerOrgFilter;
       if (cipherFilter) params.cipher = cipherFilter;
+      if (sourceFilter.length > 0) params.source = sourceFilter;
       params.sort_by = sortField === 'subject_alternative_names' ? 'san_count' : sortField;
       params.sort_dir = sortDirection === 'asc' ? 'asc' : 'desc';
       params.page = page;
@@ -110,6 +116,7 @@ function Certificates() {
     tlsVersionFilter,
     issuerOrgFilter,
     cipherFilter,
+    sourceFilter,
     sortField,
     sortDirection,
     pageSize
@@ -197,6 +204,8 @@ function Certificates() {
     if (tlsVersionFilter) params.set('tls_version', tlsVersionFilter);
     if (issuerOrgFilter) params.set('issuer_organization', issuerOrgFilter);
     if (cipherFilter) params.set('cipher', cipherFilter);
+    const serializedSource = serializeSourceFilterParam(sourceFilter);
+    if (serializedSource) params.set('source', serializedSource);
     if (sortField) params.set('sort_by', sortField === 'subject_alternative_names' ? 'san_count' : sortField);
     if (sortDirection) params.set('sort_dir', sortDirection);
     if (currentPage && currentPage !== 1) params.set('page', String(currentPage));
@@ -209,6 +218,7 @@ function Certificates() {
     tlsVersionFilter,
     issuerOrgFilter,
     cipherFilter,
+    sourceFilter,
     sortField,
     sortDirection,
     currentPage,
@@ -237,6 +247,9 @@ function Certificates() {
 
     const urlCipher = urlParams.get('cipher') || '';
     if (urlCipher !== cipherFilter) setCipherFilter(urlCipher);
+
+    const urlSource = parseSourceFilterParam(urlParams.get('source') || '');
+    if (!sourceFiltersEqual(urlSource, sourceFilter)) setSourceFilter(urlSource);
 
     const urlSortBy = urlParams.get('sort_by');
     if (urlSortBy) {
@@ -301,6 +314,19 @@ function Certificates() {
         // Fail silently to keep UI responsive
         setIssuerOrganizations([]);
       }
+      try {
+        setLoadingDistinctSources(true);
+        const sources = await certificateAPI.getDistinctValues('source', selectedProgram || undefined);
+        if (Array.isArray(sources)) {
+          setDistinctSources(sources.filter(Boolean).sort());
+        } else {
+          setDistinctSources([]);
+        }
+      } catch (e) {
+        setDistinctSources([]);
+      } finally {
+        setLoadingDistinctSources(false);
+      }
     };
     fetchDistincts();
   }, [selectedProgram]);
@@ -319,6 +345,7 @@ function Certificates() {
     setTlsVersionFilter('');
     setIssuerOrgFilter('');
     setCipherFilter('');
+    setSourceFilter([]);
     setCurrentPage(1);
     // URL will be updated by sync effect
   };
@@ -1076,6 +1103,21 @@ function Certificates() {
                       >
                         SAN Count {getSortIcon('subject_alternative_names')}
                       </th>
+                      <th style={{ cursor: 'pointer' }} onClick={() => handleSort('source')}>
+                        <div className="d-flex align-items-center gap-2">
+                          <span>Source {getSortIcon('source')}</span>
+                          <ColumnFilterPopover id="filter-source" ariaLabel="Filter by source" isActive={sourceFilter.length > 0}>
+                            <SourceMultiSelectFilter
+                              idPrefix="certificate-source"
+                              options={distinctSources}
+                              selected={sourceFilter}
+                              loading={loadingDistinctSources}
+                              onChange={(values) => { setSourceFilter(values); setCurrentPage(1); }}
+                              onClear={() => { setSourceFilter([]); setCurrentPage(1); }}
+                            />
+                          </ColumnFilterPopover>
+                        </div>
+                      </th>
                       <th 
                         style={{ cursor: 'pointer' }}
                         onClick={() => handleSort('updated_at')}
@@ -1087,7 +1129,7 @@ function Certificates() {
                   <tbody>
                     {certificates.length === 0 ? (
                       <tr>
-                        <td colSpan={8} className="text-center p-4">
+                        <td colSpan={9} className="text-center p-4">
                           <p className="text-muted mb-0">No certificates found matching the current filters.</p>
                         </td>
                       </tr>
@@ -1149,6 +1191,9 @@ function Certificates() {
                           <Badge bg="info">
                             {cert.subject_alternative_names ? cert.subject_alternative_names.length : 0}
                           </Badge>
+                        </td>
+                        <td className="text-muted">
+                          {formatAssetSource(cert.source)}
                         </td>
                         <td className="text-muted">
                           {formatDateLocal(cert.updated_at)}

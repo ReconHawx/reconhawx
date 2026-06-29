@@ -399,7 +399,8 @@ class SubdomainPermutations(Task):
                                 program_name,
                                 self.task_queue_client.task_executor.execution_id or "",
                                 converted_assets,
-                                self.task_queue_client.task_executor.asset_processor
+                                self.task_queue_client.task_executor.asset_processor,
+                                source="subdomain_permutations",
                             )
                             
                             if success:

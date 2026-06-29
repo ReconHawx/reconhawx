@@ -4,6 +4,8 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { domainAPI, programAPI } from '../../services/api';
 import { useProgramFilter } from '../../contexts/ProgramFilterContext';
 import { formatDate } from '../../utils/dateUtils';
+import { formatAssetSource, parseSourceFilterParam, serializeSourceFilterParam, sourceFiltersEqual } from '../../utils/assetSource';
+import SourceMultiSelectFilter from '../../components/assets/SourceMultiSelectFilter';
 import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
 import { withListReturn } from '../../hooks/useListNavigation';
 
@@ -28,6 +30,9 @@ function Subdomains() {
   const [apexDomainFilter, setApexDomainFilter] = useState('');
   const [availableApexDomains, setAvailableApexDomains] = useState([]);
   const [loadingApexDomains, setLoadingApexDomains] = useState(false);
+  const [sourceFilter, setSourceFilter] = useState([]);
+  const [distinctSources, setDistinctSources] = useState([]);
+  const [loadingDistinctSources, setLoadingDistinctSources] = useState(false);
   const [sortField, setSortField] = useState('updated_at');
   const [sortDirection, setSortDirection] = useState('desc');
   const [selectedItems, setSelectedItems] = useState(new Set());
@@ -92,13 +97,15 @@ function Subdomains() {
     if (hasCnameFilter) params.set('has_cname', hasCnameFilter);
     if (cnameFilter) params.set('cname_contains', cnameFilter);
     if (apexDomainFilter) params.set('apex_domain', apexDomainFilter);
+    const serializedSource = serializeSourceFilterParam(sourceFilter);
+    if (serializedSource) params.set('source', serializedSource);
     const apiSortBy = sortField === 'ip' ? 'ip_count' : sortField;
     if (apiSortBy) params.set('sort_by', apiSortBy);
     if (sortDirection) params.set('sort_dir', sortDirection);
     if (currentPage && currentPage !== 1) params.set('page', String(currentPage));
     if (pageSize && pageSize !== 25) params.set('page_size', String(pageSize));
     return params;
-  }, [searchFilter, exactMatchFilter, selectedProgram, wildcardFilter, hasIpsFilter, hasCnameFilter, cnameFilter, apexDomainFilter, sortField, sortDirection, currentPage, pageSize]);
+  }, [searchFilter, exactMatchFilter, selectedProgram, wildcardFilter, hasIpsFilter, hasCnameFilter, cnameFilter, apexDomainFilter, sourceFilter, sortField, sortDirection, currentPage, pageSize]);
 
   // Parse query params into state (runs on URL change and initial load)
   useEffect(() => {
@@ -133,6 +140,9 @@ function Subdomains() {
 
     const urlApex = urlParams.get('apex_domain') || '';
     if (urlApex !== apexDomainFilter) setApexDomainFilter(urlApex);
+
+    const urlSource = parseSourceFilterParam(urlParams.get('source') || '');
+    if (!sourceFiltersEqual(urlSource, sourceFilter)) setSourceFilter(urlSource);
 
     const urlSortBy = urlParams.get('sort_by');
     if (urlSortBy) {
@@ -180,6 +190,7 @@ function Subdomains() {
       if (hasCnameFilter) params.has_cname = hasCnameFilter === 'true';
       if (cnameFilter) params.cname_contains = cnameFilter;
       if (apexDomainFilter) params.apex_domain = apexDomainFilter;
+      if (sourceFilter.length > 0) params.source = sourceFilter;
       params.sort_by = sortField === 'ip' ? 'ip_count' : sortField;
       params.sort_dir = sortDirection === 'asc' ? 'asc' : 'desc';
       params.page = page;
@@ -196,7 +207,24 @@ function Subdomains() {
     } finally {
       setLoading(false);
     }
-  }, [pageSize, searchFilter, exactMatchFilter, selectedProgram, wildcardFilter, hasIpsFilter, hasCnameFilter, cnameFilter, apexDomainFilter, sortField, sortDirection]);
+  }, [pageSize, searchFilter, exactMatchFilter, selectedProgram, wildcardFilter, hasIpsFilter, hasCnameFilter, cnameFilter, apexDomainFilter, sourceFilter, sortField, sortDirection]);
+
+  const fetchDistinctSources = useCallback(async () => {
+    try {
+      setLoadingDistinctSources(true);
+      const sources = await domainAPI.getDistinctValues('source', selectedProgram || undefined);
+      if (sources && Array.isArray(sources)) {
+        setDistinctSources(sources.filter(Boolean).sort());
+      } else {
+        setDistinctSources([]);
+      }
+    } catch (err) {
+      console.error('Error fetching distinct sources:', err);
+      setDistinctSources([]);
+    } finally {
+      setLoadingDistinctSources(false);
+    }
+  }, [selectedProgram]);
 
   const fetchApexDomains = useCallback(async () => {
     try {
@@ -303,7 +331,8 @@ function Subdomains() {
   // Fetch apex domains when program changes
   useEffect(() => {
     fetchApexDomains();
-  }, [fetchApexDomains]);
+    fetchDistinctSources();
+  }, [fetchApexDomains, fetchDistinctSources]);
 
   // Handle URL parameters for apex domain filtering
   useEffect(() => {
@@ -331,6 +360,7 @@ function Subdomains() {
     setHasCnameFilter('');
     setCnameFilter('');
     setApexDomainFilter('');
+    setSourceFilter([]);
     setCurrentPage(1);
   };
 
@@ -1194,6 +1224,25 @@ function Subdomains() {
                       </ColumnFilterPopover>
                     </div>
                   </th>
+                  <th style={{ cursor: 'pointer' }} onClick={() => handleSort('source')}>
+                    <div className="d-flex align-items-center gap-2">
+                      <span>Source {getSortIcon('source')}</span>
+                      <ColumnFilterPopover
+                        id="filter-source"
+                        ariaLabel="Filter by source"
+                        isActive={sourceFilter.length > 0}
+                      >
+                        <SourceMultiSelectFilter
+                          idPrefix="subdomain-source"
+                          options={distinctSources}
+                          selected={sourceFilter}
+                          loading={loadingDistinctSources}
+                          onChange={(values) => { setSourceFilter(values); setCurrentPage(1); }}
+                          onClear={() => { setSourceFilter([]); setCurrentPage(1); }}
+                        />
+                      </ColumnFilterPopover>
+                    </div>
+                  </th>
                   <th style={{ cursor: 'pointer' }} onClick={() => handleSort('updated_at')}>
                     Last Updated {getSortIcon('updated_at')}
                   </th>
@@ -1202,7 +1251,7 @@ function Subdomains() {
               <tbody>
                 {domains.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="text-center p-4">
+                    <td colSpan={9} className="text-center p-4">
                       <p className="text-muted mb-0">No domains found. This might be because the Data API is not running or no data exists.</p>
                     </td>
                   </tr>
@@ -1274,6 +1323,9 @@ function Subdomains() {
                       ) : (
                         <span className="text-muted">-</span>
                       )}
+                    </td>
+                    <td className="text-muted">
+                      {formatAssetSource(domain.source)}
                     </td>
                                             <td className="text-muted">
                           {formatDateLocal(domain.updated_at)}

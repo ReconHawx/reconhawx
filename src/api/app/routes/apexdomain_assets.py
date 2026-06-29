@@ -39,7 +39,8 @@ class ApexDomainsSearchRequest(BaseModel):
     search: Optional[str] = Field(None, description="Substring search on apex domain name")
     exact_match: Optional[str] = Field(None, description="Exact match on apex domain name")
     program: Optional[Union[str, List[str]]] = Field(None, description="Restrict to program(s) within user's access scope")
-    sort_by: Literal['name','program_name','updated_at','created_at'] = 'name'
+    source: Optional[Union[str, List[str]]] = Field(None, description="Discovery source filter")
+    sort_by: Literal['name','program_name','source','updated_at','created_at'] = 'name'
     sort_dir: Literal['asc','desc'] = 'asc'
     page: int = Field(1, ge=1)
     page_size: int = Field(25, ge=1, le=10000)
@@ -96,6 +97,7 @@ async def search_apex_domains_typed(request: ApexDomainsSearchRequest, current_u
             search=request.search,
             exact_match=request.exact_match,
             program=programs if programs is not None else None,
+            source=request.source,
             sort_by=request.sort_by,
             sort_dir=request.sort_dir,
             limit=request.page_size,
@@ -199,7 +201,8 @@ async def import_apex_domains(request: ApexDomainImportRequest, current_user: Us
                     #"cname": apex_domain_data.cname,
                     #"ip": apex_domain_data.ip or [],
                     "whois_data": apex_domain_data.whois_data,
-                    "notes": apex_domain_data.notes
+                    "notes": apex_domain_data.notes,
+                    "source": "manual_import",
                 }
                 
                 # Remove None values and empty strings, but keep empty lists and valid lists

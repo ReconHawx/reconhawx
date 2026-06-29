@@ -153,6 +153,14 @@ export const apexDomainAPI = {
       notes: notes
     });
     return response.data;
+  },
+
+  // Get distinct values for a field
+  getDistinctValues: async (fieldName, program = undefined) => {
+    const body = {};
+    if (program) body.program = program;
+    const response = await api.post(`/assets/apex-domain/distinct/${fieldName}`, body);
+    return response.data;
   }
 };
 
@@ -209,6 +217,14 @@ export const ipAPI = {
       ips,
       ...options
     });
+    return response.data;
+  },
+
+  // Get distinct values for a field
+  getDistinctValues: async (fieldName, program = undefined) => {
+    const body = {};
+    if (program) body.program = program;
+    const response = await api.post(`/assets/ip/distinct/${fieldName}`, body);
     return response.data;
   }
 };

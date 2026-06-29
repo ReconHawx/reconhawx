@@ -19,7 +19,8 @@ class CertificatesSearchRequest(BaseModel):
     expiring_within_days: int = Field(30, ge=1, le=3650)
     tls_version: Optional[str] = Field(None, description="Filter by TLS version (partial match)")
     cipher: Optional[str] = Field(None, description="Filter by cipher (partial match)")
-    sort_by: Literal['subject_dn','valid_until','program_name','san_count','tls_version','cipher','updated_at'] = 'updated_at'
+    source: Optional[Union[str, List[str]]] = Field(None, description="Discovery source filter")
+    sort_by: Literal['subject_dn','valid_until','program_name','san_count','tls_version','cipher','source','updated_at'] = 'updated_at'
     sort_dir: Literal['asc','desc'] = 'desc'
     page: int = Field(1, ge=1)
     page_size: int = Field(25, ge=1, le=10000)
@@ -79,6 +80,7 @@ async def search_certificates_typed(request: CertificatesSearchRequest, current_
             expiring_within_days=request.expiring_within_days,
             tls_version=request.tls_version,
             cipher=request.cipher,
+            source=request.source,
             sort_by=request.sort_by,
             sort_dir=request.sort_dir,
             limit=request.page_size,
@@ -221,7 +223,8 @@ async def import_certificates(request: CertificateImportRequest, current_user: U
                     "not_valid_after": cert_data.not_valid_after,
                     "signature_algorithm": cert_data.signature_algorithm,
                     "serial_number": cert_data.serial_number,
-                    "notes": cert_data.notes
+                    "notes": cert_data.notes,
+                    "source": "manual_import",
                 }
                 
                 # Remove None values, empty strings, and string "null" values

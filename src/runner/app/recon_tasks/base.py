@@ -963,7 +963,7 @@ class Task(ABC):
                     if asset_processor:
                         success = self.task_components.data_api_client.send_assets(
                             step_name, program_name, workflow_id or "unknown",
-                            assets, asset_processor
+                            assets, asset_processor, source=getattr(self, "name", None),
                         )
                         return success
                     else:
@@ -981,7 +981,7 @@ class Task(ABC):
                         if asset_processor:
                             success = task_executor.data_api_client.send_assets(
                                 step_name, program_name, workflow_id or "unknown",
-                                assets, asset_processor
+                                assets, asset_processor, source=getattr(self, "name", None),
                             )
                             return success
                         else:

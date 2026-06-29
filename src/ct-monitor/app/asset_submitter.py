@@ -184,6 +184,7 @@ class CTAssetSubmitter:
         program_name = self._program_names.get(program_id, program_id)
         payload = {
             "program_id": program_id,
+            "source": "ct_monitor",
             "assets": {"subdomain": [{"name": h} for h in hostnames]},
         }
         headers = {}

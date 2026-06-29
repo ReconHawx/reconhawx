@@ -166,6 +166,7 @@ async def ensure_finding_url_asset(
     url_data: dict[str, Any] = {
         "url": canonical,
         "program_name": program_name,
+        "source": "finding_ingest",
     }
     if hostname:
         url_data["hostname"] = normalize_hostname(str(hostname))

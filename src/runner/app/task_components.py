@@ -1366,7 +1366,8 @@ class AsyncDataApiClient:
             return {"items": [], "pagination": {}}
 
     async def send_assets(self, step_name: str, program_id: str, workflow_id: str,
-                         assets: Dict[str, List[Any]], asset_processor: AssetProcessor) -> tuple[bool, Dict[str, Any]]:
+                         assets: Dict[str, List[Any]], asset_processor: AssetProcessor,
+                         source: Optional[str] = None) -> tuple[bool, Dict[str, Any]]:
         """Send assets to the data-api service in chunks"""
         if not self.session:
             logger.error("Session not initialized. Use async context manager.")
@@ -1423,6 +1424,8 @@ class AsyncDataApiClient:
                             "step_name": step_name,
                             "assets": {asset_type: chunk}
                         }
+                        if source:
+                            chunk_payload["source"] = source
                         
                         # Validate JSON serialization before sending
                         try:
@@ -1917,7 +1920,8 @@ class SyncDataApiClient:
             return {"items": [], "pagination": {}}
     
     def send_assets(self, step_name: str, program_id: str, workflow_id: str,
-                   assets: Dict[str, List[Any]], asset_processor: AssetProcessor) -> tuple[bool, Dict[str, Any]]:
+                   assets: Dict[str, List[Any]], asset_processor: AssetProcessor,
+                   source: Optional[str] = None) -> tuple[bool, Dict[str, Any]]:
         """Send assets to the data-api service in chunks (synchronous version)"""
         try:
             # Check if assets is empty and return early
@@ -1971,6 +1975,8 @@ class SyncDataApiClient:
                             "program_id": program_id,
                             "assets": {asset_type: chunk}
                         }
+                        if source:
+                            chunk_payload["source"] = source
                         
                         # Validate JSON serialization before sending
                         try:
