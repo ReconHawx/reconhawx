@@ -486,13 +486,14 @@ class BatchRepository:
         cls,
         urls: List[Dict],
         program_id: str,
-    ) -> Tuple[int, int, int, int, int, List[Dict], List[Dict], List[Dict]]:
+    ) -> Tuple[int, int, int, int, int, List[Dict], List[Dict], List[Dict], List[Dict]]:
         """
         Enhanced bulk create or update URLs with rich event data collection
 
         Returns:
             Tuple of (success_count, failed_count, created_count, updated_count,
-            skipped_count, created_assets, updated_assets, skipped_assets)
+            skipped_count, created_assets, updated_assets, skipped_assets,
+            implicit_asset_created_events)
         """
         prog = await ProgramRepository.get_program(program_id)
         if not prog:
@@ -507,6 +508,7 @@ class BatchRepository:
         created_assets: List[Dict] = []
         updated_assets: List[Dict] = []
         skipped_assets: List[Dict] = []
+        implicit_created_events: List[Dict] = []
 
         if bulk_sql_urls_enabled() and not bulk_urls.urls_require_full_orm(urls):
             return await bulk_urls.bulk_create_or_update_urls_all(urls, program_id)
@@ -533,14 +535,21 @@ class BatchRepository:
                 )
                 continue
 
-            if len(result_or_error) == 3:
+            if len(result_or_error) == 4:
+                record_id, action, pending_external_link_events, implicit_events = result_or_error
+            elif len(result_or_error) == 3:
                 record_id, action, pending_external_link_events = result_or_error
+                implicit_events = []
             else:
                 record_id, action = result_or_error
                 pending_external_link_events = []
+                implicit_events = []
 
             if pending_external_link_events:
                 await publish_pending_external_link_events(pending_external_link_events)
+
+            if implicit_events:
+                implicit_created_events.extend(implicit_events)
 
             if record_id:
                 success_count += 1
@@ -605,6 +614,7 @@ class BatchRepository:
             created_assets,
             updated_assets,
             skipped_assets,
+            implicit_created_events,
         )
 
     # ------------------------------------------------------------------

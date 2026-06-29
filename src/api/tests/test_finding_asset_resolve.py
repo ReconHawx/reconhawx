@@ -125,12 +125,42 @@ async def test_resolve_with_url_ensure_creates_when_missing():
 
 
 @pytest.mark.asyncio
+async def test_resolve_with_url_ensure_backfills_subdomain_from_url():
+    program_id = uuid.uuid4()
+    new_url_id = uuid.uuid4()
+    subdomain_id = uuid.uuid4()
+    db = MagicMock()
+    query = MagicMock()
+    db.query.return_value = query
+    query.filter.return_value = query
+    query.first.side_effect = [None, None, None, (subdomain_id,)]
+
+    with patch(
+        "utils.finding_asset_resolve.ensure_finding_url_asset",
+        new_callable=AsyncMock,
+        return_value=new_url_id,
+    ) as ensure_mock:
+        resolved = await resolve_finding_asset_ids_with_url_ensure(
+            db,
+            program_id,
+            "prog",
+            url="https://dummysite.h3x.it:443/",
+            hostname="dummysite.h3x.it",
+            resolve_ip=False,
+            resolve_service=False,
+        )
+    ensure_mock.assert_awaited_once()
+    assert resolved.url_id == new_url_id
+    assert resolved.subdomain_id == subdomain_id
+
+
+@pytest.mark.asyncio
 async def test_ensure_finding_url_asset_returns_id_from_repo():
     url_id = uuid.uuid4()
     with patch(
         "repository.url_assets_repo.UrlAssetsRepository.create_or_update_url",
         new_callable=AsyncMock,
-        return_value=(str(url_id), "created", []),
+        return_value=(str(url_id), "created", [], []),
     ):
         got = await ensure_finding_url_asset(
             "prog",

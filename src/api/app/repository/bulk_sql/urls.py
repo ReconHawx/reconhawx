@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 import logging
 import time
 import uuid
@@ -13,11 +14,11 @@ from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 
 from db import BatchSessionLocal
-from models.postgres import Program, URL
+from models.postgres import ApexDomain, Program, Subdomain, URL
 from repository.bulk_sql.config import sql_chunk_size
 from repository.bulk_sql.scope import domain_in_scope
 from utils.asset_source import apply_lazy_source, normalize_asset_source
-from utils.domain_utils import normalize_hostname
+from utils.domain_utils import extract_apex_domain, normalize_hostname
 from utils.url_utils import normalize_url_asset_payload
 
 logger = logging.getLogger(__name__)
@@ -45,6 +46,153 @@ def _uuid_or_none(v: Any) -> Optional[uuid.UUID]:
         return None
 
 
+def _hostname_is_ip(hostname: str) -> bool:
+    try:
+        ipaddress.ip_address(hostname)
+        return True
+    except ValueError:
+        return False
+
+
+def _bulk_ensure_subdomains_for_hosts(
+    session,
+    program: Program,
+    program_name: str,
+    hostnames: List[str],
+    source_by_host: Dict[str, Optional[str]],
+    now_naive: datetime,
+) -> tuple[Dict[str, uuid.UUID], List[Dict[str, Any]]]:
+    """Upsert apex + subdomain rows for URL hostnames; return id map and created events."""
+    implicit_events: List[Dict[str, Any]] = []
+    subdomain_id_by_host: Dict[str, uuid.UUID] = {}
+    if not hostnames:
+        return subdomain_id_by_host, implicit_events
+
+    distinct_hosts = sorted(set(hostnames))
+    apex_by_host: Dict[str, str] = {}
+    for host in distinct_hosts:
+        try:
+            apex_by_host[host] = extract_apex_domain(host)
+        except ValueError:
+            continue
+
+    distinct_apex = sorted(set(apex_by_host.values()))
+    if not distinct_apex:
+        return subdomain_id_by_host, implicit_events
+
+    apex_source_by_name: Dict[str, Optional[str]] = {}
+    for host, apex_name in apex_by_host.items():
+        src = source_by_host.get(host)
+        if src and apex_name not in apex_source_by_name:
+            apex_source_by_name[apex_name] = src
+
+    apex_tbl = ApexDomain.__table__
+    apex_insert = (
+        insert(apex_tbl)
+        .values(
+            [
+                {
+                    "id": uuid.uuid4(),
+                    "name": nm,
+                    "program_id": program.id,
+                    "notes": None,
+                    "source": apex_source_by_name.get(nm),
+                    "created_at": now_naive,
+                    "updated_at": now_naive,
+                }
+                for nm in distinct_apex
+            ]
+        )
+        .on_conflict_do_nothing(index_elements=[apex_tbl.c.name, apex_tbl.c.program_id])
+        .returning(apex_tbl.c.id, apex_tbl.c.name)
+    )
+    inserted_apex = session.execute(apex_insert).all()
+    for row in inserted_apex:
+        implicit_events.append(
+            {
+                "event": "asset.created",
+                "asset_type": "apex_domain",
+                "record_id": str(row.id),
+                "name": row.name,
+                "program_name": program_name,
+                "notes": None,
+                "whois_status": None,
+            }
+        )
+
+    apex_rows = session.execute(
+        select(ApexDomain.id, ApexDomain.name).where(
+            ApexDomain.program_id == program.id,
+            ApexDomain.name.in_(distinct_apex),
+        )
+    ).all()
+    apex_id_by_name = {r.name: r.id for r in apex_rows}
+
+    existing_subs = session.execute(
+        select(Subdomain.id, Subdomain.name).where(
+            Subdomain.program_id == program.id,
+            Subdomain.name.in_(distinct_hosts),
+        )
+    ).all()
+    existing_sub_names = {r.name for r in existing_subs}
+    for row in existing_subs:
+        subdomain_id_by_host[row.name] = row.id
+
+    new_sub_rows: List[Dict[str, Any]] = []
+    new_sub_meta: List[tuple[str, str]] = []
+    for host in distinct_hosts:
+        if host in existing_sub_names:
+            continue
+        apex_name = apex_by_host.get(host)
+        apex_id = apex_id_by_name.get(apex_name) if apex_name else None
+        if not apex_id:
+            continue
+        new_sub_rows.append(
+            {
+                "id": uuid.uuid4(),
+                "name": host,
+                "program_id": program.id,
+                "apex_domain_id": apex_id,
+                "is_wildcard": False,
+                "wildcard_types": [],
+                "cname_record": None,
+                "notes": None,
+                "source": source_by_host.get(host),
+                "created_at": now_naive,
+                "updated_at": now_naive,
+            }
+        )
+        new_sub_meta.append((host, apex_name or host))
+
+    if new_sub_rows:
+        sub_tbl = Subdomain.__table__
+        ins = (
+            insert(sub_tbl)
+            .values(new_sub_rows)
+            .on_conflict_do_nothing(index_elements=[sub_tbl.c.name, sub_tbl.c.program_id])
+            .returning(sub_tbl.c.id, sub_tbl.c.name)
+        )
+        inserted_subs = session.execute(ins).all()
+        apex_label_by_host = dict(new_sub_meta)
+        for row in inserted_subs:
+            subdomain_id_by_host[row.name] = row.id
+            implicit_events.append(
+                {
+                    "event": "asset.created",
+                    "asset_type": "subdomain",
+                    "record_id": str(row.id),
+                    "name": row.name,
+                    "program_name": program_name,
+                    "apex_domain": apex_label_by_host.get(row.name, row.name),
+                    "ip": [],
+                    "cname_record": None,
+                    "is_wildcard": False,
+                }
+            )
+
+    return subdomain_id_by_host, implicit_events
+
+
 def upsert_urls_chunk(program_id: str, items: List[Dict[str, Any]]) -> Dict[str, Any]:
     session = BatchSessionLocal()
     success_count = failed_count = 0
@@ -52,6 +200,7 @@ def upsert_urls_chunk(program_id: str, items: List[Dict[str, Any]]) -> Dict[str,
     created_assets: List[Dict] = []
     updated_assets: List[Dict] = []
     skipped_assets: List[Dict] = []
+    implicit_created_events: List[Dict] = []
     t0 = time.perf_counter()
 
     try:
@@ -111,9 +260,9 @@ def upsert_urls_chunk(program_id: str, items: List[Dict[str, Any]]) -> Dict[str,
             order.append(u_norm)
             dedup[u_norm] = item
 
-        rows: List[Dict[str, Any]] = []
-        meta: List[Dict[str, Any]] = []
-
+        pending_urls: List[tuple[str, Dict[str, Any], str]] = []
+        hostnames_for_sub: List[str] = []
+        source_by_host: Dict[str, Optional[str]] = {}
         for url_s in order:
             item = dedup[url_s]
             host = item.get("hostname") or _hostname(item)
@@ -124,7 +273,6 @@ def upsert_urls_chunk(program_id: str, items: List[Dict[str, Any]]) -> Dict[str,
                 list(scope_domains) if scope_domains else [],
                 list(out_of_scope_domains) if out_of_scope_domains else [],
             ):
-                # Match legacy batch_repository: no record_id for out-of-scope URL counts as failed.
                 failed_count += 1
                 skipped_assets.append(
                     {
@@ -134,13 +282,33 @@ def upsert_urls_chunk(program_id: str, items: List[Dict[str, Any]]) -> Dict[str,
                     }
                 )
                 continue
+            pending_urls.append((url_s, item, host))
+            if not _hostname_is_ip(host):
+                hostnames_for_sub.append(host)
+                src = normalize_asset_source(item.get("source"))
+                if src and host not in source_by_host:
+                    source_by_host[host] = src
 
+        subdomain_id_by_host, sub_implicit = _bulk_ensure_subdomains_for_hosts(
+            session,
+            program,
+            program_name_disp,
+            hostnames_for_sub,
+            source_by_host,
+            now_naive,
+        )
+        implicit_created_events.extend(sub_implicit)
+
+        rows: List[Dict[str, Any]] = []
+        meta: List[Dict[str, Any]] = []
+
+        for url_s, item, host in pending_urls:
             existing = session.execute(
                 select(URL).where(URL.url == url_s, URL.program_id == program.id)
             ).scalar_one_or_none()
 
             cert_id = _uuid_or_none(item.get("certificate_id"))
-            sub_id = _uuid_or_none(item.get("subdomain_id"))
+            sub_id = _uuid_or_none(item.get("subdomain_id")) or subdomain_id_by_host.get(host)
 
             simple_fields = [
                 "http_status_code",
@@ -248,6 +416,7 @@ def upsert_urls_chunk(program_id: str, items: List[Dict[str, Any]]) -> Dict[str,
                 created_assets,
                 updated_assets,
                 skipped_assets,
+                implicit_created_events,
                 t0,
             )
 
@@ -382,6 +551,7 @@ def upsert_urls_chunk(program_id: str, items: List[Dict[str, Any]]) -> Dict[str,
         created_assets,
         updated_assets,
         skipped_assets,
+        implicit_created_events,
         t0,
     )
 
@@ -395,6 +565,7 @@ def _pack(
     created_assets: List[Dict],
     updated_assets: List[Dict],
     skipped_assets: List[Dict],
+    implicit_created_events: List[Dict],
     t0: float,
 ) -> Dict[str, Any]:
     return {
@@ -406,6 +577,7 @@ def _pack(
         "created_assets": created_assets,
         "updated_assets": updated_assets,
         "skipped_assets": skipped_assets,
+        "implicit_created_events": implicit_created_events,
         "t0": t0,
     }
 
@@ -421,7 +593,7 @@ def urls_require_full_orm(urls: List[Dict[str, Any]]) -> bool:
 async def bulk_create_or_update_urls_all(
     urls: List[Dict[str, Any]],
     program_id: str,
-) -> Tuple[int, int, int, int, int, List[Dict], List[Dict], List[Dict]]:
+) -> Tuple[int, int, int, int, int, List[Dict], List[Dict], List[Dict], List[Dict]]:
     import asyncio
 
     chunk_sz = sql_chunk_size()
@@ -429,6 +601,7 @@ async def bulk_create_or_update_urls_all(
     ca: List[Dict] = []
     ua: List[Dict] = []
     sa: List[Dict] = []
+    implicit: List[Dict] = []
     for i in range(0, len(urls), chunk_sz):
         p = await asyncio.to_thread(upsert_urls_chunk, program_id, urls[i : i + chunk_sz])
         sc += p["success_count"]
@@ -439,5 +612,6 @@ async def bulk_create_or_update_urls_all(
         ca.extend(p["created_assets"])
         ua.extend(p["updated_assets"])
         sa.extend(p["skipped_assets"])
+        implicit.extend(p.get("implicit_created_events", []))
         await asyncio.sleep(0)
-    return sc, fc, cc, uc, sk, ca, ua, sa
+    return sc, fc, cc, uc, sk, ca, ua, sa, implicit

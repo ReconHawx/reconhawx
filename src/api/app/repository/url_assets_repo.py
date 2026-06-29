@@ -1,19 +1,30 @@
-from sqlalchemy import func, desc, asc, and_
-from sqlalchemy.orm import joinedload
-from typing import Dict, Any, Optional, List, Union
+import ipaddress
 import logging
 from datetime import datetime, timezone
-from uuid import UUID
+from typing import Any, Dict, List, Optional, Union
 from urllib.parse import urlparse
+from uuid import UUID
+
+from sqlalchemy import and_, asc, desc, func
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import joinedload
 
 from models.postgres import (
-    Program, URL, ExtractedLink, ExtractedLinkSource,
-    Certificate, Service, Subdomain, IP, URLService
+    ApexDomain,
+    Certificate,
+    ExtractedLink,
+    ExtractedLinkSource,
+    IP,
+    Program,
+    Service,
+    Subdomain,
+    URL,
+    URLService,
 )
 from db import get_db_session
 from utils.query_filters import ProgramAccessMixin
 from utils import get_root_url
-from utils.domain_utils import normalize_hostname
+from utils.domain_utils import extract_apex_domain, normalize_hostname
 from utils.url_utils import lower_url_host, normalize_url_asset_payload, normalize_url_for_storage
 from utils.asset_source import normalize_asset_source
 from repository.program_repo import ProgramRepository
@@ -504,12 +515,110 @@ class UrlAssetsRepository(ProgramAccessMixin):
         return True
 
     @staticmethod
-    def _resolve_url_relations(db, url_data: Dict[str, Any], program_id) -> tuple[Optional[str], List[str], Optional[str]]:
+    def _hostname_is_ip(hostname: str) -> bool:
+        try:
+            ipaddress.ip_address(hostname)
+            return True
+        except ValueError:
+            return False
+
+    @staticmethod
+    def _ensure_subdomain_for_hostname(
+        db,
+        hostname: str,
+        program: Program,
+        incoming_source: Optional[str],
+    ) -> tuple[Optional[str], List[Dict[str, Any]]]:
+        """Ensure an in-scope subdomain row exists for a URL hostname; create apex if needed."""
+        implicit_events: List[Dict[str, Any]] = []
+        host = normalize_hostname(hostname)
+        if not host or UrlAssetsRepository._hostname_is_ip(host):
+            return None, implicit_events
+
+        existing = db.query(Subdomain).filter(
+            Subdomain.name == host,
+            Subdomain.program_id == program.id,
+        ).first()
+        if existing:
+            return str(existing.id), implicit_events
+
+        try:
+            apex_domain_name = extract_apex_domain(host)
+        except ValueError:
+            return None, implicit_events
+
+        apex_domain = db.query(ApexDomain).filter(
+            ApexDomain.name == apex_domain_name,
+            ApexDomain.program_id == program.id,
+        ).first()
+        if not apex_domain:
+            apex_domain = ApexDomain(
+                name=apex_domain_name,
+                program_id=program.id,
+                notes=None,
+                source=incoming_source,
+            )
+            db.add(apex_domain)
+            db.flush()
+            implicit_events.append(
+                {
+                    "event": "asset.created",
+                    "asset_type": "apex_domain",
+                    "record_id": str(apex_domain.id),
+                    "name": apex_domain_name,
+                    "program_name": program.name,
+                    "notes": None,
+                    "whois_status": None,
+                }
+            )
+
+        try:
+            subdomain = Subdomain(
+                name=host,
+                apex_domain_id=apex_domain.id,
+                program_id=program.id,
+                source=incoming_source,
+            )
+            db.add(subdomain)
+            db.flush()
+            implicit_events.append(
+                {
+                    "event": "asset.created",
+                    "asset_type": "subdomain",
+                    "record_id": str(subdomain.id),
+                    "name": host,
+                    "program_name": program.name,
+                    "apex_domain": apex_domain_name,
+                    "ip": [],
+                    "cname_record": None,
+                    "is_wildcard": False,
+                }
+            )
+            return str(subdomain.id), implicit_events
+        except IntegrityError:
+            db.rollback()
+            raced = db.query(Subdomain).filter(
+                Subdomain.name == host,
+                Subdomain.program_id == program.id,
+            ).first()
+            if raced:
+                return str(raced.id), []
+            raise
+
+    @staticmethod
+    def _resolve_url_relations(
+        db,
+        url_data: Dict[str, Any],
+        program_id,
+        program: Optional[Program] = None,
+        incoming_source: Optional[str] = None,
+    ) -> tuple[Optional[str], List[str], Optional[str], List[Dict[str, Any]]]:
         """Resolve certificate_id, service_ids, subdomain_id from url_data.
-        Returns (certificate_id, service_ids, subdomain_id). service_ids is a list (hostname can resolve to multiple IPs)."""
+        Returns (certificate_id, service_ids, subdomain_id, implicit_events)."""
         certificate_id = None
         service_ids: List[str] = []
         subdomain_id = None
+        implicit_events: List[Dict[str, Any]] = []
 
         # Certificate: when HTTPS and certificate_serial provided
         scheme = (url_data.get("scheme") or "").lower()
@@ -542,7 +651,7 @@ class UrlAssetsRepository(ProgramAccessMixin):
                     if svc and str(svc.id) not in service_ids:
                         service_ids.append(str(svc.id))
 
-        # Subdomain: when hostname provided
+        # Subdomain: when hostname provided — lookup or auto-create
         hostname = url_data.get("hostname")
         if hostname:
             sub = db.query(Subdomain).filter(
@@ -551,8 +660,15 @@ class UrlAssetsRepository(ProgramAccessMixin):
             ).first()
             if sub:
                 subdomain_id = str(sub.id)
+            elif program is not None:
+                ensured_id, ensure_events = UrlAssetsRepository._ensure_subdomain_for_hostname(
+                    db, hostname, program, incoming_source
+                )
+                if ensured_id:
+                    subdomain_id = ensured_id
+                implicit_events.extend(ensure_events)
 
-        return certificate_id, service_ids, subdomain_id
+        return certificate_id, service_ids, subdomain_id, implicit_events
 
     @staticmethod
     def _get_relations_from_root_url(db, url: str, program_id, certificate_id, service_ids, subdomain_id) -> tuple[Optional[str], List[str], Optional[str]]:
@@ -600,16 +716,16 @@ class UrlAssetsRepository(ProgramAccessMixin):
     @staticmethod
     async def create_or_update_url(
         url_data: Dict[str, Any],
-    ) -> tuple[Optional[str], str, List[Dict[str, Any]]]:
+    ) -> tuple[Optional[str], str, List[Dict[str, Any]], List[Dict[str, Any]]]:
         """Create a new URL or update if exists with merged data.
-        Returns (url_id, action, pending_external_link_events). Pending events must be published on the
-        main API event loop (see BatchRepository / unified processor); not inside thread workers."""
+        Returns (url_id, action, pending_external_link_events, implicit_asset_events).
+        Pending external-link events must be published on the main API event loop."""
         async with get_db_session() as db:
             try:
                 logger.debug(f"create_or_update_url called with URL data: {url_data}")
                 if not normalize_url_asset_payload(url_data):
                     logger.debug("Invalid or missing URL in payload, skipping")
-                    return None, "skipped", []
+                    return None, "skipped", [], []
                 # Find program by name
                 program = db.query(Program).filter(Program.name == url_data.get('program_name')).first()
                 if not program:
@@ -626,14 +742,18 @@ class UrlAssetsRepository(ProgramAccessMixin):
 
                 if not is_in_scope:
                     logger.debug(f"URL {url_data.get('url')} is not in scope, skipping")
-                    return None, "skipped", []
+                    return None, "skipped", [], []
 
                 incoming_source = normalize_asset_source(url_data.get("source"))
+                implicit_asset_events: List[Dict[str, Any]] = []
 
                 # Resolve relations (certificate, services, subdomain) - processed in same batch
-                certificate_id, service_ids, subdomain_id = UrlAssetsRepository._resolve_url_relations(
-                    db, url_data, program.id
+                certificate_id, service_ids, subdomain_id, relation_events = (
+                    UrlAssetsRepository._resolve_url_relations(
+                        db, url_data, program.id, program, incoming_source
+                    )
                 )
+                implicit_asset_events.extend(relation_events)
                 # Inherit missing relations from root URL (e.g. https://example.com:443/) when path URLs
                 # are added by fuzz/crawl/nuclei without full test_http data
                 certificate_id, service_ids, subdomain_id = UrlAssetsRepository._get_relations_from_root_url(
@@ -717,7 +837,7 @@ class UrlAssetsRepository(ProgramAccessMixin):
                         action = "skipped"
                         logger.debug(f"URL {url_data.get('url')} had no meaningful changes, marked as skipped")
 
-                    return str(existing.id), action, external_link_events
+                    return str(existing.id), action, external_link_events, implicit_asset_events
                 else:
                     # Create new URL (without technologies - they'll be added via relationship)
                     url = URL(
@@ -825,7 +945,7 @@ class UrlAssetsRepository(ProgramAccessMixin):
                                     })
                         db.commit()
 
-                return str(url.id), "created", create_external_link_events  # Newly created asset
+                return str(url.id), "created", create_external_link_events, implicit_asset_events
                 
             except Exception as e:
                 db.rollback()

@@ -426,9 +426,9 @@ class UnifiedAssetProcessor:
 
                 # Process individual asset
                 result_tuple = await handler(asset_data, program_name, bulk=False)
-                apex_created_event: Optional[Dict[str, Any]] = None
+                implicit_extra: Any = None
                 if len(result_tuple) == 4:
-                    record_id, action, event_data, apex_created_event = result_tuple
+                    record_id, action, event_data, implicit_extra = result_tuple
                 elif len(result_tuple) == 3:
                     record_id, action, event_data = result_tuple
                 else:
@@ -436,8 +436,10 @@ class UnifiedAssetProcessor:
                     record_id, action = result_tuple
                     event_data = None
 
-                if apex_created_event is not None:
-                    result.implicit_apex_created_events.append(apex_created_event)
+                if isinstance(implicit_extra, list):
+                    result.implicit_apex_created_events.extend(implicit_extra)
+                elif implicit_extra is not None:
+                    result.implicit_apex_created_events.append(implicit_extra)
 
                 if record_id:
                     result.success_count += 1
@@ -721,16 +723,19 @@ class UnifiedAssetProcessor:
             return await BatchRepository.bulk_create_or_update_urls(assets, program_id)
         else:
             result_tuple = await UrlAssetsRepository.create_or_update_url(assets[0])
-            if len(result_tuple) == 3:
+            if len(result_tuple) >= 4:
+                record_id, action, pending_external, implicit_events = result_tuple
+            elif len(result_tuple) == 3:
                 record_id, action, pending_external = result_tuple
+                implicit_events = []
             else:
-                # Fallback for older callers
                 record_id, action = result_tuple
                 pending_external = []
+                implicit_events = []
             if pending_external:
                 await publish_pending_external_link_events(pending_external)
             event_data = None
-            return record_id, action, event_data
+            return record_id, action, event_data, implicit_events
 
     async def _handle_service_assets(self, assets: List[Dict], program_id: str, bulk: bool = False) -> Tuple:
         """Handle service asset processing"""
