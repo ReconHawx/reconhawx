@@ -10,6 +10,7 @@ from models.postgres import (
 )
 from db import get_db_session
 from utils.query_filters import ProgramAccessMixin
+from utils.asset_source import normalize_asset_source
 from services.event_publisher import publisher
 
 logger = logging.getLogger(__name__)
@@ -49,6 +50,7 @@ class ServiceAssetsRepository(ProgramAccessMixin):
                     'banner': service.banner,
                     'notes': service.notes,
                     'nerva_metadata': service.nerva_metadata,
+                    'source': service.source,
                     'created_at': service.created_at.isoformat() if service.created_at else None,
                     'updated_at': service.updated_at.isoformat() if service.updated_at else None
                 }
@@ -76,6 +78,7 @@ class ServiceAssetsRepository(ProgramAccessMixin):
                     'banner': service.banner,
                     'notes': service.notes,
                     'nerva_metadata': service.nerva_metadata,
+                    'source': service.source,
                     'created_at': service.created_at.isoformat() if service.created_at else None,
                     'updated_at': service.updated_at.isoformat() if service.updated_at else None
                 }
@@ -122,6 +125,7 @@ class ServiceAssetsRepository(ProgramAccessMixin):
         service_text: Optional[str] = None,
         ip_port_or: bool = False,
         exclude_common_ports: bool = False,
+        source: Optional[Union[str, List[str]]] = None,
         program: Optional[Union[str, List[str]]] = None,
         sort_by: str = "ip",
         sort_dir: str = "asc",
@@ -139,6 +143,7 @@ class ServiceAssetsRepository(ProgramAccessMixin):
                         Service.protocol.label("protocol"),
                         Service.banner.label("banner"),
                         Service.nerva_metadata.label("nerva_metadata"),
+                        Service.source.label("source"),
                         Program.name.label("program_name"),
                         Service.created_at.label("created_at"),
                         Service.updated_at.label("updated_at"),
@@ -217,6 +222,13 @@ class ServiceAssetsRepository(ProgramAccessMixin):
                 if exclude_common_ports:
                     base_query = base_query.filter(Service.port.notin_(COMMON_PORTS))
 
+                if source is not None:
+                    if isinstance(source, list):
+                        if len(source) > 0:
+                            base_query = base_query.filter(Service.source.in_(source))
+                    elif isinstance(source, str) and source.strip():
+                        base_query = base_query.filter(Service.source == source.strip())
+
                 # Sorting
                 sort_by_normalized = (sort_by or "ip").lower()
                 sort_dir_normalized = (sort_dir or "asc").lower()
@@ -234,6 +246,8 @@ class ServiceAssetsRepository(ProgramAccessMixin):
                     base_query = base_query.order_by(direction_func(Service.banner))
                 elif sort_by_normalized == "program_name":
                     base_query = base_query.order_by(direction_func(Program.name))
+                elif sort_by_normalized == "source":
+                    base_query = base_query.order_by(direction_func(Service.source))
                 elif sort_by_normalized == "updated_at":
                     base_query = base_query.order_by(direction_func(Service.updated_at))
                 else:
@@ -254,6 +268,7 @@ class ServiceAssetsRepository(ProgramAccessMixin):
                             "protocol": r.protocol,
                             "banner": r.banner,
                             "nerva_metadata": r.nerva_metadata,
+                            "source": r.source,
                             "program_name": r.program_name,
                             "created_at": r.created_at.isoformat() if r.created_at else None,
                             "updated_at": r.updated_at.isoformat() if r.updated_at else None,
@@ -330,6 +345,12 @@ class ServiceAssetsRepository(ProgramAccessMixin):
                     count_query = count_query.filter(Service.service_name.ilike(like))
                 if exclude_common_ports:
                     count_query = count_query.filter(Service.port.notin_(COMMON_PORTS))
+                if source is not None:
+                    if isinstance(source, list):
+                        if len(source) > 0:
+                            count_query = count_query.filter(Service.source.in_(source))
+                    elif isinstance(source, str) and source.strip():
+                        count_query = count_query.filter(Service.source == source.strip())
 
                 total_count = count_query.scalar() or 0
                 return {"items": items, "total_count": int(total_count)}
@@ -353,6 +374,9 @@ class ServiceAssetsRepository(ProgramAccessMixin):
                 if service_data.get('port') is None:
                     logger.error("Port is required to create/update service")
                     raise ValueError("Port is required to create/update service")
+
+                incoming_source = normalize_asset_source(service_data.get("source"))
+
                 # Find or create IP for this program
                 ip = db.query(IP).filter(
                     and_(IP.ip_address == service_data.get('ip'), IP.program_id == program.id)
@@ -365,6 +389,7 @@ class ServiceAssetsRepository(ProgramAccessMixin):
                             ptr_record=service_data.get('ptr'),
                             service_provider=service_data.get('service_provider'),
                             program_id=program.id,
+                            source=incoming_source,
                         )
                         db.add(ip)
                         db.commit()
@@ -380,6 +405,8 @@ class ServiceAssetsRepository(ProgramAccessMixin):
                             ip.ptr_record = service_data.get('ptr')
                         if service_data.get('service_provider') and not ip.service_provider:
                             ip.service_provider = service_data.get('service_provider')
+                        if incoming_source and not ip.source:
+                            ip.source = incoming_source
                         db.commit()
                         db.refresh(ip)
                 
@@ -404,6 +431,9 @@ class ServiceAssetsRepository(ProgramAccessMixin):
                             if service_data[field] != existing_value:
                                 setattr(existing, field, service_data[field])
                                 meaningful_changes.append(field)
+
+                    if incoming_source and not existing.source:
+                        existing.source = incoming_source
 
                     # Update timestamp if any changes were made
                     if meaningful_changes:
@@ -437,6 +467,7 @@ class ServiceAssetsRepository(ProgramAccessMixin):
                         program_id=program.id,
                         notes=service_data.get('notes'),
                         nerva_metadata=service_data.get('nerva_metadata'),
+                        source=incoming_source,
                     )
                     
                     db.add(service)
@@ -587,6 +618,8 @@ class ServiceAssetsRepository(ProgramAccessMixin):
                     values = query.with_entities(Service.protocol).distinct().all()
                 elif field_name == 'banner':
                     values = query.with_entities(Service.banner).distinct().all()
+                elif field_name == 'source':
+                    values = query.with_entities(Service.source).distinct().all()
                 else:
                     raise ValueError(f"Unsupported field '{field_name}' for service assets")
                 

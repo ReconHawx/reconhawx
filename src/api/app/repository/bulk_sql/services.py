@@ -6,14 +6,15 @@ import logging
 import time
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 
 from db import BatchSessionLocal
 from models.postgres import IP, Program, Service
 from repository.bulk_sql.config import sql_chunk_size
+from utils.asset_source import apply_lazy_source, normalize_asset_source
 
 logger = logging.getLogger(__name__)
 
@@ -91,6 +92,11 @@ def upsert_services_chunk(program_id: str, items: List[Dict[str, Any]]) -> Dict[
             )
 
         distinct_ips = sorted({k[0] for k in order})
+        ip_source_by_addr: Dict[str, Optional[str]] = {}
+        for key in order:
+            src = normalize_asset_source(dedup[key].get("source"))
+            if src and key[0] not in ip_source_by_addr:
+                ip_source_by_addr[key[0]] = src
         ip_tbl = IP.__table__
         ip_rows = [
             {
@@ -100,17 +106,19 @@ def upsert_services_chunk(program_id: str, items: List[Dict[str, Any]]) -> Dict[
                 "service_provider": None,
                 "program_id": program.id,
                 "notes": None,
+                "source": ip_source_by_addr.get(addr),
                 "created_at": now_naive,
                 "updated_at": now_naive,
             }
             for addr in distinct_ips
         ]
         if ip_rows:
+            ip_ins = insert(ip_tbl).values(ip_rows)
+            ex_ip = ip_ins.excluded
             session.execute(
-                insert(ip_tbl)
-                .values(ip_rows)
-                .on_conflict_do_nothing(
+                ip_ins.on_conflict_do_update(
                     index_elements=[ip_tbl.c.ip_address, ip_tbl.c.program_id],
+                    set_={"source": func.coalesce(ip_tbl.c.source, ex_ip.source)},
                 )
             )
 
@@ -149,6 +157,7 @@ def upsert_services_chunk(program_id: str, items: List[Dict[str, Any]]) -> Dict[
                 )
             ).scalar_one_or_none()
 
+            incoming_source = normalize_asset_source(item.get("source"))
             meaningful = False
             if existing:
                 sn = existing.service_name
@@ -183,6 +192,7 @@ def upsert_services_chunk(program_id: str, items: List[Dict[str, Any]]) -> Dict[
                         "program_id": program.id,
                         "notes": nt,
                         "nerva_metadata": nv,
+                        "source": apply_lazy_source(existing.source, incoming_source),
                         "created_at": existing.created_at,
                         "updated_at": updated_at,
                     }
@@ -206,6 +216,7 @@ def upsert_services_chunk(program_id: str, items: List[Dict[str, Any]]) -> Dict[
                         "program_id": program.id,
                         "notes": item.get("notes"),
                         "nerva_metadata": item.get("nerva_metadata"),
+                        "source": incoming_source,
                         "created_at": now_naive,
                         "updated_at": now_naive,
                     }
@@ -236,6 +247,7 @@ def upsert_services_chunk(program_id: str, items: List[Dict[str, Any]]) -> Dict[
                 "banner": ex.banner,
                 "notes": ex.notes,
                 "nerva_metadata": ex.nerva_metadata,
+                "source": func.coalesce(svc_tbl.c.source, ex.source),
                 "updated_at": ex.updated_at,
             },
         ).returning(svc_tbl.c.id, svc_tbl.c.ip_id, svc_tbl.c.port)

@@ -201,6 +201,7 @@ class ApexDomain(Base):
     name = Column(String(255), unique=True, nullable=False, index=True)
     program_id = Column(UUID(as_uuid=True), ForeignKey("programs.id"), nullable=False, index=True)
     notes = Column(Text)
+    source = Column(String(255), nullable=True)
     created_at = Column(DateTime, default=utcnow, nullable=False)
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
 
@@ -239,6 +240,7 @@ class IP(Base):
     service_provider = Column(String(255))
     program_id = Column(UUID(as_uuid=True), ForeignKey("programs.id"), nullable=False, index=True)
     notes = Column(Text)
+    source = Column(String(255), nullable=True)
     created_at = Column(DateTime, default=utcnow, nullable=False)
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
 
@@ -262,6 +264,7 @@ class Subdomain(Base):
     is_wildcard = Column(Boolean, default=False)
     wildcard_types = Column(ARRAY(String(10)))  # DNS record types that wildcard
     notes = Column(Text)
+    source = Column(String(255), nullable=True)
     created_at = Column(DateTime, default=utcnow, nullable=False)
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
 
@@ -304,6 +307,7 @@ class Service(Base):
     program_id = Column(UUID(as_uuid=True), ForeignKey("programs.id"), nullable=False, index=True)
     notes = Column(Text)
     nerva_metadata = Column(JSONB)  # Nerva fingerprinting: cpes, confidence, algo, etc.
+    source = Column(String(255), nullable=True)
     created_at = Column(DateTime, default=utcnow, nullable=False)
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
     
@@ -337,6 +341,7 @@ class Certificate(Base):
     fingerprint_hash = Column(String(255), nullable=False, index=True)
     program_id = Column(UUID(as_uuid=True), ForeignKey("programs.id"), nullable=True, index=True)
     notes = Column(Text)
+    source = Column(String(255), nullable=True)
     created_at = Column(DateTime, default=utcnow, nullable=False)
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
 
@@ -384,6 +389,7 @@ class URL(Base):
     program_id = Column(UUID(as_uuid=True), ForeignKey("programs.id"), nullable=False, index=True)
     
     notes = Column(Text)
+    source = Column(String(255), nullable=True)
     created_at = Column(DateTime, default=utcnow, nullable=False)
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
 

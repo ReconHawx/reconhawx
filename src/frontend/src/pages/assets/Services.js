@@ -4,6 +4,8 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { serviceAPI, programAPI } from '../../services/api';
 import { useProgramFilter } from '../../contexts/ProgramFilterContext';
 import { formatDate } from '../../utils/dateUtils';
+import { formatAssetSource, parseSourceFilterParam, serializeSourceFilterParam, sourceFiltersEqual } from '../../utils/assetSource';
+import SourceMultiSelectFilter from '../../components/assets/SourceMultiSelectFilter';
 import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
 import { withListReturn } from '../../hooks/useListNavigation';
 
@@ -29,6 +31,9 @@ function Services() {
   const [serviceFilter, setServiceFilter] = useState('');
   const [serviceTextFilter, setServiceTextFilter] = useState('');
   const [distinctServiceNames, setDistinctServiceNames] = useState([]);
+  const [sourceFilter, setSourceFilter] = useState([]);
+  const [distinctSources, setDistinctSources] = useState([]);
+  const [loadingDistinctSources, setLoadingDistinctSources] = useState(false);
   const [sortField, setSortField] = useState('updated_at');
   const [sortDirection, setSortDirection] = useState('desc');
   const [selectedItems, setSelectedItems] = useState(new Set());
@@ -91,6 +96,7 @@ function Services() {
       if (serviceTextFilter) params.service_text = serviceTextFilter;
       else if (serviceFilter) params.service_name = serviceFilter;
       if (uncommonPortsOnly) params.exclude_common_ports = true;
+      if (sourceFilter.length > 0) params.source = sourceFilter;
       // Map common field name variations to correct service field names
       const mappedSortField = sortField === 'ip_address' ? 'ip' : sortField === 'service' ? 'service_name' : sortField;
       params.sort_by = mappedSortField;
@@ -116,6 +122,7 @@ function Services() {
     serviceTextFilter,
     serviceFilter,
     uncommonPortsOnly,
+    sourceFilter,
     sortField,
     sortDirection,
     pageSize
@@ -144,6 +151,23 @@ function Services() {
     } catch (err) {
       console.error('Error fetching distinct ports:', err);
       setDistinctPorts([]);
+    }
+  }, [selectedProgram]);
+
+  const fetchDistinctSources = useCallback(async () => {
+    try {
+      setLoadingDistinctSources(true);
+      const sources = await serviceAPI.getDistinctValues('source', selectedProgram || undefined);
+      if (sources && Array.isArray(sources)) {
+        setDistinctSources(sources.filter(Boolean).sort());
+      } else {
+        setDistinctSources([]);
+      }
+    } catch (err) {
+      console.error('Error fetching distinct sources:', err);
+      setDistinctSources([]);
+    } finally {
+      setLoadingDistinctSources(false);
     }
   }, [selectedProgram]);
 
@@ -184,6 +208,8 @@ function Services() {
     if (protocolFilter) params.set('protocol', protocolFilter);
     if (serviceTextFilter) params.set('service_text', serviceTextFilter);
     if (serviceFilter) params.set('service_name', serviceFilter);
+    const serializedSource = serializeSourceFilterParam(sourceFilter);
+    if (serializedSource) params.set('source', serializedSource);
     if (sortField) params.set('sort_by', sortField);
     if (sortDirection) params.set('sort_dir', sortDirection);
     if (currentPage && currentPage !== 1) params.set('page', String(currentPage));
@@ -197,6 +223,7 @@ function Services() {
     protocolFilter,
     serviceTextFilter,
     serviceFilter,
+    sourceFilter,
     sortField,
     sortDirection,
     currentPage,
@@ -225,6 +252,9 @@ function Services() {
 
     const urlServiceName = urlParams.get('service_name') || '';
     if (urlServiceName !== serviceFilter) setServiceFilter(urlServiceName);
+
+    const urlSource = parseSourceFilterParam(urlParams.get('source') || '');
+    if (!sourceFiltersEqual(urlSource, sourceFilter)) setSourceFilter(urlSource);
 
     const urlUncommonPorts = urlParams.get('uncommon_ports');
     if (urlUncommonPorts === '1' && !uncommonPortsOnly) setUncommonPortsOnly(true);
@@ -283,7 +313,8 @@ function Services() {
   useEffect(() => {
     fetchDistinctServiceNames();
     fetchDistinctPorts();
-  }, [fetchDistinctServiceNames, fetchDistinctPorts]);
+    fetchDistinctSources();
+  }, [fetchDistinctServiceNames, fetchDistinctPorts, fetchDistinctSources]);
 
   // Fetch programs on component mount
   useEffect(() => {
@@ -304,6 +335,7 @@ function Services() {
     setProtocolFilter('');
     setServiceFilter('');
     setServiceTextFilter('');
+    setSourceFilter([]);
     setPageSize(25);
     setCurrentPage(1);
     // URL will be updated by sync effect
@@ -1089,6 +1121,21 @@ function Services() {
                       >
                         Program {getSortIcon('program_name')}
                       </th>
+                      <th style={{ cursor: 'pointer' }} onClick={() => handleSort('source')}>
+                        <div className="d-flex align-items-center gap-2">
+                          <span>Source {getSortIcon('source')}</span>
+                          <ColumnFilterPopover id="filter-source" ariaLabel="Filter by source" isActive={sourceFilter.length > 0}>
+                            <SourceMultiSelectFilter
+                              idPrefix="service-source"
+                              options={distinctSources}
+                              selected={sourceFilter}
+                              loading={loadingDistinctSources}
+                              onChange={(values) => { setSourceFilter(values); setCurrentPage(1); }}
+                              onClear={() => { setSourceFilter([]); setCurrentPage(1); }}
+                            />
+                          </ColumnFilterPopover>
+                        </div>
+                      </th>
                       <th 
                         style={{ cursor: 'pointer' }}
                         onClick={() => handleSort('updated_at')}
@@ -1100,7 +1147,7 @@ function Services() {
                   <tbody>
                     {services.length === 0 ? (
                       <tr>
-                        <td colSpan={8} className="text-center p-4">
+                        <td colSpan={9} className="text-center p-4">
                           <p className="text-muted mb-0">No services found matching the current filters.</p>
                         </td>
                       </tr>
@@ -1154,6 +1201,9 @@ function Services() {
                           ) : (
                             <span className="text-muted">-</span>
                           )}
+                        </td>
+                        <td className="text-muted">
+                          {formatAssetSource(service.source)}
                         </td>
                         <td className="text-muted">
                           {formatDateLocal(service.updated_at)}

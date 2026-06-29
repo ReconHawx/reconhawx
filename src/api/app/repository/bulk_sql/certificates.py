@@ -11,12 +11,13 @@ from datetime import datetime, timezone
 from models.base import utcnow
 from typing import Any, Dict, List, Optional, Tuple
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 
 from db import BatchSessionLocal
 from models.postgres import Certificate, Program
 from repository.bulk_sql.config import sql_chunk_size
+from utils.asset_source import apply_lazy_source, normalize_asset_source
 
 logger = logging.getLogger(__name__)
 
@@ -153,6 +154,7 @@ def upsert_certificates_chunk(program_id: str, items: List[Dict[str, Any]]) -> D
                 san = [san] if san else []
             fp = _fingerprint(item, serial)
 
+            incoming_source = normalize_asset_source(item.get("source"))
             meaningful = False
             if existing:
                 row = {
@@ -173,6 +175,7 @@ def upsert_certificates_chunk(program_id: str, items: List[Dict[str, Any]]) -> D
                     "fingerprint_hash": fp,
                     "program_id": program.id,
                     "notes": item.get("notes", existing.notes),
+                    "source": apply_lazy_source(existing.source, incoming_source),
                     "created_at": existing.created_at,
                     "updated_at": existing.updated_at,
                 }
@@ -213,6 +216,7 @@ def upsert_certificates_chunk(program_id: str, items: List[Dict[str, Any]]) -> D
                         "fingerprint_hash": fp,
                         "program_id": program.id,
                         "notes": item.get("notes"),
+                        "source": incoming_source,
                         "created_at": now_naive,
                         "updated_at": now_naive,
                     }
@@ -251,6 +255,7 @@ def upsert_certificates_chunk(program_id: str, items: List[Dict[str, Any]]) -> D
                 "issuer_organization": ex.issuer_organization,
                 "fingerprint_hash": ex.fingerprint_hash,
                 "notes": ex.notes,
+                "source": func.coalesce(tbl.c.source, ex.source),
                 "updated_at": ex.updated_at,
             },
         ).returning(tbl.c.id, tbl.c.serial_number)

@@ -10,6 +10,7 @@ from models.postgres import (
 )
 from db import get_db_session
 from utils.query_filters import ProgramAccessMixin
+from utils.asset_source import normalize_asset_source
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +41,7 @@ class CertificateAssetsRepository(ProgramAccessMixin):
                     'fingerprint_hash': cert.fingerprint_hash,
                     'serial_number': cert.serial_number,
                     'notes': cert.notes,
+                    'source': cert.source,
                     'created_at': cert.created_at.isoformat() if cert.created_at else None,
                     'updated_at': cert.updated_at.isoformat() if cert.updated_at else None
                 }
@@ -83,6 +85,7 @@ class CertificateAssetsRepository(ProgramAccessMixin):
         expiring_within_days: int = 30,
         tls_version: Optional[str] = None,
         cipher: Optional[str] = None,
+        source: Optional[Union[str, List[str]]] = None,
         sort_by: str = "updated_at",
         sort_dir: str = "desc",
         limit: int = 25,
@@ -105,6 +108,7 @@ class CertificateAssetsRepository(ProgramAccessMixin):
                         Certificate.valid_from.label("not_valid_before"),
                         Certificate.valid_until.label("valid_until"),
                         Certificate.serial_number.label("serial_number"),
+                        Certificate.source.label("source"),
                         Program.name.label("program_name"),
                         Certificate.created_at.label("created_at"),
                         Certificate.updated_at.label("updated_at"),
@@ -145,6 +149,13 @@ class CertificateAssetsRepository(ProgramAccessMixin):
                 if cipher:
                     base_query = base_query.filter(Certificate.cipher.ilike(f"%{cipher}%"))
 
+                if source is not None:
+                    if isinstance(source, list):
+                        if len(source) > 0:
+                            base_query = base_query.filter(Certificate.source.in_(source))
+                    elif isinstance(source, str) and source.strip():
+                        base_query = base_query.filter(Certificate.source == source.strip())
+
                 if status:
                     now_dt = utcnow()
                     if status == 'expired':
@@ -178,6 +189,8 @@ class CertificateAssetsRepository(ProgramAccessMixin):
                     base_query = base_query.order_by(direction_func(Certificate.tls_version))
                 elif sort_by_normalized == "cipher":
                     base_query = base_query.order_by(direction_func(Certificate.cipher))
+                elif sort_by_normalized == "source":
+                    base_query = base_query.order_by(direction_func(Certificate.source))
                 else:
                     base_query = base_query.order_by(direction_func(Certificate.updated_at))
 
@@ -199,6 +212,7 @@ class CertificateAssetsRepository(ProgramAccessMixin):
                             "not_valid_before": r.not_valid_before.isoformat() if r.not_valid_before else None,
                             "valid_until": r.valid_until.isoformat() if r.valid_until else None,
                             "serial_number": r.serial_number,
+                            "source": r.source,
                             "program_name": r.program_name,
                             "created_at": r.created_at.isoformat() if r.created_at else None,
                             "updated_at": r.updated_at.isoformat() if r.updated_at else None,
@@ -238,6 +252,13 @@ class CertificateAssetsRepository(ProgramAccessMixin):
                 if cipher:
                     count_query = count_query.filter(Certificate.cipher.ilike(f"%{cipher}%"))
 
+                if source is not None:
+                    if isinstance(source, list):
+                        if len(source) > 0:
+                            count_query = count_query.filter(Certificate.source.in_(source))
+                    elif isinstance(source, str) and source.strip():
+                        count_query = count_query.filter(Certificate.source == source.strip())
+
                 if status:
                     now_dt = utcnow()
                     if status == 'expired':
@@ -269,6 +290,8 @@ class CertificateAssetsRepository(ProgramAccessMixin):
                 program = db.query(Program).filter(Program.name == certificate_data.get('program_name')).first()
                 if not program:
                     raise ValueError(f"Program '{certificate_data.get('program_name')}' not found")
+
+                incoming_source = normalize_asset_source(certificate_data.get("source"))
                 
                 # Extract CN from subject DN if not provided
                 subject_cn = certificate_data.get('subject_cn')
@@ -354,6 +377,9 @@ class CertificateAssetsRepository(ProgramAccessMixin):
                             existing.subject_alternative_names = merged_sans
                             meaningful_changes.append('subject_alternative_names')
 
+                    if incoming_source and not existing.source:
+                        existing.source = incoming_source
+
                     # Update timestamp if any changes were made
                     if meaningful_changes:
                         existing.updated_at = datetime.now(timezone.utc)
@@ -391,7 +417,8 @@ class CertificateAssetsRepository(ProgramAccessMixin):
                         serial_number=serial_number,
                         fingerprint_hash=fingerprint_hash,
                         program_id=program.id,
-                        notes=certificate_data.get('notes')
+                        notes=certificate_data.get('notes'),
+                        source=incoming_source,
                     )
                     
                     db.add(certificate)
@@ -533,6 +560,8 @@ class CertificateAssetsRepository(ProgramAccessMixin):
                     values = query.with_entities(Certificate.tls_version).distinct().all()
                 elif field_name == 'cipher':
                     values = query.with_entities(Certificate.cipher).distinct().all()
+                elif field_name == 'source':
+                    values = query.with_entities(Certificate.source).distinct().all()
                 else:
                     raise ValueError(f"Unsupported field '{field_name}' for certificate assets")
                 

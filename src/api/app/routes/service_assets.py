@@ -23,7 +23,8 @@ class ServicesSearchRequest(BaseModel):
     ip_port_or: Optional[bool] = Field(False, description="When both search_ip and port are provided, match IP OR port instead of AND")
     exclude_common_ports: Optional[bool] = Field(False, description="Exclude common ports (80, 443, 21, etc.); show only uncommon ports like 8080, 8443")
     program: Optional[Union[str, List[str]]] = Field(None, description="Restrict to program(s) within user's access scope")
-    sort_by: Literal['ip','port','service_name','protocol','banner','program_name','updated_at'] = 'ip'
+    source: Optional[Union[str, List[str]]] = Field(None, description="Discovery source filter")
+    sort_by: Literal['ip','port','service_name','protocol','banner','program_name','source','updated_at'] = 'ip'
     sort_dir: Literal['asc','desc'] = 'asc'
     page: int = Field(1, ge=1)
     page_size: int = Field(25, ge=1, le=10000)
@@ -87,6 +88,7 @@ async def search_services_typed(request: ServicesSearchRequest, current_user: Us
             ip_port_or=bool(request.ip_port_or),
             exclude_common_ports=bool(request.exclude_common_ports),
             program=programs if programs is not None else None,
+            source=request.source,
             sort_by=request.sort_by,
             sort_dir=request.sort_dir,
             limit=request.page_size,
@@ -221,7 +223,8 @@ async def import_services(request: ServiceImportRequest, current_user: UserRespo
                     "banner": service_data.banner,
                     "product": service_data.product,
                     "version": service_data.version,
-                    "notes": service_data.notes
+                    "notes": service_data.notes,
+                    "source": "manual_import",
                 }
                 
                 # Remove None values and empty strings

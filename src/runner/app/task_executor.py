@@ -1007,7 +1007,8 @@ class TaskExecutor:
                                 converted_assets[str(k)] = v
 
                         success, api_response = self.data_api_client.send_assets(
-                            step_name, ingest_pid, self.execution_id, converted_assets, self.asset_processor
+                            step_name, ingest_pid, self.execution_id, converted_assets, self.asset_processor,
+                            source=task_def.name,
                         )
                         if success:
                             # Store API response data for workflow status updates
@@ -1072,7 +1073,8 @@ class TaskExecutor:
                                 converted_assets[str(k)] = v
 
                         success, api_response = self.data_api_client.send_assets(
-                            step_name, ingest_pid, self.execution_id, converted_assets, self.asset_processor
+                            step_name, ingest_pid, self.execution_id, converted_assets, self.asset_processor,
+                            source=task_def.name,
                         )
                         logger.debug(f"DEBUT SENDING ASSETS: {success}")
                         if success:
@@ -4027,7 +4029,8 @@ class TaskExecutor:
                         if batch_assets and self.progressive_streaming_enabled:
                             task_id = list(outputs.keys())[0] if outputs else None
                             sent = await self._send_batch_assets_progressively(
-                                batch_assets, program_name, step_name, task_id, params
+                                batch_assets, program_name, step_name, task_id, params,
+                                source=task_def.name,
                             )
                             progressive_assets_sent_count[0] += sent
                         self._merge_batch_into_aggregated_assets(
@@ -4321,7 +4324,8 @@ class TaskExecutor:
                     logger.info(f"Sending progressive assets for task {task_id} with {len(batch_assets)} asset types")
 
                     assets_sent = await self._send_batch_assets_progressively(
-                        batch_assets, program_name, step_name, task_id, task_def.params
+                        batch_assets, program_name, step_name, task_id, task_def.params,
+                        source=task_def.name,
                     )
                     progressive_assets_sent_count[0] += assets_sent
                     logger.info(f"Sent {assets_sent} assets for task {task_id}")
@@ -4633,6 +4637,7 @@ class TaskExecutor:
         step_name: str,
         task_id: Optional[str] = None,
         task_params: Optional[Dict[str, Any]] = None,
+        source: Optional[str] = None,
     ) -> int:
         """Send batch assets progressively during execution"""
         assets_sent = 0
@@ -4693,7 +4698,7 @@ class TaskExecutor:
             if assets and any(assets.values()):  # Check if dict is not empty AND contains actual asset lists
                 try:
                     api_response = await self.async_data_api_client.post_assets_unified(
-                        assets, ingest_pid, self.execution_id, step_name
+                        assets, ingest_pid, self.execution_id, step_name, source=source,
                     )
                     assets_success = api_response.get("status") != "error"
 

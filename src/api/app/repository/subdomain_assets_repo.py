@@ -6,6 +6,7 @@ from .program_repo import ProgramRepository
 from datetime import datetime, timezone
 from uuid import UUID
 from utils.domain_utils import extract_apex_domain, normalize_hostname
+from utils.asset_source import normalize_asset_source
 from models.postgres import (
     Program, ApexDomain, Subdomain, IP, SubdomainIP
 )
@@ -49,6 +50,7 @@ class SubdomainAssetsRepository(ProgramAccessMixin):
                     'cname_record': domain.cname_record,
                     'ip': ip_list,
                     'notes': domain.notes,
+                    'source': domain.source,
                     'created_at': domain.created_at.isoformat() if domain.created_at else None,
                     'updated_at': domain.updated_at.isoformat() if domain.updated_at else None
                 }
@@ -116,6 +118,7 @@ class SubdomainAssetsRepository(ProgramAccessMixin):
         ip: Optional[Union[str, List[str]]] = None,
         has_cname: Optional[bool] = None,
         cname_contains: Optional[str] = None,
+        source: Optional[Union[str, List[str]]] = None,
         programs: Optional[List[str]] = None,
         sort_by: str = "updated_at",
         sort_dir: str = "desc",
@@ -145,6 +148,7 @@ class SubdomainAssetsRepository(ProgramAccessMixin):
                         ApexDomain.name.label("apex_domain"),
                         Subdomain.is_wildcard.label("is_wildcard"),
                         Subdomain.cname_record.label("cname_record"),
+                        Subdomain.source.label("source"),
                         Subdomain.created_at.label("created_at"),
                         Subdomain.updated_at.label("updated_at"),
                         ip_array_col.label("ip"),
@@ -185,6 +189,13 @@ class SubdomainAssetsRepository(ProgramAccessMixin):
                 if cname_contains:
                     base_query = base_query.filter(Subdomain.cname_record.ilike(f"%{cname_contains}%"))
 
+                if source is not None:
+                    if isinstance(source, list):
+                        if len(source) > 0:
+                            base_query = base_query.filter(Subdomain.source.in_(source))
+                    elif isinstance(source, str) and source.strip():
+                        base_query = base_query.filter(Subdomain.source == source.strip())
+
                 # Filter by specific IP addresses
                 if ip is not None:
                     if isinstance(ip, list):
@@ -209,6 +220,7 @@ class SubdomainAssetsRepository(ProgramAccessMixin):
                     ApexDomain.name,
                     Subdomain.is_wildcard,
                     Subdomain.cname_record,
+                    Subdomain.source,
                     Subdomain.created_at,
                     Subdomain.updated_at,
                 )
@@ -232,6 +244,8 @@ class SubdomainAssetsRepository(ProgramAccessMixin):
                     base_query = base_query.order_by(direction_func(Subdomain.is_wildcard))
                 elif sort_by_normalized == "cname_record":
                     base_query = base_query.order_by(direction_func(Subdomain.cname_record))
+                elif sort_by_normalized == "source":
+                    base_query = base_query.order_by(direction_func(Subdomain.source))
                 elif sort_by_normalized == "ip_count":
                     base_query = base_query.order_by(direction_func(count_ip_col))
                 else:  # updated_at default
@@ -252,6 +266,7 @@ class SubdomainAssetsRepository(ProgramAccessMixin):
                         "apex_domain": r.apex_domain,
                         "is_wildcard": r.is_wildcard,
                         "cname_record": r.cname_record,
+                        "source": r.source,
                         "created_at": r.created_at.isoformat() if r.created_at else None,
                         "updated_at": r.updated_at.isoformat() if r.updated_at else None,
                         "ip": list(r.ip) if r.ip else [],
@@ -293,6 +308,13 @@ class SubdomainAssetsRepository(ProgramAccessMixin):
 
                 if cname_contains:
                     count_base = count_base.filter(Subdomain.cname_record.ilike(f"%{cname_contains}%"))
+
+                if source is not None:
+                    if isinstance(source, list):
+                        if len(source) > 0:
+                            count_base = count_base.filter(Subdomain.source.in_(source))
+                    elif isinstance(source, str) and source.strip():
+                        count_base = count_base.filter(Subdomain.source == source.strip())
 
                 count_base = count_base.group_by(Subdomain.id)
                 if _apply_has_ips_having is not None:
@@ -338,6 +360,8 @@ class SubdomainAssetsRepository(ProgramAccessMixin):
                     logger.info(f"Subdomain '{hostname}' is out of scope for program '{program_name}'")
                     return "", "out_of_scope", None, None
 
+                incoming_source = normalize_asset_source(subdomain_data.get("source"))
+
                 # Determine apex domain: use provided or extract from hostname
                 apex_domain_name = subdomain_data.get('apex_domain') or extract_apex_domain(hostname)
                 apex_auto_created = False
@@ -350,6 +374,7 @@ class SubdomainAssetsRepository(ProgramAccessMixin):
                         name=apex_domain_name,
                         program_id=program.id,
                         notes=None,
+                        source=incoming_source,
                     )
                     db.add(apex_domain)
                     db.commit()
@@ -423,6 +448,9 @@ class SubdomainAssetsRepository(ProgramAccessMixin):
                         existing.notes = subdomain_data.get('notes')
                         meaningful_changes.append('notes')
 
+                    if incoming_source and not existing.source:
+                        existing.source = incoming_source
+
                     # Merge IP relationships if provided
                     if 'ip' in subdomain_data and isinstance(subdomain_data['ip'], list):
                         logger.debug(f"Processing {len(subdomain_data['ip'])} IPs for existing subdomain {subdomain_data.get('name')}")
@@ -438,6 +466,7 @@ class SubdomainAssetsRepository(ProgramAccessMixin):
                                     ip = IP(
                                         ip_address=ip_address,
                                         program_id=program.id,
+                                        source=incoming_source,
                                     )
                                     db.add(ip)
                                     db.commit()
@@ -448,6 +477,8 @@ class SubdomainAssetsRepository(ProgramAccessMixin):
                                     ip = db.query(IP).filter(IP.ip_address == ip_address).first()
                                     if not ip:
                                         raise
+                            elif incoming_source and not ip.source:
+                                ip.source = incoming_source
                             # Ensure relationship exists
                             rel_exists = (
                                 db.query(SubdomainIP)
@@ -553,6 +584,7 @@ class SubdomainAssetsRepository(ProgramAccessMixin):
                             else subdomain_data.get('wildcard_type', [])
                         ),
                         notes=subdomain_data.get('notes'),
+                        source=incoming_source,
                     )
                     
                     db.add(subdomain)
@@ -569,7 +601,7 @@ class SubdomainAssetsRepository(ProgramAccessMixin):
                             ).first()
                             if not ip:
                                 try:
-                                    ip = IP(ip_address=ip_address, program_id=program.id)
+                                    ip = IP(ip_address=ip_address, program_id=program.id, source=incoming_source)
                                     db.add(ip)
                                     db.commit()
                                     db.refresh(ip)
@@ -730,6 +762,8 @@ class SubdomainAssetsRepository(ProgramAccessMixin):
                     values = query.with_entities(Subdomain.name).distinct().all()
                 elif field_name == 'apex_domain':
                     values = query.join(ApexDomain, ApexDomain.id == Subdomain.apex_domain_id).with_entities(ApexDomain.name).distinct().all()
+                elif field_name == 'source':
+                    values = query.with_entities(Subdomain.source).distinct().all()
                 elif field_name == 'wildcard_types':
                     # For array fields, we need to unnest the arrays to get individual values
                     values = query.with_entities(func.unnest(Subdomain.wildcard_types)).distinct().all()

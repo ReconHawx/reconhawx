@@ -254,6 +254,16 @@ async def _extract_asset_data(data: Dict[str, Any]) -> Dict[str, List]:
         "certificate": [],
         "apex_domain": []
     }
+
+    request_source = data.get("source") or data.get("task_name")
+    if request_source is not None:
+        request_source = str(request_source).strip() or None
+
+    def _stamp_asset(item: Dict[str, Any]) -> None:
+        if request_source and "source" not in item:
+            item["source"] = request_source
+        if "program_name" not in item and "program_name" in data:
+            item["program_name"] = data["program_name"]
     
     if "assets" in data:
         assets = data["assets"]
@@ -267,54 +277,42 @@ async def _extract_asset_data(data: Dict[str, Any]) -> Dict[str, List]:
             logger.info("Processing subdomains and their IPs")
             for subdomain in assets["subdomain"]:
                 if isinstance(subdomain, dict):
-                    # Add program name if not present
-                    if "program_name" not in subdomain and "program_name" in data:
-                        subdomain["program_name"] = data["program_name"]
+                    _stamp_asset(subdomain)
                     asset_data["subdomain"].append(subdomain)
 
         if "ip" in assets:
             logger.info("Processing standalone IPs")
             for ip_entry in assets["ip"]:
                 if isinstance(ip_entry, dict) and "ip" in ip_entry:
-                    # Add program name if not present
-                    if "program_name" not in ip_entry and "program_name" in data:
-                        ip_entry["program_name"] = data["program_name"]
+                    _stamp_asset(ip_entry)
                     asset_data["ip"].append(ip_entry)
         
         if "url" in assets:
             logger.info("Processing urls")
             for url in assets["url"]:
                 if isinstance(url, dict) and "url" in url:
-                    # Add program name if not present
-                    if "program_name" not in url and "program_name" in data:
-                        url["program_name"] = data["program_name"]
+                    _stamp_asset(url)
                     asset_data["url"].append(url)
 
         if "service" in assets:
             logger.info("Processing services")
             for service in assets["service"]:
                 if isinstance(service, dict) and "ip" in service:
-                    # Add program name if not present
-                    if "program_name" not in service and "program_name" in data:
-                        service["program_name"] = data["program_name"]
+                    _stamp_asset(service)
                     asset_data["service"].append(service)
 
         if "certificate" in assets:
             logger.info("Processing certificates")
             for certificate in assets["certificate"]:
                 if isinstance(certificate, dict) and "subject_dn" in certificate:
-                    # Add program name if not present
-                    if "program_name" not in certificate and "program_name" in data:
-                        certificate["program_name"] = data["program_name"]
+                    _stamp_asset(certificate)
                     asset_data["certificate"].append(certificate)
 
         if "apex_domain" in assets:
             logger.info("Processing apex domains")
             for apex_domain in assets["apex_domain"]:
                 if isinstance(apex_domain, dict) and "name" in apex_domain:
-                    # Add program name if not present
-                    if "program_name" not in apex_domain and "program_name" in data:
-                        apex_domain["program_name"] = data["program_name"]
+                    _stamp_asset(apex_domain)
                     asset_data["apex_domain"].append(apex_domain)
 
         # Skip typosquat findings - use dedicated /findings/typosquat endpoint

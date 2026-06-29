@@ -1,4 +1,4 @@
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Union
 from .program_repo import ProgramRepository
 import logging
 from datetime import datetime, timezone
@@ -6,6 +6,7 @@ from uuid import UUID
 from sqlalchemy import and_
 
 from utils.domain_utils import normalize_hostname
+from utils.asset_source import normalize_asset_source
 from models.postgres import (
     Program, ApexDomain, Subdomain
 )
@@ -109,6 +110,7 @@ def _apex_domain_row_to_dict(apex_domain: ApexDomain) -> Dict[str, Any]:
         "name": apex_domain.name,
         "program_name": apex_domain.program.name if apex_domain.program else None,
         "notes": apex_domain.notes,
+        "source": apex_domain.source,
         "created_at": apex_domain.created_at.isoformat() if apex_domain.created_at else None,
         "updated_at": apex_domain.updated_at.isoformat() if apex_domain.updated_at else None,
         "whois_status": apex_domain.whois_status,
@@ -230,6 +232,7 @@ class ApexDomainAssetsRepository(ProgramAccessMixin):
         search: Optional[str] = None,
         exact_match: Optional[str] = None,
         program: Optional[List[str]] = None,
+        source: Optional[Union[str, List[str]]] = None,
         sort_by: str = "name",
         sort_dir: str = "asc",
         limit: int = 25,
@@ -256,6 +259,13 @@ class ApexDomainAssetsRepository(ProgramAccessMixin):
                 if exact_match:
                     query = query.filter(ApexDomain.name == exact_match)
 
+                if source is not None:
+                    if isinstance(source, list):
+                        if len(source) > 0:
+                            query = query.filter(ApexDomain.source.in_(source))
+                    elif isinstance(source, str) and source.strip():
+                        query = query.filter(ApexDomain.source == source.strip())
+
                 # Count before pagination
                 total_count = query.count()
 
@@ -267,6 +277,8 @@ class ApexDomainAssetsRepository(ProgramAccessMixin):
                     sort_col = ApexDomain.updated_at
                 elif sort_by == "created_at":
                     sort_col = ApexDomain.created_at
+                elif sort_by == "source":
+                    sort_col = ApexDomain.source
 
                 if sort_dir == "desc":
                     sort_col = sort_col.desc()
@@ -383,6 +395,9 @@ class ApexDomainAssetsRepository(ProgramAccessMixin):
                     apex_domain_data['name'] = normalize_hostname(str(apex_domain_data['name'])) or apex_domain_data.get(
                         'name'
                     )
+
+                incoming_source = normalize_asset_source(apex_domain_data.get("source"))
+
                 existing = db.query(ApexDomain).filter(
                     and_(ApexDomain.name == apex_domain_data.get('name'), ApexDomain.program_id == program.id)
                 ).first()
@@ -415,6 +430,9 @@ class ApexDomainAssetsRepository(ProgramAccessMixin):
                             updated = True
                         existing.whois_checked_at = now_naive
                         updated = True
+
+                    if incoming_source and not existing.source:
+                        existing.source = incoming_source
                     
                     # Update timestamp if any changes were made
                     if updated:
@@ -428,7 +446,8 @@ class ApexDomainAssetsRepository(ProgramAccessMixin):
                     apex_domain = ApexDomain(
                         name=apex_domain_data.get('name'),
                         program_id=program.id,
-                        notes=apex_domain_data.get('notes')
+                        notes=apex_domain_data.get('notes'),
+                        source=incoming_source,
                     )
                     if has_whois_payload:
                         _apply_whois_from_payload(apex_domain, apex_domain_data)
@@ -558,6 +577,8 @@ class ApexDomainAssetsRepository(ProgramAccessMixin):
                 # Get distinct values based on field name
                 if field_name == 'name':
                     values = query.with_entities(ApexDomain.name).distinct().all()
+                elif field_name == 'source':
+                    values = query.with_entities(ApexDomain.source).distinct().all()
                 else:
                     raise ValueError(f"Unsupported field '{field_name}' for apex domain assets")
                 

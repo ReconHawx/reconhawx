@@ -12,6 +12,7 @@ from models.postgres import (
 from db import get_db_session
 from utils.query_filters import ProgramAccessMixin
 from utils.domain_utils import normalize_hostname
+from utils.asset_source import normalize_asset_source
 from services.event_publisher import publisher
 from repository.program_repo import ProgramRepository
 
@@ -36,6 +37,7 @@ class IPAssetsRepository(ProgramAccessMixin):
                     'ptr': ip.ptr_record,
                     'service_provider': ip.service_provider,
                     'notes': ip.notes,
+                    'source': ip.source,
                     'created_at': ip.created_at.isoformat() if ip.created_at else None,
                     'updated_at': ip.updated_at.isoformat() if ip.updated_at else None
                 }
@@ -79,6 +81,7 @@ class IPAssetsRepository(ProgramAccessMixin):
         ptr_contains: Optional[str] = None,
         service_provider: Optional[Union[str, List[str]]] = None,
         has_service_provider: Optional[bool] = None,
+        source: Optional[Union[str, List[str]]] = None,
         sort_by: str = "ip_address",
         sort_dir: str = "asc",
         limit: int = 25,
@@ -95,6 +98,7 @@ class IPAssetsRepository(ProgramAccessMixin):
                         Program.name.label("program_name"),
                         IP.ptr_record.label("ptr_record"),
                         IP.service_provider.label("service_provider"),
+                        IP.source.label("source"),
                         IP.created_at.label("created_at"),
                         IP.updated_at.label("updated_at"),
                     )
@@ -142,6 +146,13 @@ class IPAssetsRepository(ProgramAccessMixin):
                         base_query = base_query.filter(IP.service_provider.isnot(None), IP.service_provider != "")
                     else:
                         base_query = base_query.filter(or_(IP.service_provider.is_(None), IP.service_provider == ""))
+
+                if source is not None:
+                    if isinstance(source, list):
+                        if len(source) > 0:
+                            base_query = base_query.filter(IP.source.in_(source))
+                    elif isinstance(source, str) and source.strip():
+                        base_query = base_query.filter(IP.source == source.strip())
                 
                 # Sorting
                 sort_by_normalized = (sort_by or "ip_address").lower()
@@ -156,6 +167,8 @@ class IPAssetsRepository(ProgramAccessMixin):
                     base_query = base_query.order_by(direction_func(IP.ptr_record))
                 elif sort_by_normalized == "service_provider":
                     base_query = base_query.order_by(direction_func(IP.service_provider))
+                elif sort_by_normalized == "source":
+                    base_query = base_query.order_by(direction_func(IP.source))
                 else:  # updated_at default
                     base_query = base_query.order_by(direction_func(IP.updated_at))
 
@@ -173,6 +186,7 @@ class IPAssetsRepository(ProgramAccessMixin):
                             "program_name": r.program_name,
                             "ptr_record": r.ptr_record,
                             "service_provider": r.service_provider,
+                            "source": r.source,
                             "created_at": r.created_at.isoformat() if r.created_at else None,
                             "updated_at": r.updated_at.isoformat() if r.updated_at else None,
                         }
@@ -216,6 +230,19 @@ class IPAssetsRepository(ProgramAccessMixin):
                     elif isinstance(service_provider, str) and service_provider:
                         count_query = count_query.filter(IP.service_provider == service_provider)
 
+                if has_service_provider is not None:
+                    if has_service_provider:
+                        count_query = count_query.filter(and_(IP.service_provider.isnot(None), IP.service_provider != ""))
+                    else:
+                        count_query = count_query.filter(or_(IP.service_provider.is_(None), IP.service_provider == ""))
+
+                if source is not None:
+                    if isinstance(source, list):
+                        if len(source) > 0:
+                            count_query = count_query.filter(IP.source.in_(source))
+                    elif isinstance(source, str) and source.strip():
+                        count_query = count_query.filter(IP.source == source.strip())
+
                 total_count = count_query.scalar() or 0
 
                 return {"items": items, "total_count": int(total_count)}
@@ -249,6 +276,8 @@ class IPAssetsRepository(ProgramAccessMixin):
                     )
                     return "", "out_of_scope", None
 
+                incoming_source = normalize_asset_source(ip_data.get("source"))
+
                 # Check if IP already exists for this program
                 existing = db.query(IP).filter(
                     and_(IP.ip_address == ip_data.get('ip'), IP.program_id == program.id)
@@ -272,6 +301,9 @@ class IPAssetsRepository(ProgramAccessMixin):
                     if ip_data.get('notes') and ip_data.get('notes') != existing.notes:
                         existing.notes = ip_data.get('notes')
                         meaningful_changes.append('notes')
+
+                    if incoming_source and not existing.source:
+                        existing.source = incoming_source
 
                     # Update timestamp if any changes were made
                     if meaningful_changes:
@@ -317,7 +349,8 @@ class IPAssetsRepository(ProgramAccessMixin):
                             ptr_record=ip_data.get('ptr'),
                             service_provider=ip_data.get('service_provider'),
                             program_id=program.id,
-                            notes=ip_data.get('notes')
+                            notes=ip_data.get('notes'),
+                            source=incoming_source,
                         )
                         db.add(ip)
                         db.commit()
@@ -350,6 +383,8 @@ class IPAssetsRepository(ProgramAccessMixin):
                         if ip_data.get('notes') and ip_data.get('notes') != ip.notes:
                             ip.notes = ip_data.get('notes')
                             meaningful_changes.append('notes')
+                        if incoming_source and not ip.source:
+                            ip.source = incoming_source
                         if meaningful_changes:
                             ip.updated_at = datetime.now(timezone.utc)
                             logger.info(f"IP {ip_data.get('ip')} was updated (from race) with changes: {meaningful_changes}")
@@ -553,6 +588,8 @@ class IPAssetsRepository(ProgramAccessMixin):
                     values = query.with_entities(IP.ptr_record).distinct().all()
                 elif field_name == 'service_provider':
                     values = query.with_entities(IP.service_provider).distinct().all()
+                elif field_name == 'source':
+                    values = query.with_entities(IP.source).distinct().all()
                 else:
                     raise ValueError(f"Unsupported field '{field_name}' for IP assets")
                 

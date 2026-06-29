@@ -8,13 +8,14 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 
 from db import BatchSessionLocal
 from models.postgres import ApexDomain, IP, Program, Subdomain, SubdomainIP
 from repository.bulk_sql.config import sql_chunk_size
 from repository.bulk_sql.scope import domain_in_scope
+from utils.asset_source import apply_lazy_source, normalize_asset_source
 from utils.domain_utils import extract_apex_domain, normalize_hostname
 
 logger = logging.getLogger(__name__)
@@ -40,6 +41,7 @@ def _merge_subdomain_row(
 ) -> Dict[str, Any]:
     """Build ORM row dict for insert/upsert matching create_or_update_subdomain merge rules."""
     name = item.get("name")
+    incoming_source = normalize_asset_source(item.get("source"))
     if existing is None:
         wt = _wildcard_types(item)
         return {
@@ -51,6 +53,7 @@ def _merge_subdomain_row(
             "is_wildcard": bool(item.get("is_wildcard", False)),
             "wildcard_types": wt,
             "notes": item.get("notes"),
+            "source": incoming_source,
             "created_at": now_naive,
             "updated_at": now_naive,
         }
@@ -93,6 +96,7 @@ def _merge_subdomain_row(
         "is_wildcard": is_wc,
         "wildcard_types": wt,
         "notes": notes,
+        "source": apply_lazy_source(existing.source, incoming_source),
         "created_at": existing.created_at,
         "updated_at": updated_at,
         "_meaningful": meaningful,
@@ -203,6 +207,11 @@ def upsert_subdomains_chunk(program_id: str, items: List[Dict[str, Any]]) -> Dic
             )
 
         distinct_apex = sorted({p[2] for p in prepared})
+        apex_source_by_name: Dict[str, Optional[str]] = {}
+        for item, _hostname, apex_name in prepared:
+            src = normalize_asset_source(item.get("source"))
+            if src and apex_name not in apex_source_by_name:
+                apex_source_by_name[apex_name] = src
         now_naive = datetime.now(timezone.utc).replace(tzinfo=None)
 
         apex_tbl = ApexDomain.__table__
@@ -215,6 +224,7 @@ def upsert_subdomains_chunk(program_id: str, items: List[Dict[str, Any]]) -> Dic
                         "name": nm,
                         "program_id": program.id,
                         "notes": None,
+                        "source": apex_source_by_name.get(nm),
                         "created_at": now_naive,
                         "updated_at": now_naive,
                     }
@@ -317,6 +327,7 @@ def upsert_subdomains_chunk(program_id: str, items: List[Dict[str, Any]]) -> Dic
                     "is_wildcard": ex.is_wildcard,
                     "wildcard_types": ex.wildcard_types,
                     "notes": ex.notes,
+                    "source": func.coalesce(sub_tbl.c.source, ex.source),
                     "updated_at": ex.updated_at,
                 },
             )
@@ -525,6 +536,17 @@ def _bulk_link_subdomain_ips(
     if not ip_pairs:
         return
 
+    ip_source_by_addr: Dict[str, Optional[str]] = {}
+    for item, hostname, _apex in prepared:
+        src = normalize_asset_source(item.get("source"))
+        if "ip" not in item or not isinstance(item["ip"], list):
+            continue
+        for ip_address in item["ip"]:
+            if isinstance(ip_address, str) and ip_address.strip():
+                addr = ip_address.strip()
+                if src and addr not in ip_source_by_addr:
+                    ip_source_by_addr[addr] = src
+
     distinct_addrs = sorted({p[0] for p in ip_pairs})
     ip_values = [
         {
@@ -534,14 +556,18 @@ def _bulk_link_subdomain_ips(
             "service_provider": None,
             "program_id": program_id,
             "notes": None,
+            "source": ip_source_by_addr.get(addr),
             "created_at": now_naive,
             "updated_at": now_naive,
         }
         for addr in distinct_addrs
     ]
     ip_tbl = IP.__table__
-    ii = insert(ip_tbl).values(ip_values).on_conflict_do_nothing(
+    ii = insert(ip_tbl).values(ip_values)
+    ex_ip = ii.excluded
+    ii = ii.on_conflict_do_update(
         index_elements=[ip_tbl.c.ip_address, ip_tbl.c.program_id],
+        set_={"source": func.coalesce(ip_tbl.c.source, ex_ip.source)},
     )
     session.execute(ii)
 

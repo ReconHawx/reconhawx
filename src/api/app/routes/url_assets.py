@@ -27,7 +27,8 @@ class URLsSearchRequest(BaseModel):
     certificate_id: Optional[str] = Field(None, description="Filter by linked certificate asset ID")
     service_id: Optional[str] = Field(None, description="Filter by linked service asset ID")
     program: Optional[Union[str, List[str]]] = Field(None, description="Restrict to program(s) within user's access scope")
-    sort_by: Literal['url','http_status_code','program_name','updated_at','technologies','port'] = 'url'
+    source: Optional[Union[str, List[str]]] = Field(None, description="Discovery source filter")
+    sort_by: Literal['url','http_status_code','program_name','source','updated_at','technologies','port'] = 'url'
     sort_dir: Literal['asc','desc'] = 'asc'
     page: int = Field(1, ge=1)
     page_size: int = Field(25, ge=1, le=10000)
@@ -94,6 +95,7 @@ async def search_urls_typed(request: URLsSearchRequest, current_user: UserRespon
             certificate_id=request.certificate_id,
             service_id=request.service_id,
             program=programs if programs is not None else None,
+            source=request.source,
             sort_by=request.sort_by,
             sort_dir=request.sort_dir,
             limit=request.page_size,
@@ -219,7 +221,8 @@ async def import_urls(request: URLImportRequest, current_user: UserResponse = De
                     "content_length": url_data.content_length,
                     "content_type": url_data.content_type,
                     "techs": url_data.techs or [],
-                    "notes": url_data.notes
+                    "notes": url_data.notes,
+                    "source": "manual_import",
                 }
                 
                 # Remove None values, empty strings, and string "null" values

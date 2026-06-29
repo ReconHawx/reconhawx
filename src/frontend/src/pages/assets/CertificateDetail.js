@@ -8,6 +8,7 @@ import RelatedAssetsSection from '../../components/RelatedAssetsSection';
 import RelatedFindingsSection from '../../components/RelatedFindingsSection';
 import useRelatedContent from '../../hooks/useRelatedContent';
 import { formatDate, isExpired, isExpiringSoon } from '../../utils/dateUtils';
+import { formatAssetSource } from '../../utils/assetSource';
 import { usePageTitle, formatPageTitle, truncateTitle } from '../../hooks/usePageTitle';
 import { useBackToList } from '../../hooks/useListNavigation';
 
@@ -344,6 +345,10 @@ function CertificateDetail() {
             <Card.Body>
               <Table borderless>
                 <tbody>
+                  <tr>
+                    <td><strong>Source:</strong></td>
+                    <td>{formatAssetSource(certificate.source)}</td>
+                  </tr>
                   <tr>
                     <td><strong>First Discovered:</strong></td>
                     <td>{formatCertDetailDate(certificate.created_at)}</td>

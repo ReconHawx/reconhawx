@@ -15,6 +15,7 @@ from models.postgres import ApexDomain, Program
 from repository.apexdomain_assets_repo import WHOIS_COLUMNS, _apply_whois_from_payload
 from repository.bulk_sql.config import sql_chunk_size
 from repository.bulk_sql.scope import domain_in_scope
+from utils.asset_source import apply_lazy_source, normalize_asset_source
 from utils.domain_utils import normalize_hostname
 
 logger = logging.getLogger(__name__)
@@ -101,6 +102,7 @@ def upsert_apex_domains_chunk(program_id: str, items: List[Dict[str, Any]]) -> D
                     name=nm,
                     program_id=program.id,
                     notes=item.get("notes"),
+                    source=normalize_asset_source(item.get("source")),
                     created_at=now_naive,
                     updated_at=now_naive,
                 )
@@ -128,6 +130,9 @@ def upsert_apex_domains_chunk(program_id: str, items: List[Dict[str, Any]]) -> D
                 by_name[nm] = ad
             else:
                 updated = False
+                incoming_source = normalize_asset_source(item.get("source"))
+                if incoming_source and not ex.source:
+                    ex.source = incoming_source
                 if item.get("notes") is not None and item.get("notes") != ex.notes:
                     ex.notes = item.get("notes")
                     updated = True

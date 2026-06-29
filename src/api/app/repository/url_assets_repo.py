@@ -15,6 +15,7 @@ from utils.query_filters import ProgramAccessMixin
 from utils import get_root_url
 from utils.domain_utils import normalize_hostname
 from utils.url_utils import lower_url_host, normalize_url_asset_payload, normalize_url_for_storage
+from utils.asset_source import normalize_asset_source
 from repository.program_repo import ProgramRepository
 from services.event_publisher import publisher
 
@@ -123,6 +124,7 @@ class UrlAssetsRepository(ProgramAccessMixin):
                     'favicon_hash': url.favicon_hash,
                     'favicon_url': url.favicon_url,
                     'notes': url.notes,
+                    'source': url.source,
                     'created_at': url.created_at.isoformat() if url.created_at else None,
                     'updated_at': url.updated_at.isoformat() if url.updated_at else None
                 }
@@ -172,6 +174,7 @@ class UrlAssetsRepository(ProgramAccessMixin):
         subdomain_id: Optional[str] = None,
         certificate_id: Optional[str] = None,
         service_id: Optional[str] = None,
+        source: Optional[Union[str, List[str]]] = None,
         program: Optional[Union[str, List[str]]] = None,
         sort_by: str = "url",
         sort_dir: str = "asc",
@@ -239,6 +242,13 @@ class UrlAssetsRepository(ProgramAccessMixin):
                         URLService, URLService.url_id == URL.id
                     ).filter(URLService.service_id == svc_uuid)
 
+                if source is not None:
+                    if isinstance(source, list):
+                        if len(source) > 0:
+                            base_query = base_query.filter(URL.source.in_(source))
+                    elif isinstance(source, str) and source.strip():
+                        base_query = base_query.filter(URL.source == source.strip())
+
                 sort_by_normalized = (sort_by or "url").lower()
                 sort_dir_normalized = (sort_dir or "asc").lower()
                 direction_func = asc if sort_dir_normalized == "asc" else desc
@@ -253,6 +263,8 @@ class UrlAssetsRepository(ProgramAccessMixin):
                     base_query = base_query.order_by(direction_func(URL.updated_at))
                 elif sort_by_normalized == "port":
                     base_query = base_query.order_by(direction_func(URL.port))
+                elif sort_by_normalized == "source":
+                    base_query = base_query.order_by(direction_func(URL.source))
                 else:
                     base_query = base_query.order_by(direction_func(URL.url))
 
@@ -278,6 +290,7 @@ class UrlAssetsRepository(ProgramAccessMixin):
                             "technologies": [assoc.technology.name for assoc in url.technology_associations],
                             "extracted_links": [source.extracted_link.link_url for source in url.extracted_link_sources],
                             "program_name": url.program.name if url.program else None,
+                            "source": url.source,
                             "created_at": url.created_at.isoformat() if url.created_at else None,
                             "updated_at": url.updated_at.isoformat() if url.updated_at else None,
                         }
@@ -327,6 +340,12 @@ class UrlAssetsRepository(ProgramAccessMixin):
                     count_query = count_query.join(
                         URLService, URLService.url_id == URL.id
                     ).filter(URLService.service_id == svc_uuid)
+                if source is not None:
+                    if isinstance(source, list):
+                        if len(source) > 0:
+                            count_query = count_query.filter(URL.source.in_(source))
+                    elif isinstance(source, str) and source.strip():
+                        count_query = count_query.filter(URL.source == source.strip())
 
                 total_count = count_query.scalar() or 0
                 return {"items": items, "total_count": int(total_count)}
@@ -609,6 +628,8 @@ class UrlAssetsRepository(ProgramAccessMixin):
                     logger.debug(f"URL {url_data.get('url')} is not in scope, skipping")
                     return None, "skipped", []
 
+                incoming_source = normalize_asset_source(url_data.get("source"))
+
                 # Resolve relations (certificate, services, subdomain) - processed in same batch
                 certificate_id, service_ids, subdomain_id = UrlAssetsRepository._resolve_url_relations(
                     db, url_data, program.id
@@ -673,6 +694,9 @@ class UrlAssetsRepository(ProgramAccessMixin):
                         existing.subdomain_id = UUID(subdomain_id)
                         meaningful_changes.append('subdomain_id')
 
+                    if incoming_source and not existing.source:
+                        existing.source = incoming_source
+
                     # Update timestamp if any changes were made
                     if meaningful_changes:
                         existing.updated_at = datetime.now(timezone.utc)
@@ -720,7 +744,8 @@ class UrlAssetsRepository(ProgramAccessMixin):
                         certificate_id=UUID(certificate_id) if certificate_id else None,
                         subdomain_id=UUID(subdomain_id) if subdomain_id else None,
                         program_id=program.id,
-                        notes=url_data.get('notes')
+                        notes=url_data.get('notes'),
+                        source=incoming_source,
                     )
 
                     db.add(url)
@@ -1260,6 +1285,8 @@ class UrlAssetsRepository(ProgramAccessMixin):
                     values = query.with_entities(URL.title).distinct().all()
                 elif field_name == 'port':
                     values = query.with_entities(URL.port).distinct().all()
+                elif field_name == 'source':
+                    values = query.with_entities(URL.source).distinct().all()
                 else:
                     raise ValueError(f"Unsupported field '{field_name}' for URL assets")
                 

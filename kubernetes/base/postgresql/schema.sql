@@ -183,6 +183,7 @@ CREATE TABLE public.ips (
     service_provider character varying(255),
     program_id uuid NOT NULL,
     notes text,
+    source character varying(255),
     created_at timestamp without time zone NOT NULL,
     updated_at timestamp without time zone NOT NULL
 );
@@ -325,6 +326,7 @@ CREATE TABLE public.services (
     banner text,
     program_id uuid NOT NULL,
     notes text,
+    source character varying(255),
     created_at timestamp without time zone NOT NULL,
     updated_at timestamp without time zone NOT NULL,
     nerva_metadata jsonb
@@ -375,6 +377,7 @@ CREATE TABLE public.apex_domains (
     name character varying(255) NOT NULL,
     program_id uuid NOT NULL,
     notes text,
+    source character varying(255),
     created_at timestamp without time zone NOT NULL,
     updated_at timestamp without time zone NOT NULL,
     whois_status character varying(64),
@@ -434,6 +437,7 @@ CREATE TABLE public.certificates (
     fingerprint_hash character varying(255) NOT NULL,
     program_id uuid,
     notes text,
+    source character varying(255),
     created_at timestamp without time zone NOT NULL,
     updated_at timestamp without time zone NOT NULL,
     tls_version character varying(255),
@@ -492,6 +496,7 @@ CREATE TABLE public.subdomains (
     is_wildcard boolean,
     wildcard_types character varying(10)[],
     notes text,
+    source character varying(255),
     created_at timestamp without time zone NOT NULL,
     updated_at timestamp without time zone NOT NULL
 );
@@ -526,6 +531,7 @@ CREATE TABLE public.urls (
     certificate_id uuid,
     program_id uuid,
     notes text,
+    source character varying(255),
     created_at timestamp without time zone NOT NULL,
     updated_at timestamp without time zone NOT NULL,
     subdomain_id uuid
@@ -2820,6 +2826,13 @@ CREATE INDEX ix_apex_domains_prog_created ON public.apex_domains USING btree (pr
 
 
 --
+-- Name: ix_apex_domains_prog_source; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_apex_domains_prog_source ON public.apex_domains USING btree (program_id, source);
+
+
+--
 -- Name: ix_apex_domains_program_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2866,6 +2879,13 @@ CREATE INDEX ix_certificates_fingerprint_hash ON public.certificates USING btree
 --
 
 CREATE INDEX ix_certificates_prog_created ON public.certificates USING btree (program_id, created_at DESC);
+
+
+--
+-- Name: ix_certificates_prog_source; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_certificates_prog_source ON public.certificates USING btree (program_id, source);
 
 
 --
@@ -3041,6 +3061,13 @@ CREATE INDEX ix_findings_service_id ON public.findings USING btree (service_id);
 --
 
 CREATE INDEX ix_ips_prog_created ON public.ips USING btree (program_id, created_at DESC);
+
+
+--
+-- Name: ix_ips_prog_source; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_ips_prog_source ON public.ips USING btree (program_id, source);
 
 
 --
@@ -3303,6 +3330,13 @@ CREATE INDEX ix_services_prog_created ON public.services USING btree (program_id
 
 
 --
+-- Name: ix_services_prog_source; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_services_prog_source ON public.services USING btree (program_id, source);
+
+
+--
 -- Name: ix_services_program_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3321,6 +3355,13 @@ CREATE INDEX ix_subdomains_apex_domain_id ON public.subdomains USING btree (apex
 --
 
 CREATE INDEX ix_subdomains_prog_created ON public.subdomains USING btree (program_id, created_at DESC);
+
+
+--
+-- Name: ix_subdomains_prog_source; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_subdomains_prog_source ON public.subdomains USING btree (program_id, source);
 
 
 --
@@ -3643,6 +3684,13 @@ CREATE INDEX ix_urls_hostname ON public.urls USING btree (hostname);
 --
 
 CREATE INDEX ix_urls_prog_created ON public.urls USING btree (program_id, created_at DESC);
+
+
+--
+-- Name: ix_urls_prog_source; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_urls_prog_source ON public.urls USING btree (program_id, source);
 
 
 --

@@ -8,6 +8,7 @@ import RelatedAssetsSection from '../../components/RelatedAssetsSection';
 import RelatedFindingsSection from '../../components/RelatedFindingsSection';
 import useRelatedContent from '../../hooks/useRelatedContent';
 import { formatDate } from '../../utils/dateUtils';
+import { formatAssetSource } from '../../utils/assetSource';
 import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
 import { useBackToList } from '../../hooks/useListNavigation';
 
@@ -279,6 +280,10 @@ function SubdomainDetail() {
                         <span className="text-muted">-</span>
                       )}
                     </td>
+                  </tr>
+                  <tr>
+                    <td><strong>Source:</strong></td>
+                    <td>{formatAssetSource(domain.source)}</td>
                   </tr>
                   <tr>
                     <td><strong>Created:</strong></td>

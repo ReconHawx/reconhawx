@@ -8,13 +8,14 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Tuple
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 
 from db import BatchSessionLocal
 from models.postgres import IP, Program
 from repository.bulk_sql.config import sql_chunk_size
 from repository.bulk_sql.scope import domain_in_scope
+from utils.asset_source import apply_lazy_source, normalize_asset_source
 
 logger = logging.getLogger(__name__)
 
@@ -96,6 +97,7 @@ def upsert_ips_chunk(program_id: str, items: List[Dict[str, Any]]) -> Dict[str, 
                 )
             ).scalar_one_or_none()
 
+            incoming_source = normalize_asset_source(item.get("source"))
             meaningful = False
             if existing:
                 ptr = existing.ptr_record
@@ -119,6 +121,7 @@ def upsert_ips_chunk(program_id: str, items: List[Dict[str, Any]]) -> Dict[str, 
                         "service_provider": sp,
                         "program_id": program.id,
                         "notes": notes,
+                        "source": apply_lazy_source(existing.source, incoming_source),
                         "created_at": existing.created_at,
                         "updated_at": updated_at,
                     }
@@ -139,6 +142,7 @@ def upsert_ips_chunk(program_id: str, items: List[Dict[str, Any]]) -> Dict[str, 
                         "service_provider": item.get("service_provider"),
                         "program_id": program.id,
                         "notes": item.get("notes"),
+                        "source": incoming_source,
                         "created_at": now_naive,
                         "updated_at": now_naive,
                     }
@@ -169,6 +173,7 @@ def upsert_ips_chunk(program_id: str, items: List[Dict[str, Any]]) -> Dict[str, 
                 "ptr_record": ex.ptr_record,
                 "service_provider": ex.service_provider,
                 "notes": ex.notes,
+                "source": func.coalesce(tbl.c.source, ex.source),
                 "updated_at": ex.updated_at,
             },
         ).returning(tbl.c.id, tbl.c.ip_address)

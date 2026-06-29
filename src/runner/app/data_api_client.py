@@ -206,7 +206,8 @@ class DataAPIClient:
             return str(obj)
     
     async def post_assets_unified(self, assets: Dict[Any, List[Any]], program_id: str,
-                                 workflow_id: str = None, step_name: str = None) -> Dict[str, Any]:
+                                 workflow_id: str = None, step_name: str = None,
+                                 source: str = None) -> Dict[str, Any]:
         """
         Post assets using the new unified API endpoint.
 
@@ -239,6 +240,8 @@ class DataAPIClient:
                 payload["workflow_id"] = workflow_id
             if step_name:
                 payload["step_name"] = step_name
+            if source:
+                payload["source"] = source
 
             # Calculate total asset count for dynamic timeout
             total_asset_count = sum(len(asset_list) for asset_list in serializable_assets.values())

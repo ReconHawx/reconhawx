@@ -9,13 +9,14 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 
 from db import BatchSessionLocal
 from models.postgres import Program, URL
 from repository.bulk_sql.config import sql_chunk_size
 from repository.bulk_sql.scope import domain_in_scope
+from utils.asset_source import apply_lazy_source, normalize_asset_source
 from utils.domain_utils import normalize_hostname
 from utils.url_utils import normalize_url_asset_payload
 
@@ -152,6 +153,7 @@ def upsert_urls_chunk(program_id: str, items: List[Dict[str, Any]]) -> Dict[str,
                 "response_body_hash",
                 "body_preview",
             ]
+            incoming_source = normalize_asset_source(item.get("source"))
             meaningful = False
             if existing:
                 row = {
@@ -180,6 +182,7 @@ def upsert_urls_chunk(program_id: str, items: List[Dict[str, Any]]) -> Dict[str,
                     "subdomain_id": existing.subdomain_id,
                     "program_id": program.id,
                     "notes": existing.notes,
+                    "source": apply_lazy_source(existing.source, incoming_source),
                     "created_at": existing.created_at,
                     "updated_at": existing.updated_at,
                 }
@@ -227,6 +230,7 @@ def upsert_urls_chunk(program_id: str, items: List[Dict[str, Any]]) -> Dict[str,
                         "subdomain_id": sub_id,
                         "program_id": program.id,
                         "notes": item.get("notes"),
+                        "source": incoming_source,
                         "created_at": now_naive,
                         "updated_at": now_naive,
                     }
@@ -275,6 +279,7 @@ def upsert_urls_chunk(program_id: str, items: List[Dict[str, Any]]) -> Dict[str,
                 "certificate_id": ex.certificate_id,
                 "subdomain_id": ex.subdomain_id,
                 "notes": ex.notes,
+                "source": func.coalesce(tbl.c.source, ex.source),
                 "updated_at": ex.updated_at,
             },
         ).returning(tbl.c.id, tbl.c.url)
