@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.49.0](https://github.com/ReconHawx/reconhawx/compare/v0.48.0...v0.49.0) (2026-06-29)
+
+
+### Features
+
+* record which tool first discovered each asset ([17004c0](https://github.com/ReconHawx/reconhawx/commit/17004c025038024856acf6ffea8f4cefe3094e60))
+
+
+### Bug Fixes
+
+* **api:** link URL and finding assets to subdomains created on ingest ([74f62a6](https://github.com/ReconHawx/reconhawx/commit/74f62a66e5547880dc778ea4975661c6a821497f))
+
 ## [0.48.0](https://github.com/ReconHawx/reconhawx/compare/v0.47.1...v0.48.0) (2026-06-15)
 
 
