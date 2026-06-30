@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.49.1](https://github.com/ReconHawx/reconhawx/compare/v0.49.0...v0.49.1) (2026-06-30)
+
+
+### Bug Fixes
+
+* **frontend:** allow adding legacy scope regexes when none exist ([a513a18](https://github.com/ReconHawx/reconhawx/commit/a513a183581304d7534ec00c55a59b31b51aefce))
+* only send CT asset Discord alerts for new subdomains ([2cd5b14](https://github.com/ReconHawx/reconhawx/commit/2cd5b1407b551dc9d793c21af4a988581e9bfcd5))
+
 ## [0.49.0](https://github.com/ReconHawx/reconhawx/compare/v0.48.0...v0.49.0) (2026-06-29)
 
 
