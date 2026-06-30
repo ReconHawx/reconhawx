@@ -840,6 +840,7 @@ function ProgramDetail() {
         'scope_domains': 'In-scope domain patterns',
         'out_of_scope_domains': 'Out-of-scope domain patterns',
         'domain_regex': 'Domain regex patterns',
+        'out_of_scope_regex': 'Out-of-scope regex patterns',
         'cidr_list': 'CIDR blocks',
         'safe_registrar': 'Safe registrars',
         'safe_ssl_issuer': 'Safe SSL issuers',
@@ -1301,37 +1302,45 @@ function ProgramDetail() {
             </Card.Body>
           </Card>
 
-          {program.domain_regex && program.domain_regex.length > 0 && (
-            <Card className="rh-elevated-card mb-4">
-              <Card.Header className="rh-card-header-table">
-                <div className="d-flex justify-content-between align-items-center">
-                  <h5 className="mb-0">
-                    Legacy in-scope regex
-                    <Badge bg="secondary" className="ms-2">{program.domain_regex.length}</Badge>
-                  </h5>
-                  {isUserManager && (
-                    <Button variant="outline-primary" size="sm" onClick={() => openEditModal('domain_regex')}>
-                      ✏️ Edit legacy regex
-                    </Button>
+          <Card className="rh-elevated-card mb-4">
+            <Card.Header className="rh-card-header-table">
+              <div className="d-flex justify-content-between align-items-center">
+                <h5 className="mb-0">
+                  Legacy in-scope regex
+                  {(program.domain_regex || []).length > 0 && (
+                    <Badge bg="secondary" className="ms-2">{(program.domain_regex || []).length}</Badge>
                   )}
+                </h5>
+                {isUserManager && (
+                  <Button variant="outline-primary" size="sm" onClick={() => openEditModal('domain_regex')}>
+                    ✏️ Edit legacy regex
+                  </Button>
+                )}
+              </div>
+            </Card.Header>
+            <Card.Body>
+              {(program.domain_regex || []).length > 0 ? (
+                <div>
+                  <p className="text-muted small mb-2">Optional advanced regex lines; matching uses structured patterns first, then these.</p>
+                  <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
+                    <Table striped bordered size="sm">
+                      <tbody>
+                        {(program.domain_regex || []).map((pattern, index) => (
+                          <tr key={index}>
+                            <td><code>{pattern}</code></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </Table>
+                  </div>
                 </div>
-              </Card.Header>
-              <Card.Body>
-                <p className="text-muted small mb-2">Optional advanced regex lines; matching uses structured patterns first, then these.</p>
-                <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
-                  <Table striped bordered size="sm">
-                    <tbody>
-                      {program.domain_regex.map((pattern, index) => (
-                        <tr key={index}>
-                          <td><code>{pattern}</code></td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </Table>
+              ) : (
+                <div className="text-center py-3">
+                  <p className="text-muted">No legacy in-scope regex patterns configured. Use Edit to add advanced regex lines.</p>
                 </div>
-              </Card.Body>
-            </Card>
-          )}
+              )}
+            </Card.Body>
+          </Card>
 
           <Card className="rh-elevated-card mb-4">
             <Card.Header className="rh-card-header-table">
@@ -1393,26 +1402,28 @@ function ProgramDetail() {
             </Card.Body>
           </Card>
 
-          {program.out_of_scope_regex && program.out_of_scope_regex.length > 0 && (
-            <Card className="rh-elevated-card mb-4">
-              <Card.Header className="rh-card-header-table">
-                <div className="d-flex justify-content-between align-items-center">
-                  <h5 className="mb-0">
-                    Legacy out-of-scope regex
-                    <Badge bg="secondary" className="ms-2">{program.out_of_scope_regex.length}</Badge>
-                  </h5>
-                  {isUserManager && (
-                    <Button variant="outline-primary" size="sm" onClick={() => openEditModal('out_of_scope_regex')}>
-                      ✏️ Edit legacy regex
-                    </Button>
+          <Card className="rh-elevated-card mb-4">
+            <Card.Header className="rh-card-header-table">
+              <div className="d-flex justify-content-between align-items-center">
+                <h5 className="mb-0">
+                  Legacy out-of-scope regex
+                  {(program.out_of_scope_regex || []).length > 0 && (
+                    <Badge bg="secondary" className="ms-2">{(program.out_of_scope_regex || []).length}</Badge>
                   )}
-                </div>
-              </Card.Header>
-              <Card.Body>
+                </h5>
+                {isUserManager && (
+                  <Button variant="outline-primary" size="sm" onClick={() => openEditModal('out_of_scope_regex')}>
+                    ✏️ Edit legacy regex
+                  </Button>
+                )}
+              </div>
+            </Card.Header>
+            <Card.Body>
+              {(program.out_of_scope_regex || []).length > 0 ? (
                 <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
                   <Table striped bordered size="sm">
                     <tbody>
-                      {program.out_of_scope_regex.map((pattern, index) => (
+                      {(program.out_of_scope_regex || []).map((pattern, index) => (
                         <tr key={index}>
                           <td><code>{pattern}</code></td>
                         </tr>
@@ -1420,9 +1431,13 @@ function ProgramDetail() {
                     </tbody>
                   </Table>
                 </div>
-              </Card.Body>
-            </Card>
-          )}
+              ) : (
+                <div className="text-center py-3">
+                  <p className="text-muted">No legacy out-of-scope regex patterns configured. Use Edit to add advanced regex lines.</p>
+                </div>
+              )}
+            </Card.Body>
+          </Card>
 
           <Card className="rh-elevated-card mb-4">
             <Card.Header className="rh-card-header-table">
