@@ -371,6 +371,7 @@ def upsert_subdomains_chunk(program_id: str, items: List[Dict[str, Any]]) -> Dic
                         "asset_type": "subdomain",
                         "record_id": str(sid),
                         **base_event,
+                        "source": normalize_asset_source(item.get("source")),
                         "previous_ip_count": 0,
                         "new_ip_count": len(item.get("ip", []) or [])
                         if isinstance(item.get("ip"), list)

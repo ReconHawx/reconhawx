@@ -98,6 +98,7 @@ async def test_flush_posts_batched_subdomains(fake_http):
     assert call["headers"]["Authorization"] == "Bearer secret"
     assert call["json"] == {
         "program_id": PROGRAM_ID,
+        "source": "ct_monitor",
         "assets": {
             "subdomain": [{"name": "a.example.com"}, {"name": "b.example.com"}]
         },
@@ -174,16 +175,6 @@ async def test_stop_flushes_pending(fake_http):
     assert len(fake_http.calls) == 1
 
 
-class _FakePublisher:
-    calls = []
-
-    async def publish_asset_discovered(self, program_name, program_id, subdomain):
-        _FakePublisher.calls.append(
-            {"program_name": program_name, "program_id": program_id, "subdomain": subdomain}
-        )
-        return True
-
-
 class _FakeLogSubmitter:
     def __init__(self):
         self.logs = []
@@ -193,29 +184,15 @@ class _FakeLogSubmitter:
 
 
 @pytest.mark.asyncio
-async def test_successful_post_publishes_nats_events(fake_http):
-    pub = _FakePublisher()
-    _FakePublisher.calls = []
-    sub = _submitter(event_publisher=pub)
+async def test_successful_post_does_not_publish_nats_events(fake_http):
+    """Notification events are published by the API after ingest, not by ct-monitor."""
+    sub = _submitter()
     await sub.add("a.example.com", "prog1", PROGRAM_ID)
     await sub.add("b.example.com", "prog1", PROGRAM_ID)
     await sub.flush_now()
 
-    assert len(_FakePublisher.calls) == 2
-    assert {c["subdomain"] for c in _FakePublisher.calls} == {"a.example.com", "b.example.com"}
-    assert sub.asset_events_published == 2
-
-
-@pytest.mark.asyncio
-async def test_failed_post_does_not_publish_events(fake_http):
-    pub = _FakePublisher()
-    _FakePublisher.calls = []
-    sub = _submitter(event_publisher=pub)
-    fake_http.status = 500
-    await sub.add("a.example.com", "prog1", PROGRAM_ID)
-    await sub.flush_now()
-    assert _FakePublisher.calls == []
-    assert sub.asset_events_published == 0
+    assert len(fake_http.calls) == 1
+    assert sub.assets_submitted == 2
 
 
 @pytest.mark.asyncio

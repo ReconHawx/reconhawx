@@ -24,7 +24,6 @@ from typing import TYPE_CHECKING, Dict, List, Optional, Set
 import aiohttp
 
 if TYPE_CHECKING:
-    from alert_publisher import CTAlertPublisher
     from ct_log_submitter import CTLogSubmitter
 
 logger = logging.getLogger(__name__)
@@ -44,13 +43,11 @@ class CTAssetSubmitter:
         cache_ttl: int = 86400,
         flush_interval: float = 15.0,
         batch_max: int = 200,
-        event_publisher: Optional["CTAlertPublisher"] = None,
         log_submitter: Optional["CTLogSubmitter"] = None,
     ) -> None:
         self.api_url = api_url.rstrip("/")
         self.api_key = api_key
         self.redis_client = redis_client
-        self.event_publisher = event_publisher
         self.log_submitter = log_submitter
         self.cache_ttl = max(1, int(cache_ttl))
         self.flush_interval = max(1.0, float(flush_interval))
@@ -68,8 +65,6 @@ class CTAssetSubmitter:
         self.asset_dedup_hits = 0
         self.batches_posted = 0
         self.post_failures = 0
-        self.asset_events_published = 0
-        self.asset_event_publish_failures = 0
 
     async def start(self) -> None:
         if self._running:
@@ -249,29 +244,12 @@ class CTAssetSubmitter:
             outcome="submitted",
             details={"batch_size": len(hostnames)},
         )
-        await self._publish_asset_events(program_name, program_id, hostnames)
         logger.info(
             "CT ASSET: submitted %s subdomain(s) for program '%s' (e.g. %s)",
             len(hostnames),
             program_name,
             ", ".join(hostnames[:3]),
         )
-
-    async def _publish_asset_events(
-        self,
-        program_name: str,
-        program_id: str,
-        hostnames: List[str],
-    ) -> None:
-        if not self.event_publisher:
-            return
-        for hostname in hostnames:
-            if await self.event_publisher.publish_asset_discovered(
-                program_name, program_id, hostname
-            ):
-                self.asset_events_published += 1
-            else:
-                self.asset_event_publish_failures += 1
 
     def _log_asset_submission(
         self,
@@ -321,7 +299,5 @@ class CTAssetSubmitter:
             "asset_dedup_hits": self.asset_dedup_hits,
             "batches_posted": self.batches_posted,
             "post_failures": self.post_failures,
-            "asset_events_published": self.asset_events_published,
-            "asset_event_publish_failures": self.asset_event_publish_failures,
             "buffered": sum(len(b) for b in self._buffers.values()),
         }

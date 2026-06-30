@@ -572,8 +572,47 @@ class UnifiedAssetProcessor:
                     result.program_name,
                 )
 
+            await self._publish_ct_asset_discovery_events(result)
+
         except Exception as e:
             logger.error(f"Failed to publish completion events for job {result.job_id}: {e}")
+
+    async def _publish_ct_asset_discovery_events(self, result: UnifiedProcessingResult) -> None:
+        """Publish CT asset discovery notifications only for newly created ct_monitor subdomains."""
+        subdomain_batch = result.asset_results.get("subdomain")
+        if not subdomain_batch or not subdomain_batch.created_assets:
+            return
+
+        program_name = result.program_name or ""
+        program_id = result.program_id or ""
+        now = datetime.now(timezone.utc).isoformat()
+
+        try:
+            for asset in subdomain_batch.created_assets:
+                if asset.get("source") != "ct_monitor":
+                    continue
+                name = (asset.get("name") or "").lower().strip()
+                if not name:
+                    continue
+                await publisher.publish(
+                    "events.assets.ct_subdomain.discovered",
+                    {
+                        "event": "ct_asset_discovered",
+                        "program_name": program_name,
+                        "program_id": program_id,
+                        "name": name,
+                        "timestamp": now,
+                        "domain_list": name,
+                        "domain_list_array": [name],
+                        "source": "ct_monitoring",
+                    },
+                )
+        except Exception as e:
+            logger.error(
+                "Failed to publish CT asset discovery events for job %s: %s",
+                result.job_id,
+                e,
+            )
 
     async def _publish_asset_events(
         self,

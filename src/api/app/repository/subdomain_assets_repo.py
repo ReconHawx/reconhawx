@@ -630,6 +630,7 @@ class SubdomainAssetsRepository(ProgramAccessMixin):
                         "name": subdomain_data.get('name'),
                         "program_name": subdomain_data.get('program_name'),
                         "apex_domain": subdomain_data.get('apex_domain') or extract_apex_domain(subdomain_data.get('name')),
+                        "source": incoming_source,
                         "ip": subdomain_data.get('ip', []),
                         "cname_record": subdomain_data.get('cname_record'),
                         "is_wildcard": subdomain_data.get('is_wildcard'),
