@@ -963,6 +963,7 @@ CREATE TABLE public.job_status (
     progress smallint,
     message text,
     results jsonb,
+    runner_pod_output text,
     created_at timestamp without time zone NOT NULL,
     updated_at timestamp without time zone NOT NULL
 );

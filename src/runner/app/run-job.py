@@ -9,12 +9,56 @@ from runner_logging import configure_runner_logging
 configure_runner_logging()
 
 import logging
+import aiohttp
 from batch_jobs.phishlabs_batch import PhishLabsBatchTask
 from batch_jobs.gather_api_findings import GatherApiFindingsTask
 from batch_jobs.sync_recordedfuture_data import SyncRecordedFutureDataTask
 from batch_jobs.ai_analysis_batch import AIAnalysisBatchTask
+from services.kubernetes import KubernetesService
 
 logger = logging.getLogger(__name__)
+
+
+def _capture_batch_job_pod_output(job_id: str) -> str:
+    """Capture batch job runner pod output/logs via Kubernetes API."""
+    try:
+        k8s_service = KubernetesService()
+        logs = k8s_service.get_batch_job_pod_logs_by_job_id(job_id)
+        return logs if logs else ""
+    except Exception as e:
+        logger.warning(f"Failed to capture pod output for job {job_id}: {e}")
+        return ""
+
+
+async def _upload_runner_pod_output(job_id: str, pod_output: str) -> None:
+    """Append runner pod output to job status via API."""
+    api_base_url = os.getenv("API_BASE_URL", "http://api:8000")
+    headers = {}
+    internal_api_key = os.getenv("INTERNAL_SERVICE_API_KEY")
+    if internal_api_key:
+        headers["Authorization"] = f"Bearer {internal_api_key}"
+
+    payload = {
+        "runner_pod_output": (
+            f"\n--- Final Job Output ---\n{pod_output}\n\n--- End Job ---\n"
+        ),
+    }
+    url = f"{api_base_url}/jobs/{job_id}/status"
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.put(url, json=payload, headers=headers) as resp:
+                if resp.status >= 400:
+                    body = await resp.text()
+                    logger.warning(
+                        f"Failed to upload runner_pod_output for job {job_id}: "
+                        f"{resp.status} {body}"
+                    )
+                else:
+                    logger.info(f"Uploaded runner_pod_output for job {job_id}")
+    except Exception as e:
+        logger.warning(f"Failed to upload runner_pod_output for job {job_id}: {e}")
+
 
 async def run_phishlabs_batch_job(job_data: dict):
     """Run a PhishLabs batch job (fetch or create incidents)"""
@@ -167,6 +211,8 @@ async def run_sync_recordedfuture_data_job(job_data: dict):
 
 async def main():
     """Main entry point for job execution"""
+    job_id = None
+    exit_code = 1
     try:
         # Read job data from file
         job_data_path = "/app/job-data/job_data.json"
@@ -178,6 +224,7 @@ async def main():
         with open(job_data_path, 'r') as f:
             job_data = json.load(f)
         
+        job_id = job_data.get("job_id")
         job_type = job_data.get("job_type")
         logger.info(f"Starting job of type: {job_type}")
         
@@ -195,18 +242,26 @@ async def main():
             success = await run_sync_recordedfuture_data_job(job_data)
         else:
             logger.error(f"Unknown job type: {job_type}")
-            sys.exit(1)
+            exit_code = 1
+            return
         
         if success:
             logger.info("Job completed successfully")
-            sys.exit(0)
+            exit_code = 0
         else:
             logger.error("Job failed")
-            sys.exit(1)
+            exit_code = 1
             
     except Exception as e:
         logger.error(f"Error in main: {str(e)}")
-        sys.exit(1)
+        exit_code = 1
+    finally:
+        if job_id:
+            final_pod_output = _capture_batch_job_pod_output(job_id)
+            if final_pod_output:
+                await _upload_runner_pod_output(job_id, final_pod_output)
+
+    sys.exit(exit_code)
 
 if __name__ == "__main__":
-    asyncio.run(main()) 
+    asyncio.run(main())

@@ -27,6 +27,27 @@ def _internal_service_api_key_env_var() -> client.V1EnvVar:
     )
 
 
+def _batch_job_runner_env_vars(
+    namespace: str,
+    extra: Optional[list] = None,
+) -> list:
+    """Common env vars for batch job runner pods."""
+    env = [
+        client.V1EnvVar(name="POSTGRES_HOST", value=os.getenv('POSTGRES_HOST', 'postgresql')),
+        client.V1EnvVar(name="POSTGRES_PORT", value=os.getenv('POSTGRES_PORT', '5432')),
+        client.V1EnvVar(name="DATABASE_NAME", value=os.getenv('DATABASE_NAME', 'reconhawx')),
+        client.V1EnvVar(name="POSTGRES_USER", value=os.getenv('POSTGRES_USER', 'admin')),
+        client.V1EnvVar(name="POSTGRES_PASSWORD", value=os.getenv('POSTGRES_PASSWORD', 'password')),
+        _internal_service_api_key_env_var(),
+        client.V1EnvVar(name="API_BASE_URL", value=os.getenv('API_BASE_URL', 'http://api:8000')),
+        client.V1EnvVar(name="KUBERNETES_NAMESPACE", value=namespace),
+        client.V1EnvVar(name="LOG_LEVEL", value=os.getenv('LOG_LEVEL', 'INFO')),
+    ]
+    if extra:
+        env.extend(extra)
+    return env
+
+
 class JobSubmissionService:
     def __init__(self):
         try:
@@ -152,18 +173,7 @@ class JobSubmissionService:
                 image_pull_policy=image_pull_policy,
                 command=["/usr/local/bin/python"],
                 args=["/app/run-job.py"],
-                env=[
-                    # PostgreSQL connection
-                    client.V1EnvVar(name="POSTGRES_HOST", value=os.getenv('POSTGRES_HOST', 'postgresql')),
-                    client.V1EnvVar(name="POSTGRES_PORT", value=os.getenv('POSTGRES_PORT', '5432')),
-                    client.V1EnvVar(name="DATABASE_NAME", value=os.getenv('DATABASE_NAME', 'reconhawx')),
-                    client.V1EnvVar(name="POSTGRES_USER", value=os.getenv('POSTGRES_USER', 'admin')),
-                    client.V1EnvVar(name="POSTGRES_PASSWORD", value=os.getenv('POSTGRES_PASSWORD', 'password')),
-                    _internal_service_api_key_env_var(),
-
-                    # Logging
-                    client.V1EnvVar(name="LOG_LEVEL", value=os.getenv('LOG_LEVEL', 'INFO')),
-                ],
+                env=_batch_job_runner_env_vars(namespace),
                 resources=client.V1ResourceRequirements(
                     requests={
                         "cpu": "200m",
@@ -306,20 +316,15 @@ class JobSubmissionService:
                 image_pull_policy=image_pull_policy,
                 command=["/usr/local/bin/python"],
                 args=["/app/run-job.py"],
-                env=[
-                    client.V1EnvVar(name="POSTGRES_HOST", value=os.getenv('POSTGRES_HOST', 'postgresql')),
-                    client.V1EnvVar(name="POSTGRES_PORT", value=os.getenv('POSTGRES_PORT', '5432')),
-                    client.V1EnvVar(name="DATABASE_NAME", value=os.getenv('DATABASE_NAME', 'reconhawx')),
-                    client.V1EnvVar(name="POSTGRES_USER", value=os.getenv('POSTGRES_USER', 'admin')),
-                    client.V1EnvVar(name="POSTGRES_PASSWORD", value=os.getenv('POSTGRES_PASSWORD', 'password')),
-                    _internal_service_api_key_env_var(),
-                    client.V1EnvVar(name="API_BASE_URL", value=os.getenv('API_BASE_URL', 'http://api:8000')),
-                    client.V1EnvVar(name="OLLAMA_URL", value=ollama_cfg["url"]),
-                    client.V1EnvVar(name="OLLAMA_MODEL", value=ollama_model),
-                    client.V1EnvVar(name="OLLAMA_TIMEOUT", value=str(ollama_cfg["timeout"])),
-                    client.V1EnvVar(name="OLLAMA_MAX_RETRIES", value=str(ollama_cfg["max_retries"])),
-                    client.V1EnvVar(name="LOG_LEVEL", value=os.getenv('LOG_LEVEL', 'INFO')),
-                ],
+                env=_batch_job_runner_env_vars(
+                    namespace,
+                    extra=[
+                        client.V1EnvVar(name="OLLAMA_URL", value=ollama_cfg["url"]),
+                        client.V1EnvVar(name="OLLAMA_MODEL", value=ollama_model),
+                        client.V1EnvVar(name="OLLAMA_TIMEOUT", value=str(ollama_cfg["timeout"])),
+                        client.V1EnvVar(name="OLLAMA_MAX_RETRIES", value=str(ollama_cfg["max_retries"])),
+                    ],
+                ),
                 resources=client.V1ResourceRequirements(
                     # Keep in sync with ai-analysis ClusterQueue nominalQuota (reconhawx-kueue-quota-sync.py).
                     requests={"cpu": "500m", "memory": "512Mi"},
@@ -444,21 +449,13 @@ class JobSubmissionService:
                 image_pull_policy=image_pull_policy,
                 command=["/usr/local/bin/python"],
                 args=["/app/run-job.py"],
-                env=[
-                    # Service URLs
-                    client.V1EnvVar(name="MONGO_URI", value=os.getenv('MONGO_URI')),
-                    client.V1EnvVar(name="MONGO_DATABASE_NAME", value="reconhawx"),
-
-                    # PostgreSQL connection
-                    client.V1EnvVar(name="POSTGRES_HOST", value=os.getenv('POSTGRES_HOST', 'postgresql')),
-                    client.V1EnvVar(name="POSTGRES_PORT", value=os.getenv('POSTGRES_PORT', '5432')),
-                    client.V1EnvVar(name="DATABASE_NAME", value=os.getenv('DATABASE_NAME', 'reconhawx')),
-                    client.V1EnvVar(name="POSTGRES_USER", value=os.getenv('POSTGRES_USER', 'admin')),
-                    client.V1EnvVar(name="POSTGRES_PASSWORD", value=os.getenv('POSTGRES_PASSWORD', 'password')),
-
-                    # Logging
-                    client.V1EnvVar(name="LOG_LEVEL", value=os.getenv('LOG_LEVEL', 'INFO')),
-                ],
+                env=_batch_job_runner_env_vars(
+                    namespace,
+                    extra=[
+                        client.V1EnvVar(name="MONGO_URI", value=os.getenv('MONGO_URI')),
+                        client.V1EnvVar(name="MONGO_DATABASE_NAME", value="reconhawx"),
+                    ],
+                ),
                 resources=client.V1ResourceRequirements(
                     requests={
                         "cpu": "200m",
@@ -604,18 +601,7 @@ class JobSubmissionService:
                 image_pull_policy=image_pull_policy,
                 command=["/usr/local/bin/python"],
                 args=["/app/run-job.py"],
-                env=[
-                    # PostgreSQL connection
-                    client.V1EnvVar(name="POSTGRES_HOST", value=os.getenv('POSTGRES_HOST', 'postgresql')),
-                    client.V1EnvVar(name="POSTGRES_PORT", value=os.getenv('POSTGRES_PORT', '5432')),
-                    client.V1EnvVar(name="DATABASE_NAME", value=os.getenv('DATABASE_NAME', 'reconhawx')),
-                    client.V1EnvVar(name="POSTGRES_USER", value=os.getenv('POSTGRES_USER', 'admin')),
-                    client.V1EnvVar(name="POSTGRES_PASSWORD", value=os.getenv('POSTGRES_PASSWORD', 'password')),
-                    _internal_service_api_key_env_var(),
-
-                    # Logging
-                    client.V1EnvVar(name="LOG_LEVEL", value=os.getenv('LOG_LEVEL', 'INFO')),
-                ],
+                env=_batch_job_runner_env_vars(namespace),
                 resources=client.V1ResourceRequirements(
                     requests={
                         "cpu": "200m",
@@ -760,21 +746,7 @@ class JobSubmissionService:
                 image_pull_policy=image_pull_policy,
                 command=["/usr/local/bin/python"],
                 args=["/app/run-job.py"],
-                env=[
-                    # PostgreSQL connection
-                    client.V1EnvVar(name="POSTGRES_HOST", value=os.getenv('POSTGRES_HOST', 'postgresql')),
-                    client.V1EnvVar(name="POSTGRES_PORT", value=os.getenv('POSTGRES_PORT', '5432')),
-                    client.V1EnvVar(name="DATABASE_NAME", value=os.getenv('DATABASE_NAME', 'reconhawx')),
-                    client.V1EnvVar(name="POSTGRES_USER", value=os.getenv('POSTGRES_USER', 'admin')),
-                    client.V1EnvVar(name="POSTGRES_PASSWORD", value=os.getenv('POSTGRES_PASSWORD', 'password')),
-
-                    # API configuration
-                    client.V1EnvVar(name="API_BASE_URL", value=os.getenv('API_BASE_URL', 'http://api:8000')),
-                    _internal_service_api_key_env_var(),
-
-                    # Logging
-                    client.V1EnvVar(name="LOG_LEVEL", value=os.getenv('LOG_LEVEL', 'INFO')),
-                ],
+                env=_batch_job_runner_env_vars(namespace),
                 resources=client.V1ResourceRequirements(
                     requests={
                         "cpu": "200m",
@@ -919,21 +891,7 @@ class JobSubmissionService:
                 image_pull_policy=image_pull_policy,
                 command=["/usr/local/bin/python"],
                 args=["/app/run-job.py"],
-                env=[
-                    # PostgreSQL connection
-                    client.V1EnvVar(name="POSTGRES_HOST", value=os.getenv('POSTGRES_HOST', 'postgresql')),
-                    client.V1EnvVar(name="POSTGRES_PORT", value=os.getenv('POSTGRES_PORT', '5432')),
-                    client.V1EnvVar(name="DATABASE_NAME", value=os.getenv('DATABASE_NAME', 'reconhawx')),
-                    client.V1EnvVar(name="POSTGRES_USER", value=os.getenv('POSTGRES_USER', 'admin')),
-                    client.V1EnvVar(name="POSTGRES_PASSWORD", value=os.getenv('POSTGRES_PASSWORD', 'password')),
-
-                    # API configuration
-                    client.V1EnvVar(name="API_BASE_URL", value=os.getenv('API_BASE_URL', 'http://api:8000')),
-                    _internal_service_api_key_env_var(),
-
-                    # Logging
-                    client.V1EnvVar(name="LOG_LEVEL", value=os.getenv('LOG_LEVEL', 'INFO')),
-                ],
+                env=_batch_job_runner_env_vars(namespace),
                 resources=client.V1ResourceRequirements(
                     requests={
                         "cpu": "200m",
