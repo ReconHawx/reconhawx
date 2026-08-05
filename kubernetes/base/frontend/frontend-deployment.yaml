@@ -47,8 +47,12 @@ spec:
         - containerPort: 80
 
         volumeMounts:
+        # Alpine nginx loads vhosts from http.d (http context); conf.d is main-context only.
         - name: shared-config
-          mountPath: /etc/nginx/conf.d
+          mountPath: /etc/nginx/http.d
+        # Alpine nginx pid path is /run/nginx/nginx.pid (dir not present in slim image).
+        - name: nginx-run
+          mountPath: /run/nginx
 
         resources:
           requests:
@@ -80,4 +84,6 @@ spec:
         configMap:
           name: frontend-nginx-config
       - name: shared-config
+        emptyDir: {}
+      - name: nginx-run
         emptyDir: {}
