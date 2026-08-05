@@ -587,6 +587,62 @@ function TyposquatFindingDetail() {
     }
   };
 
+  // Strip RecordedFuture entity prefixes (idn:, ip:, url:, img:, doc:)
+  const stripRfEntityPrefix = (value) => {
+    if (!value || typeof value !== 'string') return value;
+    return value.replace(/^(idn|ip|url|img|doc):/i, '');
+  };
+
+  const getRfCriticalityVariant = (criticality) => {
+    switch (criticality) {
+      case 'High': return 'danger';
+      case 'Medium': return 'warning';
+      case 'Low': return 'info';
+      default: return 'secondary';
+    }
+  };
+
+  const getRfPriorityVariant = (priority) => {
+    switch (priority) {
+      case 'High': return 'danger';
+      case 'Moderate': return 'warning';
+      case 'Low': return 'info';
+      default: return 'secondary';
+    }
+  };
+
+  const getRfRiskScoreVariant = (score) => {
+    if (score >= 80) return 'danger';
+    if (score >= 60) return 'warning';
+    if (score >= 40) return 'info';
+    return 'secondary';
+  };
+
+  // Prefer human-readable assignee from panel_status / raw_alert over stripped uhash top-level
+  const getRfAssigneeName = (rf) => {
+    if (!rf) return null;
+    const panelName = rf.raw_details?.panel_status?.assignee_name;
+    const alertName = rf.raw_alert?.assignee_name;
+    const topName = rf.assignee_name;
+    const looksLikeHash = (v) => typeof v === 'string' && /^[A-Za-z0-9]{8,}$/.test(v) && !/\s/.test(v);
+    if (panelName && !looksLikeHash(panelName)) return panelName;
+    if (alertName && !looksLikeHash(alertName)) return alertName;
+    return panelName || alertName || topName || null;
+  };
+
+  const getRfContextTags = (rf) => {
+    if (!rf) return [];
+    const contextList =
+      rf.raw_details?.panel_status?.context_list ||
+      rf.context_list ||
+      rf.raw_details?.context_list ||
+      [];
+    if (!Array.isArray(contextList)) return [];
+    return contextList
+      .map((item) => (typeof item === 'string' ? item : item?.context))
+      .filter(Boolean);
+  };
+
   const handleAiAnalyze = async (force = false) => {
     setAiAnalyzing(true);
     setAiMessage({ text: '', type: '' });
@@ -2711,22 +2767,52 @@ function TyposquatFindingDetail() {
       )}
 
       {/* RecordedFuture Data */}
-      {finding.recordedfuture_data && (
+      {finding.recordedfuture_data && (() => {
+        const rf = finding.recordedfuture_data;
+        const panelStatus = rf.raw_details?.panel_status || {};
+        const summary = rf.raw_details?.panel_evidence_summary || {};
+        const dns = rf.raw_details?.panel_evidence_dns || {};
+        const whoisBody = rf.raw_details?.panel_evidence_whois?.body || [];
+        const whoisRecords = whoisBody.filter((item) => item.attribute === 'attr:whois' && item.value);
+        const contextTags = getRfContextTags(rf);
+        const assigneeName = getRfAssigneeName(rf);
+        const alertRuleName =
+          panelStatus.case_rule_label ||
+          panelStatus.alert_rule?.name ||
+          rf.raw_alert?.alert_rule?.name ||
+          null;
+        const entityName =
+          panelStatus.entity_name ||
+          rf.raw_alert?.title ||
+          stripRfEntityPrefix(rf.entity_id || panelStatus.entity_id);
+        const entityId = rf.entity_id || panelStatus.entity_id;
+        const entityCriticality = rf.entity_criticality || panelStatus.entity_criticality;
+        const attackers = panelStatus.attackers || [];
+        const actionsTaken = panelStatus.actions_taken || rf.raw_alert?.actions_taken || [];
+        const targets = (rf.targets?.length ? rf.targets : panelStatus.targets) || [];
+        const screenshots = summary.screenshots || [];
+        const screenshotMentions = summary.screenshot_mentions || [];
+        const ipList = dns.ip_list || [];
+        const mxList = dns.mx_list || [];
+        const nsList = dns.ns_list || [];
+        const hasDns = ipList.length > 0 || mxList.length > 0 || nsList.length > 0;
+
+        return (
         <Card className="rh-elevated-card mb-4">
           <Card.Header className="d-flex justify-content-between align-items-center">
             <h6 className="mb-0">🔮 RecordedFuture Intelligence</h6>
             <div className="d-flex align-items-center">
-              {finding.recordedfuture_data.risk_score && (
+              {entityCriticality && (
+                <Badge bg={getRfCriticalityVariant(entityCriticality)} className="me-2">
+                  {entityCriticality}
+                </Badge>
+              )}
+              {(rf.risk_score != null || panelStatus.risk_score != null) && (
                 <Badge
-                  bg={
-                    finding.recordedfuture_data.risk_score >= 80 ? 'danger' :
-                    finding.recordedfuture_data.risk_score >= 60 ? 'warning' :
-                    finding.recordedfuture_data.risk_score >= 40 ? 'info' :
-                    'secondary'
-                  }
+                  bg={getRfRiskScoreVariant(rf.risk_score ?? panelStatus.risk_score)}
                   className="me-2"
                 >
-                  Risk Score: {finding.recordedfuture_data.risk_score}
+                  Risk Score: {rf.risk_score ?? panelStatus.risk_score}
                 </Badge>
               )}
               <Button
@@ -2744,43 +2830,44 @@ function TyposquatFindingDetail() {
                 <Col md={6}>
                   <Table borderless size="sm">
                     <tbody>
-                      {finding.recordedfuture_data.alert_id && (
+                      {rf.alert_id && (
                         <tr>
                           <td><strong>Alert ID:</strong></td>
                           <td>
-                            <code className="small">{finding.recordedfuture_data.alert_id}</code>
+                            <code className="small">{rf.alert_id}</code>
                           </td>
                         </tr>
                       )}
-                      {finding.recordedfuture_data.status && (
+                      {(rf.status || panelStatus.status) && (
                         <tr>
                           <td><strong>Status:</strong></td>
                           <td>
-                            <Badge bg="info">{finding.recordedfuture_data.status}</Badge>
+                            <Badge bg="info">{rf.status || panelStatus.status}</Badge>
                           </td>
                         </tr>
                       )}
-                      {finding.recordedfuture_data.category && (
+                      {rf.category && (
                         <tr>
                           <td><strong>Category:</strong></td>
                           <td>
-                            <Badge bg="warning">{finding.recordedfuture_data.category}</Badge>
+                            <Badge bg="warning">{rf.category}</Badge>
                           </td>
                         </tr>
                       )}
-                      {finding.recordedfuture_data.priority && (
+                      {(rf.priority || panelStatus.priority) && (
                         <tr>
                           <td><strong>Priority:</strong></td>
                           <td>
-                            <Badge bg={
-                              finding.recordedfuture_data.priority === 'High' ? 'danger' :
-                              finding.recordedfuture_data.priority === 'Moderate' ? 'warning' :
-                              finding.recordedfuture_data.priority === 'Low' ? 'info' :
-                              'secondary'
-                            }>
-                              {finding.recordedfuture_data.priority}
+                            <Badge bg={getRfPriorityVariant(rf.priority || panelStatus.priority)}>
+                              {rf.priority || panelStatus.priority}
                             </Badge>
                           </td>
+                        </tr>
+                      )}
+                      {alertRuleName && (
+                        <tr>
+                          <td><strong>Alert Rule:</strong></td>
+                          <td>{alertRuleName}</td>
                         </tr>
                       )}
                     </tbody>
@@ -2789,28 +2876,40 @@ function TyposquatFindingDetail() {
                 <Col md={6}>
                   <Table borderless size="sm">
                     <tbody>
-                      {finding.recordedfuture_data.owner_name && (
+                      {(rf.owner_name || panelStatus.owner_name) && (
                         <tr>
                           <td><strong>Owner:</strong></td>
-                          <td>{finding.recordedfuture_data.owner_name}</td>
+                          <td>{rf.owner_name || panelStatus.owner_name}</td>
                         </tr>
                       )}
-                      {finding.recordedfuture_data.organisation_name && (
+                      {(rf.organisation_name || panelStatus.organisation_name) && (
                         <tr>
                           <td><strong>Organization:</strong></td>
-                          <td>{finding.recordedfuture_data.organisation_name}</td>
+                          <td>{rf.organisation_name || panelStatus.organisation_name}</td>
                         </tr>
                       )}
-                      {finding.recordedfuture_data.created && (
+                      {assigneeName && (
+                        <tr>
+                          <td><strong>Assignee:</strong></td>
+                          <td>{assigneeName}</td>
+                        </tr>
+                      )}
+                      {(rf.created || panelStatus.created) && (
                         <tr>
                           <td><strong>Created:</strong></td>
-                          <td>{formatDate(finding.recordedfuture_data.created)}</td>
+                          <td>{formatDate(rf.created || panelStatus.created)}</td>
                         </tr>
                       )}
-                      {finding.recordedfuture_data.updated && (
+                      {(rf.updated || panelStatus.updated) && (
                         <tr>
                           <td><strong>Last Updated:</strong></td>
-                          <td>{formatDate(finding.recordedfuture_data.updated)}</td>
+                          <td>{formatDate(rf.updated || panelStatus.updated)}</td>
+                        </tr>
+                      )}
+                      {rf.last_fetched && (
+                        <tr>
+                          <td><strong>Last Synced:</strong></td>
+                          <td>{formatDate(rf.last_fetched)}</td>
                         </tr>
                       )}
                     </tbody>
@@ -2818,69 +2917,101 @@ function TyposquatFindingDetail() {
                 </Col>
               </Row>
 
-              {/* Title and Entity Information */}
-              {(finding.recordedfuture_data.raw_alert?.title || finding.recordedfuture_data.entity_id) && (
+              {/* Entity */}
+              {(entityName || entityId) && (
                 <div className="mb-4">
-                  {finding.recordedfuture_data.raw_alert?.title && (
-                    <div className="mb-3">
-                      <h6>Alert Title</h6>
-                      <div className="bg-body-tertiary p-3 rounded border">
-                        <p className="mb-0">{finding.recordedfuture_data.raw_alert.title}</p>
-                      </div>
-                    </div>
-                  )}
-                  {finding.recordedfuture_data.entity_id && (
-                    <div className="mb-3">
-                      <h6>Entity</h6>
-                      <div className="bg-body-tertiary p-3 rounded border">
-                        <p className="mb-0">
-                          <strong>ID:</strong> {finding.recordedfuture_data.entity_id}
-                          {finding.recordedfuture_data.entity_criticality && (
-                            <>
-                              <br />
-                              <strong>Criticality:</strong> <Badge bg={
-                                finding.recordedfuture_data.entity_criticality === 'High' ? 'danger' :
-                                finding.recordedfuture_data.entity_criticality === 'Medium' ? 'warning' :
-                                finding.recordedfuture_data.entity_criticality === 'Low' ? 'info' :
-                                'secondary'
-                              }>{finding.recordedfuture_data.entity_criticality}</Badge>
-                            </>
-                          )}
-                        </p>
-                      </div>
-                    </div>
-                  )}
+                  <h6>Entity</h6>
+                  <div className="bg-body-tertiary p-3 rounded border">
+                    {entityName && (
+                      <p className="mb-1">
+                        <strong>{entityName}</strong>
+                      </p>
+                    )}
+                    {entityId && (
+                      <p className="mb-1 small text-muted">
+                        <code>{entityId}</code>
+                      </p>
+                    )}
+                    {entityCriticality && (
+                      <p className="mb-0">
+                        <strong>Criticality:</strong>{' '}
+                        <Badge bg={getRfCriticalityVariant(entityCriticality)}>
+                          {entityCriticality}
+                        </Badge>
+                      </p>
+                    )}
+                  </div>
                 </div>
               )}
 
-              {/* Additional Alert Data */}
-              {(finding.recordedfuture_data.assignee_name || finding.recordedfuture_data.targets || finding.recordedfuture_data.raw_details?.panel_evidence_summary?.explanation) && (
+              {/* Context tags */}
+              {contextTags.length > 0 && (
                 <div className="mb-4">
-                  <h6>Additional Alert Information</h6>
+                  <h6>Tags</h6>
+                  <div>
+                    {contextTags.map((tag, index) => (
+                      <Badge key={index} bg="secondary" className="me-1 mb-1">
+                        {tag}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Evidence summary */}
+              {(summary.cause || summary.explanation || attackers.length > 0 || targets.length > 0 || actionsTaken.length > 0) && (
+                <div className="mb-4">
+                  <h6>Evidence Summary</h6>
                   <Table size="sm" borderless>
                     <tbody>
-                      {finding.recordedfuture_data.assignee_name && (
+                      {summary.cause && (
                         <tr>
-                          <td><strong>Assignee:</strong></td>
-                          <td>{finding.recordedfuture_data.assignee_name}</td>
+                          <td><strong>Cause:</strong></td>
+                          <td>
+                            <Badge bg="info">{summary.cause}</Badge>
+                          </td>
                         </tr>
                       )}
-                      {finding.recordedfuture_data.targets && finding.recordedfuture_data.targets.length > 0 && (
+                      {summary.explanation && (
                         <tr>
-                          <td><strong>Targets:</strong></td>
+                          <td><strong>Explanation:</strong></td>
+                          <td>{summary.explanation}</td>
+                        </tr>
+                      )}
+                      {attackers.length > 0 && (
+                        <tr>
+                          <td><strong>Attackers:</strong></td>
                           <td>
-                            {finding.recordedfuture_data.targets.map((target, index) => (
-                              <Badge key={index} bg="secondary" className="me-1">
-                                {target}
+                            {attackers.map((attacker, index) => (
+                              <Badge key={index} bg="danger" className="me-1 mb-1">
+                                {stripRfEntityPrefix(attacker)}
                               </Badge>
                             ))}
                           </td>
                         </tr>
                       )}
-                      {finding.recordedfuture_data.raw_details?.panel_evidence_summary?.explanation && (
+                      {targets.length > 0 && (
                         <tr>
-                          <td><strong>Explanation:</strong></td>
-                          <td>{finding.recordedfuture_data.raw_details.panel_evidence_summary.explanation}</td>
+                          <td><strong>Targets:</strong></td>
+                          <td>
+                            {targets.map((target, index) => (
+                              <Badge key={index} bg="secondary" className="me-1 mb-1">
+                                {stripRfEntityPrefix(target)}
+                              </Badge>
+                            ))}
+                          </td>
+                        </tr>
+                      )}
+                      {actionsTaken.length > 0 && (
+                        <tr>
+                          <td><strong>Actions Taken:</strong></td>
+                          <td>
+                            {actionsTaken.map((action, index) => (
+                              <Badge key={index} bg="success" className="me-1 mb-1">
+                                {typeof action === 'string' ? action : action?.name || action?.action || JSON.stringify(action)}
+                              </Badge>
+                            ))}
+                          </td>
                         </tr>
                       )}
                     </tbody>
@@ -2888,42 +3019,160 @@ function TyposquatFindingDetail() {
                 </div>
               )}
 
+              {/* Screenshots metadata from RF summary */}
+              {screenshots.length > 0 && (
+                <div className="mb-4">
+                  <h6>Screenshots</h6>
+                  <Table size="sm" bordered hover responsive>
+                    <thead>
+                      <tr>
+                        <th>Tag</th>
+                        <th>Availability</th>
+                        <th>Created</th>
+                        <th>Image ID</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {screenshots.map((shot, index) => (
+                        <tr key={shot.image_id || index}>
+                          <td>
+                            {shot.tag ? (
+                              <Badge bg="secondary">{shot.tag}</Badge>
+                            ) : (
+                              <span className="text-muted">—</span>
+                            )}
+                          </td>
+                          <td>
+                            <Badge bg={shot.availability === 'Available' ? 'success' : 'secondary'}>
+                              {shot.availability || 'Unknown'}
+                            </Badge>
+                          </td>
+                          <td>{shot.created ? formatDate(shot.created) : '—'}</td>
+                          <td>
+                            <code className="small">{shot.image_id || '—'}</code>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </Table>
+                </div>
+              )}
+
+              {/* Screenshot mentions */}
+              {screenshotMentions.length > 0 && (
+                <div className="mb-4">
+                  <h6>Screenshot Mentions</h6>
+                  {screenshotMentions.map((mention, mIndex) => {
+                    const url = stripRfEntityPrefix(mention.url);
+                    const entities = mention.mentioned_entities || [];
+                    return (
+                      <div key={mention.document || mention.screenshot || mIndex} className="bg-body-tertiary p-3 rounded border mb-2">
+                        {url && (
+                          <p className="mb-2">
+                            <strong>URL:</strong>{' '}
+                            <a href={url} target="_blank" rel="noopener noreferrer">
+                              {url}
+                            </a>
+                          </p>
+                        )}
+                        {mention.analyzed && (
+                          <p className="mb-2 small text-muted">
+                            Analyzed: {formatDate(mention.analyzed)}
+                          </p>
+                        )}
+                        {entities.length > 0 && (
+                          <div>
+                            <strong className="small">Mentioned entities:</strong>
+                            <div className="mt-1">
+                              {entities.map((entry, eIndex) => (
+                                <div key={entry.reference || eIndex} className="mb-2">
+                                  <Badge bg="warning" className="me-1">
+                                    {entry.entity?.name || entry.entity?.id || 'Unknown'}
+                                  </Badge>
+                                  {entry.entity?.type && (
+                                    <Badge bg="light" text="dark" className="me-1 border">
+                                      {entry.entity.type}
+                                    </Badge>
+                                  )}
+                                  {entry.fragment && (
+                                    <div className="small text-muted mt-1" style={{ maxHeight: '4.5em', overflow: 'hidden' }}>
+                                      {entry.fragment.length > 280
+                                        ? `${entry.fragment.substring(0, 280)}…`
+                                        : entry.fragment}
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
               {/* DNS Evidence */}
-              {finding.recordedfuture_data.raw_details?.panel_evidence_dns?.ip_list && finding.recordedfuture_data.raw_details.panel_evidence_dns.ip_list.length > 0 && (
+              {hasDns && (
                 <div className="mb-4">
                   <h6>DNS Evidence</h6>
                   <Table size="sm" borderless>
                     <tbody>
-                      <tr>
-                        <td><strong>IP Addresses:</strong></td>
-                        <td>
-                          {finding.recordedfuture_data.raw_details.panel_evidence_dns.ip_list.map((ip, index) => (
-                            <div key={index} className="mb-1">
-                              <Badge bg="info" className="me-2">
-                                {ip.entity.replace('ip:', '')}
+                      {ipList.length > 0 && (
+                        <tr>
+                          <td><strong>IP Addresses:</strong></td>
+                          <td>
+                            {ipList.map((ip, index) => (
+                              <div key={index} className="mb-1">
+                                <Badge bg="info" className="me-2">
+                                  {stripRfEntityPrefix(ip.entity)}
+                                </Badge>
+                                <small className="text-muted">
+                                  {ip.record_type} record
+                                  {ip.criticality && ` · ${ip.criticality}`}
+                                  {ip.risk_score != null && ` · Risk: ${ip.risk_score}`}
+                                </small>
+                              </div>
+                            ))}
+                          </td>
+                        </tr>
+                      )}
+                      {mxList.length > 0 && (
+                        <tr>
+                          <td><strong>MX Records:</strong></td>
+                          <td>
+                            {mxList.map((mx, index) => (
+                              <Badge key={index} bg="secondary" className="me-1 mb-1">
+                                {stripRfEntityPrefix(mx.entity || mx)}
                               </Badge>
-                              <small className="text-muted">
-                                {ip.record_type} record
-                                {ip.risk_score > 0 && ` - Risk: ${ip.risk_score}`}
-                              </small>
-                            </div>
-                          ))}
-                        </td>
-                      </tr>
+                            ))}
+                          </td>
+                        </tr>
+                      )}
+                      {nsList.length > 0 && (
+                        <tr>
+                          <td><strong>NS Records:</strong></td>
+                          <td>
+                            {nsList.map((ns, index) => (
+                              <Badge key={index} bg="secondary" className="me-1 mb-1">
+                                {stripRfEntityPrefix(ns.entity || ns)}
+                              </Badge>
+                            ))}
+                          </td>
+                        </tr>
+                      )}
                     </tbody>
                   </Table>
                 </div>
               )}
 
               {/* WHOIS Evidence */}
-              {finding.recordedfuture_data.raw_details?.panel_evidence_whois?.body && finding.recordedfuture_data.raw_details.panel_evidence_whois.body.length > 0 && (
+              {whoisRecords.length > 0 && (
                 <div>
                   <h6>WHOIS Evidence</h6>
                   <Table size="sm" borderless>
                     <tbody>
-                      {finding.recordedfuture_data.raw_details.panel_evidence_whois.body
-                        .filter(item => item.attribute === 'attr:whois' && item.value)
-                        .map((item, index) => (
+                      {whoisRecords.map((item, index) => (
                         <React.Fragment key={index}>
                           {item.value.registrarName && (
                             <tr>
@@ -2937,6 +3186,12 @@ function TyposquatFindingDetail() {
                               <td>{formatDate(item.value.createdDate, 'MMM dd, yyyy')}</td>
                             </tr>
                           )}
+                          {item.value.updatedDate && (
+                            <tr>
+                              <td><strong>Updated Date:</strong></td>
+                              <td>{formatDate(item.value.updatedDate, 'MMM dd, yyyy')}</td>
+                            </tr>
+                          )}
                           {item.value.expiresDate && (
                             <tr>
                               <td><strong>Expires Date:</strong></td>
@@ -2946,7 +3201,41 @@ function TyposquatFindingDetail() {
                           {item.value.status && (
                             <tr>
                               <td><strong>Status:</strong></td>
-                              <td><Badge bg="secondary">{item.value.status}</Badge></td>
+                              <td>
+                                {String(item.value.status).split(/\s+/).filter(Boolean).map((status, sIndex) => (
+                                  <Badge key={sIndex} bg="secondary" className="me-1 mb-1">
+                                    {status}
+                                  </Badge>
+                                ))}
+                              </td>
+                            </tr>
+                          )}
+                          {typeof item.value.privateRegistration === 'boolean' && (
+                            <tr>
+                              <td><strong>Private Registration:</strong></td>
+                              <td>
+                                <Badge bg={item.value.privateRegistration ? 'warning' : 'success'}>
+                                  {item.value.privateRegistration ? 'Yes' : 'No'}
+                                </Badge>
+                              </td>
+                            </tr>
+                          )}
+                          {item.value.nameServers?.length > 0 && (
+                            <tr>
+                              <td><strong>Name Servers:</strong></td>
+                              <td>
+                                {item.value.nameServers.map((ns, nsIndex) => (
+                                  <Badge key={nsIndex} bg="info" className="me-1 mb-1">
+                                    {stripRfEntityPrefix(ns)}
+                                  </Badge>
+                                ))}
+                              </td>
+                            </tr>
+                          )}
+                          {item.provider && (
+                            <tr>
+                              <td><strong>Provider:</strong></td>
+                              <td className="text-muted small">{item.provider}</td>
                             </tr>
                           )}
                         </React.Fragment>
@@ -2958,7 +3247,8 @@ function TyposquatFindingDetail() {
             </Card.Body>
           </Collapse>
         </Card>
-      )}
+        );
+      })()}
 
       {phishMessage.text && (
         <Alert variant={phishMessage.type} className="mb-4">
