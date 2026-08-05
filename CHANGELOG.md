@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.50.0](https://github.com/ReconHawx/reconhawx/compare/v0.49.1...v0.50.0) (2026-08-05)
+
+
+### Features
+
+* **admin:** show batch job runner pod output on job status ([ee97763](https://github.com/ReconHawx/reconhawx/commit/ee97763aacbbc5cd7a8efefd951632b49cd14d8a))
+* **frontend:** enrich Recorded Future panel on typosquat findings ([243a25f](https://github.com/ReconHawx/reconhawx/commit/243a25fb440f3b70de1accac4d7414f5a8be9665))
+
+
+### Bug Fixes
+
+* **k8s:** mount Alpine nginx config under http.d and provide /run/nginx ([c5b3cf6](https://github.com/ReconHawx/reconhawx/commit/c5b3cf65c2737a9f5b75b656ae5ca39d15645ac8))
+
 ## [0.49.1](https://github.com/ReconHawx/reconhawx/compare/v0.49.0...v0.49.1) (2026-06-30)
 
 
