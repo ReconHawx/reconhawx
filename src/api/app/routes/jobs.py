@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Depends, Query
 from typing import Dict, Any, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from models.job import DummyBatchRequest, GatherApiFindingsRequest, SyncRecordedFutureDataRequest
 from repository import JobRepository
 from auth.dependencies import require_internal_service_or_authentication, get_current_user_from_middleware
@@ -15,10 +15,35 @@ router = APIRouter()
 
 class JobStatusUpdateRequest(BaseModel):
     """Request model for updating job status"""
-    status: str = Field(..., description="New job status (pending, running, completed, failed)")
-    progress: int = Field(..., ge=0, le=100, description="Job progress percentage (0-100)")
-    message: str = Field(..., description="Status message")
+    status: Optional[str] = Field(None, description="New job status (pending, running, completed, failed)")
+    progress: Optional[int] = Field(None, ge=0, le=100, description="Job progress percentage (0-100)")
+    message: Optional[str] = Field(None, description="Status message")
     results: Optional[Dict[str, Any]] = Field(None, description="Job results (optional)")
+    runner_pod_output: Optional[str] = Field(None, description="Runner pod output/logs to append")
+
+    @model_validator(mode="after")
+    def validate_update_payload(self):
+        has_status_fields = (
+            self.status is not None
+            or self.progress is not None
+            or self.message is not None
+            or self.results is not None
+        )
+        has_runner_output = self.runner_pod_output is not None
+
+        if not has_status_fields and not has_runner_output:
+            raise ValueError(
+                "Provide status/progress/message/results or runner_pod_output"
+            )
+
+        if has_status_fields and (
+            self.status is None or self.progress is None or self.message is None
+        ):
+            raise ValueError(
+                "status, progress, and message are required for a status update"
+            )
+
+        return self
 
 @router.get("", response_model=Dict[str, Any])
 @router.get("/", response_model=Dict[str, Any])
@@ -306,20 +331,20 @@ async def update_job_status(
     progress, and results. The job must exist and be accessible to the user.
     """
     try:
-        # Validate status values
         valid_statuses = ["pending", "running", "completed", "failed"]
-        if request.status not in valid_statuses:
-            raise HTTPException(
-                status_code=400, 
-                detail=f"Invalid status '{request.status}'. Must be one of: {valid_statuses}"
-            )
-        
-        # Validate progress range
-        if request.progress < 0 or request.progress > 100:
-            raise HTTPException(
-                status_code=400,
-                detail="Progress must be between 0 and 100"
-            )
+
+        if request.status is not None:
+            if request.status not in valid_statuses:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid status '{request.status}'. Must be one of: {valid_statuses}"
+                )
+
+            if request.progress is None or request.progress < 0 or request.progress > 100:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Progress must be between 0 and 100"
+                )
         
         # Update job status
         success = await JobRepository.update_job_status(
@@ -327,21 +352,29 @@ async def update_job_status(
             status=request.status,
             progress=request.progress,
             message=request.message,
-            results=request.results
+            results=request.results,
+            runner_pod_output=request.runner_pod_output,
         )
         
         if not success:
             raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
         
-        logger.info(f"Updated job {job_id} status to {request.status} ({request.progress}%)")
+        if request.status is not None:
+            logger.info(
+                f"Updated job {job_id} status to {request.status} ({request.progress}%)"
+            )
+        elif request.runner_pod_output is not None:
+            logger.info(f"Appended runner_pod_output for job {job_id}")
         
-        return {
+        response: Dict[str, Any] = {
             "status": "success",
             "message": f"Job {job_id} status updated successfully",
             "job_id": job_id,
-            "updated_status": request.status,
-            "updated_progress": request.progress
         }
+        if request.status is not None:
+            response["updated_status"] = request.status
+            response["updated_progress"] = request.progress
+        return response
         
     except HTTPException:
         raise

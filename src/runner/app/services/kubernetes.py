@@ -174,6 +174,36 @@ class KubernetesService:
             return ""
 
 
+    def get_batch_job_pod_logs_by_job_id(self, job_id: str) -> str:
+        """Get logs from batch job runner pod using job-id label selector."""
+        try:
+            selector = f"app=background-job,job-id={job_id}"
+            pods = self.core_api.list_namespaced_pod(
+                namespace=self.kubernetes_namespace,
+                label_selector=selector,
+            ).items
+
+            if not pods:
+                logger.warning(f"No batch job pods found for job_id {job_id}")
+                return ""
+
+            pods.sort(key=lambda x: x.metadata.creation_timestamp, reverse=True)
+            pod = pods[0]
+
+            try:
+                logs = self.core_api.read_namespaced_pod_log(
+                    name=pod.metadata.name,
+                    namespace=self.kubernetes_namespace,
+                )
+                return logs if logs else ""
+            except Exception as e:
+                logger.error(f"Error getting logs for batch job pod {pod.metadata.name}: {str(e)}")
+                return ""
+        except Exception as e:
+            logger.error(f"Error accessing batch job pod for job_id {job_id}: {str(e)}")
+            return ""
+
+
     def get_job_status(self, type: str, id: str):
         """Get the status of a workflow job"""
         try:

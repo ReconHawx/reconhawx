@@ -45,8 +45,15 @@ class JobRepository:
             return False
 
     @staticmethod
-    async def update_job_status(job_id: str, status: str, progress: int, message: str, results: Optional[Dict[str, Any]] = None) -> bool:
-        """Update job status"""
+    async def update_job_status(
+        job_id: str,
+        status: Optional[str] = None,
+        progress: Optional[int] = None,
+        message: Optional[str] = None,
+        results: Optional[Dict[str, Any]] = None,
+        runner_pod_output: Optional[str] = None,
+    ) -> bool:
+        """Update job status. Status/progress/message are optional when only appending runner_pod_output."""
         try:
             async with get_db_session() as db:
                 job_status = db.query(JobStatus).filter(JobStatus.job_id == job_id).first()
@@ -55,16 +62,30 @@ class JobRepository:
                     logger.warning(f"Job {job_id} not found for status update")
                     return False
                 
-                job_status.status = status
-                job_status.progress = progress
-                job_status.message = message
+                if status is not None:
+                    job_status.status = status
+                if progress is not None:
+                    job_status.progress = progress
+                if message is not None:
+                    job_status.message = message
                 job_status.updated_at = utcnow()
                 
                 if results is not None:
                     job_status.results = results
+
+                if runner_pod_output is not None:
+                    existing_output = job_status.runner_pod_output or ""
+                    new_output = runner_pod_output or ""
+                    job_status.runner_pod_output = existing_output + new_output
                 
                 db.commit()
-                logger.info(f"Updated job {job_id} status to {status} ({progress}%)")
+                if status is not None and progress is not None:
+                    logger.info(f"Updated job {job_id} status to {status} ({progress}%)")
+                elif runner_pod_output is not None:
+                    logger.info(
+                        f"Appended runner_pod_output for job {job_id} "
+                        f"({len(runner_pod_output)} chars)"
+                    )
                 return True
                 
         except SQLAlchemyError as e:
@@ -140,7 +161,11 @@ class JobRepository:
                     query = query.filter(and_(*filter_conditions))
                 
                 job_statuses = query.order_by(desc(JobStatus.created_at)).offset(skip).limit(limit).all()
-                jobs = [job_status.to_dict() for job_status in job_statuses]
+                jobs = []
+                for job_status in job_statuses:
+                    job_dict = job_status.to_dict()
+                    job_dict.pop("runner_pod_output", None)
+                    jobs.append(job_dict)
                 
                 return jobs, total
                 

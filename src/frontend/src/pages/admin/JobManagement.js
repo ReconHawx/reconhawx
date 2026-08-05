@@ -35,6 +35,9 @@ export function JobManagementInner({ embedded = false }) {
   // Modal states
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [selectedJob, setSelectedJob] = useState(null);
+  const [detailsLoading, setDetailsLoading] = useState(false);
+  const [showPodOutput, setShowPodOutput] = useState(true);
+  const [podOutputSearch, setPodOutputSearch] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
   
   // Auto-refresh
@@ -93,9 +96,51 @@ export function JobManagementInner({ embedded = false }) {
     }
   };
 
-  const openDetailsModal = (job) => {
-    setSelectedJob(job);
+  const openDetailsModal = async (job) => {
     setShowDetailsModal(true);
+    setSelectedJob(job);
+    setShowPodOutput(true);
+    setPodOutputSearch('');
+    setDetailsLoading(true);
+    setError('');
+
+    try {
+      const response = await jobAPI.getStatus(job.job_id);
+      if (response.status === 'success' && response.job) {
+        setSelectedJob(response.job);
+      }
+    } catch (err) {
+      setError('Failed to load job details: ' + (err.response?.data?.detail || err.message));
+    } finally {
+      setDetailsLoading(false);
+    }
+  };
+
+  const downloadPodOutput = () => {
+    if (!selectedJob?.runner_pod_output) return;
+    const blob = new Blob([selectedJob.runner_pod_output], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `job-${selectedJob.job_id}-runner-output.txt`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const highlightPodOutput = (text, searchTerm) => {
+    if (!searchTerm || !text) return text;
+    const escaped = searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(`(${escaped})`, 'gi');
+    const parts = text.split(regex);
+    return parts.map((part, index) =>
+      index % 2 === 1 ? (
+        <mark key={index}>{part}</mark>
+      ) : (
+        part
+      )
+    );
   };
 
   const getStatusBadge = (status) => {
@@ -370,7 +415,12 @@ export function JobManagementInner({ embedded = false }) {
           <Modal.Title>Job Details</Modal.Title>
         </Modal.Header>
         <Modal.Body>
-          {selectedJob && (
+          {detailsLoading ? (
+            <div className="text-center py-4">
+              <Spinner animation="border" />
+              <p className="mt-2 mb-0">Loading job details...</p>
+            </div>
+          ) : selectedJob && (
             <div>
               <Row>
                 <Col md={6}>
@@ -442,6 +492,53 @@ export function JobManagementInner({ embedded = false }) {
                     <pre className="bg-light p-3 rounded small">
                       {JSON.stringify(selectedJob.job_data, null, 2)}
                     </pre>
+                  </Col>
+                </Row>
+              )}
+
+              {selectedJob.runner_pod_output && (
+                <Row className="mt-3">
+                  <Col>
+                    <div className="d-flex justify-content-between align-items-center mb-2">
+                      <h6 className="mb-0">Runner Pod Output</h6>
+                      <div className="d-flex gap-2">
+                        <Button
+                          variant="outline-secondary"
+                          size="sm"
+                          onClick={() => setShowPodOutput((prev) => !prev)}
+                        >
+                          {showPodOutput ? 'Hide' : 'Show'}
+                        </Button>
+                        <Button
+                          variant="outline-primary"
+                          size="sm"
+                          onClick={downloadPodOutput}
+                        >
+                          Download
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="text-muted small mb-2">
+                      {selectedJob.runner_pod_output.length} characters
+                    </div>
+                    {showPodOutput && (
+                      <>
+                        <Form.Control
+                          type="search"
+                          size="sm"
+                          placeholder="Search output..."
+                          value={podOutputSearch}
+                          onChange={(e) => setPodOutputSearch(e.target.value)}
+                          className="mb-2"
+                        />
+                        <pre
+                          className="bg-light p-3 rounded small mb-0"
+                          style={{ maxHeight: '600px', overflow: 'auto', whiteSpace: 'pre-wrap' }}
+                        >
+                          {highlightPodOutput(selectedJob.runner_pod_output, podOutputSearch)}
+                        </pre>
+                      </>
+                    )}
                   </Col>
                 </Row>
               )}

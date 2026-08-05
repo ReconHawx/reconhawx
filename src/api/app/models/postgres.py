@@ -1178,6 +1178,7 @@ class JobStatus(Base):
     progress = Column(SmallInteger, default=0)  # 0-100
     message = Column(Text)
     results = Column(JSONB)  # Job results data
+    runner_pod_output = Column(Text)  # Runner pod output/logs
     created_at = Column(DateTime, default=utcnow, nullable=False, index=True)
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow, nullable=False, index=True)
     
@@ -1195,6 +1196,7 @@ class JobStatus(Base):
             'progress': self.progress,
             'message': self.message,
             'results': self.results,
+            'runner_pod_output': self.runner_pod_output,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None
         }
