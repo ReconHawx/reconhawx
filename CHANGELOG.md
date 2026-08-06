@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.51.0](https://github.com/ReconHawx/reconhawx/compare/v0.50.2...v0.51.0) (2026-08-06)
+
+
+### Features
+
+* **typosquat:** filter findings by RecordedFuture or Threatstream intelligence ([418f4e3](https://github.com/ReconHawx/reconhawx/commit/418f4e3d77e6600e75d31ebf1f70f7e4b5b55b1c))
+
 ## [0.50.2](https://github.com/ReconHawx/reconhawx/compare/v0.50.1...v0.50.2) (2026-08-06)
 
 

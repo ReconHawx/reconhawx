@@ -1,6 +1,6 @@
 {
   "name": "recon-react-frontend",
-  "version": "0.50.2",
+  "version": "0.51.0",
   "private": true,
   "dependencies": {
     "@testing-library/jest-dom": "^5.16.4",
