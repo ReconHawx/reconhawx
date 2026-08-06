@@ -130,6 +130,8 @@ function TyposquatFindings() {
     is_wildcard: searchParams.get('is_wildcard') || '',
     is_parked: searchParams.get('is_parked') || '',
     has_phishlabs: searchParams.get('has_phishlabs') || '',
+    has_recordedfuture: searchParams.get('has_recordedfuture') === 'true',
+    has_threatstream: searchParams.get('has_threatstream') === 'true',
     phishlabs_incident_status: searchParams.get('phishlabs_incident_status') ? searchParams.get('phishlabs_incident_status').split(',') : [], // Multi-select array for PhishLabs incident status
     source: searchParams.get('source') || '',
     assigned_to_username: searchParams.get('assigned_to_username') || '',
@@ -289,7 +291,7 @@ function TyposquatFindings() {
     const urlParams = new URLSearchParams(location.search);
 
     const newFilters = { ...filters };
-    const boolKeys = ['has_ip', 'hide_no_registrar', 'apex_only'];
+    const boolKeys = ['has_ip', 'hide_no_registrar', 'apex_only', 'has_recordedfuture', 'has_threatstream'];
     const arrayKeys = ['status', 'phishlabs_incident_status'];
     Object.keys(newFilters).forEach((k) => {
       const v = urlParams.get(k);
@@ -364,6 +366,8 @@ function TyposquatFindings() {
       is_parked: filters.is_parked ? (filters.is_parked === 'true') : undefined,
       // http_status: filters.http_status ? parseInt(filters.http_status) : undefined,
       has_phishlabs: filters.has_phishlabs ? (filters.has_phishlabs === 'with') : undefined,
+      has_recordedfuture: filters.has_recordedfuture || undefined,
+      has_threatstream: filters.has_threatstream || undefined,
       has_whois_registrar: filters.hide_no_registrar ? true : undefined,
       phishlabs_incident_status: (filters.phishlabs_incident_status && filters.phishlabs_incident_status.length > 0) ? filters.phishlabs_incident_status : undefined,
       source: filters.source === 'no_source' ? 'no_source' : (filters.source || undefined),
@@ -2010,6 +2014,29 @@ function TyposquatFindings() {
                 </Row>
 
                 <hr className="my-3" />
+                <h6 className="text-secondary text-uppercase small fw-semibold mb-0">Vendor intelligence</h6>
+                <Row className="g-3 mt-2">
+                  <Col md={6}>
+                    <Form.Check
+                      type="checkbox"
+                      id="filter-has-recordedfuture"
+                      label="Has RecordedFuture Intelligence"
+                      checked={filters.has_recordedfuture}
+                      onChange={(e) => handleFilterChange('has_recordedfuture', e.target.checked)}
+                    />
+                  </Col>
+                  <Col md={6}>
+                    <Form.Check
+                      type="checkbox"
+                      id="filter-has-threatstream"
+                      label="Has Threatstream Intelligence"
+                      checked={filters.has_threatstream}
+                      onChange={(e) => handleFilterChange('has_threatstream', e.target.checked)}
+                    />
+                  </Col>
+                </Row>
+
+                <hr className="my-3" />
                 <h6 className="text-secondary text-uppercase small fw-semibold mb-0">Domain attributes</h6>
                 <Row className="g-3 mt-2">
                   <Col lg={3} md={6}>
@@ -2151,6 +2178,8 @@ function TyposquatFindings() {
                         is_wildcard: '',
                         is_parked: '',
                         has_phishlabs: '',
+                        has_recordedfuture: false,
+                        has_threatstream: false,
                         phishlabs_incident_status: [], // Reset to empty (no filter)
                         source: '',
                         assigned_to_username: '',
@@ -2199,6 +2228,8 @@ function TyposquatFindings() {
                 is_wildcard: '',
                 is_parked: '',
                 has_phishlabs: '',
+                has_recordedfuture: false,
+                has_threatstream: false,
                 phishlabs_incident_status: [],
                 source: '',
                 assigned_to_username: '',

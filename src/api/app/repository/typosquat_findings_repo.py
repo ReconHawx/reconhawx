@@ -1304,6 +1304,7 @@ class TyposquatFindingsRepository(ProgramAccessMixin):
         has_phishlabs: Optional[bool] = None,
         has_whois_registrar: Optional[bool] = None,
         phishlabs_incident_status: Optional[List[str]] = None,
+        has_recordedfuture: Optional[bool] = None,
         has_threatstream: Optional[bool] = None,
         source: Optional[str] = None,
         assigned_to_username: Optional[str] = None,
@@ -1515,7 +1516,12 @@ class TyposquatFindingsRepository(ProgramAccessMixin):
                     if status_conditions:
                         base_query = base_query.filter(or_(*status_conditions))
 
-                # Threatstream filters
+                # Vendor intelligence filters
+                if has_recordedfuture is True:
+                    base_query = base_query.filter(TyposquatDomain.recordedfuture_data.isnot(None))
+                elif has_recordedfuture is False:
+                    base_query = base_query.filter(TyposquatDomain.recordedfuture_data.is_(None))
+
                 if has_threatstream is True:
                     base_query = base_query.filter(TyposquatDomain.threatstream_data.isnot(None))
                 elif has_threatstream is False:
@@ -1756,7 +1762,12 @@ class TyposquatFindingsRepository(ProgramAccessMixin):
                         or_(TyposquatDomain.auto_resolve.is_(False), TyposquatDomain.auto_resolve.is_(None))
                     )
 
-                # Threatstream filters for count query
+                # Vendor intelligence filters for count query
+                if has_recordedfuture is True:
+                    count_query = count_query.filter(TyposquatDomain.recordedfuture_data.isnot(None))
+                elif has_recordedfuture is False:
+                    count_query = count_query.filter(TyposquatDomain.recordedfuture_data.is_(None))
+
                 if has_threatstream is True:
                     count_query = count_query.filter(TyposquatDomain.threatstream_data.isnot(None))
                 elif has_threatstream is False:
