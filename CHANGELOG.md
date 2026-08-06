@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.50.2](https://github.com/ReconHawx/reconhawx/compare/v0.50.1...v0.50.2) (2026-08-06)
+
+
+### Bug Fixes
+
+* force release please run ([3219441](https://github.com/ReconHawx/reconhawx/commit/3219441938d4be137a8bc757e4dcb5fff99ff70a))
+
 ## [0.50.1](https://github.com/ReconHawx/reconhawx/compare/v0.50.0...v0.50.1) (2026-08-06)
 
 
