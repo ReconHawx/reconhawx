@@ -60,6 +60,6 @@ Read-only RF use for enrichment (search, details GET/POST, screenshot **fetch**)
 
 - Reuse shared `aiohttp` session from `_get_session()` for volume and TLS reuse.
 - RF pre-flight filter + filtered-alert resolve run only for **recordedfuture** vendor on **new** domains.
-- Post-storage screenshots: `_handle_recordedfuture_post_storage` uses RF token from `_get_vendor_credentials(..., "recordedfuture")` and `RecordedFutureAdapter.process_post_storage_tasks` for findings with `raw_details`.
+- Post-storage screenshots: `_handle_recordedfuture_post_storage` uses RF token from `_get_vendor_credentials(..., "recordedfuture")` and `RecordedFutureAdapter.process_post_storage_tasks` for findings with `raw_details`. The gather task passes resolved **`program_id`** into that path; RF post-storage **`POST /findings/typosquat-url`** and **`POST /findings/typosquat-screenshot`** both require it (same as domain batch create).
 
 When extending behavior, keep **primary vendor** vs **enrichment-only** semantics explicit so RF customer alerts are never modified by TS-led jobs.
