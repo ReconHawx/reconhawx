@@ -17,12 +17,96 @@ logger = logging.getLogger(__name__)
 MAX_EXTRACTED_TEXT_BYTES = 50 * 1024
 
 
+def load_gowitness_entries(jsonl_path: str) -> list:
+    """
+    Load all valid JSON objects from a gowitness JSONL file (one object per line).
+
+    ``gowitness scan file`` writes a single JSONL with one line per scanned URL, so callers
+    iterate the returned entries to map each screenshot (via ``file_name``) back to its URL.
+
+    Returns an empty list if the file is missing or unreadable; malformed lines are skipped.
+    """
+    entries: list = []
+    try:
+        with open(jsonl_path, 'r', encoding='utf-8', errors='replace') as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entries.append(json.loads(line))
+                except json.JSONDecodeError:
+                    continue
+    except Exception as e:
+        logger.debug(f"Failed to load entries from {jsonl_path}: {e}")
+    return entries
+
+
+def extract_text_from_gowitness_entry(entry: dict, url: Optional[str] = None) -> Optional[str]:
+    """
+    Extract readable text from a single parsed gowitness JSONL entry.
+
+    Primary source is the main document's response body in ``network[].content`` (base64),
+    populated by ``--save-content``: request_type 0, status_code 200, mime_type "text/html".
+    Falls back to the top-level ``html`` field when present (i.e. when ``--skip-html`` is not
+    used), so extraction is robust to which field gowitness populates.
+
+    Args:
+        entry: Parsed JSON object for one URL.
+        url: Optional URL to match against the entry (handles :443 vs implicit port); if the
+            entry is for a different URL, returns None.
+
+    Returns:
+        Extracted text or None if no HTML body is available.
+    """
+    try:
+        if url:
+            entry_url = entry.get('final_url') or entry.get('url', '')
+            if entry_url and not _urls_match(url, entry_url):
+                return None
+
+        network = entry.get('network') or []
+        final_url = (entry.get('final_url') or entry.get('url') or '').rstrip('/')
+
+        for req in network:
+            if (req.get('request_type') == 0
+                    and req.get('status_code') == 200
+                    and (req.get('mime_type') or '').lower() == 'text/html'):
+                req_url = (req.get('url') or '').rstrip('/')
+                if not final_url or req_url == final_url or req_url.startswith(final_url.split('?')[0]):
+                    content_b64 = req.get('content')
+                    if not content_b64:
+                        continue
+                    try:
+                        html_bytes = base64.b64decode(content_b64)
+                        html_str = html_bytes.decode('utf-8', errors='replace')
+                    except Exception as e:
+                        logger.debug(f"Failed to decode base64 content: {e}")
+                        continue
+
+                    text = _extract_text_from_html(html_str)
+                    if text:
+                        return _truncate_text(text)
+
+        # Fallback: top-level html field (populated when --skip-html is not set).
+        top_html = entry.get('html')
+        if top_html:
+            text = _extract_text_from_html(top_html)
+            if text:
+                return _truncate_text(text)
+
+        return None
+    except Exception as e:
+        logger.debug(f"Failed to extract text from gowitness entry: {e}")
+        return None
+
+
 def extract_text_from_gowitness_jsonl(jsonl_path: str, url: Optional[str] = None) -> Optional[str]:
     """
-    Parse gowitness JSONL file, find main HTML from network[].content, extract readable text.
+    Parse a gowitness JSONL file and extract readable text for the first (matching) entry.
 
-    With --skip-html, the top-level html field is empty; HTML lives only in network[].content (base64).
-    Main document: request_type 0, status_code 200, mime_type "text/html".
+    Thin wrapper over :func:`extract_text_from_gowitness_entry` kept for single-entry callers.
+    When ``url`` is provided, non-matching lines are skipped; otherwise the first line is used.
 
     Args:
         jsonl_path: Path to gowitness.jsonl file (one JSON object per line)
@@ -31,57 +115,13 @@ def extract_text_from_gowitness_jsonl(jsonl_path: str, url: Optional[str] = None
     Returns:
         Extracted text or None if extraction fails
     """
-    try:
-        with open(jsonl_path, 'r', encoding='utf-8', errors='replace') as f:
-            lines = f.readlines()
-
-        if not lines:
-            return None
-
-        # Parse first line (gowitness scan single produces one JSON per URL)
-        for line in lines:
-            line = line.strip()
-            if not line:
+    for entry in load_gowitness_entries(jsonl_path):
+        if url:
+            entry_url = entry.get('final_url') or entry.get('url', '')
+            if entry_url and not _urls_match(url, entry_url):
                 continue
-            try:
-                entry = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-
-            # Optional: match by url/final_url if provided (normalize to handle :443 vs implicit port)
-            if url:
-                entry_url = entry.get('final_url') or entry.get('url', '')
-                if entry_url and not _urls_match(url, entry_url):
-                    continue
-
-            network = entry.get('network') or []
-            final_url = (entry.get('final_url') or entry.get('url') or '').rstrip('/')
-
-            for req in network:
-                if (req.get('request_type') == 0
-                        and req.get('status_code') == 200
-                        and (req.get('mime_type') or '').lower() == 'text/html'):
-                    req_url = (req.get('url') or '').rstrip('/')
-                    if not final_url or req_url == final_url or req_url.startswith(final_url.split('?')[0]):
-                        content_b64 = req.get('content')
-                        if not content_b64:
-                            continue
-                        try:
-                            html_bytes = base64.b64decode(content_b64)
-                            html_str = html_bytes.decode('utf-8', errors='replace')
-                        except Exception as e:
-                            logger.debug(f"Failed to decode base64 content: {e}")
-                            continue
-
-                        text = _extract_text_from_html(html_str)
-                        if text:
-                            return _truncate_text(text)
-            break  # Only process first matching entry
-
-        return None
-    except Exception as e:
-        logger.debug(f"Failed to extract text from {jsonl_path}: {e}")
-        return None
+        return extract_text_from_gowitness_entry(entry)
+    return None
 
 
 def _urls_match(a: str, b: str) -> bool:

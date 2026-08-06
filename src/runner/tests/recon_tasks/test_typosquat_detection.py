@@ -168,17 +168,40 @@ def test_get_command_selective_preflight_protected_seed_bypass(task, monkeypatch
 
 def test_process_spawned_task_outputs_returns_screenshot_findings(task, monkeypatch) -> None:
     import io
+    import json
     import tarfile
-    from unittest.mock import patch
 
     from recon_tasks.base import FindingType
 
+    # The gowitness JSONL entry drives the URL<->screenshot mapping and carries the HTML
+    # body used for text extraction, matching the runner's parse_output flow.
+    html = "<html><body><h1>Example</h1></body></html>"
+    entry = {
+        "url": "https://example.com/",
+        "final_url": "https://example.com/",
+        "file_name": "example.png",
+        "failed": False,
+        "network": [
+            {
+                "request_type": 0,
+                "status_code": 200,
+                "mime_type": "text/html",
+                "url": "https://example.com/",
+                "content": base64.b64encode(html.encode()).decode(),
+            }
+        ],
+    }
+
     buf = io.BytesIO()
     with tarfile.open(fileobj=buf, mode="w:gz") as tar:
-        content = b"\x89PNG\r\n\x1a\nFAKE"
-        info = tarfile.TarInfo(name="https---example.com---.png")
-        info.size = len(content)
-        tar.addfile(info, io.BytesIO(content))
+        png = b"\x89PNG\r\n\x1a\nFAKE"
+        info = tarfile.TarInfo(name="example.png")
+        info.size = len(png)
+        tar.addfile(info, io.BytesIO(png))
+        jsonl = (json.dumps(entry) + "\n").encode()
+        jinfo = tarfile.TarInfo(name="gowitness.jsonl")
+        jinfo.size = len(jsonl)
+        tar.addfile(jinfo, io.BytesIO(jsonl))
     archive_b64 = base64.b64encode(buf.getvalue()).decode()
 
     task.spawned_task_outputs = {"job-1": archive_b64}
@@ -191,14 +214,7 @@ def test_process_spawned_task_outputs_returns_screenshot_findings(task, monkeypa
         }
     }
 
-    with patch(
-        "recon_tasks.screenshot_website.extract_text_from_gowitness_jsonl",
-        return_value=None,
-    ), patch(
-        "recon_tasks.screenshot_website.extract_text_from_image_ocr",
-        return_value="",
-    ):
-        result = task.process_spawned_task_outputs()
+    result = task.process_spawned_task_outputs()
 
     screenshots = result[FindingType.TYPOSQUAT_SCREENSHOT]
     assert len(screenshots) == 1
