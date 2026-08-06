@@ -333,7 +333,8 @@ class TyposquatSearchRequest(BaseModel):
     has_phishlabs: Optional[bool] = Field(None)
     has_whois_registrar: Optional[bool] = Field(None, description="Filter domains that have a whois_registrar")
     phishlabs_incident_status: Optional[List[str]] = Field(None, description="PhishLabs incident status filter (multi-select: no_incident, monitoring, other)")
-    # Threatstream filters
+    # Vendor intelligence filters
+    has_recordedfuture: Optional[bool] = Field(None, description="Filter domains that have RecordedFuture data")
     has_threatstream: Optional[bool] = Field(None, description="Filter domains that have threatstream data")
     threatstream_id: Optional[str] = Field(None, description="Filter by specific threatstream ID")
     min_threatstream_score: Optional[int] = Field(None, description="Minimum threatstream threat score")
@@ -734,6 +735,7 @@ async def search_typosquat_typed(request: TyposquatSearchRequest, current_user: 
             has_phishlabs=request.has_phishlabs,
             has_whois_registrar=request.has_whois_registrar,
             phishlabs_incident_status=request.phishlabs_incident_status,
+            has_recordedfuture=request.has_recordedfuture,
             has_threatstream=request.has_threatstream,
             threatstream_id=request.threatstream_id,
             min_threatstream_score=request.min_threatstream_score,
