@@ -527,7 +527,14 @@ class RecordedFutureAdapter(BaseAPIVendor):
         
         logger.info(f"Updated RecordedFuture adapter config: query={self.query_config}, retry={self.retry_config}")
     
-    async def process_post_storage_tasks(self, findings: List[Dict[str, Any]], program_name: str, rf_token: str, session: Optional[aiohttp.ClientSession] = None):
+    async def process_post_storage_tasks(
+        self,
+        findings: List[Dict[str, Any]],
+        program_name: str,
+        program_id: str,
+        rf_token: str,
+        session: Optional[aiohttp.ClientSession] = None,
+    ):
         """Process tasks that need to happen after domain storage (like screenshots)"""
         try:
             logger.info(f"Processing post-storage tasks for {len(findings)} RecordedFuture findings")
@@ -540,7 +547,9 @@ class RecordedFutureAdapter(BaseAPIVendor):
                 domain_name = finding.get("typo_domain")
                 
                 if alert_id and domain_name and raw_details:
-                    await self._process_screenshots(rf_token, alert_id, rf_data, program_name, session)
+                    await self._process_screenshots(
+                        rf_token, alert_id, rf_data, program_name, program_id, session
+                    )
                 else:
                     logger.debug(f"Skipping finding - missing required data: domain={domain_name}, alert_id={alert_id}, has_details={bool(raw_details)}")
                     
@@ -718,7 +727,15 @@ class RecordedFutureAdapter(BaseAPIVendor):
             logger.error(f"Error extracting DNS data: {str(e)}")
             return dns_fields
     
-    async def _process_screenshots(self, rf_token: str, alert_id: str, domain_data: Dict[str, Any], program_name: str, session: Optional[aiohttp.ClientSession] = None):
+    async def _process_screenshots(
+        self,
+        rf_token: str,
+        alert_id: str,
+        domain_data: Dict[str, Any],
+        program_name: str,
+        program_id: str,
+        session: Optional[aiohttp.ClientSession] = None,
+    ):
         """Process screenshots from RecordedFuture alert details"""
         try:
             # Check if we have screenshot data in the details
@@ -748,7 +765,9 @@ class RecordedFutureAdapter(BaseAPIVendor):
             logger.info(f"Processing {len(screenshots)} screenshots for domain {domain_name}")
             
             # Create typosquat URL first
-            url_id = await self._create_typosquat_url(domain_name, program_name, session)
+            url_id = await self._create_typosquat_url(
+                domain_name, program_name, program_id, session
+            )
             if not url_id:
                 logger.error(f"Failed to create typosquat URL for {domain_name}")
                 return
@@ -759,15 +778,28 @@ class RecordedFutureAdapter(BaseAPIVendor):
                     image_id = screenshot.get("image_id")
                     if image_id:
                         await self._fetch_and_upload_screenshot(
-                            rf_token, alert_id, image_id, domain_name, program_name, url_id, session,
+                            rf_token,
+                            alert_id,
+                            image_id,
+                            domain_name,
+                            program_name,
+                            program_id,
+                            url_id,
+                            session,
                             screenshot_created=screenshot.get("created"),
-                            source="recordedfuture"
+                            source="recordedfuture",
                         )
                         
         except Exception as e:
             logger.error(f"Error processing screenshots for alert {alert_id}: {str(e)}")
     
-    async def _create_typosquat_url(self, domain_name: str, program_name: str, session: Optional[aiohttp.ClientSession] = None) -> Optional[str]:
+    async def _create_typosquat_url(
+        self,
+        domain_name: str,
+        program_name: str,
+        program_id: str,
+        session: Optional[aiohttp.ClientSession] = None,
+    ) -> Optional[str]:
         """Create a typosquat URL entry via API"""
         try:
             # Build URL data
@@ -779,7 +811,8 @@ class RecordedFutureAdapter(BaseAPIVendor):
                 "port": 443,
                 "path": "/",
                 "typosquat_domain": domain_name,
-                "program_name": program_name
+                "program_id": program_id,
+                "program_name": program_name,
             }
             
             headers = {"Content-Type": "application/json"}
@@ -816,7 +849,19 @@ class RecordedFutureAdapter(BaseAPIVendor):
             logger.error(f"Failed to create typosquat URL for {domain_name}: HTTP {response.status} - {response_text}")
             return None
     
-    async def _fetch_and_upload_screenshot(self, rf_token: str, alert_id: str, image_id: str, domain_name: str, program_name: str, url_id: str, session: Optional[aiohttp.ClientSession] = None, screenshot_created: Optional[str] = None, source: Optional[str] = None):
+    async def _fetch_and_upload_screenshot(
+        self,
+        rf_token: str,
+        alert_id: str,
+        image_id: str,
+        domain_name: str,
+        program_name: str,
+        program_id: str,
+        url_id: str,
+        session: Optional[aiohttp.ClientSession] = None,
+        screenshot_created: Optional[str] = None,
+        source: Optional[str] = None,
+    ):
         """Fetch screenshot from RecordedFuture and upload to our API"""
         try:
             # URL encode the IDs for the screenshot URL
@@ -844,7 +889,16 @@ class RecordedFutureAdapter(BaseAPIVendor):
                         screenshot_data = await self._handle_screenshot_response(response, image_id)
             
             if screenshot_data:
-                await self._upload_screenshot(screenshot_data, domain_name, program_name, url_id, image_id, screenshot_created=screenshot_created, source=source)
+                await self._upload_screenshot(
+                    screenshot_data,
+                    domain_name,
+                    program_name,
+                    program_id,
+                    url_id,
+                    image_id,
+                    screenshot_created=screenshot_created,
+                    source=source,
+                )
                 
         except Exception as e:
             logger.error(f"Error fetching/uploading screenshot {image_id} for {domain_name}: {str(e)}")
@@ -860,7 +914,17 @@ class RecordedFutureAdapter(BaseAPIVendor):
             logger.error(f"Failed to fetch screenshot {image_id}: HTTP {response.status} - {response_text}")
             return None
     
-    async def _upload_screenshot(self, screenshot_data: bytes, domain_name: str, program_name: str, url_id: str, image_id: str, screenshot_created: Optional[str] = None, source: Optional[str] = None):
+    async def _upload_screenshot(
+        self,
+        screenshot_data: bytes,
+        domain_name: str,
+        program_name: str,
+        program_id: str,
+        url_id: str,
+        image_id: str,
+        screenshot_created: Optional[str] = None,
+        source: Optional[str] = None,
+    ):
         """Upload screenshot to our API"""
         try:
             # Prepare multipart form data
@@ -878,6 +942,7 @@ class RecordedFutureAdapter(BaseAPIVendor):
 
             form_data.add_field('file', screenshot_data, filename=filename, content_type='image/png')
             form_data.add_field('url', f"https://{domain_name}")
+            form_data.add_field('program_id', program_id)
             form_data.add_field('program_name', program_name)
             if screenshot_created:
                 form_data.add_field('source_created_at', screenshot_created)

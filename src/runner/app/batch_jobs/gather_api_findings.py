@@ -828,7 +828,7 @@ class GatherApiFindingsTask:
             session = await self._get_session()
             rf_adapter = RecordedFutureAdapter(self.timeout)
             await rf_adapter.process_post_storage_tasks(
-                rf_candidates, program_name, rf_token, session
+                rf_candidates, program_name, self.program_id, rf_token, session
             )
 
         except Exception as e:
