@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.50.1](https://github.com/ReconHawx/reconhawx/compare/v0.50.0...v0.50.1) (2026-08-06)
+
+
+### Bug Fixes
+
+* **runner:** include program_id on RF gather typosquat URL and screenshot ingest ([c626856](https://github.com/ReconHawx/reconhawx/commit/c6268568b5b71184a96f1085f1682f61f2546dc3))
+* **runner:** map gowitness screenshots to URLs via JSONL ([c2bf55e](https://github.com/ReconHawx/reconhawx/commit/c2bf55e2be9b336f381640231d6b155bbe194ccb))
+
 ## [0.50.0](https://github.com/ReconHawx/reconhawx/compare/v0.49.1...v0.50.0) (2026-08-05)
 
 
