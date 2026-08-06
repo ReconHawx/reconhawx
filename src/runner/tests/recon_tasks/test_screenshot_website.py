@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import io
+import json
 import tarfile
 from unittest.mock import patch
 
@@ -27,6 +28,39 @@ def _build_screenshot_archive(entries: dict[str, bytes]) -> str:
             info.size = len(content)
             tar.addfile(info, io.BytesIO(content))
     return base64.b64encode(buf.getvalue()).decode()
+
+
+def _gowitness_entry(
+    url: str,
+    file_name: str,
+    html: str | None = None,
+    failed: bool = False,
+    failed_reason: str = "",
+) -> dict:
+    """Build a gowitness JSONL entry; ``html`` (if given) is embedded as network content."""
+    entry: dict = {
+        "url": url,
+        "final_url": url,
+        "file_name": file_name,
+        "failed": failed,
+        "failed_reason": failed_reason,
+        "network": [],
+    }
+    if html is not None:
+        entry["network"] = [
+            {
+                "request_type": 0,
+                "status_code": 200,
+                "mime_type": "text/html",
+                "url": url,
+                "content": base64.b64encode(html.encode()).decode(),
+            }
+        ]
+    return entry
+
+
+def _jsonl_bytes(*entries: dict) -> bytes:
+    return ("\n".join(json.dumps(e) for e in entries) + "\n").encode()
 
 
 def test_get_timestamp_hash_is_reversible(task: ScreenshotWebsite) -> None:
@@ -62,26 +96,22 @@ def test_parse_output_non_gzip_payload_returns_empty(task: ScreenshotWebsite) ->
 
 
 def test_parse_output_gowitness_archive(task: ScreenshotWebsite) -> None:
+    # URL comes from the JSONL entry (not the PNG filename), and text is extracted from
+    # the entry's embedded HTML content without any mocking.
+    entry = _gowitness_entry("https://example.com/", "example.png", html="<p>hi</p>")
     archive = _build_screenshot_archive(
         {
-            "https---example.com---.png": b"\x89PNG\r\n\x1a\nFAKE",
-            "https---example.com---.jsonl": b'{"html": "<p>hi</p>"}',
+            "example.png": b"\x89PNG\r\n\x1a\nFAKE",
+            "gowitness.jsonl": _jsonl_bytes(entry),
         }
     )
 
-    with patch(
-        "recon_tasks.screenshot_website.extract_text_from_gowitness_jsonl",
-        return_value="hi",
-    ), patch(
-        "recon_tasks.screenshot_website.extract_text_from_image_ocr",
-        return_value="",
-    ):
-        result = task.parse_output(archive)
+    result = task.parse_output(archive)
 
     screenshots = result[AssetType.SCREENSHOT]
     assert len(screenshots) == 1
     shot = screenshots[0]
-    assert shot["filename"] == "https---example.com---.png"
+    assert shot["filename"] == "example.png"
     assert shot["status"] == "captured"
     assert shot["image_size"] == len(b"\x89PNG\r\n\x1a\nFAKE")
     # image_data is base64 of the raw bytes.
@@ -90,14 +120,16 @@ def test_parse_output_gowitness_archive(task: ScreenshotWebsite) -> None:
     assert "example.com" in shot["url"]
 
 
-def test_parse_output_falls_back_to_ocr_when_no_jsonl(task: ScreenshotWebsite) -> None:
+def test_parse_output_falls_back_to_ocr_when_no_html_text(task: ScreenshotWebsite) -> None:
+    # Entry with no network HTML content -> JSONL extraction yields nothing -> OCR fallback.
+    entry = _gowitness_entry("http://only.example.com/", "only.png", html=None)
     archive = _build_screenshot_archive(
-        {"http---only.example.com---.png": b"\x89PNG\r\n\x1a\n"}
+        {
+            "only.png": b"\x89PNG\r\n\x1a\n",
+            "gowitness.jsonl": _jsonl_bytes(entry),
+        }
     )
     with patch(
-        "recon_tasks.screenshot_website.extract_text_from_gowitness_jsonl",
-        return_value=None,
-    ), patch(
         "recon_tasks.screenshot_website.extract_text_from_image_ocr",
         return_value="ocr-text",
     ):
@@ -106,6 +138,32 @@ def test_parse_output_falls_back_to_ocr_when_no_jsonl(task: ScreenshotWebsite) -
     screenshots = result[AssetType.SCREENSHOT]
     assert len(screenshots) == 1
     assert screenshots[0]["extracted_text"] == "ocr-text"
+
+
+def test_parse_output_no_jsonl_returns_empty(task: ScreenshotWebsite) -> None:
+    # Without the JSONL there is no authoritative URL mapping, so nothing is emitted.
+    archive = _build_screenshot_archive({"orphan.png": b"\x89PNG\r\n\x1a\n"})
+    assert task.parse_output(archive) == {AssetType.SCREENSHOT: []}
+
+
+def test_parse_output_skips_failed_and_missing_entries(task: ScreenshotWebsite) -> None:
+    ok = _gowitness_entry("https://ok.example/", "ok.png", html="<p>hi</p>")
+    failed = _gowitness_entry(
+        "https://bad.example/", "", failed=True, failed_reason="timeout"
+    )
+    missing = _gowitness_entry("https://gone.example/", "gone.png", html="<p>x</p>")
+    archive = _build_screenshot_archive(
+        {
+            "ok.png": b"\x89PNG\r\n\x1a\nA",
+            # Note: no "gone.png" file, and the failed entry has no file_name.
+            "gowitness.jsonl": _jsonl_bytes(ok, failed, missing),
+        }
+    )
+
+    result = task.parse_output(archive)
+    screenshots = result[AssetType.SCREENSHOT]
+    assert len(screenshots) == 1
+    assert "ok.example" in screenshots[0]["url"]
 
 
 def test_transform_to_findings_maps_screenshots(task: ScreenshotWebsite) -> None:
@@ -159,17 +217,14 @@ def test_transform_to_findings_empty_when_no_screenshots(task: ScreenshotWebsite
 def test_process_output_for_typosquat_mode(task: ScreenshotWebsite, monkeypatch) -> None:
     monkeypatch.setenv("PROGRAM_NAME", "p")
     monkeypatch.setenv("WORKFLOW_ID", "w")
+    entry = _gowitness_entry("https://example.com/", "example.png", html="<p>hi</p>")
     archive = _build_screenshot_archive(
-        {"https---example.com---.png": b"\x89PNG\r\n\x1a\nFAKE"}
+        {
+            "example.png": b"\x89PNG\r\n\x1a\nFAKE",
+            "gowitness.jsonl": _jsonl_bytes(entry),
+        }
     )
-    with patch(
-        "recon_tasks.screenshot_website.extract_text_from_gowitness_jsonl",
-        return_value=None,
-    ), patch(
-        "recon_tasks.screenshot_website.extract_text_from_image_ocr",
-        return_value="",
-    ):
-        findings_map = task.process_output_for_typosquat_mode(archive, params={})
+    findings_map = task.process_output_for_typosquat_mode(archive, params={})
 
     findings = findings_map[FindingType.TYPOSQUAT_SCREENSHOT]
     assert len(findings) == 1

@@ -4,14 +4,17 @@ from typing import Dict, List, Any, Optional
 import base64
 import tarfile
 import tempfile
-import re
 from .base import Task, AssetType, FindingType
 from models.findings import TyposquatScreenshot
 from utils import (
     get_valid_urls,
     normalize_url_for_storage,
 )
-from utils.html_extractor import extract_text_from_gowitness_jsonl, extract_text_from_image_ocr
+from utils.html_extractor import (
+    extract_text_from_gowitness_entry,
+    extract_text_from_image_ocr,
+    load_gowitness_entries,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -100,76 +103,83 @@ class ScreenshotWebsite(Task):
                 # Extract tar.gz archive
                 with tarfile.open(archive_path, 'r:gz') as tar:
                     tar.extractall(temp_dir)
-                
-                # Process each PNG file
-                for filename in os.listdir(temp_dir):
-                    if filename.endswith('.png'):
-                        # Convert filename back to URL
-                        # The filename format depends on how the screenshotter encodes URLs
-                        # We need to reverse the encoding process carefully
-                        
-                        url = filename[:-4]  # Remove .png extension
-                        
-                        # Replace URL encoding back to original format
-                        # First, replace --- with :// for the protocol
-                        url = url.replace('---', '://', 1)
-                        
-                        # Replace remaining --- with / for paths
-                        url = url.replace('---', '/')
-                        
-                        # Handle port numbers more carefully
-                        # Look for pattern like -PORT- or -PORT at the end
-                        if ':' not in url.split('://')[1]:  # No port yet in the URL
-                            # Look for port pattern: -digits- or -digits at end
-                            port_match = re.search(r'-(\d+)-?$', url)
-                            if port_match:
-                                port = port_match.group(1)
-                                # Remove the port pattern and add it properly
-                                url = re.sub(r'-\d+-?$', f':{port}', url)
-                        
-                        # Clean up any trailing dashes that might have been left
-                        url = url.rstrip('-')
-                        
-                        # If URL doesn't end with /, add it (since we sent normalized URLs)
-                        if not url.endswith('/') and '/' not in url.split('://', 1)[1]:
-                            url += '/'
-                        
-                        
-                        # Don't normalize again since we should already have the correct format
-                        # url = normalize_url_for_storage(url)
-                        
-                        # Read image data as bytes
-                        image_path = os.path.join(temp_dir, filename)
-                        with open(image_path, 'rb') as img_file:
-                            image_data = img_file.read()
-                        
-                        # Extract text from matching JSONL (same encoded filename)
-                        # Pass url=None: filename match is sufficient; gowitness URL format may differ (e.g. :443 vs implicit)
-                        jsonl_filename = filename[:-4] + '.jsonl'
-                        jsonl_path = os.path.join(temp_dir, jsonl_filename)
-                        extracted_text = None
-                        if os.path.exists(jsonl_path):
-                            extracted_text = extract_text_from_gowitness_jsonl(jsonl_path, url=None)
-                            if extracted_text:
-                                logger.debug(f"Extracted {len(extracted_text)} chars from {jsonl_filename}")
-                        else:
-                            logger.debug(f"JSONL not found for {filename}: {jsonl_path}")
-                        # OCR fallback when HTML yields no text
-                        if not extracted_text or not extracted_text.strip():
-                            extracted_text = extract_text_from_image_ocr(image_path)
-                        # Create screenshot asset object
-                        screenshot_asset = {
-                            "url": url,
-                            "image_data": base64.b64encode(image_data).decode(),
-                            "filename": filename,
-                            "image_size": len(image_data),
-                            "status": "captured"
-                        }
-                        if extracted_text is not None:
-                            screenshot_asset["extracted_text"] = extracted_text
-                        screenshots.append(screenshot_asset)
-                        
-            
+
+                # Locate the single gowitness JSONL: it is the authoritative source for the
+                # URL <-> screenshot mapping (via each entry's `file_name` / `url`), replacing
+                # the old lossy filename encoding round-trip.
+                jsonl_path = None
+                for fn in os.listdir(temp_dir):
+                    if fn.endswith('.jsonl'):
+                        jsonl_path = os.path.join(temp_dir, fn)
+                        break
+
+                if not jsonl_path:
+                    logger.warning(
+                        "No JSONL found in screenshot archive; cannot map screenshots to URLs"
+                    )
+                    return {AssetType.SCREENSHOT: []}
+
+                seen_files: set = set()
+                for entry in load_gowitness_entries(jsonl_path):
+                    # Authoritative URL straight from gowitness (no reconstruction).
+                    raw_url = entry.get('final_url') or entry.get('url') or ''
+                    if not raw_url:
+                        continue
+                    url = normalize_url_for_storage(raw_url)
+
+                    file_name = entry.get('file_name') or ''
+                    if not file_name or entry.get('failed'):
+                        logger.info(
+                            "Skipping screenshot for %s (failed=%s, file_name=%r): %s",
+                            url,
+                            entry.get('failed'),
+                            file_name,
+                            entry.get('failed_reason') or "",
+                        )
+                        continue
+
+                    image_path = os.path.join(temp_dir, os.path.basename(file_name))
+                    if not os.path.exists(image_path):
+                        logger.warning(
+                            "Screenshot file missing for %s: %s", url, file_name
+                        )
+                        continue
+
+                    if file_name in seen_files:
+                        logger.warning(
+                            "Duplicate screenshot file_name %s for %s; gowitness may have "
+                            "overwritten an earlier capture",
+                            file_name,
+                            url,
+                        )
+                    seen_files.add(file_name)
+
+                    # Read image data as bytes
+                    with open(image_path, 'rb') as img_file:
+                        image_data = img_file.read()
+
+                    # Text from the same JSONL entry (HTML body); OCR fallback if empty.
+                    extracted_text = extract_text_from_gowitness_entry(entry)
+                    if extracted_text:
+                        logger.debug(
+                            "Extracted %d chars from JSONL for %s", len(extracted_text), url
+                        )
+                    if not extracted_text or not extracted_text.strip():
+                        extracted_text = extract_text_from_image_ocr(image_path)
+
+                    # Create screenshot asset object
+                    screenshot_asset = {
+                        "url": url,
+                        "image_data": base64.b64encode(image_data).decode(),
+                        "filename": os.path.basename(file_name),
+                        "image_size": len(image_data),
+                        "status": "captured"
+                    }
+                    if extracted_text is not None:
+                        screenshot_asset["extracted_text"] = extracted_text
+                    screenshots.append(screenshot_asset)
+
+
             logger.info(f"Successfully processed {len(screenshots)} screenshots")
             
         except Exception as e:

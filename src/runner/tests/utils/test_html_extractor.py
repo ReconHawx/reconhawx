@@ -13,7 +13,9 @@ from utils.html_extractor import (
     _extract_text_from_html,
     _truncate_text,
     _urls_match,
+    extract_text_from_gowitness_entry,
     extract_text_from_gowitness_jsonl,
+    load_gowitness_entries,
 )
 
 
@@ -112,3 +114,73 @@ def test_extract_text_from_gowitness_jsonl_url_mismatch(tmp_path: Path) -> None:
     path.write_text(json.dumps(entry) + "\n")
     result = extract_text_from_gowitness_jsonl(str(path), url="https://example.com/")
     assert result is None
+
+
+def test_extract_text_from_gowitness_entry_network_content() -> None:
+    html = "<html><body><h1>Hi</h1></body></html>"
+    entry = {
+        "url": "https://example.com/",
+        "final_url": "https://example.com/",
+        "network": [
+            {
+                "request_type": 0,
+                "status_code": 200,
+                "mime_type": "text/html",
+                "url": "https://example.com/",
+                "content": base64.b64encode(html.encode()).decode(),
+            }
+        ],
+    }
+    text = extract_text_from_gowitness_entry(entry)
+    assert text is not None
+    assert "Hi" in text
+
+
+def test_extract_text_from_gowitness_entry_top_html_fallback() -> None:
+    # When network content is absent but the top-level html field is set (no --skip-html).
+    entry = {
+        "url": "https://example.com/",
+        "final_url": "https://example.com/",
+        "html": "<p>Fallback text</p>",
+        "network": [],
+    }
+    assert extract_text_from_gowitness_entry(entry) == "Fallback text"
+
+
+def test_extract_text_from_gowitness_entry_no_content_returns_none() -> None:
+    entry = {
+        "url": "https://example.com/",
+        "final_url": "https://example.com/",
+        "network": [
+            {
+                "request_type": 0,
+                "status_code": 200,
+                "mime_type": "text/html",
+                "url": "https://example.com/",
+                "content": None,
+            }
+        ],
+    }
+    assert extract_text_from_gowitness_entry(entry) is None
+
+
+def test_extract_text_from_gowitness_entry_url_mismatch() -> None:
+    entry = {
+        "url": "https://other.com/",
+        "final_url": "https://other.com/",
+        "html": "<p>x</p>",
+    }
+    assert extract_text_from_gowitness_entry(entry, url="https://example.com/") is None
+
+
+def test_load_gowitness_entries_skips_blank_and_malformed(tmp_path: Path) -> None:
+    e1 = {"url": "https://a.com/"}
+    e2 = {"url": "https://b.com/"}
+    path = tmp_path / "gw.jsonl"
+    path.write_text(json.dumps(e1) + "\n\n" + json.dumps(e2) + "\nnot-json\n")
+    entries = load_gowitness_entries(str(path))
+    assert [e["url"] for e in entries] == ["https://a.com/", "https://b.com/"]
+
+
+def test_load_gowitness_entries_missing_file() -> None:
+    assert load_gowitness_entries("/does/not/exist.jsonl") == []
