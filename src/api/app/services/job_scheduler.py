@@ -527,6 +527,19 @@ class JobSchedulerService:
                         "created_at": datetime.now(timezone.utc).isoformat(),
                         "job_data": effective_job_data,
                     }
+                elif request.job_type == JobType.REFRESH_VENDOR_INTEL:
+                    _pids = job_row.get("program_ids") or []
+                    _first_program_id = str(_pids[0]) if _pids else None
+                    worker_payload = {
+                        "job_id": job_id,
+                        "job_type": request.job_type.value,
+                        "schedule_id": schedule_id,
+                        "user_id": job_row["user_id"],
+                        "program_id": _first_program_id,
+                        "program_name": request.program_name,
+                        "created_at": datetime.now(timezone.utc).isoformat(),
+                        "job_data": effective_job_data,
+                    }
                 else:
                     worker_payload = {
                         "job_id": job_id,
@@ -547,6 +560,8 @@ class JobSchedulerService:
                     self.job_submission_service.create_gather_api_findings_job(job_id, worker_payload)
                 elif request.job_type == JobType.SYNC_RECORDEDFUTURE_DATA:
                     self.job_submission_service.create_sync_recordedfuture_data_job(job_id, worker_payload)
+                elif request.job_type == JobType.REFRESH_VENDOR_INTEL:
+                    self.job_submission_service.create_refresh_vendor_intel_job(job_id, worker_payload)
 
                 await self._record_job_execution(schedule_id, job_id, JobStatus.RUNNING)
 

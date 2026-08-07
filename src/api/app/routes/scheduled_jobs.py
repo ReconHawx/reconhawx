@@ -273,6 +273,22 @@ async def get_supported_job_types():
                     }
                 }
             },
+            "refresh_vendor_intel": {
+                "name": "Refresh Vendor Intel",
+                "description": "Refresh Recorded Future or ThreatStream intel on existing typosquat findings (no status/assignment changes)",
+                "required_data": {
+                    "api_vendor": "str - recordedfuture or threatstream",
+                    "refresh_options": "Optional[Dict] - batch_size, max_age_hours, include_screenshots"
+                },
+                "example": {
+                    "api_vendor": "recordedfuture",
+                    "refresh_options": {
+                        "batch_size": 50,
+                        "max_age_hours": 6,
+                        "include_screenshots": true
+                    }
+                }
+            },
             "workflow": {
                 "name": "Workflow Job",
                 "description": "Execute a predefined workflow",
@@ -667,6 +683,32 @@ async def _validate_job_data(job_type: JobType, job_data: Dict[str, Any]):
 
             if "include_screenshots" in sync_options:
                 if not isinstance(sync_options["include_screenshots"], bool):
+                    raise ValueError("include_screenshots must be a boolean")
+
+    elif job_type == JobType.REFRESH_VENDOR_INTEL:
+        if "api_vendor" not in job_data or job_data["api_vendor"] not in [
+            "recordedfuture",
+            "threatstream",
+        ]:
+            raise ValueError(
+                "refresh_vendor_intel jobs require api_vendor 'recordedfuture' or 'threatstream'"
+            )
+        refresh_options = job_data.get("refresh_options")
+        if refresh_options is not None:
+            if not isinstance(refresh_options, dict):
+                raise ValueError("refresh_options must be a dictionary")
+            if "batch_size" in refresh_options:
+                bs = refresh_options["batch_size"]
+                if not isinstance(bs, int) or bs < 1 or bs > 200:
+                    raise ValueError("batch_size must be an integer between 1 and 200")
+            if "max_age_hours" in refresh_options:
+                mah = refresh_options["max_age_hours"]
+                if not isinstance(mah, (int, float)) or mah < 0 or mah > 8760:
+                    raise ValueError(
+                        "max_age_hours must be a number between 0 and 8760"
+                    )
+            if "include_screenshots" in refresh_options:
+                if not isinstance(refresh_options["include_screenshots"], bool):
                     raise ValueError("include_screenshots must be a boolean")
 
     elif job_type == JobType.WORKFLOW:

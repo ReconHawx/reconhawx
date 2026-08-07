@@ -6,6 +6,7 @@ import { formatDate, formatRelativeTime } from '../../utils/dateUtils';
 import { useAuth } from '../../contexts/AuthContext';
 import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
 import { HIDDEN_JOB_TYPES } from './hiddenJobTypes';
+import { PUBLIC_SCHEDULED_JOB_TYPE_OPTIONS } from './publicScheduledJobTypes';
 
 const LEGACY_PROBE_LIMIT = 100;
 
@@ -164,6 +165,7 @@ const ScheduledJobs = () => {
       'ai_analysis_batch': 'AI Analysis Batch',
       'gather_api_findings': 'Gather API Findings',
       'sync_recordedfuture_data': 'Sync RecordedFuture Data',
+      'refresh_vendor_intel': 'Refresh Vendor Intel',
       'workflow': 'Workflow'
     };
     return labels[jobType] || jobType;
@@ -320,7 +322,11 @@ const ScheduledJobs = () => {
               onChange={(e) => setFilters(prev => ({ ...prev, jobType: e.target.value }))}
             >
               <option value="">All Types</option>
-              <option value="workflow">Workflow</option>
+              {PUBLIC_SCHEDULED_JOB_TYPE_OPTIONS.map((type) => (
+                <option key={type.value} value={type.value}>
+                  {type.label}
+                </option>
+              ))}
             </Form.Select>
           </Form.Group>
         </Col>

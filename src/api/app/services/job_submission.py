@@ -974,6 +974,120 @@ class JobSubmissionService:
             logger.error(f"Error creating Kubernetes job: {str(e)}")
             raise
 
+    def create_refresh_vendor_intel_job(self, job_id: str, job_data: Dict[str, Any]):
+        """Create a Kubernetes job for refreshing vendor intel on existing typosquat findings."""
+        job_type = "refresh_vendor_intel"
+        try:
+            namespace = os.getenv('KUBERNETES_NAMESPACE', 'recon')
+            wk = get_workflow_kubernetes_merged_sync()
+            runner_image = wk["runner_image"]
+            image_pull_policy = wk["image_pull_policy"]
+            service_account = os.getenv('RUNNER_SERVICE_ACCOUNT', 'runner-service-account')
+
+            configmap_name = f"job-data-{job_id}"
+            job_json = json.dumps(job_data)
+            logger.debug(f"Creating refresh vendor intel job {job_id} with data: {job_data}")
+
+            configmap = client.V1ConfigMap(
+                metadata=client.V1ObjectMeta(
+                    name=configmap_name,
+                    namespace=namespace,
+                    labels={
+                        "app": "background-job",
+                        "job-id": job_id,
+                        "job-type": job_type,
+                    },
+                ),
+                data={"job_data.json": job_json},
+            )
+
+            try:
+                self.v1.create_namespaced_config_map(namespace=namespace, body=configmap)
+                logger.debug(f"Created ConfigMap {configmap_name} for job data")
+            except ApiException as e:
+                logger.error(f"Failed to create ConfigMap: {e}")
+                raise
+
+            metadata = client.V1ObjectMeta(
+                name=f"job-{job_id}",
+                namespace=namespace,
+                labels={
+                    "app": "background-job",
+                    "job-id": job_id,
+                    "job-type": job_type,
+                    "kueue.x-k8s.io/queue-name": "recon-runner-queue",
+                },
+                annotations={"kueue.x-k8s.io/queue-name": "recon-runner-queue"},
+            )
+
+            container = client.V1Container(
+                name="job-runner",
+                image=runner_image,
+                image_pull_policy=image_pull_policy,
+                command=["/usr/local/bin/python"],
+                args=["/app/run-job.py"],
+                env=_batch_job_runner_env_vars(namespace),
+                resources=client.V1ResourceRequirements(
+                    requests={"cpu": "200m", "memory": "256Mi"},
+                    limits={"cpu": "500m", "memory": "512Mi"},
+                ),
+                volume_mounts=[
+                    client.V1VolumeMount(name="job-data", mount_path="/app/job-data")
+                ],
+            )
+
+            template = client.V1PodTemplateSpec(
+                metadata=client.V1ObjectMeta(
+                    labels={
+                        "app": "background-job",
+                        "job-id": job_id,
+                        "job-type": job_type,
+                    }
+                ),
+                spec=client.V1PodSpec(
+                    containers=[container],
+                    service_account_name=service_account,
+                    restart_policy="Never",
+                    node_selector={"reconhawx.runner": "true"},
+                    volumes=[
+                        client.V1Volume(
+                            name="job-data",
+                            config_map=client.V1ConfigMapVolumeSource(
+                                name=configmap_name,
+                                items=[
+                                    client.V1KeyToPath(
+                                        key="job_data.json", path="job_data.json"
+                                    )
+                                ],
+                            ),
+                        )
+                    ],
+                ),
+            )
+
+            spec = client.V1JobSpec(
+                template=template, backoff_limit=0, ttl_seconds_after_finished=300
+            )
+            job = client.V1Job(
+                api_version="batch/v1", kind="Job", metadata=metadata, spec=spec
+            )
+            created_job = self.batch_v1.create_namespaced_job(
+                namespace=namespace, body=job
+            )
+            job_name = (
+                getattr(getattr(created_job, "metadata", None), "name", None)
+                or f"job-{job_id}"
+            )
+            job_uid = getattr(getattr(created_job, "metadata", None), "uid", None)
+            logger.debug(f"Created Kubernetes job: {job_name}")
+            self._patch_configmap_owner_to_batch_job(
+                namespace, configmap_name, job_name, job_uid
+            )
+            return created_job
+        except Exception as e:
+            logger.error(f"Error creating Kubernetes job: {str(e)}")
+            raise
+
     def get_job_status(self, job_id: str, job_type: Optional[str] = None):
         """Get the status of a Kubernetes job.
         

@@ -7,6 +7,10 @@ import { formatLocalDateTime } from '../../utils/dateUtils';
 import VariableInput from '../../components/VariableInput';
 import { usePageTitle, formatPageTitle } from '../../hooks/usePageTitle';
 import { HIDDEN_JOB_TYPES_SET } from './hiddenJobTypes';
+import {
+  PUBLIC_SCHEDULED_JOB_TYPE_OPTIONS,
+  mergePublicScheduledJobTypes,
+} from './publicScheduledJobTypes';
 
 // Helper function to get user-friendly timezone name
 const getUserFriendlyTimezone = () => {
@@ -68,10 +72,7 @@ const ScheduledJobCreate = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(false);
-  const [jobTypes, setJobTypes] = useState([
-    { value: 'workflow', label: 'Workflow Job', description: 'Execute a predefined workflow' },
-    { value: 'gather_api_findings', label: 'Gather API Findings', description: 'Gather typosquat findings from vendor APIs (ThreatStream, RecordedFuture)' }
-  ]);
+  const [jobTypes, setJobTypes] = useState([...PUBLIC_SCHEDULED_JOB_TYPE_OPTIONS]);
   
   const [workflows, setWorkflows] = useState([]);
   const [programs, setPrograms] = useState([]);
@@ -101,13 +102,16 @@ const ScheduledJobCreate = () => {
       const supportedTypes = response.supported_job_types || {};
 
       if (Object.keys(supportedTypes).length > 0) {
-        const jobTypesList = Object.entries(supportedTypes)
-          .filter(([value]) => !HIDDEN_JOB_TYPES_SET.has(value))
-          .map(([value, info]) => ({
-            value,
-            label: info.name,
-            description: info.description
-          }));
+        const jobTypesList = mergePublicScheduledJobTypes(
+          Object.entries(supportedTypes)
+            .filter(([value]) => !HIDDEN_JOB_TYPES_SET.has(value))
+            .map(([value, info]) => ({
+              value,
+              label: info.name,
+              description: info.description,
+            })),
+          HIDDEN_JOB_TYPES_SET
+        );
         setJobTypes(jobTypesList);
       }
     } catch (err) {
@@ -290,6 +294,15 @@ const ScheduledJobCreate = () => {
           sync_options: {
             batch_size: 50,
             max_age_days: 30,
+            include_screenshots: true
+          }
+        };
+      case 'refresh_vendor_intel':
+        return {
+          api_vendor: 'recordedfuture',
+          refresh_options: {
+            batch_size: 50,
+            max_age_hours: 6,
             include_screenshots: true
           }
         };
@@ -758,6 +771,79 @@ const ScheduledJobCreate = () => {
               <Form.Text className="text-muted">
                 Whether to process screenshot data during sync
               </Form.Text>
+            </Form.Group>
+          </>
+        );
+
+      case 'refresh_vendor_intel':
+        return (
+          <>
+            <Form.Group className="mb-3">
+              <Form.Label>API Vendor</Form.Label>
+              <Form.Select
+                value={formData.job_data.api_vendor || 'recordedfuture'}
+                onChange={(e) => handleInputChange('job_data.api_vendor', e.target.value)}
+              >
+                <option value="recordedfuture">RecordedFuture</option>
+                <option value="threatstream">ThreatStream</option>
+              </Form.Select>
+              <Form.Text className="text-muted">
+                Refresh intel for findings that already have vendor data. Does not change status or assignment.
+              </Form.Text>
+            </Form.Group>
+            <Form.Group className="mb-3">
+              <Form.Label>Batch Size</Form.Label>
+              <Form.Control
+                type="number"
+                min="1"
+                max="200"
+                value={formData.job_data.refresh_options?.batch_size || 50}
+                onChange={(e) => {
+                  const newOptions = {
+                    ...formData.job_data.refresh_options,
+                    batch_size: parseInt(e.target.value, 10)
+                  };
+                  handleInputChange('job_data.refresh_options', newOptions);
+                }}
+              />
+              <Form.Text className="text-muted">
+                RecordedFuture alert details are fetched in batches of this size (1-200).
+              </Form.Text>
+            </Form.Group>
+            <Form.Group className="mb-3">
+              <Form.Label>Min Refresh Interval (hours)</Form.Label>
+              <Form.Control
+                type="number"
+                min="0"
+                max="8760"
+                step="0.5"
+                value={formData.job_data.refresh_options?.max_age_hours ?? 6}
+                onChange={(e) => {
+                  const newOptions = {
+                    ...formData.job_data.refresh_options,
+                    max_age_hours: parseFloat(e.target.value)
+                  };
+                  handleInputChange('job_data.refresh_options', newOptions);
+                }}
+              />
+              <Form.Text className="text-muted">
+                Skip findings refreshed within this many hours (0 = refresh all eligible findings).
+              </Form.Text>
+            </Form.Group>
+            <Form.Group className="mb-3">
+              <Form.Check
+                type="checkbox"
+                id="refresh_include_screenshots"
+                label="Download missing RecordedFuture screenshots"
+                checked={formData.job_data.refresh_options?.include_screenshots !== false}
+                onChange={(e) => {
+                  const newOptions = {
+                    ...formData.job_data.refresh_options,
+                    include_screenshots: e.target.checked
+                  };
+                  handleInputChange('job_data.refresh_options', newOptions);
+                }}
+              />
             </Form.Group>
           </>
         );

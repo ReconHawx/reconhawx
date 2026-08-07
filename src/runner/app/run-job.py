@@ -13,6 +13,7 @@ import aiohttp
 from batch_jobs.phishlabs_batch import PhishLabsBatchTask
 from batch_jobs.gather_api_findings import GatherApiFindingsTask
 from batch_jobs.sync_recordedfuture_data import SyncRecordedFutureDataTask
+from batch_jobs.refresh_vendor_intel import RefreshVendorIntelTask
 from batch_jobs.ai_analysis_batch import AIAnalysisBatchTask
 from services.kubernetes import KubernetesService
 
@@ -209,6 +210,51 @@ async def run_sync_recordedfuture_data_job(job_data: dict):
         logger.error(f"Error running RecordedFuture data sync job: {str(e)}")
         return False
 
+async def run_refresh_vendor_intel_job(job_data: dict):
+    """Run a vendor intel refresh job (Recorded Future or ThreatStream, data-only)."""
+    try:
+        job_id = job_data.get("job_id")
+        program_name = job_data.get("program_name")
+        program_id = job_data.get("program_id")
+        user_id = job_data.get("user_id", "unknown")
+        job_specific = job_data.get("job_data", {}) or {}
+        api_vendor = job_specific.get("api_vendor", "recordedfuture")
+        refresh_options = job_specific.get("refresh_options", {})
+
+        if not job_id:
+            logger.error("Job ID is required")
+            return False
+        if not program_name:
+            logger.error("Program name is required")
+            return False
+        if api_vendor not in ("recordedfuture", "threatstream"):
+            logger.error("api_vendor must be recordedfuture or threatstream")
+            return False
+
+        logger.info(
+            "Starting refresh vendor intel job %s for program %s vendor=%s",
+            job_id,
+            program_name,
+            api_vendor,
+        )
+
+        task = RefreshVendorIntelTask(
+            job_id,
+            program_name,
+            user_id,
+            api_vendor=api_vendor,
+            program_id=program_id,
+            refresh_options=refresh_options,
+        )
+        await task.execute()
+
+        logger.info(f"Refresh vendor intel job {job_id} completed successfully")
+        return True
+
+    except Exception as e:
+        logger.error(f"Error running refresh vendor intel job: {str(e)}")
+        return False
+
 async def main():
     """Main entry point for job execution"""
     job_id = None
@@ -240,6 +286,8 @@ async def main():
             success = await run_gather_api_findings_job(job_data)
         elif job_type == "sync_recordedfuture_data":
             success = await run_sync_recordedfuture_data_job(job_data)
+        elif job_type == "refresh_vendor_intel":
+            success = await run_refresh_vendor_intel_job(job_data)
         else:
             logger.error(f"Unknown job type: {job_type}")
             exit_code = 1
