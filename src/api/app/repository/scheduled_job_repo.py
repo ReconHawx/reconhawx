@@ -1,6 +1,6 @@
 from typing import List, Dict, Any, Optional
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from models.base import utcnow
 from sqlalchemy import and_, desc, or_
 from sqlalchemy.exc import SQLAlchemyError
@@ -399,6 +399,65 @@ class ScheduledJobRepository:
         except Exception as e:
             logger.error(f"Error getting execution history by ID {execution_id}: {str(e)}")
             return None
+
+    @staticmethod
+    async def finalize_running_execution_for_job(
+        job_id: str,
+        *,
+        error_message: str = "Job stopped by user",
+    ) -> bool:
+        """Mark the latest running execution history row as cancelled and reset schedule status."""
+        try:
+            async with get_db_session() as db:
+                execution = (
+                    db.query(JobExecutionHistory)
+                    .filter(
+                        JobExecutionHistory.job_id == job_id,
+                        JobExecutionHistory.status == "running",
+                    )
+                    .order_by(desc(JobExecutionHistory.started_at))
+                    .first()
+                )
+
+                if not execution:
+                    return False
+
+                completed_at = utcnow()
+                started_at = execution.started_at
+                if isinstance(started_at, str):
+                    started_at = datetime.fromisoformat(started_at.replace("Z", "+00:00"))
+                if started_at.tzinfo is None:
+                    started_at = started_at.replace(tzinfo=timezone.utc)
+
+                duration_seconds = int((completed_at - started_at).total_seconds())
+                execution.status = "cancelled"
+                execution.completed_at = completed_at
+                execution.duration_seconds = duration_seconds
+                execution.error_message = error_message
+
+                scheduled_job = (
+                    db.query(ScheduledJob)
+                    .filter(ScheduledJob.schedule_id == execution.schedule_id)
+                    .first()
+                )
+                if scheduled_job and scheduled_job.status == "running":
+                    scheduled_job.status = "scheduled"
+                    scheduled_job.updated_at = utcnow()
+
+                db.commit()
+                logger.info(
+                    "Finalized stopped execution for job %s (schedule %s)",
+                    job_id,
+                    execution.schedule_id,
+                )
+                return True
+
+        except SQLAlchemyError as e:
+            logger.error(f"Database error finalizing execution for job {job_id}: {e}")
+            return False
+        except Exception as e:
+            logger.error(f"Error finalizing execution for job {job_id}: {e}")
+            return False
 
     @staticmethod
     async def update_execution_history(execution_id: str, update_data: Dict[str, Any]) -> bool:

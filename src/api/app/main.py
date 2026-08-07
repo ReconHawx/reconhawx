@@ -295,6 +295,11 @@ async def shutdown_event():
             logger.info("Shutting down workflow thread pool...")
             workflows.thread_pool.shutdown(wait=True)
             logger.info("Workflow thread pool shut down successfully")
+
+        if hasattr(jobs, 'thread_pool'):
+            logger.info("Shutting down jobs thread pool...")
+            jobs.thread_pool.shutdown(wait=True)
+            logger.info("Jobs thread pool shut down successfully")
         
         # Shutdown unified asset processor
         try:

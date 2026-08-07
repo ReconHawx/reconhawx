@@ -2,6 +2,7 @@ import aiohttp
 import asyncio
 from datetime import datetime, timezone, timedelta
 import logging
+from batch_jobs.stop_control import is_job_stopped
 import os
 from typing import Any, Dict, List, Optional
 
@@ -97,6 +98,11 @@ class RefreshVendorIntelTask:
         session = await self._get_session()
 
         for i in range(0, len(findings), self.batch_size):
+            if is_job_stopped():
+                progress = int((i / len(findings)) * 100) if findings else 0
+                await self.update_job_status("stopped", progress, "Job stopped by user")
+                return
+
             batch = findings[i : i + self.batch_size]
             alert_ids: List[str] = []
             finding_by_alert: Dict[str, Dict[str, Any]] = {}
@@ -182,6 +188,15 @@ class RefreshVendorIntelTask:
         screenshot_candidates: List[Dict[str, Any]] = []
 
         for finding in findings:
+            if is_job_stopped():
+                progress = int(
+                    (self.results["success_count"] + self.results["error_count"] + self.results["skipped_count"])
+                    / max(len(findings), 1)
+                    * 100
+                )
+                await self.update_job_status("stopped", progress, "Job stopped by user")
+                return
+
             domain = (finding.get("typo_domain") or "").strip()
             finding_id = finding.get("id")
             if not domain or not finding_id:

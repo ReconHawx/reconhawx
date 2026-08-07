@@ -1,8 +1,9 @@
 import aiohttp
 import uuid
+import logging
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timezone
-import logging
+from batch_jobs.stop_control import is_job_stopped
 import os
 import asyncio
 
@@ -112,6 +113,11 @@ class PhishLabsBatchTask:
             processed_count = 0
 
             for program_key, program_findings_list in program_findings.items():
+                if is_job_stopped():
+                    progress = int((processed_count / total_findings) * 100) if total_findings else 0
+                    await self.update_job_status("stopped", progress, "Job stopped by user")
+                    return
+
                 await self.process_program_findings(program_key, program_findings_list)
                 processed_count += len(program_findings_list)
 

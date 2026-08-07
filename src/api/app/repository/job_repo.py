@@ -135,7 +135,13 @@ class JobRepository:
             return False
 
     @staticmethod
-    async def get_all_jobs(page: int = 1, limit: int = 25, job_type: Optional[str] = None, status: Optional[str] = None) -> Tuple[List[Dict[str, Any]], int]:
+    async def get_all_jobs(
+        page: int = 1,
+        limit: int = 25,
+        job_type: Optional[str] = None,
+        status: Optional[str] = None,
+        job_id_contains: Optional[str] = None,
+    ) -> Tuple[List[Dict[str, Any]], int]:
         """Get all jobs with pagination and filtering"""
         try:
             async with get_db_session() as db:
@@ -145,6 +151,10 @@ class JobRepository:
                     filter_conditions.append(JobStatus.job_type == job_type)
                 if status:
                     filter_conditions.append(JobStatus.status == status)
+                if job_id_contains:
+                    filter_conditions.append(
+                        JobStatus.job_id.ilike(f"%{job_id_contains.strip()}%")
+                    )
                 
                 # Get total count
                 if filter_conditions:

@@ -1,13 +1,14 @@
 import { api } from './client';
 
 export const jobAPI = {
-  getAll: async (page = 1, limit = 25, jobType = null, status = null) => {
+  getAll: async (page = 1, limit = 25, jobType = null, status = null, jobIdContains = null) => {
     const params = new URLSearchParams({
       page: page.toString(),
       limit: limit.toString()
     });
     if (jobType) params.append('job_type', jobType);
     if (status) params.append('status', status);
+    if (jobIdContains) params.append('job_id_contains', jobIdContains);
     
     const response = await api.get(`/jobs?${params.toString()}`);
     return response.data;
@@ -26,7 +27,12 @@ export const jobAPI = {
   delete: async (jobId) => {
     const response = await api.delete(`/jobs/${jobId}`);
     return response.data;
-  }
+  },
+
+  stop: async (jobId) => {
+    const response = await api.post(`/jobs/${jobId}/stop`);
+    return response.data;
+  },
 };
 
 // Programs API calls

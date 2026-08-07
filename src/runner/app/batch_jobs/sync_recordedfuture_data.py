@@ -3,6 +3,7 @@ import asyncio
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timezone, timedelta
 import logging
+from batch_jobs.stop_control import is_job_stopped
 import os
 
 from .api_vendors import RecordedFutureAdapter
@@ -63,6 +64,9 @@ class SyncRecordedFutureDataTask:
             await self.test_api_connectivity()
 
             # Process the single program
+            if is_job_stopped():
+                await self.update_job_status("stopped", 0, "Job stopped by user")
+                return
             await self.sync_program_findings(self.program_name)
 
             # Aggregate RF adapter stats
@@ -284,6 +288,11 @@ class SyncRecordedFutureDataTask:
 
         # Group findings into batches
         for i in range(0, len(findings), self.batch_size):
+            if is_job_stopped():
+                progress = int((i / len(findings)) * 100) if findings else 0
+                await self.update_job_status("stopped", progress, "Job stopped by user")
+                return
+
             batch = findings[i:i + self.batch_size]
             logger.info(f"Processing batch {i // self.batch_size + 1}: {len(batch)} findings")
 
