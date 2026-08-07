@@ -145,8 +145,8 @@ class JobRepository:
         """Get all jobs with pagination and filtering"""
         try:
             async with get_db_session() as db:
-                # Build filter query
-                filter_conditions = []
+                # Build filter query (job monitoring is batch-only; exclude workflow rows)
+                filter_conditions = [JobStatus.job_type != "workflow"]
                 if job_type:
                     filter_conditions.append(JobStatus.job_type == job_type)
                 if status:

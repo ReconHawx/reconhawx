@@ -30,7 +30,6 @@ const JOB_TYPE_OPTIONS = [
   { value: 'refresh_vendor_intel', label: 'Refresh vendor intel' },
   { value: 'dummy_batch', label: 'Dummy batch' },
   { value: 'typosquat_batch', label: 'Typosquat batch' },
-  { value: 'workflow', label: 'Workflow' },
 ];
 
 const JOB_STATUS_OPTIONS = [
@@ -324,7 +323,6 @@ export function JobManagementInner({ embedded = false }) {
       refresh_vendor_intel: 'info',
       dummy_batch: 'secondary',
       typosquat_batch: 'info',
-      workflow: 'primary',
     };
     return <Badge bg={variants[jobType] || 'secondary'}>{jobType}</Badge>;
   };
