@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends, Query
 from typing import Dict, Any, Optional
 from pydantic import BaseModel, Field, model_validator
-from models.job import DummyBatchRequest, GatherApiFindingsRequest, SyncRecordedFutureDataRequest
+from models.job import DummyBatchRequest, GatherApiFindingsRequest, SyncRecordedFutureDataRequest, RefreshVendorIntelRequest
 from repository import JobRepository
 from auth.dependencies import require_internal_service_or_authentication, get_current_user_from_middleware
 from models.user_postgres import UserResponse
@@ -294,6 +294,83 @@ async def create_sync_recordedfuture_data_job(
         raise HTTPException(
             status_code=500,
             detail=f"Error creating RecordedFuture data sync job: {str(e)}"
+        )
+
+@router.post("/refresh-vendor-intel", response_model=Dict[str, Any])
+async def create_refresh_vendor_intel_job(
+    request: RefreshVendorIntelRequest,
+    current_user: UserResponse = Depends(get_current_user_from_middleware)
+):
+    """Create a vendor intel refresh job that runs in Kubernetes.
+
+    Refreshes existing typosquat findings that already have vendor JSONB populated
+    (has_recordedfuture / has_threatstream). Does not change finding status,
+    assignment, or Recorded Future playbook state.
+    """
+    if request.api_vendor not in ("recordedfuture", "threatstream"):
+        raise HTTPException(
+            status_code=400,
+            detail="api_vendor must be 'recordedfuture' or 'threatstream'",
+        )
+
+    try:
+        logger.info(
+            "Creating refresh vendor intel job for program %s vendor=%s",
+            request.program_name,
+            request.api_vendor,
+        )
+
+        job_id = str(uuid.uuid4())
+        refresh_options = {
+            "batch_size": request.batch_size,
+            "max_age_hours": request.max_age_hours,
+            "include_screenshots": request.include_screenshots,
+        }
+        job_payload = {
+            "job_id": job_id,
+            "job_type": "refresh_vendor_intel",
+            "program_name": request.program_name,
+            "user_id": current_user.id or "unknown",
+            "job_data": {
+                "api_vendor": request.api_vendor,
+                "refresh_options": refresh_options,
+            },
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+        job_created = await JobRepository.create_job(job_id, "refresh_vendor_intel", job_payload)
+        if not job_created:
+            raise HTTPException(status_code=500, detail="Failed to create job status record")
+
+        try:
+            job_submission_service = JobSubmissionService()
+            job_submission_service.create_refresh_vendor_intel_job(job_id, job_payload)
+            logger.info("Submitted refresh vendor intel job %s to Kubernetes", job_id)
+        except Exception as e:
+            logger.error("Failed to submit job to Kubernetes: %s", e)
+            await JobRepository.update_job_status(
+                job_id, "failed", 0, f"Failed to submit to Kubernetes: {e}"
+            )
+            raise HTTPException(
+                status_code=500, detail=f"Failed to submit job to Kubernetes: {e}"
+            )
+
+        return {
+            "status": "success",
+            "message": f"Refresh vendor intel job created with ID: {job_id}",
+            "job_id": job_id,
+            "program_name": request.program_name,
+            "api_vendor": request.api_vendor,
+            "refresh_options": refresh_options,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Error creating refresh vendor intel job: %s", e)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error creating refresh vendor intel job: {str(e)}",
         )
 
 @router.get("/{job_id}/status", response_model=Dict[str, Any])

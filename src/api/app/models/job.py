@@ -53,6 +53,13 @@ class SyncRecordedFutureDataRequest(BaseModel):
     max_age_days: int = Field(default=30, ge=0, le=365, description="Only sync findings newer than this many days (0 = all)")
     include_screenshots: bool = Field(default=True, description="Whether to include screenshot processing")
 
+class RefreshVendorIntelRequest(BaseModel):
+    program_name: str = Field(..., description="Program name to refresh vendor intel for")
+    api_vendor: str = Field(..., description="Vendor to refresh: recordedfuture or threatstream")
+    batch_size: int = Field(default=50, ge=1, le=200, description="Findings processed per batch (RF bulk path)")
+    max_age_hours: float = Field(default=6, ge=0, le=8760, description="Skip findings refreshed within this many hours (0 = no skip)")
+    include_screenshots: bool = Field(default=True, description="Download missing RecordedFuture screenshots when applicable")
+
 # New scheduling models
 class ScheduleType(str, Enum):
     ONCE = "once"
@@ -66,6 +73,7 @@ class JobType(str, Enum):
     AI_ANALYSIS_BATCH = "ai_analysis_batch"
     GATHER_API_FINDINGS = "gather_api_findings"
     SYNC_RECORDEDFUTURE_DATA = "sync_recordedfuture_data"
+    REFRESH_VENDOR_INTEL = "refresh_vendor_intel"
     WORKFLOW = "workflow"
     CUSTOM = "custom"
 

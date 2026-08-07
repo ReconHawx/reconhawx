@@ -509,6 +509,43 @@ class RecordedFutureAdapter(BaseAPIVendor):
         vendor_data["last_fetched"] = datetime.now(timezone.utc).isoformat()
         return vendor_data
 
+    def rebuild_recordedfuture_data_from_details(
+        self,
+        existing_rf: Dict[str, Any],
+        fresh_details: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Rebuild recordedfuture_data from stored alert metadata and fresh RF details."""
+        from datetime import datetime, timezone
+
+        raw_alert = dict(existing_rf.get("raw_alert") or {})
+        alert_id = existing_rf.get("alert_id") or raw_alert.get("playbook_alert_id")
+        if alert_id and not raw_alert.get("playbook_alert_id"):
+            raw_alert["playbook_alert_id"] = alert_id
+        if not raw_alert.get("title"):
+            entity = (fresh_details.get("panel_status") or {}).get("entity_name")
+            if entity:
+                raw_alert["title"] = entity
+
+        merged = self._merge_alert_data(raw_alert, fresh_details)
+        if merged:
+            return self.build_recordedfuture_vendor_blob(merged)
+
+        updated_rf = {k: v for k, v in existing_rf.items() if k != "raw_details"}
+        updated_rf["raw_details"] = fresh_details
+        panel_status = fresh_details.get("panel_status", {})
+        if panel_status:
+            for field in (
+                "entity_id",
+                "entity_criticality",
+                "risk_score",
+                "targets",
+                "context_list",
+            ):
+                if field in panel_status:
+                    updated_rf[field] = panel_status.get(field)
+        updated_rf["last_fetched"] = datetime.now(timezone.utc).isoformat()
+        return updated_rf
+
     def parse_domain_object(self, obj: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Parse a RecordedFuture domain object into standardized format"""
         # This is already handled in _merge_alert_data, but kept for interface compliance
@@ -547,8 +584,23 @@ class RecordedFutureAdapter(BaseAPIVendor):
                 domain_name = finding.get("typo_domain")
                 
                 if alert_id and domain_name and raw_details:
+                    screenshot_rf_data = {**rf_data, "typo_domain": domain_name}
+                    resolved_alert_id = alert_id or (rf_data.get("raw_alert") or {}).get(
+                        "playbook_alert_id"
+                    )
+                    if not resolved_alert_id:
+                        logger.debug(
+                            "Skipping finding - no alert_id for screenshots: domain=%s",
+                            domain_name,
+                        )
+                        continue
                     await self._process_screenshots(
-                        rf_token, alert_id, rf_data, program_name, program_id, session
+                        rf_token,
+                        resolved_alert_id,
+                        screenshot_rf_data,
+                        program_name,
+                        program_id,
+                        session,
                     )
                 else:
                     logger.debug(f"Skipping finding - missing required data: domain={domain_name}, alert_id={alert_id}, has_details={bool(raw_details)}")
@@ -763,6 +815,11 @@ class RecordedFutureAdapter(BaseAPIVendor):
                 return
             
             logger.info(f"Processing {len(screenshots)} screenshots for domain {domain_name}")
+
+            page_url = f"https://{domain_name}"
+            existing_source_timestamps = await self._fetch_existing_screenshot_source_timestamps(
+                page_url, program_name, session
+            )
             
             # Create typosquat URL first
             url_id = await self._create_typosquat_url(
@@ -776,6 +833,15 @@ class RecordedFutureAdapter(BaseAPIVendor):
             for screenshot in screenshots:
                 if screenshot.get("availability") == "Available":
                     image_id = screenshot.get("image_id")
+                    screenshot_created = screenshot.get("created")
+                    normalized_created = self._normalize_source_timestamp(screenshot_created)
+                    if normalized_created and normalized_created in existing_source_timestamps:
+                        logger.debug(
+                            "Skipping screenshot %s for %s: source_created_at already stored",
+                            image_id,
+                            domain_name,
+                        )
+                        continue
                     if image_id:
                         await self._fetch_and_upload_screenshot(
                             rf_token,
@@ -792,6 +858,78 @@ class RecordedFutureAdapter(BaseAPIVendor):
                         
         except Exception as e:
             logger.error(f"Error processing screenshots for alert {alert_id}: {str(e)}")
+
+    @staticmethod
+    def _normalize_source_timestamp(value: Optional[str]) -> Optional[str]:
+        """Normalize RF/API timestamp strings for comparison."""
+        if not value or not str(value).strip():
+            return None
+        try:
+            from datetime import datetime, timezone
+            dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt.astimezone(timezone.utc).isoformat()
+        except (ValueError, TypeError):
+            return str(value).strip()
+
+    async def _fetch_existing_screenshot_source_timestamps(
+        self,
+        page_url: str,
+        program_name: str,
+        session: Optional[aiohttp.ClientSession] = None,
+    ) -> set:
+        """Return normalized source_created_at values already stored for a typosquat URL."""
+        import os
+
+        timestamps: set = set()
+        api_base_url = os.getenv("API_BASE_URL", "http://api:8000")
+        api_token = os.getenv("INTERNAL_SERVICE_API_KEY", "")
+        headers = {"Content-Type": "application/json"}
+        if api_token:
+            headers["Authorization"] = f"Bearer {api_token}"
+
+        search_payload = {
+            "url_equals": page_url,
+            "program": program_name,
+            "page": 1,
+            "page_size": 200,
+        }
+        search_url = f"{api_base_url}/findings/typosquat-screenshot/search"
+
+        try:
+            if session:
+                async with session.post(search_url, json=search_payload, headers=headers) as response:
+                    timestamps = await self._parse_screenshot_search_timestamps(response)
+            else:
+                async with aiohttp.ClientSession(timeout=self.timeout) as temp_session:
+                    async with temp_session.post(
+                        search_url, json=search_payload, headers=headers
+                    ) as response:
+                        timestamps = await self._parse_screenshot_search_timestamps(response)
+        except Exception as e:
+            logger.warning(
+                "Could not list existing screenshots for %s: %s", page_url, e
+            )
+        return timestamps
+
+    async def _parse_screenshot_search_timestamps(self, response) -> set:
+        timestamps: set = set()
+        if response.status != 200:
+            response_text = await response.text()
+            logger.warning(
+                "Screenshot search failed: HTTP %s %s", response.status, response_text
+            )
+            return timestamps
+        data = await response.json()
+        for item in data.get("items") or []:
+            raw_ts = item.get("source_created_at")
+            if raw_ts is None and isinstance(item.get("metadata"), dict):
+                raw_ts = item["metadata"].get("source_created_at")
+            normalized = self._normalize_source_timestamp(raw_ts)
+            if normalized:
+                timestamps.add(normalized)
+        return timestamps
     
     async def _create_typosquat_url(
         self,

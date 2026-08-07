@@ -513,6 +513,7 @@ const ScheduledJobDetail = () => {
       'ai_analysis_batch': 'AI Analysis Batch',
       'gather_api_findings': 'Gather API Findings',
       'sync_recordedfuture_data': 'Sync RecordedFuture Data',
+      'refresh_vendor_intel': 'Refresh Vendor Intel',
       'workflow': 'Workflow'
     };
     return labels[jobType] || jobType;
@@ -744,6 +745,40 @@ const ScheduledJobDetail = () => {
                   <td>
                     <Badge bg={jobData.sync_options?.include_screenshots !== false ? 'success' : 'secondary'}>
                       {jobData.sync_options?.include_screenshots !== false ? 'Yes' : 'No'}
+                    </Badge>
+                  </td>
+                </tr>
+              </tbody>
+            </Table>
+          </div>
+        );
+
+      case 'refresh_vendor_intel':
+        return (
+          <div className="bg-light p-3 rounded">
+            <Table size="sm" className="mb-0">
+              <tbody>
+                <tr>
+                  <td><strong>API Vendor:</strong></td>
+                  <td>
+                    <Badge bg={jobData.api_vendor === 'threatstream' ? 'primary' : 'info'}>
+                      {jobData.api_vendor === 'threatstream' ? 'ThreatStream' : 'RecordedFuture'}
+                    </Badge>
+                  </td>
+                </tr>
+                <tr>
+                  <td><strong>Batch Size:</strong></td>
+                  <td>{jobData.refresh_options?.batch_size || 50}</td>
+                </tr>
+                <tr>
+                  <td><strong>Min Refresh Interval:</strong></td>
+                  <td>{jobData.refresh_options?.max_age_hours ?? 6} hours</td>
+                </tr>
+                <tr>
+                  <td><strong>Include Screenshots:</strong></td>
+                  <td>
+                    <Badge bg={jobData.refresh_options?.include_screenshots !== false ? 'success' : 'secondary'}>
+                      {jobData.refresh_options?.include_screenshots !== false ? 'Yes' : 'No'}
                     </Badge>
                   </td>
                 </tr>
@@ -1288,6 +1323,69 @@ const ScheduledJobDetail = () => {
                         <Form.Text className="text-muted">
                           Whether to process screenshot data during sync
                         </Form.Text>
+                      </Form.Group>
+                    </>
+                  )}
+
+                  {editFormData.job_type === 'refresh_vendor_intel' && (
+                    <>
+                      <Form.Group className="mb-3">
+                        <Form.Label>API Vendor</Form.Label>
+                        <Form.Select
+                          value={editFormData.job_data.api_vendor || 'recordedfuture'}
+                          onChange={(e) => handleEditInputChange('job_data.api_vendor', e.target.value)}
+                        >
+                          <option value="recordedfuture">RecordedFuture</option>
+                          <option value="threatstream">ThreatStream</option>
+                        </Form.Select>
+                      </Form.Group>
+                      <Form.Group className="mb-3">
+                        <Form.Label>Batch Size</Form.Label>
+                        <Form.Control
+                          type="number"
+                          min="1"
+                          max="200"
+                          value={editFormData.job_data.refresh_options?.batch_size || 50}
+                          onChange={(e) => {
+                            const newOptions = {
+                              ...editFormData.job_data.refresh_options,
+                              batch_size: parseInt(e.target.value, 10)
+                            };
+                            handleEditInputChange('job_data.refresh_options', newOptions);
+                          }}
+                        />
+                      </Form.Group>
+                      <Form.Group className="mb-3">
+                        <Form.Label>Min Refresh Interval (hours)</Form.Label>
+                        <Form.Control
+                          type="number"
+                          min="0"
+                          max="8760"
+                          step="0.5"
+                          value={editFormData.job_data.refresh_options?.max_age_hours ?? 6}
+                          onChange={(e) => {
+                            const newOptions = {
+                              ...editFormData.job_data.refresh_options,
+                              max_age_hours: parseFloat(e.target.value)
+                            };
+                            handleEditInputChange('job_data.refresh_options', newOptions);
+                          }}
+                        />
+                      </Form.Group>
+                      <Form.Group className="mb-3">
+                        <Form.Check
+                          type="checkbox"
+                          id="refresh_include_screenshots_edit"
+                          label="Download missing RecordedFuture screenshots"
+                          checked={editFormData.job_data.refresh_options?.include_screenshots !== false}
+                          onChange={(e) => {
+                            const newOptions = {
+                              ...editFormData.job_data.refresh_options,
+                              include_screenshots: e.target.checked
+                            };
+                            handleEditInputChange('job_data.refresh_options', newOptions);
+                          }}
+                        />
                       </Form.Group>
                     </>
                   )}

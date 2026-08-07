@@ -3989,7 +3989,7 @@ class RecordedFutureDataUpdateRequest(BaseModel):
 async def update_typosquat_recordedfuture_data(
     finding_id: str,
     request: RecordedFutureDataUpdateRequest,
-    current_user: UserResponse = Depends(get_current_user_from_middleware)
+    current_user: UserResponse = Depends(require_internal_service_or_authentication)
 ):
     """Update the RecordedFuture data field for a typosquat finding"""
     try:
@@ -4039,7 +4039,7 @@ class ThreatStreamDataUpdateRequest(BaseModel):
 async def update_typosquat_threatstream_data(
     finding_id: str,
     request: ThreatStreamDataUpdateRequest,
-    current_user: UserResponse = Depends(get_current_user_from_middleware),
+    current_user: UserResponse = Depends(require_internal_service_or_authentication),
 ):
     """Update the threatstream_data JSONB field for a typosquat finding (runner / internal enrichment)."""
     try:
@@ -4092,7 +4092,7 @@ class RecordedFutureDerivedColumnsUpdateRequest(BaseModel):
 async def update_typosquat_recordedfuture_derived_columns(
     finding_id: str,
     request: RecordedFutureDerivedColumnsUpdateRequest,
-    current_user: UserResponse = Depends(get_current_user_from_middleware),
+    current_user: UserResponse = Depends(require_internal_service_or_authentication),
 ):
     """Patch typosquat root columns populated from RecordedFuture WHOIS/DNS enrichment."""
     try:
