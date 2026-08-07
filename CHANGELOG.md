@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.52.0](https://github.com/ReconHawx/reconhawx/compare/v0.51.0...v0.52.0) (2026-08-07)
+
+
+### Features
+
+* **typosquat:** add job to refresh vendor intel on existing findings ([b544c9f](https://github.com/ReconHawx/reconhawx/commit/b544c9f504fe54e6b112471c594b519c108a619f))
+
 ## [0.51.0](https://github.com/ReconHawx/reconhawx/compare/v0.50.2...v0.51.0) (2026-08-06)
 
 
