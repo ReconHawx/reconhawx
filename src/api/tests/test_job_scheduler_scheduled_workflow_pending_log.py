@@ -76,6 +76,7 @@ async def test_scheduled_inline_workflow_seeds_pending_log_with_metadata(
     svc = JobSchedulerService()
     await svc._execute_multi_program_workflow("sched-test", req, job_row)
 
+    mock_create_job.assert_not_awaited()
     mock_create_log.assert_awaited_once()
     pending = mock_create_log.await_args.args[0]
     assert pending["user_id"] == str(owner)
@@ -163,6 +164,7 @@ async def test_waf_once_workflow_deleted_after_runner_monitor_finishes(
     svc = JobSchedulerService()
     await svc._execute_multi_program_workflow("sched-del-waf", req, job_row)
 
+    mock_create_job.assert_not_awaited()
     mock_delete_scheduled.assert_awaited_once_with("sched-del-waf")
     mock_monitor.assert_awaited_once()
 
@@ -241,5 +243,6 @@ async def test_non_waf_scheduled_workflow_not_deleted_after_monitor(
     svc = JobSchedulerService()
     await svc._execute_multi_program_workflow("sched-keep-me", req, job_row)
 
+    mock_create_job.assert_not_awaited()
     mock_delete_scheduled.assert_not_called()
     mock_update_status.assert_awaited()

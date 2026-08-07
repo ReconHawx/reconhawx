@@ -412,15 +412,6 @@ class JobSchedulerService:
                 raise ValueError(f"Program not found for scheduled workflow: {program_name!r}")
             spec["program_id"] = str(prog_row["id"])
             spec["execution_id"] = job_id
-            job_payload = {
-                "job_id": job_id,
-                "job_type": request.job_type.value,
-                "schedule_id": schedule_id,
-                "job_data": effective_job_data,
-                "user_id": job_row["user_id"],
-                "created_at": datetime.now(timezone.utc).isoformat(),
-            }
-            await JobRepository.create_job(job_id, request.job_type.value, job_payload)
 
             try:
                 owner_uid = job_row.get("user_id")
