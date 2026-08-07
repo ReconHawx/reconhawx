@@ -3,6 +3,7 @@ import sys
 import json
 import os
 import asyncio
+import signal
 
 from runner_logging import configure_runner_logging
 
@@ -15,9 +16,19 @@ from batch_jobs.gather_api_findings import GatherApiFindingsTask
 from batch_jobs.sync_recordedfuture_data import SyncRecordedFutureDataTask
 from batch_jobs.refresh_vendor_intel import RefreshVendorIntelTask
 from batch_jobs.ai_analysis_batch import AIAnalysisBatchTask
+from batch_jobs.stop_control import is_job_stopped, request_job_stop
 from services.kubernetes import KubernetesService
 
 logger = logging.getLogger(__name__)
+
+
+def _signal_handler(signum, frame):
+    logger.info("Received signal %s, marking batch job as externally stopped", signum)
+    request_job_stop()
+
+
+signal.signal(signal.SIGTERM, _signal_handler)
+signal.signal(signal.SIGINT, _signal_handler)
 
 
 def _capture_batch_job_pod_output(job_id: str) -> str:
@@ -59,6 +70,38 @@ async def _upload_runner_pod_output(job_id: str, pod_output: str) -> None:
                     logger.info(f"Uploaded runner_pod_output for job {job_id}")
     except Exception as e:
         logger.warning(f"Failed to upload runner_pod_output for job {job_id}: {e}")
+
+
+async def _upload_stopped_status(job_id: str, message: str = "Job stopped by user") -> None:
+    """Best-effort status update when the job is stopped externally."""
+    api_base_url = os.getenv("API_BASE_URL", "http://api:8000")
+    headers = {}
+    internal_api_key = os.getenv("INTERNAL_SERVICE_API_KEY")
+    if internal_api_key:
+        headers["Authorization"] = f"Bearer {internal_api_key}"
+
+    payload = {
+        "status": "stopped",
+        "progress": 0,
+        "message": message,
+    }
+    url = f"{api_base_url}/jobs/{job_id}/status"
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.put(url, json=payload, headers=headers) as resp:
+                if resp.status >= 400:
+                    body = await resp.text()
+                    logger.warning(
+                        "Failed to upload stopped status for job %s: %s %s",
+                        job_id,
+                        resp.status,
+                        body,
+                    )
+                else:
+                    logger.info("Uploaded stopped status for job %s", job_id)
+    except Exception as e:
+        logger.warning("Failed to upload stopped status for job %s: %s", job_id, e)
 
 
 async def run_phishlabs_batch_job(job_data: dict):
@@ -296,6 +339,9 @@ async def main():
         if success:
             logger.info("Job completed successfully")
             exit_code = 0
+        elif is_job_stopped():
+            logger.info("Job stopped externally")
+            exit_code = 0
         else:
             logger.error("Job failed")
             exit_code = 1
@@ -305,6 +351,8 @@ async def main():
         exit_code = 1
     finally:
         if job_id:
+            if is_job_stopped():
+                await _upload_stopped_status(job_id)
             final_pod_output = _capture_batch_job_pod_output(job_id)
             if final_pod_output:
                 await _upload_runner_pod_output(job_id, final_pod_output)

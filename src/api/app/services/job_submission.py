@@ -1115,6 +1115,35 @@ class JobSubmissionService:
             logger.error(f"Error getting job status: {str(e)}")
             raise
     
+    def get_batch_job_pod_logs(self, job_id: str) -> str:
+        """Read logs from the batch job runner pod (label job-id={job_id})."""
+        try:
+            namespace = os.getenv('KUBERNETES_NAMESPACE', 'recon')
+            selector = f"app=background-job,job-id={job_id}"
+            pods = self.v1.list_namespaced_pod(
+                namespace=namespace,
+                label_selector=selector,
+            ).items
+
+            if not pods:
+                logger.warning(f"No batch job pods found for job_id {job_id}")
+                return ""
+
+            pods.sort(key=lambda pod: pod.metadata.creation_timestamp, reverse=True)
+            pod_name = pods[0].metadata.name
+            logs = self.v1.read_namespaced_pod_log(
+                name=pod_name,
+                namespace=namespace,
+            )
+            return logs if logs else ""
+        except ApiException as e:
+            if e.status != 404:
+                logger.error(f"Error reading batch job pod logs for {job_id}: {e}")
+            return ""
+        except Exception as e:
+            logger.error(f"Error reading batch job pod logs for {job_id}: {e}")
+            return ""
+
     def delete_job(self, job_id: str, job_type: Optional[str] = None):
         """Delete a Kubernetes job and its ConfigMap.
         
@@ -1134,7 +1163,8 @@ class JobSubmissionService:
             try:
                 self.batch_v1.delete_namespaced_job(
                     name=job_name,
-                    namespace=namespace
+                    namespace=namespace,
+                    propagation_policy="Background",
                 )
                 logger.debug(f"Deleted Kubernetes job: {job_name}")
             except ApiException as e:

@@ -3,19 +3,101 @@ from typing import Dict, Any, Optional
 from pydantic import BaseModel, Field, model_validator
 from models.job import DummyBatchRequest, GatherApiFindingsRequest, SyncRecordedFutureDataRequest, RefreshVendorIntelRequest
 from repository import JobRepository
+from repository.scheduled_job_repo import ScheduledJobRepository
 from auth.dependencies import require_internal_service_or_authentication, get_current_user_from_middleware
 from models.user_postgres import UserResponse
 from services.job_submission import JobSubmissionService
+from services.kubernetes import KubernetesService
 from datetime import datetime, timezone
 import uuid
 import logging
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+job_submission_service = JobSubmissionService()
+k8s_service = KubernetesService()
+thread_pool = ThreadPoolExecutor(max_workers=4)
+
+_FINISHED_JOB_STATUSES = frozenset({"completed", "failed", "stopped", "cancelled"})
+
+
+async def _run_job_stop_cleanup(
+    job_id: str,
+    job_type: Optional[str],
+    current_progress: int,
+) -> None:
+    """Tear down Kubernetes resources and mark the job stopped."""
+    logger.info("Starting Kubernetes cleanup for job: %s", job_id)
+
+    if job_type == "workflow":
+        stop_results = k8s_service.stop_workflow(job_id)
+        logger.info("Workflow cleanup completed for job %s: %s", job_id, stop_results)
+    else:
+        pod_logs = job_submission_service.get_batch_job_pod_logs(job_id)
+        if pod_logs:
+            formatted_output = (
+                f"\n--- Final Job Output ---\n{pod_logs}\n\n--- End Job ---\n"
+            )
+            await JobRepository.update_job_status(
+                job_id,
+                runner_pod_output=formatted_output,
+            )
+            logger.info("Captured runner pod output for job %s before delete", job_id)
+
+        job_submission_service.delete_job(job_id, job_type=job_type)
+        logger.info("Kubernetes cleanup completed for batch job %s", job_id)
+
+    await ScheduledJobRepository.finalize_running_execution_for_job(job_id)
+
+    final_progress = current_progress
+    latest = await JobRepository.get_job_status(job_id)
+    if latest:
+        final_progress = latest.get("progress", current_progress)
+
+    await JobRepository.update_job_status(
+        job_id,
+        status="stopped",
+        progress=final_progress,
+        message="Job stopped by user",
+    )
+    logger.info("Updated job status to stopped for %s", job_id)
+
+
+def _submit_job_stop_cleanup(job_id: str, job_type: Optional[str], current_progress: int) -> None:
+    """Run stop cleanup from a background thread."""
+    try:
+        try:
+            loop = asyncio.get_event_loop()
+            future = asyncio.run_coroutine_threadsafe(
+                _run_job_stop_cleanup(job_id, job_type, current_progress),
+                loop,
+            )
+            future.result()
+        except RuntimeError:
+            asyncio.run(_run_job_stop_cleanup(job_id, job_type, current_progress))
+    except Exception as e:
+        logger.error("Error in background Kubernetes cleanup for job %s: %s", job_id, e)
+        error_update = {
+            "status": "failed",
+            "progress": current_progress,
+            "message": f"Failed to stop job: {e}",
+        }
+        try:
+            loop = asyncio.get_event_loop()
+            future = asyncio.run_coroutine_threadsafe(
+                JobRepository.update_job_status(job_id, **error_update),
+                loop,
+            )
+            future.result()
+        except RuntimeError:
+            asyncio.run(JobRepository.update_job_status(job_id, **error_update))
+
 class JobStatusUpdateRequest(BaseModel):
     """Request model for updating job status"""
-    status: Optional[str] = Field(None, description="New job status (pending, running, completed, failed)")
+    status: Optional[str] = Field(None, description="New job status (pending, running, stopping, stopped, completed, failed)")
     progress: Optional[int] = Field(None, ge=0, le=100, description="Job progress percentage (0-100)")
     message: Optional[str] = Field(None, description="Status message")
     results: Optional[Dict[str, Any]] = Field(None, description="Job results (optional)")
@@ -52,6 +134,7 @@ async def get_all_jobs(
     limit: int = Query(25, ge=1, le=100, description="Number of jobs per page"),
     job_type: Optional[str] = Query(None, description="Filter by job type"),
     status: Optional[str] = Query(None, description="Filter by status"),
+    job_id_contains: Optional[str] = Query(None, description="Filter by job ID substring"),
     current_user: UserResponse = Depends(get_current_user_from_middleware)
 ):
     """Get all jobs with pagination and filtering"""
@@ -60,7 +143,8 @@ async def get_all_jobs(
             page=page,
             limit=limit,
             job_type=job_type,
-            status=status
+            status=status,
+            job_id_contains=job_id_contains,
         )
         
         return {
@@ -408,7 +492,7 @@ async def update_job_status(
     progress, and results. The job must exist and be accessible to the user.
     """
     try:
-        valid_statuses = ["pending", "running", "completed", "failed"]
+        valid_statuses = ["pending", "running", "stopping", "stopped", "completed", "failed"]
 
         if request.status is not None:
             if request.status not in valid_statuses:
@@ -488,6 +572,59 @@ async def get_job_results(
     except Exception as e:
         logger.error(f"Error getting job results for {job_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/{job_id}/stop", response_model=Dict[str, Any])
+async def stop_job(
+    job_id: str,
+    current_user: UserResponse = Depends(get_current_user_from_middleware),
+):
+    """Stop a running batch job and cancel associated Kubernetes resources."""
+    try:
+        job_record = await JobRepository.get_job_status(job_id)
+        if not job_record:
+            raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
+
+        current_status = (job_record.get("status") or "unknown").lower()
+        if current_status in _FINISHED_JOB_STATUSES:
+            return {
+                "status": "already_finished",
+                "message": f"Job {job_id} is already {current_status} and cannot be stopped",
+                "job_id": job_id,
+            }
+
+        if current_status == "stopping":
+            return {
+                "status": "stopping",
+                "message": f"Job {job_id} is already being stopped",
+                "job_id": job_id,
+            }
+
+        job_type = job_record.get("job_type")
+        current_progress = job_record.get("progress", 0)
+
+        await JobRepository.update_job_status(
+            job_id,
+            status="stopping",
+            progress=current_progress,
+            message="Job is being stopped",
+        )
+        logger.info("Updated job %s status to stopping", job_id)
+
+        thread_pool.submit(_submit_job_stop_cleanup, job_id, job_type, current_progress)
+
+        return {
+            "status": "stopping",
+            "message": f"Job {job_id} is being stopped. Cleanup is running in the background.",
+            "job_id": job_id,
+            "note": "The job status will be updated to 'stopped' once cleanup is complete.",
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Error stopping job %s: %s", job_id, e)
+        raise HTTPException(status_code=500, detail=f"Failed to stop job: {e}")
+
 
 @router.delete("/{job_id}", response_model=Dict[str, Any])
 async def delete_job(

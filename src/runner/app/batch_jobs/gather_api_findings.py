@@ -2,6 +2,7 @@ import aiohttp
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timezone
 import logging
+from batch_jobs.stop_control import is_job_stopped
 import os
 
 from .api_vendors import BaseAPIVendor, ThreatStreamAdapter, RecordedFutureAdapter, vendor_config
@@ -99,6 +100,9 @@ class GatherApiFindingsTask:
 
             # Update progress and process the program
             await self.update_job_status("running", 50, f"Processing program {self.program_name}...")
+            if is_job_stopped():
+                await self.update_job_status("stopped", 50, "Job stopped by user")
+                return
             await self.process_program_findings(self.program_name)
 
             # Aggregate vendor stats

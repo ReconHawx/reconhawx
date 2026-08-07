@@ -11,6 +11,7 @@ import json
 import logging
 import os
 import re
+from batch_jobs.stop_control import is_job_stopped
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -280,6 +281,11 @@ class AIAnalysisBatchTask:
             processed = 0
 
             for finding_id in self.finding_ids:
+                if is_job_stopped():
+                    progress = int((processed / total) * 100) if total else 0
+                    await self.update_job_status("stopped", progress, "Job stopped by user")
+                    return
+
                 try:
                     await self.process_single_finding(finding_id)
                 except Exception as e:

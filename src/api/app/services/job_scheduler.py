@@ -827,6 +827,24 @@ class JobSchedulerService:
             
             while attempt < max_attempts:
                 try:
+                    db_job_status = await JobRepository.get_job_status(job_id)
+                    if db_job_status and db_job_status.get("status") in (
+                        "stopping",
+                        "stopped",
+                        "cancelled",
+                    ):
+                        logger.info("Job %s was stopped externally", job_id)
+                        await self._update_execution_completion(
+                            execution_id,
+                            JobStatus.CANCELLED,
+                            error_message="Job stopped by user",
+                        )
+                        if update_schedule_status:
+                            await self._update_scheduled_job_status(
+                                schedule_id, JobStatus.SCHEDULED
+                            )
+                        return False
+
                     # Get Kubernetes job status - handle different job types
                     job_status = None
                     if job_type == "workflow":
@@ -847,6 +865,27 @@ class JobSchedulerService:
                         job_status = self.job_submission_service.get_job_status(job_id, job_type=job_type)
                     
                     if not job_status:
+                        db_job_status = await JobRepository.get_job_status(job_id)
+                        if db_job_status and db_job_status.get("status") in (
+                            "stopping",
+                            "stopped",
+                            "cancelled",
+                        ):
+                            logger.info(
+                                "Job %s not found in Kubernetes but marked stopped in DB",
+                                job_id,
+                            )
+                            await self._update_execution_completion(
+                                execution_id,
+                                JobStatus.CANCELLED,
+                                error_message="Job stopped by user",
+                            )
+                            if update_schedule_status:
+                                await self._update_scheduled_job_status(
+                                    schedule_id, JobStatus.SCHEDULED
+                                )
+                            return False
+
                         logger.warning(f"Job {job_id} not found in Kubernetes, marking as failed")
                         await self._update_execution_completion(execution_id, JobStatus.FAILED, error_message="Job not found in Kubernetes")
                         if update_schedule_status:
