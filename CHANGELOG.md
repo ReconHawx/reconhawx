@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.53.0](https://github.com/ReconHawx/reconhawx/compare/v0.52.0...v0.53.0) (2026-08-07)
+
+
+### Features
+
+* **jobs:** stop running batch jobs from the monitoring UI ([bc66c8b](https://github.com/ReconHawx/reconhawx/commit/bc66c8bfec90ce2259f170390e1bca1d327cbd42))
+
+
+### Bug Fixes
+
+* **jobs:** exclude scheduled workflows from job monitoring ([42c9475](https://github.com/ReconHawx/reconhawx/commit/42c947589fffa040bea3d30fb7199da6e994dc7b))
+
 ## [0.52.0](https://github.com/ReconHawx/reconhawx/compare/v0.51.0...v0.52.0) (2026-08-07)
 
 
