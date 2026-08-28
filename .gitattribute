@@ -1,0 +1,6 @@
+# Handle text files automatically and normalize to LF on commit
+* text=auto eol=lf
+
+# Explicitly force shell scripts to always use LF line endings
+*.sh text eol=lf
+*.py text eol=lf
