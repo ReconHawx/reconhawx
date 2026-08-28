@@ -39,7 +39,7 @@ RUN go install github.com/tomnomnom/unfurl@latest
 
 RUN go install github.com/tomnomnom/assetfinder@latest
 
-RUN go install github.com/praetorian-inc/nerva/cmd/nerva@latest
+RUN go install github.com/praetorian-inc/nerva/cmd/nerva@v1.69.0
 
 ## Final stage
 FROM python:3.14-slim
